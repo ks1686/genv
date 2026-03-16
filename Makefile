@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt vet tidy clean
+.PHONY: build test test-verbose test-cover ci lint fmt vet tidy clean
 
 BINARY := gpm
 
@@ -7,6 +7,12 @@ build:
 
 test:
 	go test ./...
+
+# ci mirrors the GitHub Actions workflow — run this before pushing.
+ci: vet
+	@files=$$(gofmt -l .); if [ -n "$$files" ]; then echo "Unformatted files (run 'make fmt'):\n$$files"; exit 1; fi
+	go test -race -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out
 
 test-verbose:
 	go test -v ./...

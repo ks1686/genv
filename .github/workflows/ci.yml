@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Format check
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "The following files are not formatted (run 'make fmt'):"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out
