@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ks1686/gpm/schema/v1/gpm.json",
+  "title": "gpm.json",
+  "description": "gpm package manifest — schema version 1",
+  "type": "object",
+  "required": ["schemaVersion", "packages"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1",
+      "description": "Schema version. Must be \"1\" for this schema."
+    },
+    "packages": {
+      "type": "array",
+      "description": "Ordered list of packages to manage.",
+      "items": { "$ref": "#/$defs/package" }
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical package identifier used by gpm."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "default": "*",
+          "description": "Version constraint. \"*\" means latest."
+        },
+        "prefer": {
+          "type": "string",
+          "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew"],
+          "description": "Preferred package manager for this package."
+        },
+        "managers": {
+          "type": "object",
+          "description": "Manager-specific package identifiers (for packages with different names across managers).",
+          "additionalProperties": { "type": "string" },
+          "propertyNames": {
+            "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew"]
+          }
+        }
+      }
+    }
+  }
+}
