@@ -1,0 +1,95 @@
+# =============================================================================
+# Go
+# =============================================================================
+
+# Compiled binaries
+/gpm
+/gpm.exe
+/dist/
+
+# Test binaries (go test -c)
+*.test
+
+# Coverage output
+coverage.out
+coverage.html
+
+# Go debugger artifacts (dlv)
+__debug_bin*
+
+# Go workspace files (local developer overrides, not for committing)
+go.work
+go.work.sum
+
+# Dependency vendoring directory — uncomment if the team adopts `go mod vendor`
+# vendor/
+
+# =============================================================================
+# Environment and secrets
+# =============================================================================
+
+.env
+.env.*
+!.env.example
+
+# =============================================================================
+# Editor — VS Code
+# Shared project config (.vscode/settings.json, extensions.json) IS tracked.
+# Personal and generated files are ignored.
+# =============================================================================
+
+.vscode/*.log
+.vscode/launch.json
+.vscode/*.code-workspace
+
+# =============================================================================
+# Editor — JetBrains (GoLand, IntelliJ)
+# =============================================================================
+
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# =============================================================================
+# Editor — Vim / Neovim
+# =============================================================================
+
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+
+# =============================================================================
+# Editor — Emacs
+# =============================================================================
+
+\#*\#
+.\#*
+*.elc
+
+# =============================================================================
+# Editor — Sublime Text
+# =============================================================================
+
+*.sublime-workspace
+
+# =============================================================================
+# OS artifacts
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+desktop.ini
+
+# Linux
+.directory
