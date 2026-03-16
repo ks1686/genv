@@ -61,16 +61,16 @@ func addCmd(args []string) int {
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
 
-	if err := fs.Parse(args); err != nil {
+	id, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		// flag.ContinueOnError already printed the error.
 		return exitUsage
 	}
-	if fs.NArg() < 1 {
+	if id == "" {
 		fmt.Fprintln(os.Stderr, "gpm add: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
-	id := fs.Arg(0)
 
 	managers, err := parseManagerFlag(*managerFlag)
 	if err != nil {
@@ -184,6 +184,28 @@ func listCmd(args []string) int {
 
 	commands.List(f, os.Stdout)
 	return exitOK
+}
+
+// extractPositional separates the first non-flag argument (the package id)
+// from the flag arguments, so flags work in any position relative to the id.
+// Handles both "--flag value" and "--flag=value" forms.
+func extractPositional(args []string) (positional string, flagArgs []string) {
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			flagArgs = append(flagArgs, arg)
+			// "--flag=value" carries its value inline; no extra arg to consume.
+			if !strings.Contains(arg, "=") && i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+		} else if positional == "" {
+			positional = arg
+		}
+		i++
+	}
+	return
 }
 
 // parseManagerFlag parses a comma-separated "mgr:name" list into a map.

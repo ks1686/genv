@@ -110,6 +110,30 @@ func TestAddCmd_WithManagerFlag(t *testing.T) {
 	}
 }
 
+func TestAddCmd_FlagsAfterID(t *testing.T) {
+	// Regression: Go's flag package stops at the first non-flag argument, so
+	// flags placed after the id were silently ignored. extractPositional fixes this.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	code := run([]string{"add", "--file", path, "neovim", "--version", "0.10.*", "--prefer", "brew"})
+	if code != exitOK {
+		t.Fatalf("expected exitOK, got %d", code)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, `"0.10.*"`) {
+		t.Errorf("version not written to file (flag after id was ignored): %s", s)
+	}
+	if !strings.Contains(s, `"brew"`) {
+		t.Errorf("prefer not written to file (flag after id was ignored): %s", s)
+	}
+}
+
 func TestAddCmd_UnknownPreferFails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gpm.json")
