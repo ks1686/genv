@@ -126,10 +126,14 @@ When you run `gpm install` on a new machine:
 
 ## Roadmap
 
-- [ ] `gpm scan` — generate a `gpm.json` from currently installed packages
-- [ ] Lock file (`gpm.lock.json`) for pinning resolved versions
-- [ ] `gpm sync` — minimal-delta updates when spec changes
-- [ ] Desktop app for visual diff and one-click sync
+Implementation milestones and detailed checklists are tracked in [ROADMAP.md](ROADMAP.md).
+
+Current focus:
+
+- [ ] M1: Core CLI and `gpm.json` spec validation
+- [ ] M2: Install planner + resolver for Linux, macOS, and WSL2
+- [ ] M3: `gpm scan`, lock file support, and `gpm sync`
+- [ ] M4: Reliability, automation, and release hardening
 
 ---
 
