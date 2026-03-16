@@ -5,7 +5,6 @@ This document is the public source of truth for delivery milestones, scope, and 
 ## Status Legend
 
 - [ ] Not started
-- ~ In progress
 - [x] Complete
 
 ## Milestone M1 - Core CLI Foundation
