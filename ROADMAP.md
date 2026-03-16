@@ -19,21 +19,21 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Define and publish `gpm.json` schema v1 (`schemaVersion: "1"`).
-- [ ] Implement schema validation with line-aware error messages.
-- [ ] Implement `gpm add <id> [--version <ver>] [--manager <mgr>]`.
-- [ ] Implement `gpm remove <id>`.
-- [ ] Implement `gpm list`.
+- [x] Define and publish `gpm.json` schema v1 (`schemaVersion: "1"`).
+- [x] Implement schema validation with line-aware error messages.
+- [x] Implement `gpm add <id> [--version <ver>] [--manager <mgr>]`.
+- [x] Implement `gpm remove <id>`.
+- [x] Implement `gpm list`.
 - [ ] Implement `gpm install --dry-run` planning output.
 - [ ] Implement `gpm install` execution path with confirmation prompt.
 - [ ] Add `--strict` behavior for unresolved packages.
-- [ ] Add structured exit codes (success, partial success, failed).
-- [ ] Add unit tests for parser, validation, and command argument handling.
+- [x] Add structured exit codes (success, partial success, failed).
+- [x] Add unit tests for parser, validation, and command argument handling.
 
 Acceptance criteria:
 
 - [ ] A clean machine can run `gpm install --dry-run` against sample specs without panic/crash.
-- [ ] Malformed specs produce clear validation errors.
+- [x] Malformed specs produce clear validation errors.
 - [ ] CLI help text documents all v1 commands and flags.
 
 ## Milestone M2 - Resolver and Adapter Layer
