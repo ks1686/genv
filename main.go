@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
+	"strings" // for parseManagerFlag and extractPositional
 
 	"github.com/ks1686/gpm/internal/commands"
 	"github.com/ks1686/gpm/internal/gpmfile"
@@ -133,7 +133,7 @@ func removeCmd(args []string) int {
 			return exitLogic
 		}
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if isValidationErr(err) {
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
@@ -176,7 +176,7 @@ func listCmd(args []string) int {
 			return exitOK
 		}
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if isValidationErr(err) {
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
@@ -230,12 +230,6 @@ func parseManagerFlag(s string) (map[string]string, error) {
 		return nil, nil
 	}
 	return result, nil
-}
-
-// isValidationErr reports whether err looks like a schema validation error
-// (so the caller can choose exit code 3 vs 2).
-func isValidationErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "validation error")
 }
 
 func printUsage() {

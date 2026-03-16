@@ -64,6 +64,14 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 		if p.Prefer != want.Prefer {
 			t.Errorf("Packages[%d].Prefer: got %q, want %q", i, p.Prefer, want.Prefer)
 		}
+		if len(p.Managers) != len(want.Managers) {
+			t.Errorf("Packages[%d].Managers: got %v, want %v", i, p.Managers, want.Managers)
+		}
+		for k, wantV := range want.Managers {
+			if p.Managers[k] != wantV {
+				t.Errorf("Packages[%d].Managers[%q]: got %q, want %q", i, k, p.Managers[k], wantV)
+			}
+		}
 	}
 }
 
@@ -138,5 +146,26 @@ func TestRead_ValidationError(t *testing.T) {
 	_, err := Read(path)
 	if err == nil {
 		t.Fatal("expected error for invalid schemaVersion")
+	}
+	if !errors.Is(err, ErrInvalidFile) {
+		t.Errorf("expected ErrInvalidFile, got: %v", err)
+	}
+}
+
+func TestRead_SyntaxError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	bad := []byte(`{"schemaVersion": "1", "packages": [`)
+	if err := os.WriteFile(path, bad, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := Read(path)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+	if !errors.Is(err, ErrInvalidFile) {
+		t.Errorf("expected ErrInvalidFile, got: %v", err)
 	}
 }

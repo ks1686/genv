@@ -61,6 +61,8 @@ func ParseAndValidate(data []byte) (*GpmFile, []ValidationError, error) {
 	}
 
 	// Use a raw map to distinguish "key absent" from "key set to zero value".
+	// Error is intentionally ignored: the JSON was already successfully parsed
+	// above into &f, so this second unmarshal into a plain map cannot fail.
 	var raw map[string]json.RawMessage
 	_ = json.Unmarshal(data, &raw)
 
@@ -194,7 +196,6 @@ func walkValue(dec *json.Decoder, data []byte, path string, pos map[string]Posit
 			walkArrayBody(dec, data, path, pos)
 		}
 	default:
-		_ = v
 		pos[path] = offsetToPosition(data, offset)
 	}
 }

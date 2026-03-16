@@ -17,7 +17,11 @@ func withWorkDir(t *testing.T, dir string) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(orig) })
+	t.Cleanup(func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Errorf("cleanup: failed to restore working directory: %v", err)
+		}
+	})
 }
 
 func TestRun_NoArgs(t *testing.T) {
@@ -139,8 +143,8 @@ func TestAddCmd_UnknownPreferFails(t *testing.T) {
 	path := filepath.Join(dir, "gpm.json")
 
 	code := run([]string{"add", "--file", path, "--prefer", "yum", "git"})
-	if code == exitOK {
-		t.Error("expected failure for unknown prefer, got exitOK")
+	if code != exitUsage {
+		t.Errorf("expected exitUsage (%d), got %d", exitUsage, code)
 	}
 }
 
@@ -166,7 +170,10 @@ func TestRemoveCmd_Basic(t *testing.T) {
 		t.Fatalf("remove: expected exitOK, got %d", code)
 	}
 
-	content, _ := os.ReadFile(path)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
 	s := string(content)
 	if strings.Contains(s, `"git"`) {
 		t.Error("git should have been removed")
@@ -206,6 +213,32 @@ func TestRemoveCmd_AliasRm(t *testing.T) {
 	code := run([]string{"rm", "--file", path, "git"})
 	if code != exitOK {
 		t.Errorf("alias rm: expected exitOK, got %d", code)
+	}
+}
+
+func TestRemoveCmd_InvalidFileFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"remove", "--file", path, "git"})
+	if code != exitValidation {
+		t.Errorf("expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestListCmd_InvalidFileFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"list", "--file", path})
+	if code != exitValidation {
+		t.Errorf("expected exitValidation (%d), got %d", exitValidation, code)
 	}
 }
 

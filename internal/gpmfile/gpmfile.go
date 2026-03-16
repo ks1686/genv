@@ -18,6 +18,11 @@ const DefaultPath = "gpm.json"
 // ErrNotFound is returned by Read when the file does not exist.
 var ErrNotFound = errors.New("gpm.json not found")
 
+// ErrInvalidFile is returned by Read when the file exists but fails schema
+// validation or JSON parsing. Wrap-chain: callers can use errors.Is to
+// distinguish this from I/O errors and route to the correct exit code.
+var ErrInvalidFile = errors.New("invalid gpm.json")
+
 // Read loads, parses, and validates the gpm.json at path.
 // Returns ErrNotFound if the file is absent.
 // Returns a descriptive error (with line info) for parse or validation failures.
@@ -32,14 +37,14 @@ func Read(path string) (*schema.GpmFile, error) {
 
 	f, valErrs, parseErr := schema.ParseAndValidate(data)
 	if parseErr != nil {
-		return nil, fmt.Errorf("%s: %w", path, parseErr)
+		return nil, fmt.Errorf("%w: %s: %w", ErrInvalidFile, path, parseErr)
 	}
 	if len(valErrs) > 0 {
 		msgs := make([]string, len(valErrs))
 		for i, e := range valErrs {
 			msgs[i] = e.Error()
 		}
-		return nil, fmt.Errorf("%s: validation errors:\n  %s", path, strings.Join(msgs, "\n  "))
+		return nil, fmt.Errorf("%w: %s: validation errors:\n  %s", ErrInvalidFile, path, strings.Join(msgs, "\n  "))
 	}
 	return f, nil
 }

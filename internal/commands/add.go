@@ -40,12 +40,10 @@ func Add(f *schema.GpmFile, id, version, prefer string, managers map[string]stri
 	}
 
 	pkg := schema.Package{
-		ID:      id,
-		Version: version,
-		Prefer:  prefer,
-	}
-	if len(managers) > 0 {
-		pkg.Managers = managers
+		ID:       id,
+		Version:  version,
+		Prefer:   prefer,
+		Managers: managers, // nil is safe: omitempty omits nil and empty maps
 	}
 
 	f.Packages = append(f.Packages, pkg)
