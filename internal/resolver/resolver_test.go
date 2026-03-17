@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -230,5 +231,111 @@ func TestInstallArgs_AllManagers(t *testing.T) {
 		if args[len(args)-1] != tc.pkg {
 			t.Errorf("installArgs(%q, %q): last arg = %q, want pkg name", tc.mgr, tc.pkg, args[len(args)-1])
 		}
+	}
+}
+
+func TestInstallArgs_UnknownManager(t *testing.T) {
+	args := installArgs("yum", "git")
+	if args != nil {
+		t.Errorf("installArgs for unknown manager should return nil, got %v", args)
+	}
+}
+
+func TestDetect_ReturnsMap(t *testing.T) {
+	m := Detect()
+	if m == nil {
+		t.Error("Detect() should return a non-nil map")
+	}
+	// All values in the returned map must be true (only available managers are listed).
+	for mgr, ok := range m {
+		if !ok {
+			t.Errorf("Detect(): map[%q] = false; only true entries should be present", mgr)
+		}
+	}
+}
+
+func TestExecute_SkipsUnresolved(t *testing.T) {
+	// An unresolved action has an empty Cmd; Execute must skip it without error.
+	actions := []Action{
+		{Pkg: schema.Package{ID: "mystery"}, Manager: "", Cmd: nil},
+	}
+	var out, errOut bytes.Buffer
+	errs := Execute(actions, nil, &out, &errOut)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for all-unresolved actions, got: %v", errs)
+	}
+	if out.Len() != 0 {
+		t.Errorf("expected no stdout output for all-unresolved actions, got: %q", out.String())
+	}
+}
+
+func TestExecute_RunsCommand(t *testing.T) {
+	// Execute a real "echo" command and verify it produces output and no errors.
+	actions := []Action{
+		{
+			Pkg:     schema.Package{ID: "echo-test"},
+			Manager: "apt",
+			PkgName: "echo-test",
+			Cmd:     []string{"echo", "hello-from-execute"},
+		},
+	}
+	var out, errOut bytes.Buffer
+	errs := Execute(actions, nil, &out, &errOut)
+	if len(errs) != 0 {
+		t.Fatalf("Execute with 'echo': unexpected errors: %v", errs)
+	}
+	if !strings.Contains(out.String(), "hello-from-execute") {
+		t.Errorf("expected 'hello-from-execute' in stdout, got: %q", out.String())
+	}
+}
+
+func TestExecute_FailedCommand(t *testing.T) {
+	// A command that exits non-zero should produce one error entry.
+	actions := []Action{
+		{
+			Pkg:     schema.Package{ID: "failing-pkg"},
+			Manager: "apt",
+			PkgName: "failing-pkg",
+			Cmd:     []string{"false"},
+		},
+	}
+	var out, errOut bytes.Buffer
+	errs := Execute(actions, nil, &out, &errOut)
+	if len(errs) == 0 {
+		t.Error("expected error for failing command, got none")
+	}
+}
+
+func TestPrintPlan_SinglePackage(t *testing.T) {
+	// Singular "package" (not "packages") in the header.
+	f := &schema.GpmFile{
+		Packages: []schema.Package{{ID: "git"}},
+	}
+	actions := Plan(f, map[string]bool{"brew": true})
+	var sb strings.Builder
+	PrintPlan(actions, &sb)
+	out := sb.String()
+	if !strings.Contains(out, "1 package") {
+		t.Errorf("expected '1 package' (singular) in output, got:\n%s", out)
+	}
+	if strings.Contains(out, "1 packages") {
+		t.Errorf("unexpected '1 packages' (plural) in output; should be singular:\n%s", out)
+	}
+}
+
+func TestPrintPlan_UnresolvedHint(t *testing.T) {
+	// When unresolved packages exist the output must mention the hint lines.
+	f := &schema.GpmFile{
+		Packages: []schema.Package{{ID: "mystery"}},
+	}
+	actions := Plan(f, map[string]bool{})
+	var sb strings.Builder
+	PrintPlan(actions, &sb)
+	out := sb.String()
+	if !strings.Contains(out, "Hint:") {
+		t.Errorf("expected 'Hint:' in output for unresolved packages, got:\n%s", out)
+	}
+	if !strings.Contains(out, "--strict") {
+		t.Errorf("expected '--strict' mention in output, got:\n%s", out)
 	}
 }

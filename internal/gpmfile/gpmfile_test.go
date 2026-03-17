@@ -169,3 +169,35 @@ func TestRead_SyntaxError(t *testing.T) {
 		t.Errorf("expected ErrInvalidFile, got: %v", err)
 	}
 }
+
+func TestRead_PermissionError(t *testing.T) {
+	// Write a valid file then remove all permissions so os.ReadFile returns a
+	// permission-denied error, which is neither ErrNotFound nor ErrInvalidFile.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) })
+
+	_, err := Read(path)
+	if err == nil {
+		t.Fatal("expected error for unreadable file")
+	}
+	if errors.Is(err, ErrNotFound) {
+		t.Error("expected a non-ErrNotFound error for permission-denied read")
+	}
+	if errors.Is(err, ErrInvalidFile) {
+		t.Error("expected a non-ErrInvalidFile error for permission-denied read")
+	}
+}
+
+func TestWrite_ErrorOnBadPath(t *testing.T) {
+	// Writing to a path inside a non-existent directory must return an error.
+	path := filepath.Join(t.TempDir(), "nonexistent", "subdir", "gpm.json")
+	err := Write(path, New())
+	if err == nil {
+		t.Fatal("expected error when writing to non-existent directory")
+	}
+}

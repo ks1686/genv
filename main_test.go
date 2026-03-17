@@ -340,6 +340,95 @@ func TestInstallCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestRemoveCmd_MissingID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"remove", "--file", path})
+	if code != exitUsage {
+		t.Errorf("missing id: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestRemoveCmd_IOError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// Write a valid file then remove read permission so Read returns a generic IO error.
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) }) // restore so TempDir cleanup can delete it
+	code := run([]string{"remove", "--file", path, "git"})
+	if code != exitIO {
+		t.Errorf("io error: expected exitIO (%d), got %d", exitIO, code)
+	}
+}
+
+func TestListCmd_IOError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// Write a valid file then remove read permission so Read returns a generic IO error.
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	code := run([]string{"list", "--file", path})
+	if code != exitIO {
+		t.Errorf("io error: expected exitIO (%d), got %d", exitIO, code)
+	}
+}
+
+func TestAddCmd_BadManagerFormatFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// "notaformat" has no colon separator, so parseManagerFlag should error.
+	code := run([]string{"add", "--file", path, "--manager", "notaformat", "git"})
+	if code != exitUsage {
+		t.Errorf("bad manager format: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// "yum" is not a known manager; commands.Add should reject it.
+	code := run([]string{"add", "--file", path, "--manager", "yum:git", "git"})
+	if code != exitUsage {
+		t.Errorf("unknown manager key: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestInstallCmd_NothingToInstall_NoResolved(t *testing.T) {
+	// When every package is unresolved (no managers available) and --dry-run is not
+	// set and --strict is not set, install should print "nothing to install." and
+	// return exitOK.  We achieve "no managers available" by using a package with a
+	// managers map whose only entry is a manager that is guaranteed to not exist in
+	// the test PATH; step 3 of resolve() would normally fall back to any available
+	// manager, so we need to check whether the path leads to resolvedCount==0.
+	//
+	// Because resolver.Detect() is not injectable we can only reliably exercise the
+	// "all unresolved" branch when no package manager binary is present.  On hosts
+	// where at least one manager is available the test verifies exitOK regardless.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	// install without --dry-run; the exit code is environment-dependent (may prompt
+	// when managers are available, or print "nothing to install." when none are).
+	// We just verify it does not crash or return an unexpected error code.
+	// Since stdin is /dev/null the prompt would read "", triggering "Aborted." — exitOK.
+	// On a host with no managers it also returns exitOK.
+	code := run([]string{"install", "--file", path})
+	if code != exitOK {
+		t.Errorf("install with no managers or aborted: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
 func TestParseManagerFlag(t *testing.T) {
 	tests := []struct {
 		input   string
@@ -352,6 +441,8 @@ func TestParseManagerFlag(t *testing.T) {
 		{"badformat", 0, true},
 		{"mgr:", 0, true},
 		{":name", 0, true},
+		// All-empty tokens (commas with whitespace) → returns nil, nil.
+		{",  ,  ,", 0, false},
 	}
 	for _, tc := range tests {
 		got, err := parseManagerFlag(tc.input)
@@ -367,5 +458,35 @@ func TestParseManagerFlag(t *testing.T) {
 				t.Errorf("parseManagerFlag(%q): got %d entries, want %d", tc.input, len(got), tc.wantLen)
 			}
 		}
+	}
+}
+
+// TestListCmd_FlagParseError ensures listCmd returns exitUsage for unknown flags.
+func TestListCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"list", "--file", path, "--no-such-flag"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+// TestRemoveCmd_FlagParseError ensures removeCmd returns exitUsage for unknown flags.
+func TestRemoveCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"remove", "--file", path, "--no-such-flag", "git"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+// TestInstallCmd_FlagParseError ensures installCmd returns exitUsage for unknown flags.
+func TestInstallCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"install", "--file", path, "--no-such-flag"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
 	}
 }
