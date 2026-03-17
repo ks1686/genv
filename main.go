@@ -249,17 +249,17 @@ func installCmd(args []string) int {
 
 	// Confirmation prompt.
 	fmt.Fprintf(os.Stdout, "This will install %d package(s). Continue? [y/N] ", resolvedCount)
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	answer = strings.TrimSpace(answer)
 	if answer != "y" && answer != "Y" {
 		fmt.Fprintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
-	// Execute; pass the same buffered reader so any buffered bytes aren't lost
-	// to child processes (e.g. sudo password prompts).
-	errs := resolver.Execute(actions, reader, os.Stdout, os.Stderr)
+	// Pass os.Stdin directly so exec assigns the fd to the child process.
+	// If we passed the bufio.Reader, exec would create a pipe instead, and
+	// sudo would not see a TTY — making password prompts fail.
+	errs := resolver.Execute(actions, os.Stdin, os.Stdout, os.Stderr)
 	if len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintf(os.Stderr, "gpm install: %v\n", e)
