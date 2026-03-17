@@ -121,9 +121,10 @@ func concretePackageName(pkg schema.Package, mgr string) string {
 	return pkg.ID
 }
 
-// PrintPlan writes a human-readable install plan to w.
-func PrintPlan(actions []Action, w io.Writer) {
-	resolved, unresolved := 0, 0
+// PrintPlan writes a human-readable install plan to w and returns the number
+// of resolved and unresolved packages so callers can act on the counts without
+// a second pass over the actions slice.
+func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 	for _, a := range actions {
 		if a.Resolved() {
 			resolved++
@@ -159,6 +160,7 @@ func PrintPlan(actions []Action, w io.Writer) {
 		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in gpm.json.")
 		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
+	return
 }
 
 // Execute runs each resolved install action sequentially, writing subprocess

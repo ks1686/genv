@@ -228,14 +228,7 @@ func installCmd(args []string) int {
 
 	available := resolver.Detect()
 	actions := resolver.Plan(f, available)
-	resolver.PrintPlan(actions, os.Stdout)
-
-	unresolvedCount := 0
-	for _, a := range actions {
-		if !a.Resolved() {
-			unresolvedCount++
-		}
-	}
+	resolvedCount, unresolvedCount := resolver.PrintPlan(actions, os.Stdout)
 
 	if unresolvedCount > 0 && *strict {
 		fmt.Fprintf(os.Stderr, "gpm install: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
@@ -246,7 +239,6 @@ func installCmd(args []string) int {
 		return exitOK
 	}
 
-	resolvedCount := len(actions) - unresolvedCount
 	if resolvedCount == 0 {
 		fmt.Fprintln(os.Stdout, "nothing to install.")
 		return exitOK
@@ -347,7 +339,6 @@ Install-specific flags:
   --dry-run   Print the install plan without executing
   --strict    Exit with an error if any package cannot be resolved
 
-Supported package managers:
-  apt, dnf, pacman, flatpak, snap, brew, linuxbrew
 `)
+	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
 }
