@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 	}
 
 	bin := filepath.Join(tmp, "gpm")
-	out, err := exec.Command("go", "build", "-o", bin, "github.com/ks1686/gpm").CombinedOutput()
+	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/ks1686/gpm").CombinedOutput()
 	if err != nil {
 		os.RemoveAll(tmp)
 		panic("go build failed:\n" + string(out))
