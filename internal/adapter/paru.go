@@ -20,4 +20,12 @@ func (Paru) PlanInstall(pkgName string) []string {
 	return []string{"paru", "-S", "--noconfirm", pkgName}
 }
 
+func (Paru) PlanUninstall(pkgName string) []string {
+	return []string{"paru", "-Rns", "--noconfirm", pkgName}
+}
+
+func (Paru) PlanClean() [][]string {
+	return [][]string{{"paru", "-Sc", "--noconfirm"}}
+}
+
 func (Paru) Query(pkgName string) (bool, error) { return runQuery("paru", "-Qi", pkgName) }

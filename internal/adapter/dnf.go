@@ -18,4 +18,15 @@ func (Dnf) PlanInstall(pkgName string) []string {
 	return []string{"sudo", "dnf", "install", "-y", pkgName}
 }
 
+func (Dnf) PlanUninstall(pkgName string) []string {
+	return []string{"sudo", "dnf", "remove", "-y", pkgName}
+}
+
+func (Dnf) PlanClean() [][]string {
+	return [][]string{
+		{"sudo", "dnf", "autoremove", "-y"},
+		{"sudo", "dnf", "clean", "all"},
+	}
+}
+
 func (Dnf) Query(pkgName string) (bool, error) { return runQuery("rpm", "-q", pkgName) }

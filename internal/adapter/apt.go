@@ -18,4 +18,15 @@ func (Apt) PlanInstall(pkgName string) []string {
 	return []string{"sudo", "apt-get", "install", "-y", pkgName}
 }
 
+func (Apt) PlanUninstall(pkgName string) []string {
+	return []string{"sudo", "apt-get", "purge", "-y", pkgName}
+}
+
+func (Apt) PlanClean() [][]string {
+	return [][]string{
+		{"sudo", "apt-get", "autoremove", "-y"},
+		{"sudo", "apt-get", "clean"},
+	}
+}
+
 func (Apt) Query(pkgName string) (bool, error) { return runQuery("dpkg", "-s", pkgName) }

@@ -20,4 +20,12 @@ func (Yay) PlanInstall(pkgName string) []string {
 	return []string{"yay", "-S", "--noconfirm", pkgName}
 }
 
+func (Yay) PlanUninstall(pkgName string) []string {
+	return []string{"yay", "-Rns", "--noconfirm", pkgName}
+}
+
+func (Yay) PlanClean() [][]string {
+	return [][]string{{"yay", "-Sc", "--noconfirm"}}
+}
+
 func (Yay) Query(pkgName string) (bool, error) { return runQuery("yay", "-Qi", pkgName) }

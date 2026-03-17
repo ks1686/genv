@@ -18,4 +18,12 @@ func (MacPorts) PlanInstall(pkgName string) []string {
 	return []string{"sudo", "port", "install", pkgName}
 }
 
+func (MacPorts) PlanUninstall(pkgName string) []string {
+	return []string{"sudo", "port", "uninstall", pkgName}
+}
+
+func (MacPorts) PlanClean() [][]string {
+	return [][]string{{"sudo", "port", "clean", "--all", "installed"}}
+}
+
 func (MacPorts) Query(pkgName string) (bool, error) { return runQuery("port", "installed", pkgName) }

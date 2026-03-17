@@ -6,11 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings" // for parseManagerFlag and extractPositional
+	"os/exec"
+	"strings"
+	"text/tabwriter"
 
+	"github.com/ks1686/gpm/internal/adapter"
 	"github.com/ks1686/gpm/internal/commands"
 	"github.com/ks1686/gpm/internal/gpmfile"
 	"github.com/ks1686/gpm/internal/resolver"
+	"github.com/ks1686/gpm/internal/schema"
 )
 
 // Structured exit codes.
@@ -39,8 +43,10 @@ func run(args []string) int {
 		return removeCmd(args[1:])
 	case "list", "ls":
 		return listCmd(args[1:])
-	case "install":
-		return installCmd(args[1:])
+	case "apply":
+		return applyCmd(args[1:])
+	case "edit":
+		return editCmd(args[1:])
 	case "help", "--help", "-h":
 		printUsage()
 		return exitOK
@@ -50,7 +56,23 @@ func run(args []string) int {
 	}
 }
 
-// addCmd implements `gpm add <id> [--version <ver>] [--prefer <mgr>] [--manager mgr:name,...]`.
+// lockPathFrom derives the lock file path from the gpm.json path.
+// "gpm.json" → "gpm.lock.json", "custom.json" → "custom.lock.json".
+func lockPathFrom(jsonPath string) string {
+	return strings.TrimSuffix(jsonPath, ".json") + ".lock.json"
+}
+
+// confirm writes prompt to stdout and reads a y/Y response from stdin.
+// Returns true if the user confirmed.
+func confirm(prompt string) bool {
+	fmt.Fprint(os.Stdout, prompt)
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer = strings.TrimSpace(answer)
+	return answer == "y" || answer == "Y"
+}
+
+// addCmd implements `gpm add <id> [flags]`.
+// Adds the package to gpm.json and immediately installs it, then updates the lock.
 func addCmd(args []string) int {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -67,7 +89,6 @@ func addCmd(args []string) int {
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		// flag.ContinueOnError already printed the error.
 		return exitUsage
 	}
 	if id == "" {
@@ -82,6 +103,7 @@ func addCmd(args []string) int {
 		return exitUsage
 	}
 
+	// 1. Update gpm.json.
 	f, isNew, err := gpmfile.ReadOrNew(*file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
@@ -91,6 +113,7 @@ func addCmd(args []string) int {
 		return exitIO
 	}
 
+	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
@@ -103,15 +126,54 @@ func addCmd(args []string) int {
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
 		return exitIO
 	}
-
 	if isNew {
 		fmt.Fprintf(os.Stdout, "created %s\n", *file)
 	}
-	fmt.Fprintf(os.Stdout, "added %s\n", id)
+
+	// 2. Resolve and install the package.
+	available := resolver.Detect()
+	action := resolver.ResolveOne(pkg, available)
+	if !action.Resolved() {
+		fmt.Fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'gpm apply' after installing a compatible package manager)\n", id)
+		return exitOK
+	}
+
+	fmt.Fprintf(os.Stdout, "added %s — installing via %s\n", id, action.Manager)
+	fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(action.Cmd, " "))
+	cmd := exec.Command(action.Cmd[0], action.Cmd[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		// Install failure is non-fatal: the spec was already updated.
+		// The user can run 'gpm apply' to retry.
+		fmt.Fprintf(os.Stderr, "gpm: install failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Package was added to spec. Run 'gpm apply' to retry.")
+		return exitOK
+	}
+
+	// 3. Update lock file.
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
+	}
+	lf.Packages = append(lf.Packages, gpmfile.LockedPackage{
+		ID:      action.Pkg.ID,
+		Manager: action.Manager,
+		PkgName: action.PkgName,
+	})
+	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		return exitIO
+	}
+
 	return exitOK
 }
 
 // removeCmd implements `gpm remove <id>`.
+// Removes the package from gpm.json and immediately uninstalls it, then updates the lock.
 func removeCmd(args []string) int {
 	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -133,6 +195,7 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
+	// 1. Update gpm.json.
 	f, err := gpmfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, gpmfile.ErrNotFound) {
@@ -156,11 +219,77 @@ func removeCmd(args []string) int {
 		return exitIO
 	}
 
-	fmt.Fprintf(os.Stdout, "removed %s\n", id)
+	// 2. Find the package in the lock file to know which manager installed it.
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	var locked *gpmfile.LockedPackage
+	remaining := make([]gpmfile.LockedPackage, 0, len(lf.Packages))
+	for i := range lf.Packages {
+		if lf.Packages[i].ID == id {
+			locked = &lf.Packages[i]
+		} else {
+			remaining = append(remaining, lf.Packages[i])
+		}
+	}
+
+	if locked == nil {
+		// Never installed by gpm — nothing to uninstall on the system.
+		fmt.Fprintf(os.Stdout, "removed %s from spec (was not installed by gpm)\n", id)
+		return exitOK
+	}
+
+	// 3. Uninstall from the system using the manager recorded in the lock.
+	mgr := adapter.ByName(locked.Manager)
+	if mgr == nil {
+		fmt.Fprintf(os.Stderr, "gpm: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
+		return exitLogic
+	}
+
+	uninstallCmd := mgr.PlanUninstall(locked.PkgName)
+	fmt.Fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
+	fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
+	cmd := exec.Command(uninstallCmd[0], uninstallCmd[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	uninstallErr := cmd.Run()
+	if uninstallErr != nil {
+		fmt.Fprintf(os.Stderr, "gpm: uninstall failed: %v\n", uninstallErr)
+		// Still update the lock — the package is removed from the spec.
+	}
+
+	// Cache clean.
+	for _, cleanCmd := range mgr.PlanClean() {
+		fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
+		c := exec.Command(cleanCmd[0], cleanCmd[1:]...)
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "gpm: cache clean warning: %v\n", err)
+		}
+	}
+
+	// 4. Update lock file (remove the entry regardless of uninstall success).
+	lf.Packages = remaining
+	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		return exitIO
+	}
+
+	if uninstallErr != nil {
+		return exitLogic
+	}
 	return exitOK
 }
 
 // listCmd implements `gpm list`.
+// Lists all packages currently tracked in the lock file (i.e. installed by gpm).
 func listCmd(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -176,35 +305,40 @@ func listCmd(args []string) int {
 		return exitUsage
 	}
 
-	f, err := gpmfile.Read(*file)
+	lf, err := gpmfile.ReadLock(lockPathFrom(*file))
 	if err != nil {
-		if errors.Is(err, gpmfile.ErrNotFound) {
-			commands.List(nil, os.Stdout)
-			return exitOK
-		}
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
-			return exitValidation
-		}
 		return exitIO
 	}
 
-	commands.List(f, os.Stdout)
+	if len(lf.Packages) == 0 {
+		fmt.Fprintln(os.Stdout, "no packages installed by gpm.")
+		return exitOK
+	}
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tMANAGER\tPACKAGE NAME")
+	for _, p := range lf.Packages {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", p.ID, p.Manager, p.PkgName)
+	}
+	tw.Flush()
 	return exitOK
 }
 
-// installCmd implements `gpm install [--dry-run] [--strict]`.
-func installCmd(args []string) int {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+// applyCmd implements `gpm apply [--dry-run] [--strict]`.
+// Reconciles the system against gpm.json by installing added packages and
+// removing packages that were deleted from the spec since the last apply.
+func applyCmd(args []string) int {
+	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm install [flags]")
+		fmt.Fprintln(os.Stderr, "usage: gpm apply [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
 	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
-	dryRun := fs.Bool("dry-run", false, "print the install plan without executing")
+	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
 	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
 
 	if err := fs.Parse(args); err != nil {
@@ -224,17 +358,30 @@ func installCmd(args []string) int {
 		return exitIO
 	}
 
-	if len(f.Packages) == 0 {
-		fmt.Fprintln(os.Stdout, "nothing to install.")
-		return exitOK
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
 	}
 
 	available := resolver.Detect()
-	actions := resolver.Plan(f, available)
-	resolvedCount, unresolvedCount := resolver.PrintPlan(actions, os.Stdout)
+	result := resolver.Reconcile(f.Packages, lf.Packages, available)
+	toInstall, toRemove := resolver.PrintReconcilePlan(result, os.Stdout)
 
+	if toInstall == 0 && toRemove == 0 {
+		fmt.Fprintln(os.Stdout, "already up to date.")
+		return exitOK
+	}
+
+	unresolvedCount := 0
+	for _, a := range result.ToInstall {
+		if !a.Resolved() {
+			unresolvedCount++
+		}
+	}
 	if unresolvedCount > 0 && *strict {
-		fmt.Fprintf(os.Stderr, "gpm install: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
+		fmt.Fprintf(os.Stderr, "gpm apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
 		return exitLogic
 	}
 
@@ -242,31 +389,72 @@ func installCmd(args []string) int {
 		return exitOK
 	}
 
-	if resolvedCount == 0 {
-		fmt.Fprintln(os.Stdout, "nothing to install.")
-		return exitOK
-	}
-
-	// Confirmation prompt.
-	fmt.Fprintf(os.Stdout, "This will install %d package(s). Continue? [y/N] ", resolvedCount)
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	answer = strings.TrimSpace(answer)
-	if answer != "y" && answer != "Y" {
+	if !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
 		fmt.Fprintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
-	// Pass os.Stdin directly so exec assigns the fd to the child process.
-	// If we passed the bufio.Reader, exec would create a pipe instead, and
-	// sudo would not see a TTY — making password prompts fail.
-	errs := resolver.Execute(actions, os.Stdin, os.Stdout, os.Stderr)
-	if len(errs) > 0 {
-		for _, e := range errs {
-			fmt.Fprintf(os.Stderr, "gpm install: %v\n", e)
+	execResult := resolver.ExecuteApply(result, os.Stdin, os.Stdout, os.Stderr)
+
+	// Update lock: unchanged + successfully installed + failed removals.
+	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
+	for _, id := range execResult.Uninstalled {
+		uninstalledSet[id] = true
+	}
+	newPkgs := make([]gpmfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed))
+	newPkgs = append(newPkgs, result.Unchanged...)
+	newPkgs = append(newPkgs, execResult.Installed...)
+	for _, a := range result.ToRemove {
+		if !uninstalledSet[a.Pkg.ID] {
+			// Removal failed — keep in lock since it's still installed.
+			newPkgs = append(newPkgs, gpmfile.LockedPackage{
+				ID:      a.Pkg.ID,
+				Manager: a.Manager,
+				PkgName: a.PkgName,
+			})
+		}
+	}
+	lf.Packages = newPkgs
+	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		return exitIO
+	}
+
+	if len(execResult.Errors) > 0 {
+		for _, e := range execResult.Errors {
+			fmt.Fprintf(os.Stderr, "gpm apply: %v\n", e)
 		}
 		return exitLogic
 	}
 
+	return exitOK
+}
+
+// editCmd implements `gpm edit`.
+// Opens gpm.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
+func editCmd(args []string) int {
+	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
+	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	cmd := exec.Command(editor, *file)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm edit: %v\n", err)
+		return exitLogic
+	}
 	return exitOK
 }
 
@@ -323,10 +511,11 @@ Usage:
   gpm <command> [flags]
 
 Commands:
-  add <id>    Track a new package
-  remove <id> Stop tracking a package    (alias: rm)
-  list        List all tracked packages  (alias: ls)
-  install     Install all tracked packages
+  add <id>    Add a package to the spec and install it now
+  remove <id> Remove a package from the spec and uninstall it now  (alias: rm)
+  list        List all packages installed by gpm                   (alias: ls)
+  apply       Reconcile system state with gpm.json (install added, remove deleted)
+  edit        Open gpm.json in $EDITOR
   help        Show this help text
 
 Flags common to all commands:
@@ -338,8 +527,8 @@ Add-specific flags:
   --manager <mgr:name,...>     Manager-specific package names, e.g.
                                flatpak:org.mozilla.firefox,brew:firefox
 
-Install-specific flags:
-  --dry-run   Print the install plan without executing
+Apply-specific flags:
+  --dry-run   Print the reconcile plan without executing
   --strict    Exit with an error if any package cannot be resolved
 
 `)

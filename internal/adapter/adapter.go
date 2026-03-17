@@ -27,6 +27,14 @@ type Adapter interface {
 	// PlanInstall returns the command argv to install pkgName via this manager.
 	PlanInstall(pkgName string) []string
 
+	// PlanUninstall returns the command argv to uninstall pkgName via this manager.
+	PlanUninstall(pkgName string) []string
+
+	// PlanClean returns zero or more commands to purge cached data for this
+	// manager. Each inner slice is an independent command (argv). Returns nil
+	// when the manager has no meaningful cache-clean operation.
+	PlanClean() [][]string
+
 	// Query reports whether pkgName is already installed on this host.
 	// Returns false, nil when the package is absent (not an error condition).
 	Query(pkgName string) (bool, error)

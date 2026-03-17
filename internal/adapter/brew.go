@@ -14,6 +14,14 @@ func (brewBase) PlanInstall(pkgName string) []string {
 	return []string{"brew", "install", pkgName}
 }
 
+func (brewBase) PlanUninstall(pkgName string) []string {
+	return []string{"brew", "uninstall", pkgName}
+}
+
+func (brewBase) PlanClean() [][]string {
+	return [][]string{{"brew", "cleanup"}}
+}
+
 // Brew is the adapter for Homebrew (macOS and Linux).
 type Brew struct{ brewBase }
 
