@@ -344,11 +344,11 @@ func TestPrintPlan_UnresolvedHint(t *testing.T) {
 // values for all combinations.
 func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
 	tests := []struct {
-		name            string
-		pkgs            []schema.Package
-		available       map[string]bool
-		wantResolved    int
-		wantUnresolved  int
+		name           string
+		pkgs           []schema.Package
+		available      map[string]bool
+		wantResolved   int
+		wantUnresolved int
 	}{
 		{
 			name:           "all resolved",
