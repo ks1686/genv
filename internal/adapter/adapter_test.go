@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"testing"
+
+	"github.com/ks1686/gpm/internal/schema"
 )
 
 // TestAllAdapterNames verifies that every adapter in the registry has a
@@ -144,5 +146,26 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 				t.Errorf("%s PlanInstall: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
 			}
 		})
+	}
+}
+
+// TestKnownManagersMatchesRegistry verifies that schema.KnownManagers and
+// adapter.All are in sync: every adapter name is a known manager and every
+// known manager has a registered adapter. Adding one without the other will
+// cause this test to fail, preventing silent drift between the two lists.
+func TestKnownManagersMatchesRegistry(t *testing.T) {
+	adapterNames := make(map[string]bool, len(All))
+	for _, a := range All {
+		adapterNames[a.Name()] = true
+	}
+	for mgr := range schema.KnownManagers {
+		if !adapterNames[mgr] {
+			t.Errorf("schema.KnownManagers[%q] has no corresponding adapter in adapter.All", mgr)
+		}
+	}
+	for name := range adapterNames {
+		if !schema.KnownManagers[name] {
+			t.Errorf("adapter %q is in adapter.All but missing from schema.KnownManagers", name)
+		}
 	}
 }

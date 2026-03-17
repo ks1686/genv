@@ -49,6 +49,8 @@ func Plan(f *schema.GpmFile, available map[string]bool) []Action {
 
 func resolve(pkg schema.Package, available map[string]bool) Action {
 	// 1. Honour the prefer hint if that manager is available.
+	// ByName is guaranteed non-nil here: available is built from adapter.All
+	// in Detect(), so any name present in available has a registered adapter.
 	if pkg.Prefer != "" && available[pkg.Prefer] {
 		if a := adapter.ByName(pkg.Prefer); a != nil {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
@@ -59,7 +61,8 @@ func resolve(pkg schema.Package, available map[string]bool) Action {
 	// 2. Pick the first available adapter in registry order whose manager name
 	//    appears in the package's explicit managers map.
 	for _, a := range adapter.All {
-		if name, ok := pkg.Managers[a.Name()]; ok && available[a.Name()] {
+		if _, ok := pkg.Managers[a.Name()]; ok && available[a.Name()] {
+			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
 			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name)}
 		}
 	}

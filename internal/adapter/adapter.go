@@ -2,7 +2,10 @@
 // must implement, along with the ordered registry of all known adapters.
 package adapter
 
-import "os/exec"
+import (
+	"errors"
+	"os/exec"
+)
 
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
@@ -58,3 +61,27 @@ func ByName(name string) Adapter {
 // lookPath is the exec.LookPath implementation used by adapters.
 // Replaced in tests to avoid PATH dependence.
 var lookPath = exec.LookPath
+
+// normalizeID is the standard NormalizeID implementation shared by all adapters.
+// key must equal the adapter's Name() string.
+func normalizeID(key, id string, managers map[string]string) (string, bool) {
+	if name, ok := managers[key]; ok {
+		return name, true
+	}
+	return id, false
+}
+
+// runQuery executes cmd with args and interprets the exit status as an
+// installed/absent signal. A non-zero exit code means "not installed"
+// (false, nil). Only an OS-level execution failure is returned as an error.
+func runQuery(cmd string, args ...string) (bool, error) {
+	err := exec.Command(cmd, args...).Run()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return false, nil
+	}
+	return false, err
+}

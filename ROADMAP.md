@@ -47,15 +47,15 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Build adapter interface: detect, query, plan install, and normalize package IDs.
-- [ ] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`.
-- [ ] Implement macOS adapters: `brew` (formulae and casks), `macports`.
-- [ ] Implement Linuxbrew path support where available.
-- [ ] Implement host manager detection and capability reporting.
-- [ ] Implement package candidate scoring (`prefer` then OS priority).
-- [ ] Add unresolved package warnings in non-strict mode.
-- [ ] Add strict-mode hard failures with package-level diagnostics.
-- [ ] Add integration tests with mocked adapter responses.
+- [x] Build adapter interface: detect, query, plan install, and normalize package IDs.
+- [x] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`.
+- [x] Implement macOS adapters: `brew` (formulae and casks), `macports`.
+- [x] Implement Linuxbrew path support where available.
+- [x] Implement host manager detection and capability reporting.
+- [x] Implement package candidate scoring (`prefer` then OS priority).
+- [x] Add unresolved package warnings in non-strict mode.
+- [x] Add strict-mode hard failures with package-level diagnostics.
+- [x] Add integration tests with mocked adapter responses.
 
 Acceptance criteria:
 
