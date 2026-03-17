@@ -238,7 +238,7 @@ func ExecuteUninstall(actions []Action, stdin io.Reader, stdout, stderr io.Write
 // spec since the last apply; ToRemove are packages that were removed from it.
 type ReconcileResult struct {
 	ToInstall []Action
-	ToRemove  []Action            // UninstallCmd populated; Pkg.ID identifies the package
+	ToRemove  []Action // UninstallCmd populated; Pkg.ID identifies the package
 	Unchanged []gpmfile.LockedPackage
 }
 
