@@ -30,12 +30,12 @@ func Add(f *schema.GpmFile, id, version, prefer string, managers map[string]stri
 	}
 
 	if prefer != "" && !schema.KnownManagers[prefer] {
-		return fmt.Errorf("unknown manager %q for --prefer; valid managers: %s", prefer, knownManagerList())
+		return fmt.Errorf("unknown manager %q for --prefer; valid managers: %s", prefer, KnownManagerList())
 	}
 
 	for mgr := range managers {
 		if !schema.KnownManagers[mgr] {
-			return fmt.Errorf("unknown manager %q in --manager; valid managers: %s", mgr, knownManagerList())
+			return fmt.Errorf("unknown manager %q in --manager; valid managers: %s", mgr, KnownManagerList())
 		}
 	}
 
