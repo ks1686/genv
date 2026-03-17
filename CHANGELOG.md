@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.1.0 - 2026-03-17
+## v0.1.0-beta.1 - 2026-03-17
 
-First public release of `gpm`.
+First public pre-release of `gpm`.
 
 Highlights:
 
