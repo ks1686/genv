@@ -61,6 +61,15 @@ func TestRun_Help(t *testing.T) {
 	}
 }
 
+func TestRun_Version(t *testing.T) {
+	for _, cmd := range []string{"version", "--version"} {
+		code := run([]string{cmd})
+		if code != exitOK {
+			t.Errorf("run(%q): expected exitOK, got %d", cmd, code)
+		}
+	}
+}
+
 // ---- gpm add ----------------------------------------------------------------
 // add writes to gpm.json and attempts a best-effort install.
 // Install failure is non-fatal (no package manager in CI), so all spec-update

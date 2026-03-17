@@ -135,8 +135,8 @@ These gates apply to every milestone.
 
 ## Release Plan (Suggested)
 
-- [x] v0.1.0 - M1 complete (core CLI)
-- [x] v0.2.0 - M2 complete (resolver + adapters, declarative apply, lock file)
+- [x] v0.1.0 - first public release representing the current usable state; M1 complete, may include partially validated M2 work
+- [x] v0.2.0 - M2 complete and validated (resolver + adapters, declarative apply, lock file)
 - [ ] v0.3.0 - M3 complete (scan, version pinning, sync)
 - [ ] v0.4.0 - M4 complete (reliability and automation)
 

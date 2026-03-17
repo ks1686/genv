@@ -41,6 +41,12 @@ go install github.com/ks1686/gpm@latest
 
 Or download a pre-built binary from [Releases](../../releases).
 
+Published binaries report their embedded build metadata via:
+
+```bash
+gpm version
+```
+
 ---
 
 ## Quick start
@@ -128,7 +134,7 @@ When you run `gpm apply`:
 ## CLI reference
 
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `gpm add <id> [flags]` | Add package to spec and install it now |
 | `gpm remove <id>` | Remove package from spec and uninstall it now |
 | `gpm list` | List packages currently installed by gpm (from lock file) |
@@ -136,16 +142,19 @@ When you run `gpm apply`:
 | `gpm edit` | Open gpm.json in `$EDITOR` |
 | `gpm help` | Show help text |
 
-**`gpm add` flags:**
+### `gpm add` flags
+
 - `--version <ver>` — version constraint, e.g. `"0.10.*"`
 - `--prefer <mgr>` — preferred manager, e.g. `brew`
 - `--manager <mgr:name,...>` — manager-specific names, e.g. `flatpak:org.mozilla.firefox`
 
-**`gpm apply` flags:**
+### `gpm apply` flags
+
 - `--dry-run` — print the reconcile plan without executing
 - `--strict` — exit with an error if any package cannot be resolved
 
-**Common flag (all commands):**
+### Common flag
+
 - `--file <path>` — path to gpm.json (default: `./gpm.json`)
 
 ---
@@ -173,6 +182,12 @@ Current focus:
 - [x] M2: Resolver + adapter layer, declarative apply, uninstall, cache clean
 - [ ] M3: `gpm scan`, lock file pinning, and `gpm sync`
 - [ ] M4: Reliability, automation, and release hardening
+
+## Releasing
+
+The repository includes a tag-driven GitHub release workflow. The release process is documented in [RELEASING.md](RELEASING.md).
+
+The first public release is `v0.1.0`, intended to reflect the current usable state of the project. That release may include some Milestone 2 functionality that is still being validated across supported environments; the release notes should call that out explicitly.
 
 ---
 
