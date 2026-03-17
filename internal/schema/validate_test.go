@@ -301,3 +301,149 @@ func TestLocateFields_EmptyInput(t *testing.T) {
 		t.Errorf("expected empty positions for empty input, got: %v", pos)
 	}
 }
+
+// TestParseAndValidate_ValidAllFields verifies that a package with all optional
+// fields set is accepted without errors.
+func TestParseAndValidate_ValidAllFields(t *testing.T) {
+	input := `{
+		"schemaVersion": "1",
+		"packages": [
+			{
+				"id": "firefox",
+				"version": "123.*",
+				"prefer": "flatpak",
+				"managers": {
+					"flatpak": "org.mozilla.firefox",
+					"brew": "firefox",
+					"snap": "firefox"
+				}
+			}
+		]
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f == nil || len(f.Packages) != 1 {
+		t.Fatalf("expected 1 package, got: %v", f)
+	}
+	p := f.Packages[0]
+	if p.ID != "firefox" || p.Version != "123.*" || p.Prefer != "flatpak" {
+		t.Errorf("unexpected package fields: %+v", p)
+	}
+	if p.Managers["flatpak"] != "org.mozilla.firefox" {
+		t.Errorf("managers map not populated correctly: %v", p.Managers)
+	}
+}
+
+// TestParseAndValidate_MultipleValidPackages verifies that a file with several
+// valid packages is accepted.
+func TestParseAndValidate_MultipleValidPackages(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"git"},{"id":"neovim"},{"id":"firefox"}]}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if len(f.Packages) != 3 {
+		t.Fatalf("expected 3 packages, got %d", len(f.Packages))
+	}
+}
+
+// TestParseAndValidate_PackageWithAllKnownManagers verifies that a managers map
+// containing all known manager keys is accepted.
+func TestParseAndValidate_PackageWithAllKnownManagers(t *testing.T) {
+	input := `{
+		"schemaVersion": "1",
+		"packages": [{
+			"id": "pkg",
+			"managers": {
+				"apt":       "pkg-apt",
+				"dnf":       "pkg-dnf",
+				"pacman":    "pkg-pacman",
+				"flatpak":   "io.pkg",
+				"snap":      "pkg-snap",
+				"brew":      "pkg-brew",
+				"linuxbrew": "pkg-linuxbrew"
+			}
+		}]
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors for all-known managers: %v", errs)
+	}
+}
+
+// TestParseAndValidate_EmptyInput verifies that completely empty input returns a
+// fatal parse error.
+func TestParseAndValidate_EmptyInput(t *testing.T) {
+	_, _, err := ParseAndValidate([]byte(""))
+	if err == nil {
+		t.Fatal("expected fatal error for empty input")
+	}
+}
+
+// TestParseAndValidate_MultipleDuplicates verifies that each pair of duplicate
+// IDs generates a validation error.
+func TestParseAndValidate_MultipleDuplicates(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"git"},{"id":"git"},{"id":"vim"},{"id":"vim"}]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	// Expect two duplicate errors (one for each repeated id).
+	dupCount := 0
+	for _, e := range errs {
+		if strings.Contains(e.Message, "duplicate") {
+			dupCount++
+		}
+	}
+	if dupCount < 2 {
+		t.Errorf("expected at least 2 duplicate errors, got %d: %v", dupCount, errs)
+	}
+}
+
+// TestParseAndValidate_MultipleUnknownManagers verifies that each unknown
+// manager key in the managers map produces its own validation error.
+func TestParseAndValidate_MultipleUnknownManagers(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"git","managers":{"yum":"git","zypper":"git"}}]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) < 2 {
+		t.Errorf("expected at least 2 validation errors for 2 unknown managers, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestLocateFields_NestedManagers verifies that locateFields records positions
+// for manager keys inside a nested managers object.
+func TestLocateFields_NestedManagers(t *testing.T) {
+	data := []byte(`{
+  "schemaVersion": "1",
+  "packages": [
+    {
+      "id": "firefox",
+      "managers": {
+        "brew": "firefox"
+      }
+    }
+  ]
+}`)
+	pos := make(map[string]Position)
+	locateFields(data, pos)
+
+	// packages[0].managers.brew must be tracked.
+	key := "packages[0].managers.brew"
+	if _, ok := pos[key]; !ok {
+		t.Errorf("expected position for %q to be tracked; got keys: %v", key, pos)
+	}
+}
