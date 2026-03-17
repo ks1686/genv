@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ks1686/gpm/internal/adapter"
 	"github.com/ks1686/gpm/internal/schema"
 )
 
@@ -205,7 +206,7 @@ func TestPrintPlan_MixedResolved(t *testing.T) {
 	}
 }
 
-func TestInstallArgs_AllManagers(t *testing.T) {
+func TestPlanInstall_AllManagers(t *testing.T) {
 	tests := []struct {
 		mgr     string
 		pkg     string
@@ -214,30 +215,38 @@ func TestInstallArgs_AllManagers(t *testing.T) {
 		{"apt", "git", "sudo"},
 		{"dnf", "git", "sudo"},
 		{"pacman", "git", "sudo"},
+		{"paru", "git", "paru"},
+		{"yay", "git", "yay"},
 		{"flatpak", "app.id", "flatpak"},
 		{"snap", "git", "sudo"},
 		{"brew", "git", "brew"},
+		{"macports", "git", "sudo"},
 		{"linuxbrew", "git", "brew"},
 	}
 	for _, tc := range tests {
-		args := installArgs(tc.mgr, tc.pkg)
+		a := adapter.ByName(tc.mgr)
+		if a == nil {
+			t.Errorf("ByName(%q): no adapter found", tc.mgr)
+			continue
+		}
+		args := a.PlanInstall(tc.pkg)
 		if len(args) == 0 {
-			t.Errorf("installArgs(%q, %q): got empty slice", tc.mgr, tc.pkg)
+			t.Errorf("PlanInstall(%q, %q): got empty slice", tc.mgr, tc.pkg)
 			continue
 		}
 		if args[0] != tc.wantBin {
-			t.Errorf("installArgs(%q, %q): binary = %q, want %q", tc.mgr, tc.pkg, args[0], tc.wantBin)
+			t.Errorf("PlanInstall(%q, %q): binary = %q, want %q", tc.mgr, tc.pkg, args[0], tc.wantBin)
 		}
 		if args[len(args)-1] != tc.pkg {
-			t.Errorf("installArgs(%q, %q): last arg = %q, want pkg name", tc.mgr, tc.pkg, args[len(args)-1])
+			t.Errorf("PlanInstall(%q, %q): last arg = %q, want pkg name", tc.mgr, tc.pkg, args[len(args)-1])
 		}
 	}
 }
 
-func TestInstallArgs_UnknownManager(t *testing.T) {
-	args := installArgs("yum", "git")
-	if args != nil {
-		t.Errorf("installArgs for unknown manager should return nil, got %v", args)
+func TestByName_UnknownManager(t *testing.T) {
+	a := adapter.ByName("yum")
+	if a != nil {
+		t.Errorf("ByName for unknown manager should return nil, got %v", a)
 	}
 }
 
@@ -440,39 +449,54 @@ func TestPlan_MultiplePackagesMixed(t *testing.T) {
 	}
 }
 
-// TestConcretePackageName verifies the helper uses the managers map when present
+// TestNormalizeID verifies that each adapter uses the managers map when present
 // and falls back to the package ID otherwise.
-func TestConcretePackageName(t *testing.T) {
+func TestNormalizeID(t *testing.T) {
 	tests := []struct {
-		name string
-		pkg  schema.Package
-		mgr  string
-		want string
+		name         string
+		mgr          string
+		id           string
+		managers     map[string]string
+		wantName     string
+		wantExplicit bool
 	}{
 		{
-			name: "uses managers map",
-			pkg:  schema.Package{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox"}},
-			mgr:  "flatpak",
-			want: "org.mozilla.firefox",
+			name:         "uses managers map",
+			mgr:          "flatpak",
+			id:           "firefox",
+			managers:     map[string]string{"flatpak": "org.mozilla.firefox"},
+			wantName:     "org.mozilla.firefox",
+			wantExplicit: true,
 		},
 		{
-			name: "falls back to id when no map entry",
-			pkg:  schema.Package{ID: "firefox"},
-			mgr:  "brew",
-			want: "firefox",
+			name:         "falls back to id when no map entry",
+			mgr:          "brew",
+			id:           "firefox",
+			managers:     nil,
+			wantName:     "firefox",
+			wantExplicit: false,
 		},
 		{
-			name: "falls back to id when manager not in map",
-			pkg:  schema.Package{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox"}},
-			mgr:  "brew",
-			want: "firefox",
+			name:         "falls back to id when manager not in map",
+			mgr:          "brew",
+			id:           "firefox",
+			managers:     map[string]string{"flatpak": "org.mozilla.firefox"},
+			wantName:     "firefox",
+			wantExplicit: false,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := concretePackageName(tc.pkg, tc.mgr)
-			if got != tc.want {
-				t.Errorf("concretePackageName: got %q, want %q", got, tc.want)
+			a := adapter.ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter found", tc.mgr)
+			}
+			gotName, gotExplicit := a.NormalizeID(tc.id, tc.managers)
+			if gotName != tc.wantName {
+				t.Errorf("NormalizeID name: got %q, want %q", gotName, tc.wantName)
+			}
+			if gotExplicit != tc.wantExplicit {
+				t.Errorf("NormalizeID explicit: got %v, want %v", gotExplicit, tc.wantExplicit)
 			}
 		})
 	}

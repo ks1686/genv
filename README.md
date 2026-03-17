@@ -22,11 +22,11 @@ Inspired by NixOS's declarative model, but without the learning curve: you decla
 
 ## Supported platforms and package managers
 
-| Platform | Managers                                               |
-|----------|--------------------------------------------------------|
-| Linux    | `apt`, `dnf`, `pacman`, `linuxbrew`, `flatpak`, `snap` |
-| macOS    | `brew` (formulae + casks)                              |
-| Windows  | WSL2 (targets the Linux userland inside WSL2)          |
+| Platform | Managers                                                              |
+|----------|-----------------------------------------------------------------------|
+| Linux    | `apt`, `dnf`, `pacman`, `paru`, `yay`, `linuxbrew`, `flatpak`, `snap` |
+| macOS    | `brew` (formulae + casks), `macports`                                 |
+| Windows  | WSL2 (targets the Linux userland inside WSL2)                         |
 
 `gpm` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 
