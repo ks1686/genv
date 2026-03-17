@@ -277,6 +277,69 @@ func TestListCmd_ShowsPackages(t *testing.T) {
 	}
 }
 
+func TestInstallCmd_DryRun_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	run([]string{"add", "--file", path, "--prefer", "brew", "neovim"})
+
+	// --dry-run must not panic/crash regardless of which managers are installed.
+	code := run([]string{"install", "--file", path, "--dry-run"})
+	if code != exitOK {
+		t.Errorf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestInstallCmd_DryRun_FileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	code := run([]string{"install", "--file", path, "--dry-run"})
+	if code != exitIO {
+		t.Errorf("missing file: expected exitIO (%d), got %d", exitIO, code)
+	}
+}
+
+func TestInstallCmd_DryRun_InvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"install", "--file", path, "--dry-run"})
+	if code != exitValidation {
+		t.Errorf("invalid file: expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestInstallCmd_DryRun_EmptyPackages(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"install", "--file", path, "--dry-run"})
+	if code != exitOK {
+		t.Errorf("empty packages: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestInstallCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+
+	// --strict --dry-run must not panic; exit code depends on the host environment.
+	code := run([]string{"install", "--file", path, "--dry-run", "--strict"})
+	if code != exitOK && code != exitLogic {
+		t.Errorf("strict dry-run: expected exitOK or exitLogic, got %d", code)
+	}
+}
+
 func TestParseManagerFlag(t *testing.T) {
 	tests := []struct {
 		input   string

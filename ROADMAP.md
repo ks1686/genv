@@ -24,17 +24,17 @@ Checklist:
 - [x] Implement `gpm add <id> [--version <ver>] [--manager <mgr>]`.
 - [x] Implement `gpm remove <id>`.
 - [x] Implement `gpm list`.
-- [ ] Implement `gpm install --dry-run` planning output.
-- [ ] Implement `gpm install` execution path with confirmation prompt.
-- [ ] Add `--strict` behavior for unresolved packages.
+- [x] Implement `gpm install --dry-run` planning output.
+- [x] Implement `gpm install` execution path with confirmation prompt.
+- [x] Add `--strict` behavior for unresolved packages.
 - [x] Add structured exit codes (success, partial success, failed).
 - [x] Add unit tests for parser, validation, and command argument handling.
 
 Acceptance criteria:
 
-- [ ] A clean machine can run `gpm install --dry-run` against sample specs without panic/crash.
+- [x] A clean machine can run `gpm install --dry-run` against sample specs without panic/crash.
 - [x] Malformed specs produce clear validation errors.
-- [ ] CLI help text documents all v1 commands and flags.
+- [x] CLI help text documents all v1 commands and flags.
 
 ## Milestone M2 - Resolver and Adapter Layer
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ks1686/gpm/internal/commands"
 	"github.com/ks1686/gpm/internal/gpmfile"
+	"github.com/ks1686/gpm/internal/resolver"
 )
 
 // Structured exit codes.
@@ -37,6 +39,8 @@ func run(args []string) int {
 		return removeCmd(args[1:])
 	case "list", "ls":
 		return listCmd(args[1:])
+	case "install":
+		return installCmd(args[1:])
 	case "help", "--help", "-h":
 		printUsage()
 		return exitOK
@@ -186,6 +190,91 @@ func listCmd(args []string) int {
 	return exitOK
 }
 
+// installCmd implements `gpm install [--dry-run] [--strict]`.
+func installCmd(args []string) int {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm install [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+
+	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	dryRun := fs.Bool("dry-run", false, "print the install plan without executing")
+	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := gpmfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, gpmfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "gpm: %s not found — run 'gpm add' to create it\n", *file)
+			return exitIO
+		}
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if len(f.Packages) == 0 {
+		fmt.Fprintln(os.Stdout, "nothing to install.")
+		return exitOK
+	}
+
+	available := resolver.Detect()
+	actions := resolver.Plan(f, available)
+	resolver.PrintPlan(actions, os.Stdout)
+
+	unresolvedCount := 0
+	for _, a := range actions {
+		if !a.Resolved() {
+			unresolvedCount++
+		}
+	}
+
+	if unresolvedCount > 0 && *strict {
+		fmt.Fprintf(os.Stderr, "gpm install: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
+		return exitLogic
+	}
+
+	if *dryRun {
+		return exitOK
+	}
+
+	resolvedCount := len(actions) - unresolvedCount
+	if resolvedCount == 0 {
+		fmt.Fprintln(os.Stdout, "nothing to install.")
+		return exitOK
+	}
+
+	// Confirmation prompt.
+	fmt.Fprintf(os.Stdout, "This will install %d package(s). Continue? [y/N] ", resolvedCount)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(answer)
+	if answer != "y" && answer != "Y" {
+		fmt.Fprintln(os.Stdout, "Aborted.")
+		return exitOK
+	}
+
+	// Execute; pass the same buffered reader so any buffered bytes aren't lost
+	// to child processes (e.g. sudo password prompts).
+	errs := resolver.Execute(actions, reader, os.Stdout, os.Stderr)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "gpm install: %v\n", e)
+		}
+		return exitLogic
+	}
+
+	return exitOK
+}
+
 // extractPositional separates the first non-flag argument (the package id)
 // from the flag arguments, so flags work in any position relative to the id.
 // Handles both "--flag value" and "--flag=value" forms.
@@ -240,8 +329,9 @@ Usage:
 
 Commands:
   add <id>    Track a new package
-  remove <id> Stop tracking a package  (alias: rm)
-  list        List all tracked packages (alias: ls)
+  remove <id> Stop tracking a package    (alias: rm)
+  list        List all tracked packages  (alias: ls)
+  install     Install all tracked packages
   help        Show this help text
 
 Flags common to all commands:
@@ -252,5 +342,12 @@ Add-specific flags:
   --prefer <mgr>               Preferred manager, e.g. brew
   --manager <mgr:name,...>     Manager-specific package names, e.g.
                                flatpak:org.mozilla.firefox,brew:firefox
+
+Install-specific flags:
+  --dry-run   Print the install plan without executing
+  --strict    Exit with an error if any package cannot be resolved
+
+Supported package managers:
+  apt, dnf, pacman, flatpak, snap, brew, linuxbrew
 `)
 }
