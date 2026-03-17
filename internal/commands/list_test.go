@@ -104,3 +104,60 @@ func TestList_HeaderPresent(t *testing.T) {
 		}
 	}
 }
+
+// TestList_DashForNoPrefer verifies that a package with an empty prefer field
+// displays "-" in the PREFER column.
+func TestList_DashForNoPrefer(t *testing.T) {
+	f := newFile(schema.Package{ID: "git"}) // no prefer set
+	var buf bytes.Buffer
+	List(f, &buf)
+	out := buf.String()
+	if !strings.Contains(out, "-") {
+		t.Errorf("expected '-' for empty prefer, got: %q", out)
+	}
+}
+
+// TestList_DashForNoManagers verifies that a package with no managers map
+// displays "-" in the MANAGERS column.
+func TestList_DashForNoManagers(t *testing.T) {
+	f := newFile(schema.Package{ID: "git", Prefer: "brew"}) // no managers
+	var buf bytes.Buffer
+	List(f, &buf)
+	out := buf.String()
+	// There should be a "-" for managers.  The prefer column shows "brew", so
+	// the "-" is from the managers column.
+	if !strings.Contains(out, "-") {
+		t.Errorf("expected '-' for empty managers, got: %q", out)
+	}
+}
+
+// TestList_MultiplePackages verifies all rows are present when there is more
+// than one package in the file.
+func TestList_MultiplePackages(t *testing.T) {
+	ids := []string{"git", "neovim", "firefox"}
+	pkgs := make([]schema.Package, len(ids))
+	for i, id := range ids {
+		pkgs[i] = schema.Package{ID: id}
+	}
+	f := newFile(pkgs...)
+	var buf bytes.Buffer
+	List(f, &buf)
+	out := buf.String()
+	for _, id := range ids {
+		if !strings.Contains(out, id) {
+			t.Errorf("expected %q in list output, got: %q", id, out)
+		}
+	}
+}
+
+// TestList_EmptyManagersMapShowsDash verifies that an explicitly empty (non-nil)
+// managers map displays "-" rather than blank or panic.
+func TestList_EmptyManagersMapShowsDash(t *testing.T) {
+	f := newFile(schema.Package{ID: "git", Managers: map[string]string{}})
+	var buf bytes.Buffer
+	List(f, &buf)
+	out := buf.String()
+	if !strings.Contains(out, "-") {
+		t.Errorf("expected '-' for empty managers map, got: %q", out)
+	}
+}

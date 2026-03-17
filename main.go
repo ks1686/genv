@@ -85,6 +85,9 @@ func addCmd(args []string) int {
 	f, isNew, err := gpmfile.ReadOrNew(*file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
 		return exitIO
 	}
 

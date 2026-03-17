@@ -201,3 +201,101 @@ func TestWrite_ErrorOnBadPath(t *testing.T) {
 		t.Fatal("expected error when writing to non-existent directory")
 	}
 }
+
+// TestReadOrNew_InvalidFile verifies that ReadOrNew propagates ErrInvalidFile
+// when the existing file fails schema validation (it must NOT return isNew=true).
+func TestReadOrNew_InvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, isNew, err := ReadOrNew(path)
+	if err == nil {
+		t.Fatal("expected error for invalid file, got nil")
+	}
+	if isNew {
+		t.Error("isNew should be false for an invalid existing file")
+	}
+	if !errors.Is(err, ErrInvalidFile) {
+		t.Errorf("expected ErrInvalidFile, got: %v", err)
+	}
+}
+
+// TestWrite_OverwritesExistingFile verifies that calling Write on an existing
+// file replaces its content correctly.
+func TestWrite_OverwritesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	first := New()
+	if err := Write(path, first); err != nil {
+		t.Fatalf("first Write: %v", err)
+	}
+
+	second := &schema.GpmFile{
+		SchemaVersion: schema.SchemaVersion,
+		Packages: []schema.Package{
+			{ID: "git", Version: "1.0"},
+		},
+	}
+	if err := Write(path, second); err != nil {
+		t.Fatalf("second Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read after overwrite: %v", err)
+	}
+	if len(got.Packages) != 1 || got.Packages[0].ID != "git" {
+		t.Errorf("expected 1 package 'git' after overwrite, got: %+v", got.Packages)
+	}
+}
+
+// TestNew_PackagesNonNil verifies that New() initialises Packages as a non-nil
+// empty slice so that it marshals as "[]" rather than "null".
+func TestNew_PackagesNonNil(t *testing.T) {
+	f := New()
+	if f.Packages == nil {
+		t.Error("New().Packages must be non-nil to serialise as []")
+	}
+	if len(f.Packages) != 0 {
+		t.Errorf("New().Packages should be empty, got %d entries", len(f.Packages))
+	}
+}
+
+// TestWrite_ProducesValidJSON verifies that the output of Write is valid JSON
+// that can be re-read by Read.
+func TestWrite_ProducesValidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	f := &schema.GpmFile{
+		SchemaVersion: schema.SchemaVersion,
+		Packages: []schema.Package{
+			{
+				ID:      "firefox",
+				Version: "1.0",
+				Prefer:  "flatpak",
+				Managers: map[string]string{
+					"flatpak": "org.mozilla.firefox",
+					"brew":    "firefox",
+				},
+			},
+		},
+	}
+
+	if err := Write(path, f); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.Packages[0].Managers["flatpak"] != "org.mozilla.firefox" {
+		t.Errorf("managers roundtrip: got %v", got.Packages[0].Managers)
+	}
+}

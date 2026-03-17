@@ -339,3 +339,226 @@ func TestPrintPlan_UnresolvedHint(t *testing.T) {
 		t.Errorf("expected '--strict' mention in output, got:\n%s", out)
 	}
 }
+
+// TestPrintPlan_ReturnsCorrectCounts verifies the resolved/unresolved return
+// values for all combinations.
+func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
+	tests := []struct {
+		name            string
+		pkgs            []schema.Package
+		available       map[string]bool
+		wantResolved    int
+		wantUnresolved  int
+	}{
+		{
+			name:           "all resolved",
+			pkgs:           []schema.Package{{ID: "git"}, {ID: "neovim"}},
+			available:      map[string]bool{"brew": true},
+			wantResolved:   2,
+			wantUnresolved: 0,
+		},
+		{
+			name:           "all unresolved",
+			pkgs:           []schema.Package{{ID: "git"}, {ID: "neovim"}},
+			available:      map[string]bool{},
+			wantResolved:   0,
+			wantUnresolved: 2,
+		},
+		{
+			name: "mixed",
+			pkgs: []schema.Package{
+				{ID: "git"},
+				{
+					ID:       "only-flatpak",
+					Managers: map[string]string{"flatpak": "io.pkg"},
+					Prefer:   "flatpak",
+				},
+			},
+			// brew available → git resolves; prefer=flatpak but flatpak absent → falls
+			// back to brew for only-flatpak too (step 3 fallback), so both resolve.
+			available:      map[string]bool{"brew": true},
+			wantResolved:   2,
+			wantUnresolved: 0,
+		},
+		{
+			name:           "empty packages",
+			pkgs:           nil,
+			available:      map[string]bool{"brew": true},
+			wantResolved:   0,
+			wantUnresolved: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &schema.GpmFile{Packages: tc.pkgs}
+			actions := Plan(f, tc.available)
+			var sb strings.Builder
+			resolved, unresolved := PrintPlan(actions, &sb)
+			if resolved != tc.wantResolved {
+				t.Errorf("resolved: got %d, want %d", resolved, tc.wantResolved)
+			}
+			if unresolved != tc.wantUnresolved {
+				t.Errorf("unresolved: got %d, want %d", unresolved, tc.wantUnresolved)
+			}
+		})
+	}
+}
+
+// TestPlan_EmptyPackages verifies that Plan with no packages returns an empty
+// slice (not nil) and does not panic.
+func TestPlan_EmptyPackages(t *testing.T) {
+	f := &schema.GpmFile{Packages: []schema.Package{}}
+	actions := Plan(f, map[string]bool{"brew": true})
+	if len(actions) != 0 {
+		t.Errorf("expected 0 actions, got %d", len(actions))
+	}
+}
+
+// TestPlan_MultiplePackagesMixed verifies a file with several packages where
+// some resolve and some don't.
+func TestPlan_MultiplePackagesMixed(t *testing.T) {
+	f := &schema.GpmFile{
+		Packages: []schema.Package{
+			{ID: "git"},
+			{ID: "neovim", Prefer: "brew"},
+			{ID: "secret-pkg", Prefer: "flatpak", Managers: map[string]string{"flatpak": "io.secret"}},
+		},
+	}
+	// brew available, flatpak absent → git and neovim resolve; secret-pkg's
+	// prefer is flatpak (unavailable) and its managers map has only flatpak
+	// (unavailable), so it falls back to the generic fallback at step 3 (brew).
+	available := map[string]bool{"brew": true}
+	actions := Plan(f, available)
+	if len(actions) != 3 {
+		t.Fatalf("expected 3 actions, got %d", len(actions))
+	}
+	for _, a := range actions {
+		if !a.Resolved() {
+			t.Errorf("expected all packages to resolve via brew fallback; %q is unresolved", a.Pkg.ID)
+		}
+	}
+}
+
+// TestConcretePackageName verifies the helper uses the managers map when present
+// and falls back to the package ID otherwise.
+func TestConcretePackageName(t *testing.T) {
+	tests := []struct {
+		name string
+		pkg  schema.Package
+		mgr  string
+		want string
+	}{
+		{
+			name: "uses managers map",
+			pkg:  schema.Package{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox"}},
+			mgr:  "flatpak",
+			want: "org.mozilla.firefox",
+		},
+		{
+			name: "falls back to id when no map entry",
+			pkg:  schema.Package{ID: "firefox"},
+			mgr:  "brew",
+			want: "firefox",
+		},
+		{
+			name: "falls back to id when manager not in map",
+			pkg:  schema.Package{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox"}},
+			mgr:  "brew",
+			want: "firefox",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := concretePackageName(tc.pkg, tc.mgr)
+			if got != tc.want {
+				t.Errorf("concretePackageName: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestExecute_MultipleActions verifies that Execute runs all resolved actions
+// and collects errors correctly.
+func TestExecute_MultipleActions(t *testing.T) {
+	actions := []Action{
+		{
+			Pkg:     schema.Package{ID: "pkg1"},
+			Manager: "apt",
+			PkgName: "pkg1",
+			Cmd:     []string{"echo", "installing-pkg1"},
+		},
+		{
+			Pkg:     schema.Package{ID: "pkg2"},
+			Manager: "apt",
+			PkgName: "pkg2",
+			Cmd:     []string{"echo", "installing-pkg2"},
+		},
+	}
+	var out, errOut strings.Builder
+	errs := Execute(actions, nil, &out, &errOut)
+	if len(errs) != 0 {
+		t.Fatalf("Execute: unexpected errors: %v", errs)
+	}
+	if !strings.Contains(out.String(), "installing-pkg1") {
+		t.Errorf("expected pkg1 output, got: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "installing-pkg2") {
+		t.Errorf("expected pkg2 output, got: %q", out.String())
+	}
+}
+
+// TestExecute_MixedResolvedAndUnresolved verifies that Execute only runs
+// resolved actions and returns errors only for resolved commands that fail.
+func TestExecute_MixedResolvedAndUnresolved(t *testing.T) {
+	actions := []Action{
+		// Unresolved — must be skipped silently.
+		{Pkg: schema.Package{ID: "mystery"}, Manager: "", Cmd: nil},
+		// Resolved — runs echo successfully.
+		{
+			Pkg:     schema.Package{ID: "echo-pkg"},
+			Manager: "brew",
+			PkgName: "echo-pkg",
+			Cmd:     []string{"echo", "ok"},
+		},
+		// Unresolved — also skipped.
+		{Pkg: schema.Package{ID: "another-mystery"}, Manager: "", Cmd: nil},
+	}
+	var out, errOut strings.Builder
+	errs := Execute(actions, nil, &out, &errOut)
+	if len(errs) != 0 {
+		t.Fatalf("Execute: unexpected errors: %v", errs)
+	}
+	if !strings.Contains(out.String(), "ok") {
+		t.Errorf("expected 'ok' from echo command, got: %q", out.String())
+	}
+}
+
+// TestPlan_PreferUnavailable_ManagersMapFallback verifies that when the
+// preferred manager is unavailable but a valid entry exists in the managers map
+// for a different available manager, it is used.
+func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
+	f := &schema.GpmFile{
+		Packages: []schema.Package{
+			{
+				ID:     "firefox",
+				Prefer: "flatpak", // flatpak not available
+				Managers: map[string]string{
+					"flatpak": "org.mozilla.firefox",
+					"brew":    "firefox",
+				},
+			},
+		},
+	}
+	actions := Plan(f, map[string]bool{"brew": true})
+	a := actions[0]
+	if !a.Resolved() {
+		t.Fatal("expected resolved via managers map fallback")
+	}
+	if a.Manager != "brew" {
+		t.Errorf("manager: got %q, want %q", a.Manager, "brew")
+	}
+	if a.PkgName != "firefox" {
+		t.Errorf("pkgName: got %q, want %q", a.PkgName, "firefox")
+	}
+}
