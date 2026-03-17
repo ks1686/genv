@@ -34,27 +34,27 @@ jobs:
         include:
           - distro: ubuntu-24.04 (apt)
             image: ubuntu:24.04
-            prereqs: apt-get update -qq && apt-get install -y -qq git
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc
             adapter: TestApt
 
           - distro: debian-bookworm (apt)
             image: debian:bookworm
-            prereqs: apt-get update -qq && apt-get install -y -qq git
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc
             adapter: TestApt
 
           - distro: fedora-latest (dnf)
             image: fedora:latest
-            prereqs: dnf install -y git
+            prereqs: dnf install -y git gcc
             adapter: TestDnf
 
           - distro: arch-latest (pacman)
             image: archlinux:latest
-            prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git
+            prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git gcc
             adapter: TestPacman
 
           - distro: ubuntu-24.04 (flatpak)
             image: ubuntu:24.04
-            prereqs: apt-get update -qq && apt-get install -y -qq git flatpak
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak
             adapter: TestFlatpak
 
     container:
