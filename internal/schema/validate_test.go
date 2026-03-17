@@ -247,3 +247,57 @@ func TestOffsetToPosition(t *testing.T) {
 		t.Errorf("offset 2: want line 2, got line %d", p.Line)
 	}
 }
+
+func TestValidationError_Error_WithPosition(t *testing.T) {
+	e := ValidationError{
+		Position: Position{Line: 3, Column: 10},
+		Field:    "schemaVersion",
+		Message:  "unsupported version",
+	}
+	got := e.Error()
+	if !strings.Contains(got, "line 3:10") {
+		t.Errorf("expected 'line 3:10' in error string, got: %q", got)
+	}
+	if !strings.Contains(got, "schemaVersion") {
+		t.Errorf("expected field name in error string, got: %q", got)
+	}
+	if !strings.Contains(got, "unsupported version") {
+		t.Errorf("expected message in error string, got: %q", got)
+	}
+}
+
+func TestValidationError_Error_NoPosition(t *testing.T) {
+	e := ValidationError{
+		// Line == 0 → no position prefix
+		Field:   "packages",
+		Message: "required field is missing",
+	}
+	got := e.Error()
+	if strings.Contains(got, "line") {
+		t.Errorf("expected no 'line' prefix when Line==0, got: %q", got)
+	}
+	if !strings.Contains(got, "packages") {
+		t.Errorf("expected field name in error string, got: %q", got)
+	}
+	if !strings.Contains(got, "required field is missing") {
+		t.Errorf("expected message in error string, got: %q", got)
+	}
+}
+
+func TestLocateFields_NonObjectInput(t *testing.T) {
+	// locateFields must not panic when the top-level token is not '{'.
+	pos := make(map[string]Position)
+	locateFields([]byte(`["not","an","object"]`), pos)
+	if len(pos) != 0 {
+		t.Errorf("expected empty positions for non-object JSON, got: %v", pos)
+	}
+}
+
+func TestLocateFields_EmptyInput(t *testing.T) {
+	// locateFields must not panic on empty input.
+	pos := make(map[string]Position)
+	locateFields([]byte(""), pos)
+	if len(pos) != 0 {
+		t.Errorf("expected empty positions for empty input, got: %v", pos)
+	}
+}
