@@ -10,6 +10,11 @@ on:
 # It is separate from ci.yml (unit tests + vet + fmt) so the fast checks
 # are not blocked by slower distro jobs.
 #
+# Each job runs two test suites:
+#   1. Adapter-layer tests  (internal/adapter/) — verify Available()/Query()/PlanInstall shape.
+#   2. End-to-end tests     (e2e/)              — build the real gpm binary and exercise
+#                                                  every M1/M2 command with real installs.
+#
 # Skipped adapters and reasons:
 #   snap        — snapd requires a live systemd session; Docker containers
 #                 do not run systemd, so snap commands fail unconditionally.
@@ -25,6 +30,7 @@ jobs:
   # GitHub Actions' container: directive starts the image and runs every step
   # inside it. actions/checkout needs git; actions/setup-go needs curl+tar
   # (both present in these base images after the prereqs step).
+  # gcc is required so that go test -race can link the ThreadSanitizer runtime.
   adapters:
     name: ${{ matrix.distro }}
     runs-on: ubuntu-latest
@@ -36,26 +42,31 @@ jobs:
             image: ubuntu:24.04
             prereqs: apt-get update -qq && apt-get install -y -qq git gcc
             adapter: TestApt
+            e2eTest: TestE2EApt
 
           - distro: debian-bookworm (apt)
             image: debian:bookworm
             prereqs: apt-get update -qq && apt-get install -y -qq git gcc
             adapter: TestApt
+            e2eTest: TestE2EApt
 
           - distro: fedora-latest (dnf)
             image: fedora:latest
             prereqs: dnf install -y git gcc
             adapter: TestDnf
+            e2eTest: TestE2EDnf
 
           - distro: arch-latest (pacman)
             image: archlinux:latest
             prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git gcc
             adapter: TestPacman
+            e2eTest: TestE2EPacman
 
           - distro: ubuntu-24.04 (flatpak)
             image: ubuntu:24.04
             prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak
             adapter: TestFlatpak
+            e2eTest: TestE2EFlatpak
 
     container:
       image: ${{ matrix.image }}
@@ -72,8 +83,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Integration test — ${{ matrix.adapter }}
+      - name: Adapter integration test — ${{ matrix.adapter }}
         run: go test -tags integration -race -v -run ${{ matrix.adapter }} ./internal/adapter/
+
+      - name: E2E test — ${{ matrix.e2eTest }}
+        run: go test -tags integration -race -v -run ${{ matrix.e2eTest }} ./e2e/
 
   # ── paru (Arch AUR helper) ───────────────────────────────────────────────────
   # paru refuses ALL operations when run as root, including read-only -Qi
@@ -123,10 +137,16 @@ jobs:
               cp -r /host-workspace /home/builder/gpm
               chown -R builder:builder /home/builder/gpm
 
-              echo "==> Running integration tests as builder"
+              echo "==> Running adapter integration tests as builder"
               su -s /bin/bash builder -c "
                 cd /home/builder/gpm
                 go test -tags integration -race -v -run TestParu ./internal/adapter/
+              "
+
+              echo "==> Running E2E tests as builder"
+              su -s /bin/bash builder -c "
+                cd /home/builder/gpm
+                go test -tags integration -race -v -run TestE2EParu ./e2e/
               "
             '
 
@@ -174,9 +194,15 @@ jobs:
               cp -r /host-workspace /home/builder/gpm
               chown -R builder:builder /home/builder/gpm
 
-              echo "==> Running integration tests as builder"
+              echo "==> Running adapter integration tests as builder"
               su -s /bin/bash builder -c "
                 cd /home/builder/gpm
                 go test -tags integration -race -v -run TestYay ./internal/adapter/
+              "
+
+              echo "==> Running E2E tests as builder"
+              su -s /bin/bash builder -c "
+                cd /home/builder/gpm
+                go test -tags integration -race -v -run TestE2EYay ./e2e/
               "
             '
