@@ -40,31 +40,31 @@ jobs:
         include:
           - distro: ubuntu-24.04 (apt)
             image: ubuntu:24.04
-            prereqs: apt-get update -qq && apt-get install -y -qq git gcc
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc sudo
             adapter: TestApt
             e2eTest: TestE2EApt
 
           - distro: debian-bookworm (apt)
             image: debian:bookworm
-            prereqs: apt-get update -qq && apt-get install -y -qq git gcc
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc sudo
             adapter: TestApt
             e2eTest: TestE2EApt
 
           - distro: fedora-latest (dnf)
             image: fedora:latest
-            prereqs: dnf install -y git gcc
+            prereqs: dnf install -y git gcc sudo
             adapter: TestDnf
             e2eTest: TestE2EDnf
 
           - distro: arch-latest (pacman)
             image: archlinux:latest
-            prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git gcc
+            prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git gcc sudo
             adapter: TestPacman
             e2eTest: TestE2EPacman
 
           - distro: ubuntu-24.04 (flatpak)
             image: ubuntu:24.04
-            prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak
+            prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak sudo
             adapter: TestFlatpak
             e2eTest: TestE2EFlatpak
 
@@ -74,6 +74,11 @@ jobs:
     steps:
       - name: Install prerequisites
         run: ${{ matrix.prereqs }}
+
+      - name: Configure passwordless sudo
+        run: |
+          echo 'root ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          echo 'Defaults !requiretty' >> /etc/sudoers
 
       - name: Checkout
         uses: actions/checkout@v4
