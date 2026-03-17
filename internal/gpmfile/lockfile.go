@@ -3,7 +3,10 @@ package gpmfile
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+
+	"github.com/ks1686/gpm/internal/schema"
 )
 
 // DefaultLockPath is the conventional name for the gpm lock file, written
@@ -33,7 +36,7 @@ func ReadLock(path string) (*LockFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &LockFile{SchemaVersion: "1"}, nil
+			return &LockFile{SchemaVersion: schema.SchemaVersion}, nil
 		}
 		return nil, err
 	}
@@ -49,12 +52,16 @@ func ReadLock(path string) (*LockFile, error) {
 func WriteLock(path string, lf *LockFile) error {
 	data, err := json.MarshalIndent(lf, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("serialising lock file: %w", err)
 	}
 	data = append(data, '\n')
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("saving %s: %w", path, err)
+	}
+	return nil
 }

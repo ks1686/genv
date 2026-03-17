@@ -124,7 +124,6 @@ func addCmd(args []string) int {
 		return exitIO
 	}
 
-	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
 		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
@@ -143,6 +142,7 @@ func addCmd(args []string) int {
 
 	// 2. Resolve and install the package.
 	available := resolver.Detect()
+	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
 		fmt.Fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'gpm apply' after installing a compatible package manager)\n", id)
@@ -378,19 +378,13 @@ func applyCmd(args []string) int {
 
 	available := resolver.Detect()
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
-	toInstall, toRemove := resolver.PrintReconcilePlan(result, os.Stdout)
+	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, os.Stdout)
 
 	if toInstall == 0 && toRemove == 0 {
 		fmt.Fprintln(os.Stdout, "already up to date.")
 		return exitOK
 	}
 
-	unresolvedCount := 0
-	for _, a := range result.ToInstall {
-		if !a.Resolved() {
-			unresolvedCount++
-		}
-	}
 	if unresolvedCount > 0 && *strict {
 		fmt.Fprintf(os.Stderr, "gpm apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
 		return exitLogic
@@ -577,7 +571,7 @@ Commands:
   apply       Reconcile system state with gpm.json (install added, remove deleted)
   clean       Clear the cache of all detected package managers
   edit        Open gpm.json in $EDITOR
-	version     Show gpm build version information
+  version     Show gpm build version information
   help        Show this help text
 
 Flags common to all commands:

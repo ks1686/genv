@@ -152,85 +152,6 @@ func Execute(actions []Action, stdin io.Reader, stdout, stderr io.Writer) []erro
 	return errs
 }
 
-// PrintUninstallPlan writes a human-readable uninstall plan to w.
-// It mirrors PrintPlan but shows uninstall commands instead of install commands.
-func PrintUninstallPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
-	for _, a := range actions {
-		if a.Resolved() {
-			resolved++
-		} else {
-			unresolved++
-		}
-	}
-
-	total := len(actions)
-	fmt.Fprintf(w, "Uninstall plan — %d package", total)
-	if total != 1 {
-		fmt.Fprint(w, "s")
-	}
-	if unresolved > 0 {
-		fmt.Fprintf(w, " (%d unresolved)", unresolved)
-	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w)
-
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, a := range actions {
-		if a.Resolved() {
-			fmt.Fprintf(tw, "  %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
-		} else {
-			fmt.Fprintf(tw, "  %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
-		}
-	}
-	tw.Flush()
-	fmt.Fprintln(w)
-	return
-}
-
-// ExecuteUninstall runs each resolved uninstall action sequentially, then
-// runs cache-clean commands for every manager that was used (deduplicated).
-// stdin is forwarded to child processes for sudo prompts.
-// Returns one error per failed operation; a non-empty slice means partial failure.
-func ExecuteUninstall(actions []Action, stdin io.Reader, stdout, stderr io.Writer) []error {
-	var errs []error
-	seenManagers := make(map[string]bool)
-
-	for _, a := range actions {
-		if !a.Resolved() {
-			continue
-		}
-		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.UninstallCmd, " "))
-		cmd := exec.Command(a.UninstallCmd[0], a.UninstallCmd[1:]...)
-		cmd.Stdin = stdin
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			errs = append(errs, fmt.Errorf("package %q (via %s): %w", a.Pkg.ID, a.Manager, err))
-		}
-		seenManagers[a.Manager] = true
-	}
-
-	// Run cache clean once per manager that was involved.
-	for managerName := range seenManagers {
-		a := adapter.ByName(managerName)
-		if a == nil {
-			continue
-		}
-		for _, cleanCmd := range a.PlanClean() {
-			fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-			cmd := exec.Command(cleanCmd[0], cleanCmd[1:]...)
-			cmd.Stdin = stdin
-			cmd.Stdout = stdout
-			cmd.Stderr = stderr
-			if err := cmd.Run(); err != nil {
-				errs = append(errs, fmt.Errorf("cache clean (via %s): %w", managerName, err))
-			}
-		}
-	}
-
-	return errs
-}
-
 // ---- Reconcile (gpm apply) --------------------------------------------------
 
 // ReconcileResult holds the delta between the desired state (gpm.json) and the
@@ -290,9 +211,9 @@ func Reconcile(desired []schema.Package, managed []gpmfile.LockedPackage, availa
 
 // PrintReconcilePlan writes a human-readable apply plan to w. Each line is
 // prefixed with '+' (install), '-' (remove), or ' ' (unchanged). Returns the
-// counts of packages to install and to remove so the caller can decide whether
-// there is actually any work to do.
-func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemove int) {
+// counts of packages to install, to remove, and unresolved so the caller can
+// decide whether there is any work to do and enforce --strict without a second pass.
+func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemove, unresolved int) {
 	toInstall = len(result.ToInstall)
 	toRemove = len(result.ToRemove)
 	unchanged := len(result.Unchanged)
@@ -335,14 +256,13 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	tw.Flush()
 	fmt.Fprintln(w)
 
-	unresolvedCount := 0
 	for _, a := range result.ToInstall {
 		if !a.Resolved() {
-			unresolvedCount++
+			unresolved++
 		}
 	}
-	if unresolvedCount > 0 {
-		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolvedCount)
+	if unresolved > 0 {
+		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
 		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in gpm.json.")
 		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
