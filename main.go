@@ -26,6 +26,12 @@ const (
 	exitLogic      = 4 // semantic error (duplicate id, not found, etc.)
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -49,6 +55,9 @@ func run(args []string) int {
 		return editCmd(args[1:])
 	case "clean":
 		return cleanCmd(args[1:])
+	case "version", "--version":
+		printVersion()
+		return exitOK
 	case "help", "--help", "-h":
 		printUsage()
 		return exitOK
@@ -568,6 +577,7 @@ Commands:
   apply       Reconcile system state with gpm.json (install added, remove deleted)
   clean       Clear the cache of all detected package managers
   edit        Open gpm.json in $EDITOR
+	version     Show gpm build version information
   help        Show this help text
 
 Flags common to all commands:
@@ -588,4 +598,10 @@ Clean-specific flags:
 
 `)
 	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
+}
+
+func printVersion() {
+	fmt.Fprintf(os.Stdout, "gpm %s\n", version)
+	fmt.Fprintf(os.Stdout, "commit: %s\n", commit)
+	fmt.Fprintf(os.Stdout, "built:  %s\n", date)
 }
