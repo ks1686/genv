@@ -187,7 +187,7 @@ Current focus:
 
 The repository includes a tag-driven GitHub release workflow. The release process is documented in [RELEASING.md](RELEASING.md).
 
-The first public release is `v0.1.0`, intended to reflect the current usable state of the project. That release may include some Milestone 2 functionality that is still being validated across supported environments; the release notes should call that out explicitly.
+The first public prerelease is `v0.1.0-beta.1`, intended to reflect the current usable state of the project. That release may include some Milestone 2 functionality that is still being validated across supported environments; the release notes should call that out explicitly.
 
 ---
 
