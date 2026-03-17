@@ -366,9 +366,12 @@ func TestParseAndValidate_PackageWithAllKnownManagers(t *testing.T) {
 				"apt":       "pkg-apt",
 				"dnf":       "pkg-dnf",
 				"pacman":    "pkg-pacman",
+				"paru":      "pkg-paru",
+				"yay":       "pkg-yay",
 				"flatpak":   "io.pkg",
 				"snap":      "pkg-snap",
 				"brew":      "pkg-brew",
+				"macports":  "pkg-macports",
 				"linuxbrew": "pkg-linuxbrew"
 			}
 		}]

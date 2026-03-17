@@ -9,55 +9,17 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/ks1686/gpm/internal/adapter"
 	"github.com/ks1686/gpm/internal/schema"
 )
 
-// managerBin maps each known manager name to its executable binary.
-var managerBin = map[string]string{
-	"apt":       "apt-get",
-	"dnf":       "dnf",
-	"pacman":    "pacman",
-	"flatpak":   "flatpak",
-	"snap":      "snap",
-	"brew":      "brew",
-	"linuxbrew": "brew",
-}
-
-// fallbackOrder is the preference order when a package specifies no manager hint.
-var fallbackOrder = []string{"brew", "apt", "dnf", "pacman", "flatpak", "snap", "linuxbrew"}
-
-// installArgs returns the install command slice for the given manager and package name.
-func installArgs(mgr, pkgName string) []string {
-	switch mgr {
-	case "apt":
-		return []string{"sudo", "apt-get", "install", "-y", pkgName}
-	case "dnf":
-		return []string{"sudo", "dnf", "install", "-y", pkgName}
-	case "pacman":
-		return []string{"sudo", "pacman", "-S", "--noconfirm", pkgName}
-	case "flatpak":
-		return []string{"flatpak", "install", "-y", "--noninteractive", pkgName}
-	case "snap":
-		return []string{"sudo", "snap", "install", pkgName}
-	case "brew", "linuxbrew":
-		return []string{"brew", "install", pkgName}
-	default:
-		return nil
-	}
-}
-
 // Detect returns the set of package manager names available on the current host
-// by checking for each manager's binary in PATH.
+// by checking each registered adapter's binary in PATH.
 func Detect() map[string]bool {
 	available := make(map[string]bool)
-	found := make(map[string]bool) // binary → whether LookPath succeeded
-	for mgr, bin := range managerBin {
-		if _, checked := found[bin]; !checked {
-			_, err := exec.LookPath(bin)
-			found[bin] = err == nil
-		}
-		if found[bin] {
-			available[mgr] = true
+	for _, a := range adapter.All {
+		if a.Available() {
+			available[a.Name()] = true
 		}
 	}
 	return available
@@ -88,37 +50,30 @@ func Plan(f *schema.GpmFile, available map[string]bool) []Action {
 func resolve(pkg schema.Package, available map[string]bool) Action {
 	// 1. Honour the prefer hint if that manager is available.
 	if pkg.Prefer != "" && available[pkg.Prefer] {
-		name := concretePackageName(pkg, pkg.Prefer)
-		return Action{Pkg: pkg, Manager: pkg.Prefer, PkgName: name, Cmd: installArgs(pkg.Prefer, name)}
-	}
-
-	// 2. Pick the first available manager from the explicit managers map,
-	//    preserving the canonical fallback priority order.
-	for _, mgr := range fallbackOrder {
-		if name, ok := pkg.Managers[mgr]; ok && available[mgr] {
-			return Action{Pkg: pkg, Manager: mgr, PkgName: name, Cmd: installArgs(mgr, name)}
+		if a := adapter.ByName(pkg.Prefer); a != nil {
+			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
+			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name)}
 		}
 	}
 
-	// 3. Fall back to any available manager using the package ID as the name.
-	for _, mgr := range fallbackOrder {
-		if available[mgr] {
-			name := pkg.ID
-			return Action{Pkg: pkg, Manager: mgr, PkgName: name, Cmd: installArgs(mgr, name)}
+	// 2. Pick the first available adapter in registry order whose manager name
+	//    appears in the package's explicit managers map.
+	for _, a := range adapter.All {
+		if name, ok := pkg.Managers[a.Name()]; ok && available[a.Name()] {
+			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name)}
+		}
+	}
+
+	// 3. Fall back to the first available adapter, using the package ID as name.
+	for _, a := range adapter.All {
+		if available[a.Name()] {
+			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
+			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name)}
 		}
 	}
 
 	// Unresolved — no compatible manager on this host.
 	return Action{Pkg: pkg}
-}
-
-// concretePackageName returns the manager-specific package name, falling back
-// to the package ID when no explicit mapping exists.
-func concretePackageName(pkg schema.Package, mgr string) string {
-	if n, ok := pkg.Managers[mgr]; ok {
-		return n
-	}
-	return pkg.ID
 }
 
 // PrintPlan writes a human-readable install plan to w and returns the number

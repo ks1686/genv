@@ -9,9 +9,12 @@ var KnownManagers = map[string]bool{
 	"apt":       true,
 	"dnf":       true,
 	"pacman":    true,
+	"paru":      true,
+	"yay":       true,
 	"flatpak":   true,
 	"snap":      true,
 	"brew":      true,
+	"macports":  true,
 	"linuxbrew": true,
 }
 

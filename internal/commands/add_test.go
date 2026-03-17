@@ -144,7 +144,7 @@ func TestAdd_MultipleDistinctPackages(t *testing.T) {
 // TestAdd_AllKnownManagers verifies that every manager in schema.KnownManagers
 // is accepted as a valid --prefer value.
 func TestAdd_AllKnownManagers(t *testing.T) {
-	knownManagers := []string{"apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew"}
+	knownManagers := []string{"apt", "dnf", "pacman", "paru", "yay", "flatpak", "snap", "brew", "macports", "linuxbrew"}
 	for _, mgr := range knownManagers {
 		t.Run(mgr, func(t *testing.T) {
 			f := newFile()
