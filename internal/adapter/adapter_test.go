@@ -149,6 +149,70 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 	}
 }
 
+// TestPlanUninstall_NonEmpty verifies that every adapter returns a non-empty
+// command slice from PlanUninstall and that the package name is the last argument.
+func TestPlanUninstall_NonEmpty(t *testing.T) {
+	for _, a := range All {
+		t.Run(a.Name(), func(t *testing.T) {
+			args := a.PlanUninstall("git")
+			if len(args) == 0 {
+				t.Errorf("%s PlanUninstall: returned empty slice", a.Name())
+				return
+			}
+			if args[len(args)-1] != "git" {
+				t.Errorf("%s PlanUninstall: last arg = %q, want \"git\"", a.Name(), args[len(args)-1])
+			}
+		})
+	}
+}
+
+// TestPlanUninstall_ExpectedBinaries verifies each adapter uses the expected
+// leading binary for uninstall.
+func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
+	tests := []struct {
+		mgr     string
+		wantBin string
+	}{
+		{"apt", "sudo"},
+		{"dnf", "sudo"},
+		{"pacman", "sudo"},
+		{"paru", "paru"},
+		{"yay", "yay"},
+		{"flatpak", "flatpak"},
+		{"snap", "sudo"},
+		{"brew", "brew"},
+		{"macports", "sudo"},
+		{"linuxbrew", "brew"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			args := a.PlanUninstall("pkg")
+			if args[0] != tc.wantBin {
+				t.Errorf("%s PlanUninstall: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
+			}
+		})
+	}
+}
+
+// TestPlanClean_ValidCommands verifies that every adapter's PlanClean returns
+// either nil or a slice of non-empty command argv slices.
+func TestPlanClean_ValidCommands(t *testing.T) {
+	for _, a := range All {
+		t.Run(a.Name(), func(t *testing.T) {
+			cmds := a.PlanClean()
+			for i, cmd := range cmds {
+				if len(cmd) == 0 {
+					t.Errorf("%s PlanClean: command[%d] is empty", a.Name(), i)
+				}
+			}
+		})
+	}
+}
+
 // TestKnownManagersMatchesRegistry verifies that schema.KnownManagers and
 // adapter.All are in sync: every adapter name is a known manager and every
 // known manager has a registered adapter. Adding one without the other will

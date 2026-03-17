@@ -13,26 +13,27 @@ Goal: Ship a reliable CLI with a stable `gpm.json` contract and safe execution d
 
 Target outcomes:
 
-- `gpm add`, `gpm remove`, `gpm list`, and `gpm install` are usable end to end.
-- `gpm install --dry-run` is deterministic and readable.
+- `gpm add`, `gpm remove`, `gpm list`, and `gpm apply` are usable end to end.
+- `gpm apply --dry-run` is deterministic and readable.
 - Invalid `gpm.json` files fail with actionable errors.
 
 Checklist:
 
 - [x] Define and publish `gpm.json` schema v1 (`schemaVersion: "1"`).
 - [x] Implement schema validation with line-aware error messages.
-- [x] Implement `gpm add <id> [--version <ver>] [--manager <mgr>]`.
-- [x] Implement `gpm remove <id>`.
-- [x] Implement `gpm list`.
-- [x] Implement `gpm install --dry-run` planning output.
-- [x] Implement `gpm install` execution path with confirmation prompt.
+- [x] Implement `gpm add <id> [--version <ver>] [--manager <mgr>]` — adds to spec and installs immediately.
+- [x] Implement `gpm remove <id>` — removes from spec and uninstalls immediately.
+- [x] Implement `gpm list` — shows packages currently installed by gpm (reads lock file).
+- [x] Implement `gpm edit` — opens gpm.json in `$EDITOR`.
+- [x] Implement `gpm apply --dry-run` planning output.
+- [x] Implement `gpm apply` reconcile execution with confirmation prompt.
 - [x] Add `--strict` behavior for unresolved packages.
 - [x] Add structured exit codes (success, partial success, failed).
 - [x] Add unit tests for parser, validation, and command argument handling.
 
 Acceptance criteria:
 
-- [x] A clean machine can run `gpm install --dry-run` against sample specs without panic/crash.
+- [x] A clean machine can run `gpm apply --dry-run` against sample specs without panic/crash.
 - [x] Malformed specs produce clear validation errors.
 - [x] CLI help text documents all v1 commands and flags.
 
@@ -47,7 +48,7 @@ Target outcomes:
 
 Checklist:
 
-- [x] Build adapter interface: detect, query, plan install, and normalize package IDs.
+- [x] Build adapter interface: detect, query, plan install, plan uninstall, plan cache clean, and normalize package IDs.
 - [x] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`.
 - [x] Implement macOS adapters: `brew` (formulae and casks), `macports`.
 - [x] Implement Linuxbrew path support where available.
@@ -56,12 +57,18 @@ Checklist:
 - [x] Add unresolved package warnings in non-strict mode.
 - [x] Add strict-mode hard failures with package-level diagnostics.
 - [x] Add integration tests with mocked adapter responses.
+- [x] Implement declarative `gpm apply`: reconcile desired (gpm.json) vs applied state (gpm.lock.json).
+- [x] Implement `gpm.lock.json` write path — records manager and concrete package name per installed package.
+- [x] Implement per-adapter uninstall commands (removals use the manager recorded in the lock).
+- [x] Implement per-adapter cache-clean commands, deduplicated per manager after removals.
+- [x] `gpm add` and `gpm remove` update both the spec and the lock atomically.
 
 Acceptance criteria:
 
 - [ ] The same `gpm.json` resolves sensibly on at least one Linux distro and one macOS host.
 - [ ] WSL2 environment is treated as Linux userland and uses Linux adapters.
 - [ ] Dry-run output includes selected manager and concrete package name per item.
+- [ ] Adding a package then removing it leaves the system and lock file in the original state.
 
 ## Milestone M3 - Reproducibility Features
 
@@ -77,8 +84,8 @@ Checklist:
 
 - [ ] Implement `gpm scan` to generate `gpm.json` from installed packages.
 - [ ] Implement package normalization and deduplication during scan.
-- [ ] Introduce `gpm.lock.json` write path after install.
-- [ ] Add lockfile read support and precedence rules.
+- [ ] Add lockfile version pinning (record resolved version after install).
+- [ ] Add lockfile precedence rules for version constraints.
 - [ ] Implement `gpm status` host-vs-spec diff output.
 - [ ] Implement `gpm sync` minimal-delta planner.
 - [ ] Add conflict messaging for version or manager mismatches.
@@ -128,9 +135,9 @@ These gates apply to every milestone.
 
 ## Release Plan (Suggested)
 
-- [ ] v0.1.0 - M1 complete (core CLI)
-- [ ] v0.2.0 - M2 complete (resolver + adapters)
-- [ ] v0.3.0 - M3 complete (scan, lock, sync)
+- [x] v0.1.0 - M1 complete (core CLI)
+- [x] v0.2.0 - M2 complete (resolver + adapters, declarative apply, lock file)
+- [ ] v0.3.0 - M3 complete (scan, version pinning, sync)
 - [ ] v0.4.0 - M4 complete (reliability and automation)
 
 ## How to Contribute Against This Roadmap

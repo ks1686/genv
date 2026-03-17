@@ -18,4 +18,11 @@ func (Snap) PlanInstall(pkgName string) []string {
 	return []string{"sudo", "snap", "install", pkgName}
 }
 
+func (Snap) PlanUninstall(pkgName string) []string {
+	return []string{"sudo", "snap", "remove", "--purge", pkgName}
+}
+
+// PlanClean returns nil: snap has no standard cache-clean command.
+func (Snap) PlanClean() [][]string { return nil }
+
 func (Snap) Query(pkgName string) (bool, error) { return runQuery("snap", "list", pkgName) }

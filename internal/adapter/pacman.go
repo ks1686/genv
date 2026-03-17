@@ -18,4 +18,12 @@ func (Pacman) PlanInstall(pkgName string) []string {
 	return []string{"sudo", "pacman", "-S", "--noconfirm", pkgName}
 }
 
+func (Pacman) PlanUninstall(pkgName string) []string {
+	return []string{"sudo", "pacman", "-Rns", "--noconfirm", pkgName}
+}
+
+func (Pacman) PlanClean() [][]string {
+	return [][]string{{"sudo", "pacman", "-Sc", "--noconfirm"}}
+}
+
 func (Pacman) Query(pkgName string) (bool, error) { return runQuery("pacman", "-Qi", pkgName) }

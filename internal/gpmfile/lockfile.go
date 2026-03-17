@@ -1,0 +1,60 @@
+package gpmfile
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+)
+
+// DefaultLockPath is the conventional name for the gpm lock file, written
+// alongside gpm.json after each successful apply.
+const DefaultLockPath = "gpm.lock.json"
+
+// LockedPackage records how one package was last applied by gpm: which manager
+// was chosen and what concrete package name was passed to it. This is needed
+// so that uninstall uses the same manager that did the original install, even
+// if the user has since changed their preferences in gpm.json.
+type LockedPackage struct {
+	ID      string `json:"id"`
+	Manager string `json:"manager"`
+	PkgName string `json:"pkgName"`
+}
+
+// LockFile is the on-disk representation of gpm's applied state.
+type LockFile struct {
+	SchemaVersion string          `json:"schemaVersion"`
+	Packages      []LockedPackage `json:"packages"`
+}
+
+// ReadLock reads the lock file at path. If the file does not exist (first run),
+// it returns an empty LockFile with no error — the caller treats that as a
+// clean slate and will install everything in gpm.json.
+func ReadLock(path string) (*LockFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &LockFile{SchemaVersion: "1"}, nil
+		}
+		return nil, err
+	}
+	var lf LockFile
+	if err := json.Unmarshal(data, &lf); err != nil {
+		return nil, err
+	}
+	return &lf, nil
+}
+
+// WriteLock atomically writes lf to path using a temp-file + rename, matching
+// the same safety pattern as Write for gpm.json.
+func WriteLock(path string, lf *LockFile) error {
+	data, err := json.MarshalIndent(lf, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
