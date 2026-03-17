@@ -47,6 +47,8 @@ func run(args []string) int {
 		return applyCmd(args[1:])
 	case "edit":
 		return editCmd(args[1:])
+	case "clean":
+		return cleanCmd(args[1:])
 	case "help", "--help", "-h":
 		printUsage()
 		return exitOK
@@ -430,6 +432,55 @@ func applyCmd(args []string) int {
 	return exitOK
 }
 
+// cleanCmd implements `gpm clean`.
+// Runs each available package manager's cache-clean commands.
+func cleanCmd(args []string) int {
+	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm clean [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	dryRun := fs.Bool("dry-run", false, "print the clean commands without executing")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	availableNames := resolver.Detect()
+	if len(availableNames) == 0 {
+		fmt.Fprintln(os.Stdout, "no supported package managers detected.")
+		return exitOK
+	}
+
+	exitCode := exitOK
+	for _, mgr := range adapter.All {
+		if !availableNames[mgr.Name()] {
+			continue
+		}
+		cmds := mgr.PlanClean()
+		if len(cmds) == 0 {
+			continue
+		}
+		fmt.Fprintf(os.Stdout, "\n[%s]\n", mgr.Name())
+		for _, cleanCmd := range cmds {
+			fmt.Fprintf(os.Stdout, "==> %s\n", strings.Join(cleanCmd, " "))
+			if *dryRun {
+				continue
+			}
+			c := exec.Command(cleanCmd[0], cleanCmd[1:]...)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			if err := c.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "gpm clean: %s: %v\n", mgr.Name(), err)
+				exitCode = exitLogic
+			}
+		}
+	}
+	return exitCode
+}
+
 // editCmd implements `gpm edit`.
 // Opens gpm.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
@@ -515,6 +566,7 @@ Commands:
   remove <id> Remove a package from the spec and uninstall it now  (alias: rm)
   list        List all packages installed by gpm                   (alias: ls)
   apply       Reconcile system state with gpm.json (install added, remove deleted)
+  clean       Clear the cache of all detected package managers
   edit        Open gpm.json in $EDITOR
   help        Show this help text
 
@@ -530,6 +582,9 @@ Add-specific flags:
 Apply-specific flags:
   --dry-run   Print the reconcile plan without executing
   --strict    Exit with an error if any package cannot be resolved
+
+Clean-specific flags:
+  --dry-run   Print the clean commands without executing
 
 `)
 	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
