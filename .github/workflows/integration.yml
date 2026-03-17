@@ -1,0 +1,182 @@
+name: Distro Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# This file tests each adapter against a real package-manager binary.
+# It is separate from ci.yml (unit tests + vet + fmt) so the fast checks
+# are not blocked by slower distro jobs.
+#
+# Skipped adapters and reasons:
+#   snap        — snapd requires a live systemd session; Docker containers
+#                 do not run systemd, so snap commands fail unconditionally.
+#                 Test manually on a real Ubuntu host with snapd running.
+#   brew        — Homebrew install takes 5–10 min and cannot be usefully
+#                 cached in a standard Linux runner. Test on macOS or a
+#                 self-hosted runner with brew pre-installed.
+#   linuxbrew   — Same time/caching constraint as brew.
+#   macports    — macOS only; not applicable to Linux CI.
+
+jobs:
+  # ── Adapters that work as root inside a container ───────────────────────────
+  # GitHub Actions' container: directive starts the image and runs every step
+  # inside it. actions/checkout needs git; actions/setup-go needs curl+tar
+  # (both present in these base images after the prereqs step).
+  adapters:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu-24.04 (apt)
+            image: ubuntu:24.04
+            prereqs: apt-get update -qq && apt-get install -y -qq git
+            adapter: TestApt
+
+          - distro: debian-bookworm (apt)
+            image: debian:bookworm
+            prereqs: apt-get update -qq && apt-get install -y -qq git
+            adapter: TestApt
+
+          - distro: fedora-latest (dnf)
+            image: fedora:latest
+            prereqs: dnf install -y git
+            adapter: TestDnf
+
+          - distro: arch-latest (pacman)
+            image: archlinux:latest
+            prereqs: pacman -Syu --noconfirm && pacman -S --noconfirm git
+            adapter: TestPacman
+
+          - distro: ubuntu-24.04 (flatpak)
+            image: ubuntu:24.04
+            prereqs: apt-get update -qq && apt-get install -y -qq git flatpak
+            adapter: TestFlatpak
+
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Install prerequisites
+        run: ${{ matrix.prereqs }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Integration test — ${{ matrix.adapter }}
+        run: go test -tags integration -race -v -run ${{ matrix.adapter }} ./internal/adapter/
+
+  # ── paru (Arch AUR helper) ───────────────────────────────────────────────────
+  # paru refuses ALL operations when run as root, including read-only -Qi
+  # queries. The container: approach runs steps as root, so it cannot be
+  # used here. Instead we spin up an Arch container via docker run, build
+  # paru from AUR as a non-root builder user, then run the tests as that
+  # same user. Go is installed to /usr/local so both root and builder can
+  # reach it; the workspace is copied to builder's home for write access.
+  paru:
+    name: arch-latest (paru)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build paru and run integration tests
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/host-workspace:ro" \
+            archlinux:latest \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Updating system and installing build dependencies"
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel git curl sudo
+
+              echo "==> Installing Go from go.dev"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+              ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+              echo "==> Creating non-root builder user"
+              useradd -m builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+              echo "==> Building paru from AUR as builder"
+              su -s /bin/bash builder -c "
+                git clone https://aur.archlinux.org/paru.git /tmp/paru
+                cd /tmp/paru
+                makepkg -si --noconfirm
+              "
+
+              echo "==> Copying workspace and fixing ownership"
+              cp -r /host-workspace /home/builder/gpm
+              chown -R builder:builder /home/builder/gpm
+
+              echo "==> Running integration tests as builder"
+              su -s /bin/bash builder -c "
+                cd /home/builder/gpm
+                go test -tags integration -race -v -run TestParu ./internal/adapter/
+              "
+            '
+
+  # ── yay (Arch AUR helper) ────────────────────────────────────────────────────
+  # Same root-refusal constraint as paru; identical structure with yay
+  # substituted for paru in the AUR clone and the test -run filter.
+  yay:
+    name: arch-latest (yay)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build yay and run integration tests
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/host-workspace:ro" \
+            archlinux:latest \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Updating system and installing build dependencies"
+              pacman -Syu --noconfirm
+              pacman -S --noconfirm base-devel git curl sudo
+
+              echo "==> Installing Go from go.dev"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+              ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+              echo "==> Creating non-root builder user"
+              useradd -m builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+              echo "==> Building yay from AUR as builder"
+              su -s /bin/bash builder -c "
+                git clone https://aur.archlinux.org/yay.git /tmp/yay
+                cd /tmp/yay
+                makepkg -si --noconfirm
+              "
+
+              echo "==> Copying workspace and fixing ownership"
+              cp -r /host-workspace /home/builder/gpm
+              chown -R builder:builder /home/builder/gpm
+
+              echo "==> Running integration tests as builder"
+              su -s /bin/bash builder -c "
+                cd /home/builder/gpm
+                go test -tags integration -race -v -run TestYay ./internal/adapter/
+              "
+            '
