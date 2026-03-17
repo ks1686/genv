@@ -481,6 +481,7 @@ func TestRemoveCmd_FlagParseError(t *testing.T) {
 	}
 }
 
+// TestInstallCmd_FlagParseError ensures installCmd returns exitUsage for unknown flags.
 func TestInstallCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gpm.json")
