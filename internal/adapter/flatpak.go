@@ -18,4 +18,12 @@ func (Flatpak) PlanInstall(pkgName string) []string {
 	return []string{"flatpak", "install", "-y", "--noninteractive", pkgName}
 }
 
+func (Flatpak) PlanUninstall(pkgName string) []string {
+	return []string{"flatpak", "uninstall", "-y", pkgName}
+}
+
+func (Flatpak) PlanClean() [][]string {
+	return [][]string{{"flatpak", "uninstall", "--unused", "-y"}}
+}
+
 func (Flatpak) Query(pkgName string) (bool, error) { return runQuery("flatpak", "info", pkgName) }
