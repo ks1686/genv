@@ -5,6 +5,8 @@ Track, sync, and reproduce your software environment across Linux, macOS, and WS
 ```bash
 gpm add git                     # add and immediately install a package
 gpm remove git                  # remove from spec and immediately uninstall
+gpm adopt git                   # track an already-installed package without reinstalling
+gpm disown git                  # stop tracking a package without uninstalling it
 gpm apply                       # reconcile system state with gpm.json
 gpm apply --dry-run             # preview what will change
 ```
@@ -57,6 +59,12 @@ gpm add git
 gpm add neovim --version "0.10.*"
 gpm add firefox --manager flatpak:org.mozilla.firefox
 
+# Adopt a package that's already installed — track it without reinstalling
+gpm adopt ripgrep
+
+# Disown a package — stop tracking it without uninstalling it
+gpm disown ripgrep
+
 # See what is currently installed by gpm (reads gpm.lock.json)
 gpm list
 
@@ -93,6 +101,8 @@ When you run `gpm apply`:
 5. Lock file is updated to reflect what actually succeeded.
 
 `gpm add <id>` and `gpm remove <id>` are convenience commands that update the spec **and** immediately install or uninstall the single package, keeping the lock in sync.
+
+`gpm adopt <id>` and `gpm disown <id>` give you fine-grained tracking control without touching the system: adopt starts tracking a package that's already installed (no install runs), and disown stops tracking one without uninstalling it.
 
 ---
 
@@ -136,13 +146,17 @@ When you run `gpm apply`:
 | Command | Description |
 | ------- | ----------- |
 | `gpm add <id> [flags]` | Add package to spec and install it now |
-| `gpm remove <id>` | Remove package from spec and uninstall it now |
-| `gpm list` | List packages currently installed by gpm (from lock file) |
+| `gpm remove <id>` | Remove package from spec and uninstall it now (alias: `rm`) |
+| `gpm adopt <id> [flags]` | Track an already-installed package without reinstalling |
+| `gpm disown <id>` | Stop tracking a package without uninstalling it |
+| `gpm list` | List packages currently tracked by gpm (from lock file) (alias: `ls`) |
 | `gpm apply [--dry-run] [--strict]` | Reconcile system state with gpm.json |
+| `gpm clean [--dry-run]` | Clear the cache of all detected package managers |
 | `gpm edit` | Open gpm.json in `$EDITOR` |
+| `gpm version` | Show build version, commit, and date |
 | `gpm help` | Show help text |
 
-### `gpm add` flags
+### `gpm add` / `gpm adopt` flags
 
 - `--version <ver>` — version constraint, e.g. `"0.10.*"`
 - `--prefer <mgr>` — preferred manager, e.g. `brew`
@@ -152,6 +166,10 @@ When you run `gpm apply`:
 
 - `--dry-run` — print the reconcile plan without executing
 - `--strict` — exit with an error if any package cannot be resolved
+
+### `gpm clean` flags
+
+- `--dry-run` — print the clean commands without executing
 
 ### Common flag
 
@@ -179,15 +197,14 @@ Implementation milestones and detailed checklists are tracked in [ROADMAP.md](RO
 Current focus:
 
 - [x] M1: Core CLI and `gpm.json` spec validation
-- [x] M2: Resolver + adapter layer, declarative apply, uninstall, cache clean
-- [ ] M3: `gpm scan`, lock file pinning, and `gpm sync`
+- [x] M2: Resolver + adapter layer, declarative apply, adopt/disown, cache clean
+- [ ] M3: `gpm scan`, lock file version pinning, `gpm status`
 - [ ] M4: Reliability, automation, and release hardening
+- [ ] M5: macOS and WSL2 validation and automated testing
 
 ## Releasing
 
 The repository includes a tag-driven GitHub release workflow. The release process is documented in [RELEASING.md](RELEASING.md).
-
-The first public prerelease is `v0.1.0-beta.1`, intended to reflect the current usable state of the project. That release may include some Milestone 2 functionality that is still being validated across supported environments; the release notes should call that out explicitly.
 
 ---
 

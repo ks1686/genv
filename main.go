@@ -47,6 +47,10 @@ func run(args []string) int {
 		return addCmd(args[1:])
 	case "remove", "rm":
 		return removeCmd(args[1:])
+	case "adopt":
+		return adoptCmd(args[1:])
+	case "disown":
+		return disownCmd(args[1:])
 	case "list", "ls":
 		return listCmd(args[1:])
 	case "apply":
@@ -295,6 +299,186 @@ func removeCmd(args []string) int {
 
 	if uninstallErr != nil {
 		return exitLogic
+	}
+	return exitOK
+}
+
+// adoptCmd implements `gpm adopt <id> [flags]`.
+// Verifies the package is already installed on the system and then adds it to
+// gpm.json and the lock file without running an install command.
+func adoptCmd(args []string) int {
+	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm adopt <id> [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+
+	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
+	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
+	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
+
+	id, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return exitUsage
+	}
+	if id == "" {
+		fmt.Fprintln(os.Stderr, "gpm adopt: missing package id")
+		fs.Usage()
+		return exitUsage
+	}
+
+	managers, err := parseManagerFlag(*managerFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm adopt: --manager: %v\n", err)
+		return exitUsage
+	}
+
+	// 1. Resolve to find which manager handles this package.
+	available := resolver.Detect()
+	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
+	action := resolver.ResolveOne(pkg, available)
+	if !action.Resolved() {
+		fmt.Fprintf(os.Stderr, "gpm adopt: no available manager for %q — install a compatible package manager first\n", id)
+		return exitLogic
+	}
+
+	// 2. Verify the package is actually installed.
+	mgr := adapter.ByName(action.Manager)
+	installed, err := mgr.Query(action.PkgName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm adopt: querying %s: %v\n", action.Manager, err)
+		return exitLogic
+	}
+	if !installed {
+		fmt.Fprintf(os.Stderr, "gpm adopt: %q is not installed via %s — use 'gpm add %s' to install it\n", id, action.Manager, id)
+		return exitLogic
+	}
+
+	// 3. Update gpm.json.
+	f, isNew, err := gpmfile.ReadOrNew(*file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, commands.ErrAlreadyTracked) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := gpmfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fmt.Fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	// 4. Update lock file.
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
+	}
+	lf.Packages = append(lf.Packages, gpmfile.LockedPackage{
+		ID:      action.Pkg.ID,
+		Manager: action.Manager,
+		PkgName: action.PkgName,
+	})
+	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		return exitIO
+	}
+
+	fmt.Fprintf(os.Stdout, "adopted %s — now tracked via %s (already installed)\n", id, action.Manager)
+	return exitOK
+}
+
+// disownCmd implements `gpm disown <id>`.
+// Removes the package from gpm.json and the lock file without uninstalling it,
+// leaving it managed by the underlying package manager directly.
+func disownCmd(args []string) int {
+	fs := flag.NewFlagSet("disown", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm disown <id> [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+
+	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "gpm disown: missing package id")
+		fs.Usage()
+		return exitUsage
+	}
+	id := fs.Arg(0)
+
+	// 1. Update gpm.json.
+	f, err := gpmfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, gpmfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "gpm: %s not found\n", *file)
+			return exitLogic
+		}
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.Remove(f, id); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		return exitLogic
+	}
+
+	if err := gpmfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		return exitIO
+	}
+
+	// 2. Remove from lock file without uninstalling.
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	wasTracked := false
+	remaining := make([]gpmfile.LockedPackage, 0, len(lf.Packages))
+	for i := range lf.Packages {
+		if lf.Packages[i].ID == id {
+			wasTracked = true
+		} else {
+			remaining = append(remaining, lf.Packages[i])
+		}
+	}
+	lf.Packages = remaining
+	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		return exitIO
+	}
+
+	if wasTracked {
+		fmt.Fprintf(os.Stdout, "disowned %s — removed from tracking (package remains installed)\n", id)
+	} else {
+		fmt.Fprintf(os.Stdout, "disowned %s — removed from spec (was not in lock)\n", id)
 	}
 	return exitOK
 }
@@ -567,6 +751,8 @@ Usage:
 Commands:
   add <id>    Add a package to the spec and install it now
   remove <id> Remove a package from the spec and uninstall it now  (alias: rm)
+  adopt <id>  Track an already-installed package in gpm.json without reinstalling
+  disown <id> Stop tracking a package in gpm.json without uninstalling it
   list        List all packages installed by gpm                   (alias: ls)
   apply       Reconcile system state with gpm.json (install added, remove deleted)
   clean       Clear the cache of all detected package managers
@@ -577,7 +763,7 @@ Commands:
 Flags common to all commands:
   --file <path>   Path to gpm.json (default: ./gpm.json)
 
-Add-specific flags:
+Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
   --prefer <mgr>               Preferred manager, e.g. brew
   --manager <mgr:name,...>     Manager-specific package names, e.g.

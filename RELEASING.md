@@ -6,14 +6,11 @@ This repository is set up to publish GitHub releases from annotated tags.
 
 Use full semantic versions for tags and releases:
 
-- `v0.1.0-beta.1` for the first public prerelease
-- `v0.1.0` for the first stable release
-- `v0.2.0` for the release where Milestone 2 is considered fully validated and complete
-
-For this repository, `v0.1.0-beta.1` is the first public, current-state prerelease. It may include work from Milestone 2 that is functional but not yet fully validated across every target environment.
-
-If you ship partially tested M2 functionality in `v0.1.0-beta.1`, say that plainly in the release notes.
-Keep `v0.1.0` for the first stable release and `v0.2.0` for the point where Milestone 2 is complete and you want to signal stronger confidence in that surface area.
+- `v0.1.0-beta.1` — first public prerelease (shipped)
+- `v0.1.0` — first stable release; M1 and M2 complete and validated on Linux
+- `v0.2.0` — M3 complete (scan, version pinning, status)
+- `v0.3.0` — M4 complete (reliability and automation)
+- `v0.4.0` — M5 complete (macOS and WSL2 support)
 
 ## One-time setup
 
@@ -44,15 +41,13 @@ Keep `v0.1.0` for the first stable release and `v0.2.0` for the point where Mile
    - a `checksums.txt` file
    - binaries stamped with version metadata visible via `gpm version`
 
-## Recommended release note framing for `v0.1.0-beta.1`
+## Release note framing
 
-Use wording close to this:
+For each release, the notes should cover:
 
-- first public release of `gpm`
-- explicitly a prerelease build
-- stable core CLI and spec workflow from Milestone 1
-- includes current resolver and adapter work from Milestone 2
-- some cross-platform M2 paths are still in final validation
+- what milestone is complete
+- any known limitations or partially-validated surfaces (e.g., adapters not tested in CI)
+- any breaking changes to `gpm.json` schema or lock format
 
 ## Verifying the published release
 
