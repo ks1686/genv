@@ -48,10 +48,6 @@ homebrew_casks:
     homepage: "https://github.com/ks1686/gpm"
     description: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
     license: MIT
-    install: |
-      bin.install "gpm"
-    test: |
-      system "#{bin}/gpm", "version"
     skip_upload: auto  # skips pre-releases automatically
 
 # ── AUR (Arch User Repository) ────────────────────────────────────────────────
