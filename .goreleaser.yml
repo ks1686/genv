@@ -31,6 +31,55 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# ── Homebrew tap ──────────────────────────────────────────────────────────────
+# Publishes a formula to ks1686/homebrew-tap on every non-prerelease tag.
+# Requires secret: HOMEBREW_TAP_GITHUB_TOKEN (fine-grained PAT with
+# Contents: read+write on the homebrew-tap repo).
+#
+# Install after setup:
+#   brew tap ks1686/tap
+#   brew install gpm
+brews:
+  - name: gpm
+    repository:
+      owner: ks1686
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/ks1686/gpm"
+    description: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
+    license: MIT
+    install: |
+      bin.install "gpm"
+    test: |
+      system "#{bin}/gpm", "version"
+    skip_upload: auto  # skips pre-releases automatically
+
+# ── AUR (Arch User Repository) ────────────────────────────────────────────────
+# Publishes a PKGBUILD to aur.archlinux.org/gpm-bin.git on every non-prerelease.
+# Package name is gpm-bin ("gpm" is taken by the General Purpose Mouse daemon).
+#
+# Requires secret: AUR_KEY (SSH private key of an AUR account that owns gpm-bin).
+# One-time manual step: create the AUR package at https://aur.archlinux.org/
+# before the first automated publish (GoReleaser only updates, not creates).
+#
+# Install after setup:
+#   paru -S gpm-bin   # or yay, or manual makepkg
+aurs:
+  - name: gpm-bin
+    homepage: "https://github.com/ks1686/gpm"
+    description: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
+    maintainers:
+      - "ks1686 <ks1686@users.noreply.github.com>"
+    license: MIT
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/gpm-bin.git"
+    package: |-
+      install -Dm755 "./gpm" "${pkgdir}/usr/bin/gpm"
+    commit_author:
+      name: ks1686
+      email: ks1686@users.noreply.github.com
+    skip_upload: auto  # skips pre-releases automatically
+
 changelog:
   sort: asc
   filters:
