@@ -32,14 +32,14 @@ checksum:
   name_template: checksums.txt
 
 # ── Homebrew tap ──────────────────────────────────────────────────────────────
-# Publishes a formula to ks1686/homebrew-tap on every non-prerelease tag.
+# Publishes a cask to ks1686/homebrew-tap on every non-prerelease tag.
 # Requires secret: HOMEBREW_TAP_GITHUB_TOKEN (fine-grained PAT with
 # Contents: read+write on the homebrew-tap repo).
 #
 # Install after setup:
 #   brew tap ks1686/tap
 #   brew install gpm
-brews:
+homebrew_casks:
   - name: gpm
     repository:
       owner: ks1686
