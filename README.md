@@ -37,13 +37,45 @@ Move to a new machine? Clone your dotfiles, run `gpm apply`, and you're done.
 
 ## Install
 
+### macOS
+
+```bash
+brew tap ks1686/tap
+brew install gpm
+```
+
+### Linux — Arch / Manjaro
+
+```bash
+paru -S gpm-bin      # or: yay -S gpm-bin
+```
+
+### Linux — other distros
+
+Download a pre-built binary from [Releases](../../releases/latest):
+
+```bash
+# example for x86-64
+curl -Lo gpm.tar.gz https://github.com/ks1686/gpm/releases/latest/download/gpm_linux_amd64.tar.gz
+tar -xzf gpm.tar.gz
+sudo mv gpm /usr/local/bin/
+```
+
+### Windows (WSL2)
+
+Use the Linux instructions above inside your WSL2 shell, or download the Windows binary from [Releases](../../releases/latest) and add it to your `PATH`.
+
+### Any platform — Go install
+
 ```bash
 go install github.com/ks1686/gpm@latest
 ```
 
-Or download a pre-built binary from [Releases](../../releases).
+Requires Go 1.21+. The binary is placed in `$GOPATH/bin`.
 
-Published binaries report their embedded build metadata via:
+---
+
+Verify the installation:
 
 ```bash
 gpm version
