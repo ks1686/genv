@@ -389,6 +389,204 @@ func TestRemoveCmd_MultiplePackages(t *testing.T) {
 	}
 }
 
+// ---- gpm adopt --------------------------------------------------------------
+// adopt requires the package to already be installed on the system.
+// In CI no package manager is guaranteed to be present, so tests that reach
+// the query step will get either "no manager available" or "not installed" —
+// both return exitLogic. Tests that fail before the query are deterministic.
+
+func TestAdoptCmd_MissingIDFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	code := run([]string{"adopt", "--file", path})
+	if code != exitUsage {
+		t.Errorf("expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestAdoptCmd_InvalidFileFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// adopt checks manager/install before reading the file, so an invalid file
+	// is only reached after the query step; in CI this returns exitLogic first.
+	code := run([]string{"adopt", "--file", path, "git"})
+	if code != exitValidation && code != exitLogic {
+		t.Errorf("expected exitValidation or exitLogic, got %d", code)
+	}
+}
+
+func TestAdoptCmd_AlreadyTrackedFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	// adopt on an already-tracked package should return exitLogic.
+	// In CI the query step may fail first (also exitLogic), so both are valid.
+	code := run([]string{"adopt", "--file", path, "git"})
+	if code != exitLogic {
+		t.Errorf("expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestAdoptCmd_BadManagerFormatFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	code := run([]string{"adopt", "--file", path, "--manager", "notaformat", "git"})
+	if code != exitUsage {
+		t.Errorf("bad manager format: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestAdoptCmd_UnknownPreferFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// --prefer validation happens inside commands.Add, which is called after the
+	// query; in CI the query fails first. Both lead to exitLogic or exitUsage.
+	code := run([]string{"adopt", "--file", path, "--prefer", "yum", "git"})
+	if code != exitUsage && code != exitLogic {
+		t.Errorf("unknown prefer: expected exitUsage or exitLogic, got %d", code)
+	}
+}
+
+func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// In any environment: either no manager resolves (exitLogic) or the package
+	// is not installed (exitLogic). Both are acceptable outcomes for this test.
+	code := run([]string{"adopt", "--file", path, "this-package-definitely-does-not-exist-xyzzy"})
+	if code != exitLogic {
+		t.Errorf("expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+// ---- gpm disown -------------------------------------------------------------
+// disown removes the package from gpm.json and the lock file without uninstalling.
+
+func TestDisownCmd_Basic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	// Set up: git and neovim in spec and lock.
+	run([]string{"add", "--file", path, "git"})
+	run([]string{"add", "--file", path, "neovim"})
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "neovim", Manager: "apt", PkgName: "neovim"},
+	})
+
+	code := run([]string{"disown", "--file", path, "git"})
+	if code != exitOK {
+		t.Fatalf("disown: expected exitOK, got %d", code)
+	}
+
+	// git must be gone from spec.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile spec: %v", err)
+	}
+	if strings.Contains(string(content), `"git"`) {
+		t.Error("git should have been removed from spec")
+	}
+	if !strings.Contains(string(content), `"neovim"`) {
+		t.Error("neovim should still be present in spec")
+	}
+
+	// git must be gone from lock.
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	for _, p := range lf.Packages {
+		if p.ID == "git" {
+			t.Error("git should have been removed from lock")
+		}
+	}
+}
+
+func TestDisownCmd_NotInSpec(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"disown", "--file", path, "neovim"})
+	if code != exitLogic {
+		t.Errorf("expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestDisownCmd_FileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	code := run([]string{"disown", "--file", path, "git"})
+	if code != exitLogic {
+		t.Errorf("expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestDisownCmd_MissingID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"disown", "--file", path})
+	if code != exitUsage {
+		t.Errorf("missing id: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestDisownCmd_InvalidFileFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"disown", "--file", path, "git"})
+	if code != exitValidation {
+		t.Errorf("expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestDisownCmd_NotInLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// Package in spec but never in lock (never installed by gpm).
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"disown", "--file", path, "git"})
+	if code != exitOK {
+		t.Errorf("not-in-lock disown: expected exitOK, got %d", code)
+	}
+
+	// Verify git is gone from spec.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(content), `"git"`) {
+		t.Error("git should have been removed from spec")
+	}
+}
+
+func TestDisownCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"disown", "--file", path, "--no-such-flag", "git"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
 // ---- gpm list ---------------------------------------------------------------
 // list reads from the lock file, not gpm.json.
 

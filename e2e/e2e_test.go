@@ -7,10 +7,12 @@
 // against a live package manager on the host:
 //
 //   - gpm add / remove / list (ls) / apply / apply --dry-run / clean / clean --dry-run
+//   - gpm adopt: verify already-installed package is tracked without reinstalling
+//   - gpm disown: verify package is untracked without being uninstalled
 //   - lock-file integrity after every mutation
 //   - gpm apply reconcile: install newly-added packages, remove deleted ones
 //   - gpm apply --strict with a fully-resolved plan
-//   - error paths: duplicate add, remove of untracked package, apply with no gpm.json
+//   - error paths: duplicate add, remove/adopt/disown of untracked package, apply with no gpm.json
 //   - command aliases: ls, rm
 //
 // Each TestE2E* function skips itself when its adapter binary is absent,
@@ -471,6 +473,86 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
 			// clean up so later tests start from an empty state
 			r.gpm("", "remove", cfg.testPkg)
+		})
+
+		// ── gpm disown ────────────────────────────────────────────────────────
+		// Install and track testPkg, then disown it. The package must remain
+		// installed on the system but disappear from spec and lock.
+
+		t.Run("disown_removes_tracking_keeps_package_installed", func(t *testing.T) {
+			if _, _, code := r.gpm("", "add", addArgs...); code != 0 {
+				t.Fatalf("setup disown: gpm add exit %d", code)
+			}
+			r.assertInSpec(t, cfg.testPkg)
+			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
+
+			stdout, _, code := r.gpm("", "disown", cfg.testPkg)
+			if code != 0 {
+				t.Fatalf("gpm disown %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+			}
+			r.assertNotInSpec(t, cfg.testPkg)
+			r.assertNotInLock(t, cfg.testPkg)
+			if !strings.Contains(stdout, "remains installed") {
+				t.Errorf("expected 'remains installed' in stdout, got: %q", stdout)
+			}
+		})
+
+		t.Run("disown_not_tracked_fails", func(t *testing.T) {
+			_, _, code := r.gpm("", "disown", "gpm-e2e-never-tracked-xyzzy")
+			if code == 0 {
+				t.Error("disown untracked: expected non-zero exit, got 0")
+			}
+		})
+
+		// ── gpm adopt ────────────────────────────────────────────────────────
+		// testPkg is installed on the system but not tracked by gpm
+		// (state left by disown_removes_tracking_keeps_package_installed above).
+
+		adoptArgs := []string{cfg.testPkg}
+		if cfg.preferFlag != "" {
+			adoptArgs = append(adoptArgs, "--prefer", cfg.preferFlag)
+		}
+
+		t.Run("adopt_tracks_already_installed_package", func(t *testing.T) {
+			stdout, _, code := r.gpm("", "adopt", adoptArgs...)
+			if code != 0 {
+				t.Fatalf("gpm adopt %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+			}
+			r.assertInSpec(t, cfg.testPkg)
+			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
+			if !strings.Contains(stdout, "adopted") {
+				t.Errorf("expected 'adopted' in stdout, got: %q", stdout)
+			}
+			if !strings.Contains(stdout, "already installed") {
+				t.Errorf("expected 'already installed' in stdout, got: %q", stdout)
+			}
+		})
+
+		t.Run("adopt_already_tracked_fails", func(t *testing.T) {
+			// testPkg is now tracked from the previous subtest.
+			_, stderr, code := r.gpm("", "adopt", adoptArgs...)
+			if code == 0 {
+				t.Error("adopt already-tracked: expected non-zero exit, got 0")
+			}
+			if !strings.Contains(stderr, "already tracked") {
+				t.Errorf("expected 'already tracked' in stderr, got: %q", stderr)
+			}
+			// clean up so the package is gone for the not-installed test
+			r.gpm("", "remove", cfg.testPkg)
+		})
+
+		t.Run("adopt_not_installed_fails", func(t *testing.T) {
+			notInstalledArgs := []string{"gpm-e2e-definitely-not-installed-xyzzy"}
+			if cfg.preferFlag != "" {
+				notInstalledArgs = append(notInstalledArgs, "--prefer", cfg.preferFlag)
+			}
+			_, stderr, code := r.gpm("", "adopt", notInstalledArgs...)
+			if code == 0 {
+				t.Error("adopt not-installed: expected non-zero exit, got 0")
+			}
+			if !strings.Contains(stderr, "not installed") {
+				t.Errorf("expected 'not installed' in stderr, got: %q", stderr)
+			}
 		})
 	}
 
