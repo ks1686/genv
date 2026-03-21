@@ -135,18 +135,18 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Validate `brew` and `macports` adapters on a real macOS host (manual or self-hosted runner).
-- [ ] Add a macOS job to the integration workflow (self-hosted runner or `macos-latest` GitHub runner).
+- [x] Validate `brew` and `macports` adapters on a real macOS host (manual or self-hosted runner).
+- [x] Add a macOS job to the integration workflow (self-hosted runner or `macos-latest` GitHub runner).
 - [ ] Validate WSL2 environment detection — confirm Linux adapters are selected, no Windows path leakage.
 - [ ] Add install and bootstrap documentation for macOS.
 - [ ] Add install and bootstrap documentation for WSL2.
-- [ ] Document known limitations for macOS (Homebrew install time, cask vs formula resolution).
+- [x] Document known limitations for macOS (Homebrew install time, cask vs formula resolution).
 
 Acceptance criteria:
 
-- [ ] `gpm apply` on macOS with a `brew`-only spec installs and removes packages correctly.
+- [x] `gpm apply` on macOS with a `brew`-only spec installs and removes packages correctly.
 - [ ] `gpm apply` inside WSL2 uses Linux adapters and produces identical output to a native Linux host.
-- [ ] The integration workflow runs and passes on macOS without manual intervention.
+- [x] The integration workflow runs and passes on macOS without manual intervention.
 
 ## Cross-Cutting Quality Gates
 
