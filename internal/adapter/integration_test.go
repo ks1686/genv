@@ -18,6 +18,7 @@
 package adapter_test
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -184,10 +185,10 @@ func TestSnap(t *testing.T) {
 
 func TestBrew(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
-		a:            adapter.Brew{},
-		wantBin:      "brew",
-		explicitMap:  map[string]string{"brew": "neovim"},
-		explicitWant: "neovim",
+		a:              adapter.Brew{},
+		wantBin:        "brew",
+		explicitMap:    map[string]string{"brew": "neovim"},
+		explicitWant:   "neovim",
 		knownInstalled: "ca-certificates",
 	})
 }
@@ -197,13 +198,18 @@ func TestBrew_Query_Cask(t *testing.T) {
 	if !a.Available() {
 		t.Skip("brew not available on this host")
 	}
-	// discord is a cask — must be detected as installed via the cask fallback.
-	installed, err := a.Query("discord")
+	// Pick the first installed cask dynamically so the test works on any machine.
+	out, err := exec.Command("brew", "list", "--cask").Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		t.Skip("no casks installed on this host — skipping cask query test")
+	}
+	cask := strings.Fields(string(out))[0]
+	installed, err := a.Query(cask)
 	if err != nil {
-		t.Fatalf("Query(\"discord\"): unexpected error: %v", err)
+		t.Fatalf("Query(%q): unexpected error: %v", cask, err)
 	}
 	if !installed {
-		t.Error("Query(\"discord\"): expected installed=true for a known installed cask")
+		t.Errorf("Query(%q): expected installed=true for a known installed cask", cask)
 	}
 }
 
