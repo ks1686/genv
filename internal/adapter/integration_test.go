@@ -188,8 +188,23 @@ func TestBrew(t *testing.T) {
 		wantBin:      "brew",
 		explicitMap:  map[string]string{"brew": "neovim"},
 		explicitWant: "neovim",
-		// No knownInstalled: formula presence varies across brew setups.
+		knownInstalled: "ca-certificates",
 	})
+}
+
+func TestBrew_Query_Cask(t *testing.T) {
+	a := adapter.Brew{}
+	if !a.Available() {
+		t.Skip("brew not available on this host")
+	}
+	// discord is a cask — must be detected as installed via the cask fallback.
+	installed, err := a.Query("discord")
+	if err != nil {
+		t.Fatalf("Query(\"discord\"): unexpected error: %v", err)
+	}
+	if !installed {
+		t.Error("Query(\"discord\"): expected installed=true for a known installed cask")
+	}
 }
 
 func TestLinuxbrew(t *testing.T) {
@@ -207,6 +222,7 @@ func TestMacPorts(t *testing.T) {
 		wantBin:      "sudo",
 		explicitMap:  map[string]string{"macports": "neovim"},
 		explicitWant: "neovim",
+		// No knownInstalled: MacPorts is not pre-installed in CI; tested on real macOS host only.
 	})
 }
 
