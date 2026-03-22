@@ -32,7 +32,10 @@ func (Brew) NormalizeID(id string, managers map[string]string) (string, bool) {
 }
 
 func (Brew) Query(pkgName string) (bool, error) {
-	return runQuery("brew", "list", "--formula", pkgName)
+	if ok, err := runQuery("brew", "list", "--formula", pkgName); ok || err != nil {
+		return ok, err
+	}
+	return runQuery("brew", "list", "--cask", pkgName)
 }
 
 // Linuxbrew is the adapter for Homebrew on Linux (distinct manager ID so

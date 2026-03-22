@@ -2,9 +2,7 @@ name: Distro Integration Tests
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 # This file tests each adapter against a real package-manager binary.
 # It is separate from ci.yml (unit tests + vet + fmt) so the fast checks
@@ -19,11 +17,8 @@ on:
 #   snap        — snapd requires a live systemd session; Docker containers
 #                 do not run systemd, so snap commands fail unconditionally.
 #                 Test manually on a real Ubuntu host with snapd running.
-#   brew        — Homebrew install takes 5–10 min and cannot be usefully
-#                 cached in a standard Linux runner. Test on macOS or a
-#                 self-hosted runner with brew pre-installed.
-#   linuxbrew   — Same time/caching constraint as brew.
-#   macports    — macOS only; not applicable to Linux CI.
+#   linuxbrew   — Same time/caching constraint as brew on Linux runners.
+#   macports    — Not pre-installed on GitHub's macOS runners; tested manually.
 
 jobs:
   # ── Adapters that work as root inside a container ───────────────────────────
@@ -211,3 +206,27 @@ jobs:
                 go test -tags integration -race -v -run TestE2EYay ./e2e/
               "
             '
+
+  # ── macOS (brew) ─────────────────────────────────────────────────────────────
+  # GitHub's macos-latest runner has Homebrew pre-installed, so no setup is
+  # needed. brew install is slow (~20s per package) so this job is expected
+  # to take several minutes.
+  macos:
+    name: macos-latest (brew)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Adapter integration test — TestBrew
+        run: go test -tags integration -race -v -run TestBrew ./internal/adapter/
+
+      - name: E2E test — TestE2EBrew
+        run: go test -tags integration -race -v -run TestE2EBrew ./e2e/

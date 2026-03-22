@@ -18,6 +18,7 @@
 package adapter_test
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -184,12 +185,32 @@ func TestSnap(t *testing.T) {
 
 func TestBrew(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
-		a:            adapter.Brew{},
-		wantBin:      "brew",
-		explicitMap:  map[string]string{"brew": "neovim"},
-		explicitWant: "neovim",
-		// No knownInstalled: formula presence varies across brew setups.
+		a:              adapter.Brew{},
+		wantBin:        "brew",
+		explicitMap:    map[string]string{"brew": "neovim"},
+		explicitWant:   "neovim",
+		knownInstalled: "ca-certificates",
 	})
+}
+
+func TestBrew_Query_Cask(t *testing.T) {
+	a := adapter.Brew{}
+	if !a.Available() {
+		t.Skip("brew not available on this host")
+	}
+	// Pick the first installed cask dynamically so the test works on any machine.
+	out, err := exec.Command("brew", "list", "--cask").Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		t.Skip("no casks installed on this host — skipping cask query test")
+	}
+	cask := strings.Fields(string(out))[0]
+	installed, err := a.Query(cask)
+	if err != nil {
+		t.Fatalf("Query(%q): unexpected error: %v", cask, err)
+	}
+	if !installed {
+		t.Errorf("Query(%q): expected installed=true for a known installed cask", cask)
+	}
 }
 
 func TestLinuxbrew(t *testing.T) {
@@ -207,6 +228,7 @@ func TestMacPorts(t *testing.T) {
 		wantBin:      "sudo",
 		explicitMap:  map[string]string{"macports": "neovim"},
 		explicitWant: "neovim",
+		// No knownInstalled: MacPorts is not pre-installed in CI; tested on real macOS host only.
 	})
 }
 
