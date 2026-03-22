@@ -4,7 +4,9 @@ package adapter
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // Adapter is the capability contract every package manager must satisfy.
@@ -68,7 +70,26 @@ func ByName(name string) Adapter {
 
 // lookPath is the exec.LookPath implementation used by adapters.
 // Replaced in tests to avoid PATH dependence.
-var lookPath = exec.LookPath
+// On WSL2 hosts it uses wslSafeLookPath to prevent Windows-mounted binaries
+// from shadowing Linux-native package managers.
+var lookPath = wslSafeLookPath
+
+// wslSafeLookPath wraps exec.LookPath. On WSL2 it sanitizes PATH first to
+// remove Windows drive mount entries (/mnt/c/, /mnt/d/, …) so that Windows
+// binaries cannot shadow Linux-native package managers.
+func wslSafeLookPath(file string) (string, error) {
+	if isWSL() {
+		clean := sanitizePathForWSL(os.Getenv("PATH"))
+		for _, dir := range filepath.SplitList(clean) {
+			candidate := filepath.Join(dir, file)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+				return candidate, nil
+			}
+		}
+		return "", &os.PathError{Op: "lookpath", Path: file, Err: os.ErrNotExist}
+	}
+	return exec.LookPath(file)
+}
 
 // normalizeID is the standard NormalizeID implementation shared by all adapters.
 // key must equal the adapter's Name() string.

@@ -77,6 +77,17 @@ func lockPathFrom(jsonPath string) string {
 	return strings.TrimSuffix(jsonPath, ".json") + ".lock.json"
 }
 
+// defaultSpecPath returns the XDG-aware default path for gpm.json.
+// Falls back to "gpm.json" in the current directory if the config dir cannot
+// be determined (e.g. no home directory set).
+func defaultSpecPath() string {
+	p, err := gpmfile.DefaultSpecPath()
+	if err != nil {
+		return "gpm.json"
+	}
+	return p
+}
+
 // confirm writes prompt to stdout and reads a y/Y response from stdin.
 // Returns true if the user confirmed.
 func confirm(prompt string) bool {
@@ -97,7 +108,7 @@ func addCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
@@ -198,7 +209,7 @@ func removeCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -315,7 +326,7 @@ func adoptCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
@@ -416,7 +427,7 @@ func disownCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -494,7 +505,7 @@ func listCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -532,7 +543,7 @@ func applyCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
 	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
 
@@ -672,7 +683,7 @@ func cleanCmd(args []string) int {
 // Opens gpm.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
 	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
-	file := fs.String("file", gpmfile.DefaultPath, "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -761,7 +772,7 @@ Commands:
   help        Show this help text
 
 Flags common to all commands:
-  --file <path>   Path to gpm.json (default: ./gpm.json)
+  --file <path>   Path to gpm.json (default: ~/.config/gpm/gpm.json)
 
 Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"

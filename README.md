@@ -111,7 +111,7 @@ gpm apply             # apply it
 gpm remove git
 ```
 
-Your `gpm.json` is just a file — commit it, share it, version it.
+Your `gpm.json` lives at `~/.config/gpm/gpm.json` by default (respects `$XDG_CONFIG_HOME`). It is just a file — commit it, share it, version it.
 
 ---
 
@@ -119,10 +119,10 @@ Your `gpm.json` is just a file — commit it, share it, version it.
 
 `gpm` maintains two files side by side:
 
-| File | Purpose |
-| --- | --- |
-| `gpm.json` | **Desired state** — what you want installed. Edit via `gpm add`/`gpm remove`/`gpm edit`. |
-| `gpm.lock.json` | **Applied state** — what gpm last installed, via which manager. Auto-managed; do not edit by hand. |
+| File | Default location | Purpose |
+| --- | --- | --- |
+| `gpm.json` | `~/.config/gpm/gpm.json` | **Desired state** — what you want installed. Edit via `gpm add`/`gpm remove`/`gpm edit`. |
+| `gpm.lock.json` | `~/.config/gpm/gpm.lock.json` | **Applied state** — what gpm last installed, via which manager. Auto-managed; do not edit by hand. |
 
 When you run `gpm apply`:
 
@@ -205,7 +205,7 @@ When you run `gpm apply`:
 
 ### Common flag
 
-- `--file <path>` — path to gpm.json (default: `./gpm.json`)
+- `--file <path>` — path to gpm.json (default: `~/.config/gpm/gpm.json`, respects `$XDG_CONFIG_HOME`)
 
 ---
 
