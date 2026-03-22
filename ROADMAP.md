@@ -137,7 +137,7 @@ Checklist:
 
 - [x] Validate `brew` and `macports` adapters on a real macOS host (manual or self-hosted runner).
 - [x] Add a macOS job to the integration workflow (self-hosted runner or `macos-latest` GitHub runner).
-- [ ] Validate WSL2 environment detection — confirm Linux adapters are selected, no Windows path leakage.
+- [x] Validate WSL2 environment detection — confirm Linux adapters are selected, no Windows path leakage.
 - [ ] Add install and bootstrap documentation for macOS.
 - [ ] Add install and bootstrap documentation for WSL2.
 - [x] Document known limitations for macOS (Homebrew install time, cask vs formula resolution).
