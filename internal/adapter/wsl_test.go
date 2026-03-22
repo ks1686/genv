@@ -18,9 +18,9 @@ func TestIsWindowsMountPath(t *testing.T) {
 		{"/mnt/d", true},
 		{"/mnt/z/Program Files", true},
 		// Not Windows mounts
-		{"/mnt/data", false},   // more than one char after /mnt/
-		{"/mnt/C", false},      // uppercase drive letter
-		{"/mnt/1", false},      // digit, not a letter
+		{"/mnt/data", false}, // more than one char after /mnt/
+		{"/mnt/C", false},    // uppercase drive letter
+		{"/mnt/1", false},    // digit, not a letter
 		{"/usr/bin", false},
 		{"/mnt", false},
 		{"", false},
