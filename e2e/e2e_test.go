@@ -646,3 +646,28 @@ func TestE2EFlatpak(t *testing.T) {
 		canInstall:  false,
 	})
 }
+
+// TestE2EBrew runs the full E2E suite on macOS using Homebrew.
+// tree is used as the test package — it is small and not expected to be
+// pre-installed. Skips automatically when brew is not in PATH.
+func TestE2EBrew(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "brew",
+		checkBin:    "brew",
+		testPkg:     "tree",
+		preferFlag:  "brew",
+		canInstall:  true,
+	})
+}
+
+// TestE2EMacPorts tests all non-install commands for the MacPorts adapter.
+// Real installs are skipped because MacPorts is not universally available
+// and requires sudo. Skips automatically when port is not in PATH.
+func TestE2EMacPorts(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "macports",
+		checkBin:    "port",
+		testPkg:     "tree",
+		canInstall:  false,
+	})
+}
