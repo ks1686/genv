@@ -7,13 +7,34 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ks1686/gpm/internal/schema"
 )
 
-// DefaultPath is the conventional name for a gpm manifest.
-const DefaultPath = "gpm.json"
+// DefaultDir returns the platform-appropriate configuration directory for gpm.
+// It respects $XDG_CONFIG_HOME; otherwise falls back to ~/.config.
+func DefaultDir() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "gpm"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "gpm"), nil
+}
+
+// DefaultSpecPath returns the default path for gpm.json inside the gpm config
+// directory (~/.config/gpm/gpm.json, or $XDG_CONFIG_HOME/gpm/gpm.json).
+func DefaultSpecPath() (string, error) {
+	dir, err := DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "gpm.json"), nil
+}
 
 // ErrNotFound is returned by Read when the file does not exist.
 var ErrNotFound = errors.New("gpm.json not found")
@@ -76,6 +97,10 @@ func Write(path string, f *schema.GpmFile) error {
 		return fmt.Errorf("serialising gpm.json: %w", err)
 	}
 	data = append(data, '\n')
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
 
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
