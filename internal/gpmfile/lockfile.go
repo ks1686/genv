@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/ks1686/gpm/internal/schema"
 )
-
-// DefaultLockPath is the conventional name for the gpm lock file, written
-// alongside gpm.json after each successful apply.
-const DefaultLockPath = "gpm.lock.json"
 
 // LockedPackage records how one package was last applied by gpm: which manager
 // was chosen and what concrete package name was passed to it. This is needed
@@ -55,6 +52,10 @@ func WriteLock(path string, lf *LockFile) error {
 		return fmt.Errorf("serialising lock file: %w", err)
 	}
 	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", tmp, err)

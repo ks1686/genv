@@ -193,12 +193,15 @@ func TestRead_PermissionError(t *testing.T) {
 	}
 }
 
-func TestWrite_ErrorOnBadPath(t *testing.T) {
-	// Writing to a path inside a non-existent directory must return an error.
+func TestWrite_CreatesParentDirs(t *testing.T) {
+	// Write must create any missing parent directories (e.g. ~/.config/gpm/)
+	// so that first-run behaviour is self-bootstrapping.
 	path := filepath.Join(t.TempDir(), "nonexistent", "subdir", "gpm.json")
-	err := Write(path, New())
-	if err == nil {
-		t.Fatal("expected error when writing to non-existent directory")
+	if err := Write(path, New()); err != nil {
+		t.Fatalf("expected Write to create parent dirs, got error: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected gpm.json to exist after Write: %v", err)
 	}
 }
 
