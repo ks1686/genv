@@ -62,7 +62,7 @@ not create a new one. The first publish must be done manually.
 **3b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
 
 ```bash
-ssh-keygen -t ed25519 -C "aur-genv" -f ~/.ssh/aur_genv
+ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
 # Leave passphrase empty — GoReleaser needs a passphrase-free key.
 ```
 
@@ -113,10 +113,10 @@ git push
 **3d. Add the AUR SSH private key as a repository secret:**
 
 In `ks1686/genv` → Settings → Secrets and variables → Actions, add a secret named
-**`AUR_KEY`** containing the contents of `~/.ssh/aur_genv` (the private key).
+**`AUR_KEY`** containing the contents of `~/.ssh/aur` (the private key).
 
 ```bash
-cat ~/.ssh/aur_genv
+cat ~/.ssh/aur
 # Copy the entire output including -----BEGIN/END----- lines into the secret value
 ```
 
