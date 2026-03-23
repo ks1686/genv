@@ -1,6 +1,6 @@
 .PHONY: build test test-verbose test-cover ci lint fmt vet tidy clean
 
-BINARY := gpm
+BINARY := genv
 
 build:
 	go build -o $(BINARY) .

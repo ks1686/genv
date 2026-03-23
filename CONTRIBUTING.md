@@ -1,6 +1,6 @@
-# Contributing to gpm
+# Contributing to genv
 
-Thank you for your interest in contributing to `gpm`!
+Thank you for your interest in contributing to `genv`!
 
 The project has reached v0.2.0 with all core milestones (M1–M5) complete. We are now working toward v1.0.0, which focuses on API stability (M6) and developer experience (M7). Contributions in both areas are welcome.
 
@@ -15,8 +15,8 @@ If something crashes, produces wrong output, or behaves unexpectedly, please ope
 
 **M6 and M7 feature work** is now open for community contributions. See [ROADMAP.md](ROADMAP.md) for the unchecked items. Good first targets:
 
-- Shell completions (`gpm completion <shell>`) — self-contained, no core changes needed.
-- `gpm validate` — validate `gpm.json` without installing anything; straightforward CLI addition.
+- Shell completions (`genv completion <shell>`) — self-contained, no core changes needed.
+- `genv validate` — validate `genv.json` without installing anything; straightforward CLI addition.
 - Test coverage improvements — adding table-driven tests for uncovered code paths.
 - Fuzz tests for the version constraint logic in `internal/version`.
 
@@ -47,9 +47,9 @@ If something crashes, produces wrong output, or behaves unexpectedly, please ope
 
 A good bug report includes:
 
-- `gpm version` output
+- `genv version` output
 - Operating system and package manager(s) in use
-- The `gpm.json` content (or a minimal reproduction)
+- The `genv.json` content (or a minimal reproduction)
 - The exact command you ran
 - The actual output vs. what you expected
 - If possible, re-run with `--debug` and include the debug output
@@ -59,8 +59,8 @@ A good bug report includes:
 ## Development setup
 
 ```bash
-git clone https://github.com/ks1686/gpm.git
-cd gpm
+git clone https://github.com/ks1686/genv.git
+cd genv
 go build .          # build the binary
 go test ./...       # run all unit tests
 ```

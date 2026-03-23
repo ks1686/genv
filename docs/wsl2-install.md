@@ -26,21 +26,21 @@ wsl --install
 
 ---
 
-## Step 4 — Install gpm
+## Step 4 — Install genv
 
-Download the latest Linux binary from the [Releases](https://github.com/ks1686/gpm/releases/latest) page:
+Download the latest Linux binary from the [Releases](https://github.com/ks1686/genv/releases/latest) page:
 
 ```bash
-curl -Lo gpm.tar.gz https://github.com/ks1686/gpm/releases/latest/download/gpm_linux_amd64.tar.gz
-tar -xzf gpm.tar.gz
-sudo mv gpm /usr/local/bin/
-rm gpm.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_linux_amd64.tar.gz
+tar -xzf genv.tar.gz
+sudo mv genv /usr/local/bin/
+rm genv.tar.gz
 ```
 
 Verify:
 
 ```bash
-gpm version
+genv version
 ```
 
 ---
@@ -48,7 +48,7 @@ gpm version
 ## Step 5 — Create your config
 
 ```bash
-mkdir -p ~/.config/gpm && cat > ~/.config/gpm/gpm.json << 'EOF'
+mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
   "schemaVersion": "1",
   "packages": [
@@ -63,11 +63,11 @@ EOF
 
 ---
 
-## Step 6 — Test `gpm apply`
+## Step 6 — Test `genv apply`
 
 ```bash
-gpm apply --dry-run   # preview what will happen
-gpm apply             # apply it
+genv apply --dry-run   # preview what will happen
+genv apply             # apply it
 ```
 
 Confirm it installed via apt (not a Windows binary):
@@ -76,15 +76,15 @@ Confirm it installed via apt (not a Windows binary):
 jq --version
 ```
 
-Confirm gpm tracked it:
+Confirm genv tracked it:
 
 ```bash
-gpm list
+genv list
 ```
 
 - `apply` output should show `apt` as the adapter ✅
 - `jq --version` should print a version number ✅
-- `gpm list` should show `jq` as an installed package ✅
+- `genv list` should show `jq` as an installed package ✅
 
 ---
 
@@ -95,25 +95,25 @@ echo $PATH
 ```
 
 - You may see `/mnt/c/...` paths — that's normal for WSL2
-- gpm strips these automatically so Windows binaries don't shadow Linux ones
+- genv strips these automatically so Windows binaries don't shadow Linux ones
 
 ---
 
 ## Step 8 — Done!
 
-Your `gpm.json` lives at `~/.config/gpm/gpm.json`. Add more packages with:
+Your `genv.json` lives at `~/.config/genv/genv.json`. Add more packages with:
 
 ```bash
-gpm add <package>
+genv add <package>
 ```
 
 Or bulk-adopt everything already installed:
 
 ```bash
-gpm scan
+genv scan
 ```
 
-Then run `gpm apply` to sync after editing the spec directly.
+Then run `genv apply` to sync after editing the spec directly.
 
 ---
 

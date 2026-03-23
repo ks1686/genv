@@ -12,10 +12,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/ks1686/gpm/internal/adapter"
-	"github.com/ks1686/gpm/internal/gpmfile"
-	"github.com/ks1686/gpm/internal/schema"
-	"github.com/ks1686/gpm/internal/version"
+	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/version"
 )
 
 // Detect returns the set of package manager names available on the current host
@@ -51,7 +51,7 @@ func ResolveOne(pkg schema.Package, available map[string]bool) Action {
 
 // Plan resolves every package in f into an Action, using the provided set of
 // available manager names. Call Detect() to build the available map.
-func Plan(f *schema.GpmFile, available map[string]bool) []Action {
+func Plan(f *schema.GenvFile, available map[string]bool) []Action {
 	actions := make([]Action, 0, len(f.Packages))
 	for _, pkg := range f.Packages {
 		actions = append(actions, resolve(pkg, available))
@@ -127,7 +127,7 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 
 	if unresolved > 0 {
 		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
-		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in gpm.json.")
+		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
 		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
 	return
@@ -161,33 +161,33 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 	return errs
 }
 
-// ---- Reconcile (gpm apply) --------------------------------------------------
+// ---- Reconcile (genv apply) --------------------------------------------------
 
 // versionDrifted reports whether lp's recorded InstalledVersion fails the
 // version constraint in pkg. Returns false when InstalledVersion is empty
 // (old lock entries without version data are never treated as drifted).
-func versionDrifted(pkg schema.Package, lp gpmfile.LockedPackage) bool {
+func versionDrifted(pkg schema.Package, lp genvfile.LockedPackage) bool {
 	return lp.InstalledVersion != "" && !version.Satisfies(pkg.Version, lp.InstalledVersion)
 }
 
-// ReconcileResult holds the delta between the desired state (gpm.json) and the
-// previously applied state (gpm.lock.json). ToInstall are packages added to the
+// ReconcileResult holds the delta between the desired state (genv.json) and the
+// previously applied state (genv.lock.json). ToInstall are packages added to the
 // spec since the last apply; ToRemove are packages that were removed from it.
 type ReconcileResult struct {
 	ToInstall []Action
 	ToRemove  []Action // UninstallCmd populated; Pkg.ID identifies the package
-	Unchanged []gpmfile.LockedPackage
+	Unchanged []genvfile.LockedPackage
 }
 
-// Reconcile computes the delta between the desired packages (from gpm.json)
-// and the previously applied state (from gpm.lock.json).
+// Reconcile computes the delta between the desired packages (from genv.json)
+// and the previously applied state (from genv.lock.json).
 //
 //   - ToInstall: in desired but not in lock → resolve via available managers.
 //   - ToRemove:  in lock but not in desired → uninstall using the manager
 //     recorded in the lock (not re-resolved, preserving the original manager).
 //   - Unchanged: in both desired and lock → nothing to do.
-func Reconcile(desired []schema.Package, managed []gpmfile.LockedPackage, available map[string]bool) ReconcileResult {
-	managedByID := make(map[string]gpmfile.LockedPackage, len(managed))
+func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool) ReconcileResult {
+	managedByID := make(map[string]genvfile.LockedPackage, len(managed))
 	for _, lp := range managed {
 		managedByID[lp.ID] = lp
 	}
@@ -214,7 +214,7 @@ func Reconcile(desired []schema.Package, managed []gpmfile.LockedPackage, availa
 	}
 
 	var toRemove []Action
-	var unchanged []gpmfile.LockedPackage
+	var unchanged []genvfile.LockedPackage
 	for _, lp := range managed {
 		if !desiredByID[lp.ID] {
 			a := adapter.ByName(lp.Manager)
@@ -293,7 +293,7 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	}
 	if unresolved > 0 {
 		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
-		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in gpm.json.")
+		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
 		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
 	return
@@ -302,7 +302,7 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 // ApplyExecution records the outcome of ExecuteApply so the caller can update
 // the lock file: only successful operations change persisted state.
 type ApplyExecution struct {
-	Installed   []gpmfile.LockedPackage // successfully installed
+	Installed   []genvfile.LockedPackage // successfully installed
 	Uninstalled []string                // IDs successfully removed
 	Errors      []error
 }
@@ -372,7 +372,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 		if err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
-			lp := gpmfile.LockedPackage{
+			lp := genvfile.LockedPackage{
 				ID:      a.Pkg.ID,
 				Manager: a.Manager,
 				PkgName: a.PkgName,

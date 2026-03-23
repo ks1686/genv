@@ -3,7 +3,7 @@ package adapter
 import (
 	"testing"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // TestAllAdapterNames verifies that every adapter in the registry has a

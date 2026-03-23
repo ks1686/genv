@@ -1,29 +1,29 @@
-# gpm — Global Package Manager
+# genv — Global Environment Manager
 
 Track, sync, and reproduce your software environment across Linux, macOS, and WSL2.
 
 ```bash
-gpm add git                       # add and immediately install a package
-gpm remove git                    # remove from spec and immediately uninstall
-gpm adopt git                     # track an already-installed package without reinstalling
-gpm disown git                    # stop tracking a package without uninstalling it
-gpm scan                          # bulk-adopt all installed packages into gpm.json
-gpm status                        # show drift between gpm.json and the lock file
-gpm apply                         # reconcile system state with gpm.json
-gpm apply --dry-run               # preview what will change
-gpm apply --yes                   # apply without a confirmation prompt (CI-safe)
-gpm apply --dry-run --json        # machine-readable plan output
+genv add git                       # add and immediately install a package
+genv remove git                    # remove from spec and immediately uninstall
+genv adopt git                     # track an already-installed package without reinstalling
+genv disown git                    # stop tracking a package without uninstalling it
+genv scan                          # bulk-adopt all installed packages into genv.json
+genv status                        # show drift between genv.json and the lock file
+genv apply                         # reconcile system state with genv.json
+genv apply --dry-run               # preview what will change
+genv apply --yes                   # apply without a confirmation prompt (CI-safe)
+genv apply --dry-run --json        # machine-readable plan output
 ```
 
 ---
 
 ## What it is
 
-`gpm` is a thin layer on top of your existing package managers. It tracks what you want installed in a single `gpm.json` file, then figures out how to install each package on whatever machine you're on.
+`genv` is a thin layer on top of your existing package managers. It tracks what you want installed in a single `genv.json` file, then figures out how to install each package on whatever machine you're on.
 
-It works like NixOS's declarative model: **you edit the spec file, and `gpm apply` makes reality match it** — installing packages that were added and uninstalling ones that were removed. A `gpm.lock.json` file records what gpm last applied, so it only acts on the delta.
+It works like NixOS's declarative model: **you edit the spec file, and `genv apply` makes reality match it** — installing packages that were added and uninstalling ones that were removed. A `genv.lock.json` file records what genv last applied, so it only acts on the delta.
 
-Move to a new machine? Clone your dotfiles, run `gpm apply`, and you're done.
+Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
 ---
 
@@ -35,7 +35,7 @@ Move to a new machine? Clone your dotfiles, run `gpm apply`, and you're done.
 | macOS    | `brew` (formulae + casks), `macports`                                  |
 | Windows  | WSL2 (targets the Linux userland inside WSL2)                          |
 
-`gpm` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
+`genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 
 ---
 
@@ -45,13 +45,13 @@ Move to a new machine? Clone your dotfiles, run `gpm apply`, and you're done.
 
 ```bash
 brew tap ks1686/tap
-brew install gpm
+brew install genv
 ```
 
 ### Linux — Arch / Manjaro
 
 ```bash
-paru -S gpm-bin      # or: yay -S gpm-bin
+paru -S genv-bin      # or: yay -S genv-bin
 ```
 
 ### Linux — other distros
@@ -60,9 +60,9 @@ Download a pre-built binary from [Releases](../../releases/latest):
 
 ```bash
 # example for x86-64 Linux
-curl -Lo gpm.tar.gz https://github.com/ks1686/gpm/releases/latest/download/gpm_linux_amd64.tar.gz
-tar -xzf gpm.tar.gz
-sudo mv gpm /usr/local/bin/
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_linux_amd64.tar.gz
+tar -xzf genv.tar.gz
+sudo mv genv /usr/local/bin/
 ```
 
 ### Windows (WSL2)
@@ -72,7 +72,7 @@ Use the Linux instructions above inside your WSL2 shell. See the [WSL2 install g
 ### Any platform — Go install
 
 ```bash
-go install github.com/ks1686/gpm@latest
+go install github.com/ks1686/genv@latest
 ```
 
 Requires Go 1.21+. The binary is placed in `$GOPATH/bin`.
@@ -82,7 +82,7 @@ Requires Go 1.21+. The binary is placed in `$GOPATH/bin`.
 Verify the installation:
 
 ```bash
-gpm version
+genv version
 ```
 
 Release binaries are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. The signature and certificate are attached to every GitHub release alongside `checksums.txt`.
@@ -92,74 +92,74 @@ Release binaries are signed with [cosign](https://docs.sigstore.dev/cosign/overv
 ## Quick start
 
 ```bash
-# Add packages — each one is tracked in gpm.json and installed immediately
-gpm add git
-gpm add neovim --version "0.10.*"
-gpm add firefox --manager flatpak:org.mozilla.firefox
+# Add packages — each one is tracked in genv.json and installed immediately
+genv add git
+genv add neovim --version "0.10.*"
+genv add firefox --manager flatpak:org.mozilla.firefox
 
 # Bulk-adopt all packages already installed on this machine
-gpm scan
+genv scan
 
 # Adopt a single already-installed package — track it without reinstalling
-gpm adopt ripgrep
+genv adopt ripgrep
 
 # Disown a package — stop tracking it without uninstalling it
-gpm disown ripgrep
+genv disown ripgrep
 
-# Check if gpm.json and the lock file are in sync
-gpm status
+# Check if genv.json and the lock file are in sync
+genv status
 
-# See what is currently tracked by gpm (reads gpm.lock.json)
-gpm list
+# See what is currently tracked by genv (reads genv.lock.json)
+genv list
 
-# Edit gpm.json directly in your $EDITOR
-gpm edit
+# Edit genv.json directly in your $EDITOR
+genv edit
 
 # Reconcile — installs newly added packages, removes deleted ones
-gpm apply --dry-run   # preview the delta first
-gpm apply             # apply it (prompts for confirmation)
-gpm apply --yes       # apply without prompting (for CI / scripts)
+genv apply --dry-run   # preview the delta first
+genv apply             # apply it (prompts for confirmation)
+genv apply --yes       # apply without prompting (for CI / scripts)
 
 # Machine-readable output for pipelines
-gpm apply --dry-run --json
-gpm status --json
+genv apply --dry-run --json
+genv status --json
 
 # Remove a package — uninstalls it and removes it from the spec
-gpm remove git
+genv remove git
 ```
 
-Your `gpm.json` lives at `~/.config/gpm/gpm.json` by default (respects `$XDG_CONFIG_HOME`). It is just a file — commit it, share it, version it.
+Your `genv.json` lives at `~/.config/genv/genv.json` by default (respects `$XDG_CONFIG_HOME`). It is just a file — commit it, share it, version it.
 
 ---
 
 ## How the declarative model works
 
-`gpm` maintains two files side by side:
+`genv` maintains two files side by side:
 
 | File | Default location | Purpose |
 | --- | --- | --- |
-| `gpm.json` | `~/.config/gpm/gpm.json` | **Desired state** — what you want installed. Edit via `gpm add`/`gpm remove`/`gpm edit`/`gpm scan`. |
-| `gpm.lock.json` | `~/.config/gpm/gpm.lock.json` | **Applied state** — what gpm last installed, via which manager. Auto-managed; do not edit by hand. |
+| `genv.json` | `~/.config/genv/genv.json` | **Desired state** — what you want installed. Edit via `genv add`/`genv remove`/`genv edit`/`genv scan`. |
+| `genv.lock.json` | `~/.config/genv/genv.lock.json` | **Applied state** — what genv last installed, via which manager. Auto-managed; do not edit by hand. |
 
-When you run `gpm apply`:
+When you run `genv apply`:
 
-1. gpm reads `gpm.json` (desired) and `gpm.lock.json` (last applied).
+1. genv reads `genv.json` (desired) and `genv.lock.json` (last applied).
 2. Packages in desired but not in the lock → **install**.
 3. Packages in the lock but not in desired → **uninstall** (using the manager recorded in the lock, then clean cache).
 4. Packages in both → **skip** (already up to date).
 5. Lock file is updated to reflect what actually succeeded.
 
-`gpm add <id>` and `gpm remove <id>` are convenience commands that update the spec **and** immediately install or uninstall the single package, keeping the lock in sync.
+`genv add <id>` and `genv remove <id>` are convenience commands that update the spec **and** immediately install or uninstall the single package, keeping the lock in sync.
 
-`gpm adopt <id>` and `gpm disown <id>` give you fine-grained tracking control without touching the system: adopt starts tracking a package that's already installed (no install runs), and disown stops tracking one without uninstalling it.
+`genv adopt <id>` and `genv disown <id>` give you fine-grained tracking control without touching the system: adopt starts tracking a package that's already installed (no install runs), and disown stops tracking one without uninstalling it.
 
-`gpm scan` discovers every package currently installed across all available managers and bulk-adopts them into your spec and lock — useful for generating a baseline spec from an existing machine.
+`genv scan` discovers every package currently installed across all available managers and bulk-adopts them into your spec and lock — useful for generating a baseline spec from an existing machine.
 
-`gpm status` compares your spec and lock file and reports any drift — packages in the spec but not yet applied, packages in the lock but removed from the spec, and version constraint violations.
+`genv status` compares your spec and lock file and reports any drift — packages in the spec but not yet applied, packages in the lock but removed from the spec, and version constraint violations.
 
 ---
 
-## gpm.json format
+## genv.json format
 
 ```json
 {
@@ -187,7 +187,7 @@ When you run `gpm apply`:
 
 **Fields:**
 
-- `id` — canonical name for the package (used by gpm)
+- `id` — canonical name for the package (used by genv)
 - `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
 - `prefer` — optional hint for which manager to use first
 - `managers` — optional map of manager-specific package identifiers (for packages with different names across managers)
@@ -198,26 +198,26 @@ When you run `gpm apply`:
 
 | Command | Description |
 | ------- | ----------- |
-| `gpm add <id> [flags]` | Add package to spec and install it now |
-| `gpm remove <id>` | Remove package from spec and uninstall it now (alias: `rm`) |
-| `gpm adopt <id> [flags]` | Track an already-installed package without reinstalling |
-| `gpm disown <id>` | Stop tracking a package without uninstalling it |
-| `gpm scan [flags]` | Bulk-adopt all installed packages into gpm.json |
-| `gpm status [flags]` | Show drift between gpm.json and the lock file |
-| `gpm list` | List packages currently tracked by gpm (from lock file) (alias: `ls`) |
-| `gpm apply [flags]` | Reconcile system state with gpm.json |
-| `gpm clean [--dry-run]` | Clear the cache of all detected package managers |
-| `gpm edit` | Open gpm.json in `$EDITOR` |
-| `gpm version` | Show build version, commit, and date |
-| `gpm help` | Show help text |
+| `genv add <id> [flags]` | Add package to spec and install it now |
+| `genv remove <id>` | Remove package from spec and uninstall it now (alias: `rm`) |
+| `genv adopt <id> [flags]` | Track an already-installed package without reinstalling |
+| `genv disown <id>` | Stop tracking a package without uninstalling it |
+| `genv scan [flags]` | Bulk-adopt all installed packages into genv.json |
+| `genv status [flags]` | Show drift between genv.json and the lock file |
+| `genv list` | List packages currently tracked by genv (from lock file) (alias: `ls`) |
+| `genv apply [flags]` | Reconcile system state with genv.json |
+| `genv clean [--dry-run]` | Clear the cache of all detected package managers |
+| `genv edit` | Open genv.json in `$EDITOR` |
+| `genv version` | Show build version, commit, and date |
+| `genv help` | Show help text |
 
-### `gpm add` / `gpm adopt` flags
+### `genv add` / `genv adopt` flags
 
 - `--version <ver>` — version constraint, e.g. `"0.10.*"`
 - `--prefer <mgr>` — preferred manager, e.g. `brew`
 - `--manager <mgr:name,...>` — manager-specific names, e.g. `flatpak:org.mozilla.firefox`
 
-### `gpm apply` flags
+### `genv apply` flags
 
 - `--dry-run` — print the reconcile plan without executing
 - `--strict` — exit with an error if any package cannot be resolved
@@ -226,23 +226,23 @@ When you run `gpm apply`:
 - `--timeout <duration>` — per-subprocess deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
 
-### `gpm status` flags
+### `genv status` flags
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
 
-### `gpm scan` flags
+### `genv scan` flags
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
 
-### `gpm clean` flags
+### `genv clean` flags
 
 - `--dry-run` — print the clean commands without executing
 
 ### Common flag
 
-- `--file <path>` — path to gpm.json (default: `$XDG_CONFIG_HOME/gpm/gpm.json` or `~/.config/gpm/gpm.json`)
+- `--file <path>` — path to genv.json (default: `$XDG_CONFIG_HOME/genv/genv.json` or `~/.config/genv/genv.json`)
 
 ---
 
@@ -252,13 +252,13 @@ When `--json` is passed, the command writes a single JSON object to stdout and r
 
 ```bash
 # Parse the plan in CI
-gpm apply --dry-run --json | jq '.data.toInstall[].id'
+genv apply --dry-run --json | jq '.data.toInstall[].id'
 
 # Check status in a script
-gpm status --json | jq '.ok'
+genv status --json | jq '.ok'
 
 # Non-interactive apply in a bootstrap script
-gpm apply --yes --json 2>/dev/null
+genv apply --yes --json 2>/dev/null
 ```
 
 The envelope format:
@@ -272,13 +272,13 @@ The envelope format:
 }
 ```
 
-`ok` is `false` when the command encountered an error or found drift (`gpm status`). Exit codes are unchanged regardless of `--json`.
+`ok` is `false` when the command encountered an error or found drift (`genv status`). Exit codes are unchanged regardless of `--json`.
 
 ---
 
 ## How resolution works
 
-When gpm needs to install a package it:
+When genv needs to install a package it:
 
 1. Detects which package managers are available on the host.
 2. Honours the `prefer` hint if that manager is available.
@@ -296,8 +296,8 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 | 0 | Success |
 | 1 | Bad arguments or unknown command |
 | 2 | Filesystem or serialisation error |
-| 3 | `gpm.json` fails schema validation |
-| 4 | Semantic error — also returned by `gpm status` when drift or extra entries exist |
+| 3 | `genv.json` fails schema validation |
+| 4 | Semantic error — also returned by `genv status` when drift or extra entries exist |
 
 ---
 
@@ -307,13 +307,13 @@ Implementation milestones and detailed checklists are tracked in [ROADMAP.md](RO
 
 Current focus (v1.0.0):
 
-- [x] M1: Core CLI and `gpm.json` spec validation
+- [x] M1: Core CLI and `genv.json` spec validation
 - [x] M2: Resolver + adapter layer, declarative apply, adopt/disown, cache clean
-- [x] M3: `gpm scan`, lock file version pinning, `gpm status`
+- [x] M3: `genv scan`, lock file version pinning, `genv status`
 - [x] M4: `--json`, `--yes`, `--timeout`, `--debug`, signed releases
 - [x] M5: macOS and WSL2 validation and automated testing
 - [ ] M6: API stability, test coverage, performance benchmarks, security audit
-- [ ] M7: Shell completions, `gpm validate`, `gpm upgrade`, `gpm init`, improved errors
+- [ ] M7: Shell completions, `genv validate`, `genv upgrade`, `genv init`, improved errors
 
 ## Releasing
 

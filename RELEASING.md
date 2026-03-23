@@ -1,4 +1,4 @@
-# Releasing gpm
+# Releasing genv
 
 This repository publishes GitHub releases, a Homebrew formula, and an AUR package
 automatically when an annotated tag is pushed. GoReleaser handles all three.
@@ -13,7 +13,7 @@ automatically when an annotated tag is pushed. GoReleaser handles all three.
 | `v0.1.0` | First stable release — M1 and M2 complete on Linux |
 | `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
 | `v0.3.0` | M6 complete (API stability, test coverage, performance benchmarks, security audit) |
-| `v0.4.0` | M7 complete (shell completions, gpm validate/upgrade/init, improved errors) |
+| `v0.4.0` | M7 complete (shell completions, genv validate/upgrade/init, improved errors) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
@@ -39,7 +39,7 @@ In the repository settings → Actions → General, confirm:
 GoReleaser pushes the formula to a separate `homebrew-tap` repo.
 
 1. Create the repo **`ks1686/homebrew-tap`** on GitHub (public, empty is fine).
-2. In the **`ks1686/gpm`** repository settings → Secrets and variables → Actions,
+2. In the **`ks1686/genv`** repository settings → Secrets and variables → Actions,
    add a repository secret named **`HOMEBREW_TAP_GITHUB_TOKEN`**.
    - Generate a fine-grained PAT at GitHub Settings → Developer Settings → Personal access tokens → Fine-grained tokens.
    - Grant it **Contents: Read and write** on the `ks1686/homebrew-tap` repository only.
@@ -49,10 +49,10 @@ Users install after setup:
 
 ```bash
 brew tap ks1686/tap
-brew install gpm
+brew install genv
 ```
 
-### 3. AUR (`gpm-bin`)
+### 3. AUR (`genv-bin`)
 
 GoReleaser pushes a PKGBUILD to AUR via SSH. It updates an existing package — it does
 not create a new one. The first publish must be done manually.
@@ -62,41 +62,41 @@ not create a new one. The first publish must be done manually.
 **3b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
 
 ```bash
-ssh-keygen -t ed25519 -C "aur-gpm" -f ~/.ssh/aur_gpm
+ssh-keygen -t ed25519 -C "aur-genv" -f ~/.ssh/aur_genv
 # Leave passphrase empty — GoReleaser needs a passphrase-free key.
 ```
 
 Add the public key to your AUR account: https://aur.archlinux.org/account/ → SSH keys.
 
-**3c. Create the `gpm-bin` package on AUR** (one-time manual step):
+**3c. Create the `genv-bin` package on AUR** (one-time manual step):
 
 ```bash
 # Clone the (empty) AUR repo — this creates the package namespace
-git clone ssh://aur@aur.archlinux.org/gpm-bin.git /tmp/gpm-bin
-cd /tmp/gpm-bin
+git clone ssh://aur@aur.archlinux.org/genv-bin.git /tmp/genv-bin
+cd /tmp/genv-bin
 
 # Write an initial PKGBUILD pointing at the v0.1.0 release
 # (GoReleaser will update this on every subsequent tag push)
 cat > PKGBUILD << 'EOF'
 # Maintainer: ks1686 <ks1686@users.noreply.github.com>
-pkgname=gpm-bin
+pkgname=genv-bin
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
 arch=('x86_64' 'aarch64')
-url="https://github.com/ks1686/gpm"
+url="https://github.com/ks1686/genv"
 license=('MIT')
-provides=('gpm')
-conflicts=('gpm')
-source_x86_64=("https://github.com/ks1686/gpm/releases/download/v${pkgver}/gpm_${pkgver}_linux_amd64.tar.gz")
-source_aarch64=("https://github.com/ks1686/gpm/releases/download/v${pkgver}/gpm_${pkgver}_linux_arm64.tar.gz")
+provides=('genv')
+conflicts=('genv')
+source_x86_64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_amd64.tar.gz")
+source_aarch64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_arm64.tar.gz")
 # Fill in sha256sums after downloading the release artifacts:
-# sha256sum gpm_0.1.0_linux_amd64.tar.gz gpm_0.1.0_linux_arm64.tar.gz
+# sha256sum genv_0.1.0_linux_amd64.tar.gz genv_0.1.0_linux_arm64.tar.gz
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
 package() {
-    install -Dm755 "./gpm" "${pkgdir}/usr/bin/gpm"
+    install -Dm755 "./genv" "${pkgdir}/usr/bin/genv"
 }
 EOF
 
@@ -114,18 +114,18 @@ git push
 
 **3d. Add the AUR SSH private key as a repository secret:**
 
-In `ks1686/gpm` → Settings → Secrets and variables → Actions, add a secret named
-**`AUR_KEY`** containing the contents of `~/.ssh/aur_gpm` (the private key).
+In `ks1686/genv` → Settings → Secrets and variables → Actions, add a secret named
+**`AUR_KEY`** containing the contents of `~/.ssh/aur_genv` (the private key).
 
 ```bash
-cat ~/.ssh/aur_gpm
+cat ~/.ssh/aur_genv
 # Copy the entire output including -----BEGIN/END----- lines into the secret value
 ```
 
 Users install after setup:
 
 ```bash
-paru -S gpm-bin   # or: yay -S gpm-bin
+paru -S genv-bin   # or: yay -S genv-bin
 ```
 
 ---
@@ -148,7 +148,7 @@ paru -S gpm-bin   # or: yay -S gpm-bin
    ```bash
    git checkout main
    git pull --ff-only origin main
-   git tag -a v0.1.0 -m "gpm v0.1.0"
+   git tag -a v0.1.0 -m "genv v0.1.0"
    git push origin v0.1.0
    ```
 
@@ -159,27 +159,27 @@ paru -S gpm-bin   # or: yay -S gpm-bin
    - Generate `checksums.txt`
    - Publish a GitHub Release with all artifacts
    - Push the Homebrew formula to `ks1686/homebrew-tap`
-   - Push an updated PKGBUILD to AUR (`gpm-bin`)
+   - Push an updated PKGBUILD to AUR (`genv-bin`)
 
 6. **Verify** by downloading one artifact and running:
 
    ```bash
-   ./gpm version
-   # Expected: gpm v0.1.0
+   ./genv version
+   # Expected: genv v0.1.0
    ```
 
 7. **Verify Homebrew** (if you have brew):
 
    ```bash
-   brew update && brew upgrade gpm
-   gpm version
+   brew update && brew upgrade genv
+   genv version
    ```
 
 8. **Verify AUR** (on any Arch machine):
 
    ```bash
-   paru -Sy gpm-bin
-   gpm version
+   paru -Sy genv-bin
+   genv version
    ```
 
 ---
@@ -190,7 +190,7 @@ For each release, the notes should cover:
 
 - what milestone is complete
 - any known limitations or partially-validated surfaces (e.g., adapters not tested in CI)
-- any breaking changes to `gpm.json` schema or lock format
+- any breaking changes to `genv.json` schema or lock format
 
 GoReleaser auto-generates a changelog from `feat:` and `fix:` commits as the release
 body. Edit it on GitHub after publish, or use `release.notes` in `.goreleaser.yml`

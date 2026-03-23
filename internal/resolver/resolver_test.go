@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/adapter"
-	"github.com/ks1686/gpm/internal/gpmfile"
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 func TestPlan_PreferredManagerAvailable(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "neovim", Prefer: "brew"},
 		},
@@ -34,7 +34,7 @@ func TestPlan_PreferredManagerAvailable(t *testing.T) {
 }
 
 func TestPlan_PreferredManagerUnavailable_FallsBackToAvailable(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "neovim", Prefer: "brew"},
 		},
@@ -51,7 +51,7 @@ func TestPlan_PreferredManagerUnavailable_FallsBackToAvailable(t *testing.T) {
 }
 
 func TestPlan_ManagersMapPicksCorrectName(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
 				ID: "firefox",
@@ -77,7 +77,7 @@ func TestPlan_ManagersMapPicksCorrectName(t *testing.T) {
 
 func TestPlan_ManagersMap_FallbackOrder(t *testing.T) {
 	// Both brew and flatpak are in managers map; brew is first in fallbackOrder.
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
 				ID: "firefox",
@@ -96,7 +96,7 @@ func TestPlan_ManagersMap_FallbackOrder(t *testing.T) {
 }
 
 func TestPlan_Unresolved_NoManagersAvailable(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 		},
@@ -115,7 +115,7 @@ func TestPlan_Unresolved_NoManagersAvailable(t *testing.T) {
 }
 
 func TestPlan_FallsBackToIDWhenNoManagersMap(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"}, // no managers map, no prefer
 		},
@@ -131,7 +131,7 @@ func TestPlan_FallsBackToIDWhenNoManagersMap(t *testing.T) {
 }
 
 func TestPlan_PreferWithManagersMap_UsesMapName(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
 				ID:     "neovim",
@@ -154,7 +154,7 @@ func TestPlan_PreferWithManagersMap_UsesMapName(t *testing.T) {
 }
 
 func TestPrintPlan_NoCrash_AllUnresolved(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "neovim", Prefer: "brew"},
@@ -173,7 +173,7 @@ func TestPrintPlan_NoCrash_AllUnresolved(t *testing.T) {
 }
 
 func TestPrintPlan_ShowsInstallCommand(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 		},
@@ -188,7 +188,7 @@ func TestPrintPlan_ShowsInstallCommand(t *testing.T) {
 }
 
 func TestPrintPlan_MixedResolved(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "mystery-pkg"},
@@ -319,7 +319,7 @@ func TestExecute_FailedCommand(t *testing.T) {
 
 func TestPrintPlan_SinglePackage(t *testing.T) {
 	// Singular "package" (not "packages") in the header.
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{{ID: "git"}},
 	}
 	actions := Plan(f, map[string]bool{"brew": true})
@@ -336,7 +336,7 @@ func TestPrintPlan_SinglePackage(t *testing.T) {
 
 func TestPrintPlan_UnresolvedHint(t *testing.T) {
 	// When unresolved packages exist the output must mention the hint lines.
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{{ID: "mystery"}},
 	}
 	actions := Plan(f, map[string]bool{})
@@ -402,7 +402,7 @@ func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &schema.GpmFile{Packages: tc.pkgs}
+			f := &schema.GenvFile{Packages: tc.pkgs}
 			actions := Plan(f, tc.available)
 			var sb strings.Builder
 			resolved, unresolved := PrintPlan(actions, &sb)
@@ -419,7 +419,7 @@ func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
 // TestPlan_EmptyPackages verifies that Plan with no packages returns an empty
 // slice (not nil) and does not panic.
 func TestPlan_EmptyPackages(t *testing.T) {
-	f := &schema.GpmFile{Packages: []schema.Package{}}
+	f := &schema.GenvFile{Packages: []schema.Package{}}
 	actions := Plan(f, map[string]bool{"brew": true})
 	if len(actions) != 0 {
 		t.Errorf("expected 0 actions, got %d", len(actions))
@@ -429,7 +429,7 @@ func TestPlan_EmptyPackages(t *testing.T) {
 // TestPlan_MultiplePackagesMixed verifies a file with several packages where
 // some resolve and some don't.
 func TestPlan_MultiplePackagesMixed(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "neovim", Prefer: "brew"},
@@ -564,7 +564,7 @@ func TestExecute_MixedResolvedAndUnresolved(t *testing.T) {
 // preferred manager is unavailable but a valid entry exists in the managers map
 // for a different available manager, it is used.
 func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
 				ID:     "firefox",
@@ -597,7 +597,7 @@ func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
 // absent from the lock ends up in ToInstall.
 func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 	desired := []schema.Package{{ID: "git"}}
-	managed := []gpmfile.LockedPackage{} // empty lock
+	managed := []genvfile.LockedPackage{} // empty lock
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
 	if len(result.ToInstall) != 1 {
 		t.Fatalf("ToInstall: got %d, want 1", len(result.ToInstall))
@@ -614,7 +614,7 @@ func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 // but absent from the spec ends up in ToRemove.
 func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {
 	desired := []schema.Package{}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "htop", Manager: "brew", PkgName: "htop"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
@@ -630,7 +630,7 @@ func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {
 // lock with no version constraint stays Unchanged.
 func TestReconcile_Unchanged_NoVersion(t *testing.T) {
 	desired := []schema.Package{{ID: "git"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
@@ -646,7 +646,7 @@ func TestReconcile_Unchanged_NoVersion(t *testing.T) {
 // whose InstalledVersion satisfies the spec constraint stays Unchanged.
 func TestReconcile_VersionSatisfied_StaysUnchanged(t *testing.T) {
 	desired := []schema.Package{{ID: "vim", Version: "9.*"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "vim", Manager: "brew", PkgName: "vim", InstalledVersion: "9.1.0"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
@@ -662,7 +662,7 @@ func TestReconcile_VersionSatisfied_StaysUnchanged(t *testing.T) {
 // InstalledVersion does not satisfy the spec constraint is queued for reinstall.
 func TestReconcile_VersionDrift_MovesToInstall(t *testing.T) {
 	desired := []schema.Package{{ID: "neovim", Version: "0.10.*"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "neovim", Manager: "brew", PkgName: "neovim", InstalledVersion: "0.9.5"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
@@ -679,7 +679,7 @@ func TestReconcile_VersionDrift_MovesToInstall(t *testing.T) {
 // treated as drifted, even when the spec has a version constraint.
 func TestReconcile_NoInstalledVersion_AlwaysUnchanged(t *testing.T) {
 	desired := []schema.Package{{ID: "git", Version: "2.40.*"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"}, // InstalledVersion == ""
 	}
 	result := Reconcile(desired, managed, map[string]bool{"apt": true})
@@ -695,7 +695,7 @@ func TestReconcile_NoInstalledVersion_AlwaysUnchanged(t *testing.T) {
 // constraint is satisfied by an identical InstalledVersion.
 func TestReconcile_ExactVersionMatch_StaysUnchanged(t *testing.T) {
 	desired := []schema.Package{{ID: "ripgrep", Version: "14.1.0"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "14.1.0"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
@@ -708,7 +708,7 @@ func TestReconcile_ExactVersionMatch_StaysUnchanged(t *testing.T) {
 // constraint with a different installed version is treated as drift.
 func TestReconcile_ExactVersionMismatch_MovesToInstall(t *testing.T) {
 	desired := []schema.Package{{ID: "ripgrep", Version: "14.1.0"}}
-	managed := []gpmfile.LockedPackage{
+	managed := []genvfile.LockedPackage{
 		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "13.0.0"},
 	}
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})

@@ -1,5 +1,5 @@
 // Package version provides constraint-satisfaction logic for package versions.
-// gpm uses simple string-based version constraints:
+// genv uses simple string-based version constraints:
 //   - empty or "*": always satisfied
 //   - "x.y.*": prefix wildcard (installed must start with "x.y.")
 //   - "x.y.z": exact match

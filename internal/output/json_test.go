@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/output"
+	"github.com/ks1686/genv/internal/output"
 )
 
 func TestWrite_ProducesValidJSON(t *testing.T) {

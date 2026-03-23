@@ -1,4 +1,4 @@
-// Package schema defines the gpm.json v1 data model and validation logic.
+// Package schema defines the genv.json v1 data model and validation logic.
 package schema
 
 // SchemaVersion is the only accepted value for the schemaVersion field.
@@ -18,8 +18,8 @@ var KnownManagers = map[string]bool{
 	"linuxbrew": true,
 }
 
-// GpmFile is the top-level structure of a gpm.json file.
-type GpmFile struct {
+// GenvFile is the top-level structure of a genv.json file.
+type GenvFile struct {
 	SchemaVersion string    `json:"schemaVersion"`
 	Packages      []Package `json:"packages"`
 }

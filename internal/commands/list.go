@@ -7,12 +7,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // List writes a tabular summary of f's packages to w.
 // Passing a nil f (file not found) or an empty package list prints a friendly message.
-func List(f *schema.GpmFile, w io.Writer) {
+func List(f *schema.GenvFile, w io.Writer) {
 	if f == nil || len(f.Packages) == 0 {
 		fmt.Fprintln(w, "no packages tracked")
 		return

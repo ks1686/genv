@@ -56,7 +56,7 @@ func (Brew) ListInstalled() ([]string, error) {
 func (Brew) QueryVersion(pkgName string) (string, error) { return brewQueryVersion(pkgName) }
 
 // Linuxbrew is the adapter for Homebrew on Linux (distinct manager ID so
-// gpm.json can target it explicitly, but uses the same brew binary).
+// genv.json can target it explicitly, but uses the same brew binary).
 type Linuxbrew struct{ brewBase }
 
 func (Linuxbrew) Name() string { return "linuxbrew" }

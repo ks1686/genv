@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/ks1686/gpm/schema/v1/gpm.json",
-  "title": "gpm.json",
-  "description": "gpm package manifest — schema version 1",
+  "$id": "https://github.com/ks1686/genv/schema/v1/genv.json",
+  "title": "genv.json",
+  "description": "genv package manifest — schema version 1",
   "type": "object",
   "required": ["schemaVersion", "packages"],
   "additionalProperties": false,
@@ -27,7 +27,7 @@
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Canonical package identifier used by gpm."
+          "description": "Canonical package identifier used by genv."
         },
         "version": {
           "type": "string",

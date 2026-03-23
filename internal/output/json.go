@@ -1,5 +1,5 @@
 // Package output provides stable JSON envelope types for machine-readable
-// gpm output. The Envelope type is the top-level wrapper emitted to stdout
+// genv output. The Envelope type is the top-level wrapper emitted to stdout
 // when a command is run with --json. Inner Data types are stable across
 // patch releases; new optional fields may be added in minor releases.
 package output
@@ -24,7 +24,7 @@ type PlanPackage struct {
 	Cmd     string `json:"cmd,omitempty"`
 }
 
-// PlanResult is the Data payload for `gpm apply [--dry-run] --json`.
+// PlanResult is the Data payload for `genv apply [--dry-run] --json`.
 type PlanResult struct {
 	ToInstall  []PlanPackage `json:"toInstall"`
 	ToRemove   []PlanPackage `json:"toRemove"`
@@ -41,18 +41,18 @@ type StatusEntry struct {
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
-// StatusResult is the Data payload for `gpm status --json`.
+// StatusResult is the Data payload for `genv status --json`.
 type StatusResult struct {
 	Entries []StatusEntry `json:"entries"`
 }
 
-// ScanResult is the Data payload for `gpm scan --json`.
+// ScanResult is the Data payload for `genv scan --json`.
 type ScanResult struct {
 	Added   int `json:"added"`
 	Skipped int `json:"skipped"`
 }
 
-// ApplyResult is the Data payload for `gpm apply --json` (non-dry-run).
+// ApplyResult is the Data payload for `genv apply --json` (non-dry-run).
 type ApplyResult struct {
 	Installed   []string `json:"installed"`
 	Uninstalled []string `json:"uninstalled"`

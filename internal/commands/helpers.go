@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // knownManagerList is computed once at init from the constant KnownManagers map.

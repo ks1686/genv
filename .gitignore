@@ -3,8 +3,8 @@
 # =============================================================================
 
 # Compiled binaries
-/gpm
-/gpm.exe
+/genv
+/genv.exe
 /dist/
 
 # Test binaries (go test -c)

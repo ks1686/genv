@@ -10,7 +10,7 @@ on:
 #
 # Each job runs two test suites:
 #   1. Adapter-layer tests  (internal/adapter/) — verify Available()/Query()/PlanInstall shape.
-#   2. End-to-end tests     (e2e/)              — build the real gpm binary and exercise
+#   2. End-to-end tests     (e2e/)              — build the real genv binary and exercise
 #                                                  every M1/M2 command with real installs.
 #
 # Skipped adapters and reasons:
@@ -134,18 +134,18 @@ jobs:
               "
 
               echo "==> Copying workspace and fixing ownership"
-              cp -r /host-workspace /home/builder/gpm
-              chown -R builder:builder /home/builder/gpm
+              cp -r /host-workspace /home/builder/genv
+              chown -R builder:builder /home/builder/genv
 
               echo "==> Running adapter integration tests as builder"
               su -s /bin/bash builder -c "
-                cd /home/builder/gpm
+                cd /home/builder/genv
                 go test -tags integration -race -v -run TestParu ./internal/adapter/
               "
 
               echo "==> Running E2E tests as builder"
               su -s /bin/bash builder -c "
-                cd /home/builder/gpm
+                cd /home/builder/genv
                 go test -tags integration -race -v -run TestE2EParu ./e2e/
               "
             '
@@ -191,18 +191,18 @@ jobs:
               "
 
               echo "==> Copying workspace and fixing ownership"
-              cp -r /host-workspace /home/builder/gpm
-              chown -R builder:builder /home/builder/gpm
+              cp -r /host-workspace /home/builder/genv
+              chown -R builder:builder /home/builder/genv
 
               echo "==> Running adapter integration tests as builder"
               su -s /bin/bash builder -c "
-                cd /home/builder/gpm
+                cd /home/builder/genv
                 go test -tags integration -race -v -run TestYay ./internal/adapter/
               "
 
               echo "==> Running E2E tests as builder"
               su -s /bin/bash builder -c "
-                cd /home/builder/gpm
+                cd /home/builder/genv
                 go test -tags integration -race -v -run TestE2EYay ./e2e/
               "
             '

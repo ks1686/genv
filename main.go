@@ -11,13 +11,13 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/ks1686/gpm/internal/adapter"
-	"github.com/ks1686/gpm/internal/commands"
-	"github.com/ks1686/gpm/internal/gpmfile"
-	"github.com/ks1686/gpm/internal/logging"
-	"github.com/ks1686/gpm/internal/output"
-	"github.com/ks1686/gpm/internal/resolver"
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/commands"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/logging"
+	"github.com/ks1686/genv/internal/output"
+	"github.com/ks1686/genv/internal/resolver"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // Structured exit codes.
@@ -25,7 +25,7 @@ const (
 	exitOK         = 0 // success
 	exitUsage      = 1 // bad arguments or unknown command
 	exitIO         = 2 // filesystem or serialisation error
-	exitValidation = 3 // gpm.json fails schema validation
+	exitValidation = 3 // genv.json fails schema validation
 	exitLogic      = 4 // semantic error (duplicate id, not found, etc.)
 )
 
@@ -73,24 +73,24 @@ func run(args []string) int {
 		printUsage()
 		return exitOK
 	default:
-		fmt.Fprintf(os.Stderr, "gpm: unknown command %q\n\nRun 'gpm help' for usage.\n", args[0])
+		fmt.Fprintf(os.Stderr, "genv: unknown command %q\n\nRun 'genv help' for usage.\n", args[0])
 		return exitUsage
 	}
 }
 
-// lockPathFrom derives the lock file path from the gpm.json path.
-// "gpm.json" → "gpm.lock.json", "custom.json" → "custom.lock.json".
+// lockPathFrom derives the lock file path from the genv.json path.
+// "genv.json" → "genv.lock.json", "custom.json" → "custom.lock.json".
 func lockPathFrom(jsonPath string) string {
 	return strings.TrimSuffix(jsonPath, ".json") + ".lock.json"
 }
 
-// defaultSpecPath returns the XDG-aware default path for gpm.json.
-// Falls back to "gpm.json" in the current directory if the config dir cannot
+// defaultSpecPath returns the XDG-aware default path for genv.json.
+// Falls back to "genv.json" in the current directory if the config dir cannot
 // be determined (e.g. no home directory set).
 func defaultSpecPath() string {
-	p, err := gpmfile.DefaultSpecPath()
+	p, err := genvfile.DefaultSpecPath()
 	if err != nil {
-		return "gpm.json"
+		return "genv.json"
 	}
 	return p
 }
@@ -104,18 +104,18 @@ func confirm(prompt string) bool {
 	return answer == "y" || answer == "Y"
 }
 
-// addCmd implements `gpm add <id> [flags]`.
-// Adds the package to gpm.json and immediately installs it, then updates the lock.
+// addCmd implements `genv add <id> [flags]`.
+// Adds the package to genv.json and immediately installs it, then updates the lock.
 func addCmd(args []string) int {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm add <id> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv add <id> [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
@@ -125,37 +125,37 @@ func addCmd(args []string) int {
 		return exitUsage
 	}
 	if id == "" {
-		fmt.Fprintln(os.Stderr, "gpm add: missing package id")
+		fmt.Fprintln(os.Stderr, "genv add: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm add: --manager: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv add: --manager: %v\n", err)
 		return exitUsage
 	}
 
-	// 1. Update gpm.json.
-	f, isNew, err := gpmfile.ReadOrNew(*file)
+	// 1. Update genv.json.
+	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
 			return exitLogic
 		}
 		return exitUsage
 	}
 
-	if err := gpmfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+	if err := genvfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 	if isNew {
@@ -167,7 +167,7 @@ func addCmd(args []string) int {
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
-		fmt.Fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'gpm apply' after installing a compatible package manager)\n", id)
+		fmt.Fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'genv apply' after installing a compatible package manager)\n", id)
 		return exitOK
 	}
 
@@ -179,89 +179,89 @@ func addCmd(args []string) int {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		// Install failure is non-fatal: the spec was already updated.
-		// The user can run 'gpm apply' to retry.
-		fmt.Fprintf(os.Stderr, "gpm: install failed: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Package was added to spec. Run 'gpm apply' to retry.")
+		// The user can run 'genv apply' to retry.
+		fmt.Fprintf(os.Stderr, "genv: install failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Package was added to spec. Run 'genv apply' to retry.")
 		return exitOK
 	}
 
 	// 3. Update lock file.
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
-	lf.Packages = append(lf.Packages, gpmfile.LockedPackage{
+	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
 	})
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
 	return exitOK
 }
 
-// removeCmd implements `gpm remove <id>`.
-// Removes the package from gpm.json and immediately uninstalls it, then updates the lock.
+// removeCmd implements `genv remove <id>`.
+// Removes the package from genv.json and immediately uninstalls it, then updates the lock.
 func removeCmd(args []string) int {
 	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm remove <id> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv remove <id> [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "gpm remove: missing package id")
+		fmt.Fprintln(os.Stderr, "genv remove: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 	id := fs.Arg(0)
 
-	// 1. Update gpm.json.
-	f, err := gpmfile.Read(*file)
+	// 1. Update genv.json.
+	f, err := genvfile.Read(*file)
 	if err != nil {
-		if errors.Is(err, gpmfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "gpm: %s not found\n", *file)
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "genv: %s not found\n", *file)
 			return exitLogic
 		}
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	if err := commands.Remove(f, id); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitLogic
 	}
 
-	if err := gpmfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+	if err := genvfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
 	// 2. Find the package in the lock file to know which manager installed it.
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
-	var locked *gpmfile.LockedPackage
-	remaining := make([]gpmfile.LockedPackage, 0, len(lf.Packages))
+	var locked *genvfile.LockedPackage
+	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
 		if lf.Packages[i].ID == id {
 			locked = &lf.Packages[i]
@@ -271,15 +271,15 @@ func removeCmd(args []string) int {
 	}
 
 	if locked == nil {
-		// Never installed by gpm — nothing to uninstall on the system.
-		fmt.Fprintf(os.Stdout, "removed %s from spec (was not installed by gpm)\n", id)
+		// Never installed by genv — nothing to uninstall on the system.
+		fmt.Fprintf(os.Stdout, "removed %s from spec (was not installed by genv)\n", id)
 		return exitOK
 	}
 
 	// 3. Uninstall from the system using the manager recorded in the lock.
 	mgr := adapter.ByName(locked.Manager)
 	if mgr == nil {
-		fmt.Fprintf(os.Stderr, "gpm: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
+		fmt.Fprintf(os.Stderr, "genv: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
 		return exitLogic
 	}
 
@@ -292,7 +292,7 @@ func removeCmd(args []string) int {
 	cmd.Stderr = os.Stderr
 	uninstallErr := cmd.Run()
 	if uninstallErr != nil {
-		fmt.Fprintf(os.Stderr, "gpm: uninstall failed: %v\n", uninstallErr)
+		fmt.Fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
 		// Still update the lock — the package is removed from the spec.
 	}
 
@@ -304,14 +304,14 @@ func removeCmd(args []string) int {
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 		if err := c.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "gpm: cache clean warning: %v\n", err)
+			fmt.Fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
 		}
 	}
 
 	// 4. Update lock file (remove the entry regardless of uninstall success).
 	lf.Packages = remaining
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
@@ -321,19 +321,19 @@ func removeCmd(args []string) int {
 	return exitOK
 }
 
-// adoptCmd implements `gpm adopt <id> [flags]`.
+// adoptCmd implements `genv adopt <id> [flags]`.
 // Verifies the package is already installed on the system and then adds it to
-// gpm.json and the lock file without running an install command.
+// genv.json and the lock file without running an install command.
 func adoptCmd(args []string) int {
 	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm adopt <id> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv adopt <id> [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
@@ -343,14 +343,14 @@ func adoptCmd(args []string) int {
 		return exitUsage
 	}
 	if id == "" {
-		fmt.Fprintln(os.Stderr, "gpm adopt: missing package id")
+		fmt.Fprintln(os.Stderr, "genv adopt: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm adopt: --manager: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv adopt: --manager: %v\n", err)
 		return exitUsage
 	}
 
@@ -359,7 +359,7 @@ func adoptCmd(args []string) int {
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
-		fmt.Fprintf(os.Stderr, "gpm adopt: no available manager for %q — install a compatible package manager first\n", id)
+		fmt.Fprintf(os.Stderr, "genv adopt: no available manager for %q — install a compatible package manager first\n", id)
 		return exitLogic
 	}
 
@@ -367,34 +367,34 @@ func adoptCmd(args []string) int {
 	mgr := adapter.ByName(action.Manager)
 	installed, err := mgr.Query(action.PkgName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm adopt: querying %s: %v\n", action.Manager, err)
+		fmt.Fprintf(os.Stderr, "genv adopt: querying %s: %v\n", action.Manager, err)
 		return exitLogic
 	}
 	if !installed {
-		fmt.Fprintf(os.Stderr, "gpm adopt: %q is not installed via %s — use 'gpm add %s' to install it\n", id, action.Manager, id)
+		fmt.Fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
 		return exitLogic
 	}
 
-	// 3. Update gpm.json.
-	f, isNew, err := gpmfile.ReadOrNew(*file)
+	// 3. Update genv.json.
+	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
 			return exitLogic
 		}
 		return exitUsage
 	}
 
-	if err := gpmfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+	if err := genvfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 	if isNew {
@@ -403,18 +403,18 @@ func adoptCmd(args []string) int {
 
 	// 4. Update lock file.
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
-	lf.Packages = append(lf.Packages, gpmfile.LockedPackage{
+	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
 	})
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
@@ -422,64 +422,64 @@ func adoptCmd(args []string) int {
 	return exitOK
 }
 
-// disownCmd implements `gpm disown <id>`.
-// Removes the package from gpm.json and the lock file without uninstalling it,
+// disownCmd implements `genv disown <id>`.
+// Removes the package from genv.json and the lock file without uninstalling it,
 // leaving it managed by the underlying package manager directly.
 func disownCmd(args []string) int {
 	fs := flag.NewFlagSet("disown", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm disown <id> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv disown <id> [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "gpm disown: missing package id")
+		fmt.Fprintln(os.Stderr, "genv disown: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 	id := fs.Arg(0)
 
-	// 1. Update gpm.json.
-	f, err := gpmfile.Read(*file)
+	// 1. Update genv.json.
+	f, err := genvfile.Read(*file)
 	if err != nil {
-		if errors.Is(err, gpmfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "gpm: %s not found\n", *file)
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "genv: %s not found\n", *file)
 			return exitLogic
 		}
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	if err := commands.Remove(f, id); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitLogic
 	}
 
-	if err := gpmfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+	if err := genvfile.Write(*file, f); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
 	// 2. Remove from lock file without uninstalling.
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
 	wasTracked := false
-	remaining := make([]gpmfile.LockedPackage, 0, len(lf.Packages))
+	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
 		if lf.Packages[i].ID == id {
 			wasTracked = true
@@ -488,8 +488,8 @@ func disownCmd(args []string) int {
 		}
 	}
 	lf.Packages = remaining
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
@@ -501,31 +501,31 @@ func disownCmd(args []string) int {
 	return exitOK
 }
 
-// listCmd implements `gpm list`.
-// Lists all packages currently tracked in the lock file (i.e. installed by gpm).
+// listCmd implements `genv list`.
+// Lists all packages currently tracked in the lock file (i.e. installed by genv).
 func listCmd(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm list [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv list [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	lf, err := gpmfile.ReadLock(lockPathFrom(*file))
+	lf, err := genvfile.ReadLock(lockPathFrom(*file))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
 	if len(lf.Packages) == 0 {
-		fmt.Fprintln(os.Stdout, "no packages installed by gpm.")
+		fmt.Fprintln(os.Stdout, "no packages installed by genv.")
 		return exitOK
 	}
 
@@ -538,19 +538,19 @@ func listCmd(args []string) int {
 	return exitOK
 }
 
-// applyCmd implements `gpm apply [--dry-run] [--strict] [--yes] [--json] [--timeout] [--debug]`.
-// Reconciles the system against gpm.json by installing added packages and
+// applyCmd implements `genv apply [--dry-run] [--strict] [--yes] [--json] [--timeout] [--debug]`.
+// Reconciles the system against genv.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
 func applyCmd(args []string) int {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm apply [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv apply [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
 	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
@@ -572,23 +572,23 @@ func applyCmd(args []string) int {
 		defer cancel()
 	}
 
-	f, err := gpmfile.Read(*file)
+	f, err := genvfile.Read(*file)
 	if err != nil {
-		if errors.Is(err, gpmfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "gpm: %s not found — run 'gpm add' to create it\n", *file)
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
 			return exitIO
 		}
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -632,7 +632,7 @@ func applyCmd(args []string) int {
 	}
 
 	if unresolvedCount > 0 && *strict {
-		fmt.Fprintf(os.Stderr, "gpm apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
+		fmt.Fprintf(os.Stderr, "genv apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
 		return exitLogic
 	}
 
@@ -650,7 +650,7 @@ func applyCmd(args []string) int {
 
 	if len(execResult.Errors) > 0 {
 		for _, e := range execResult.Errors {
-			fmt.Fprintf(os.Stderr, "gpm apply: %v\n", e)
+			fmt.Fprintf(os.Stderr, "genv apply: %v\n", e)
 		}
 		return exitLogic
 	}
@@ -660,18 +660,18 @@ func applyCmd(args []string) int {
 
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *gpmfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution) {
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution) {
 	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
 	for _, id := range execResult.Uninstalled {
 		uninstalledSet[id] = true
 	}
-	newPkgs := make([]gpmfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed))
+	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed))
 	newPkgs = append(newPkgs, result.Unchanged...)
 	newPkgs = append(newPkgs, execResult.Installed...)
 	for _, a := range result.ToRemove {
 		if !uninstalledSet[a.Pkg.ID] {
 			// Removal failed — keep in lock since it's still installed.
-			newPkgs = append(newPkgs, gpmfile.LockedPackage{
+			newPkgs = append(newPkgs, genvfile.LockedPackage{
 				ID:      a.Pkg.ID,
 				Manager: a.Manager,
 				PkgName: a.PkgName,
@@ -679,8 +679,8 @@ func writeLockAfterApply(lockPath string, lf *gpmfile.LockFile, result resolver.
 		}
 	}
 	lf.Packages = newPkgs
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 	}
 }
 
@@ -723,7 +723,7 @@ func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 // writeJSON serialises env to w and returns an exit code.
 func writeJSON(w *os.File, env output.Envelope) int {
 	if err := output.Write(w, env); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: writing JSON: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: writing JSON: %v\n", err)
 		return exitIO
 	}
 	if !env.OK {
@@ -744,23 +744,23 @@ func errStrings(errs []error) []string {
 	return s
 }
 
-// scanCmd implements `gpm scan`.
+// scanCmd implements `genv scan`.
 // Discovers all packages currently installed via available package managers and
-// bulk-adopts them into gpm.json and the lock file. Packages already tracked
+// bulk-adopts them into genv.json and the lock file. Packages already tracked
 // are skipped. Duplicate names discovered across multiple managers are
 // deduplicated — the first adapter in registry order wins.
 func scanCmd(args []string) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm scan [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv scan [flags]")
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Discover all installed packages and adopt them into gpm.json.")
+		fmt.Fprintln(os.Stderr, "Discover all installed packages and adopt them into genv.json.")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
@@ -784,19 +784,19 @@ func scanCmd(args []string) int {
 		return exitOK
 	}
 
-	f, isNew, err := gpmfile.ReadOrNew(*file)
+	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
 	lockPath := lockPathFrom(*file)
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -817,7 +817,7 @@ func scanCmd(args []string) int {
 		}
 		pkgs, err := a.ListInstalled()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "gpm scan: %s: listing packages: %v\n", a.Name(), err)
+			fmt.Fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
 			continue
 		}
 		for _, pkgName := range pkgs {
@@ -840,7 +840,7 @@ func scanCmd(args []string) int {
 			trackedInSpec[pkgName] = true
 
 			// Record in lock with best-effort version capture.
-			lp := gpmfile.LockedPackage{
+			lp := genvfile.LockedPackage{
 				ID:      pkgName,
 				Manager: a.Name(),
 				PkgName: pkgName,
@@ -854,12 +854,12 @@ func scanCmd(args []string) int {
 	}
 
 	if added > 0 {
-		if err := gpmfile.Write(*file, f); err != nil {
-			fmt.Fprintf(os.Stderr, "gpm: writing spec: %v\n", err)
+		if err := genvfile.Write(*file, f); err != nil {
+			fmt.Fprintf(os.Stderr, "genv: writing spec: %v\n", err)
 			return exitIO
 		}
-		if err := gpmfile.WriteLock(lockPath, lf); err != nil {
-			fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+		if err := genvfile.WriteLock(lockPath, lf); err != nil {
+			fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 			return exitIO
 		}
 	}
@@ -883,25 +883,25 @@ func scanCmd(args []string) int {
 	return exitOK
 }
 
-// statusCmd implements `gpm status [--json] [--debug]`.
-// Computes a three-way diff between gpm.json, gpm.lock.json, and recorded
+// statusCmd implements `genv status [--json] [--debug]`.
+// Computes a three-way diff between genv.json, genv.lock.json, and recorded
 // version data to surface drift, missing installs, and orphaned lock entries.
 // Exits with exitLogic when any drift or extra packages are found, so it can
 // be used as a CI gate.
 func statusCmd(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm status [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv status [flags]")
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Show the diff between gpm.json, the lock file, and recorded versions.")
+		fmt.Fprintln(os.Stderr, "Show the diff between genv.json, the lock file, and recorded versions.")
 		fmt.Fprintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
-		fmt.Fprintln(os.Stderr, "Run 'gpm apply' to reconcile any differences shown.")
+		fmt.Fprintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
@@ -912,22 +912,22 @@ func statusCmd(args []string) int {
 		logging.Init(true)
 	}
 
-	f, err := gpmfile.Read(*file)
+	f, err := genvfile.Read(*file)
 	if err != nil {
-		if errors.Is(err, gpmfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "gpm: %s not found — run 'gpm add' to create it\n", *file)
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
 			return exitIO
 		}
-		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
-		if errors.Is(err, gpmfile.ErrInvalidFile) {
+		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
 		return exitIO
 	}
 
-	lf, err := gpmfile.ReadLock(lockPathFrom(*file))
+	lf, err := genvfile.ReadLock(lockPathFrom(*file))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -1006,10 +1006,10 @@ func statusCmd(args []string) int {
 			fmt.Fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
 				e.ID, mgr, e.SpecVersion, e.InstalledVersion)
 		case commands.StatusMissing:
-			note := "(in spec, not in lock — run 'gpm apply')"
+			note := "(in spec, not in lock — run 'genv apply')"
 			fmt.Fprintf(tw, "  missing\t%s\t%s\t%s\n", e.ID, mgr, note)
 		case commands.StatusExtra:
-			note := "(in lock, not in spec — run 'gpm apply' or 'gpm disown')"
+			note := "(in lock, not in spec — run 'genv apply' or 'genv disown')"
 			fmt.Fprintf(tw, "  extra\t%s\t%s\t%s\n", e.ID, mgr, note)
 		}
 	}
@@ -1021,12 +1021,12 @@ func statusCmd(args []string) int {
 	return exitOK
 }
 
-// cleanCmd implements `gpm clean`.
+// cleanCmd implements `genv clean`.
 // Runs each available package manager's cache-clean commands.
 func cleanCmd(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: gpm clean [flags]")
+		fmt.Fprintln(os.Stderr, "usage: genv clean [flags]")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -1062,7 +1062,7 @@ func cleanCmd(args []string) int {
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
 			if err := c.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "gpm clean: %s: %v\n", mgr.Name(), err)
+				fmt.Fprintf(os.Stderr, "genv clean: %s: %v\n", mgr.Name(), err)
 				exitCode = exitLogic
 			}
 		}
@@ -1070,11 +1070,11 @@ func cleanCmd(args []string) int {
 	return exitCode
 }
 
-// editCmd implements `gpm edit`.
-// Opens gpm.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
+// editCmd implements `genv edit`.
+// Opens genv.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
 	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
-	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -1092,7 +1092,7 @@ func editCmd(args []string) int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "gpm edit: %v\n", err)
+		fmt.Fprintf(os.Stderr, "genv edit: %v\n", err)
 		return exitLogic
 	}
 	return exitOK
@@ -1145,27 +1145,27 @@ func parseManagerFlag(s string) (map[string]string, error) {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `gpm — global package manager
+	fmt.Fprint(os.Stderr, `genv — global package manager
 
 Usage:
-  gpm <command> [flags]
+  genv <command> [flags]
 
 Commands:
   add <id>    Add a package to the spec and install it now
   remove <id> Remove a package from the spec and uninstall it now  (alias: rm)
-  adopt <id>  Track an already-installed package in gpm.json without reinstalling
-  disown <id> Stop tracking a package in gpm.json without uninstalling it
-  list        List all packages installed by gpm                   (alias: ls)
-  apply       Reconcile system state with gpm.json (install added, remove deleted)
-  scan        Discover all installed packages and bulk-adopt them into gpm.json
-  status      Show diff between gpm.json, the lock file, and recorded versions
+  adopt <id>  Track an already-installed package in genv.json without reinstalling
+  disown <id> Stop tracking a package in genv.json without uninstalling it
+  list        List all packages installed by genv                   (alias: ls)
+  apply       Reconcile system state with genv.json (install added, remove deleted)
+  scan        Discover all installed packages and bulk-adopt them into genv.json
+  status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
-  edit        Open gpm.json in $EDITOR
-  version     Show gpm build version information
+  edit        Open genv.json in $EDITOR
+  version     Show genv build version information
   help        Show this help text
 
 Flags common to all commands:
-  --file <path>   Path to gpm.json (default: $XDG_CONFIG_HOME/gpm/gpm.json or ~/.config/gpm/gpm.json, falling back to ./gpm.json)
+  --file <path>   Path to genv.json (default: $XDG_CONFIG_HOME/genv/genv.json or ~/.config/genv/genv.json, falling back to ./genv.json)
 
 Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
@@ -1196,15 +1196,15 @@ Exit codes:
   0  success (status: all ok or missing only)
   1  bad arguments or unknown command
   2  filesystem or serialisation error
-  3  gpm.json fails schema validation
-  4  semantic error — also returned by 'gpm status' when drift or extra entries exist
+  3  genv.json fails schema validation
+  4  semantic error — also returned by 'genv status' when drift or extra entries exist
 
 `)
 	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
 }
 
 func printVersion() {
-	fmt.Fprintf(os.Stdout, "gpm %s\n", version)
+	fmt.Fprintf(os.Stdout, "genv %s\n", version)
 	fmt.Fprintf(os.Stdout, "commit: %s\n", commit)
 	fmt.Fprintf(os.Stdout, "built:  %s\n", date)
 }
