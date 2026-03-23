@@ -111,9 +111,9 @@ func TestStatus_Empty(t *testing.T) {
 func TestStatus_Mixed(t *testing.T) {
 	f := &schema.GpmFile{
 		Packages: []schema.Package{
-			{ID: "git"},                    // in lock → ok
-			{ID: "curl"},                  // not in lock → missing
-			{ID: "vim", Version: "9.*"},   // in lock, version drifts → drift
+			{ID: "git"},                 // in lock → ok
+			{ID: "curl"},                // not in lock → missing
+			{ID: "vim", Version: "9.*"}, // in lock, version drifts → drift
 		},
 	}
 	lf := &gpmfile.LockFile{
