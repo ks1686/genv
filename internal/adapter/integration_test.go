@@ -99,9 +99,12 @@ func runAdapterSuite(t *testing.T, s adapterSuite) {
 		if err != nil {
 			t.Fatalf("ListInstalled(): unexpected error: %v", err)
 		}
-		// A stock system always has at least one package managed by its package manager.
-		if len(pkgs) == 0 {
-			t.Errorf("ListInstalled(): expected at least one package on a stock system")
+		// Only assert non-empty when knownInstalled is set: that means the
+		// adapter's manager always has at least one package on a stock system
+		// (e.g. apt/pacman/dnf always have bash). Application-layer managers
+		// like flatpak and brew may legitimately have zero items in CI.
+		if s.knownInstalled != "" && len(pkgs) == 0 {
+			t.Errorf("ListInstalled(): expected at least one package on a stock %s system", s.a.Name())
 		}
 	})
 
