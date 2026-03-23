@@ -3,15 +3,19 @@
 package resolver
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/ks1686/gpm/internal/adapter"
 	"github.com/ks1686/gpm/internal/gpmfile"
 	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/gpm/internal/version"
 )
 
 // Detect returns the set of package manager names available on the current host
@@ -133,19 +137,24 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 // output to stdout/stderr. stdin is forwarded to child processes so that
 // interactive password prompts (e.g. sudo) work correctly.
 // Unresolved packages are silently skipped.
+// ctx controls the deadline for every subprocess; use context.Background() for no timeout.
 // Returns one error per failed install; a non-empty slice means partial failure.
-func Execute(actions []Action, stdin io.Reader, stdout, stderr io.Writer) []error {
+func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, stderr io.Writer) []error {
 	var errs []error
 	for _, a := range actions {
 		if !a.Resolved() {
 			continue
 		}
 		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
-		cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
+		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
+		start := time.Now()
+		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)
 		cmd.Stdin = stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		slog.Debug("done", "cmd", a.Cmd[0], "duration", time.Since(start), "err", err)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("package %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		}
 	}
@@ -153,6 +162,13 @@ func Execute(actions []Action, stdin io.Reader, stdout, stderr io.Writer) []erro
 }
 
 // ---- Reconcile (gpm apply) --------------------------------------------------
+
+// versionDrifted reports whether lp's recorded InstalledVersion fails the
+// version constraint in pkg. Returns false when InstalledVersion is empty
+// (old lock entries without version data are never treated as drifted).
+func versionDrifted(pkg schema.Package, lp gpmfile.LockedPackage) bool {
+	return lp.InstalledVersion != "" && !version.Satisfies(pkg.Version, lp.InstalledVersion)
+}
 
 // ReconcileResult holds the delta between the desired state (gpm.json) and the
 // previously applied state (gpm.lock.json). ToInstall are packages added to the
@@ -176,13 +192,23 @@ func Reconcile(desired []schema.Package, managed []gpmfile.LockedPackage, availa
 		managedByID[lp.ID] = lp
 	}
 	desiredByID := make(map[string]bool, len(desired))
+	specByID := make(map[string]schema.Package, len(desired))
 	for _, pkg := range desired {
 		desiredByID[pkg.ID] = true
+		specByID[pkg.ID] = pkg
 	}
 
 	var toInstall []Action
 	for _, pkg := range desired {
-		if _, alreadyManaged := managedByID[pkg.ID]; !alreadyManaged {
+		lp, alreadyManaged := managedByID[pkg.ID]
+		if !alreadyManaged {
+			toInstall = append(toInstall, resolve(pkg, available))
+			continue
+		}
+		// Package is already in the lock. Check version constraint: if the lock
+		// recorded an InstalledVersion and it no longer satisfies the spec
+		// constraint, queue a reinstall.
+		if versionDrifted(pkg, lp) {
 			toInstall = append(toInstall, resolve(pkg, available))
 		}
 	}
@@ -190,20 +216,24 @@ func Reconcile(desired []schema.Package, managed []gpmfile.LockedPackage, availa
 	var toRemove []Action
 	var unchanged []gpmfile.LockedPackage
 	for _, lp := range managed {
-		if desiredByID[lp.ID] {
-			unchanged = append(unchanged, lp)
+		if !desiredByID[lp.ID] {
+			a := adapter.ByName(lp.Manager)
+			if a == nil {
+				continue // adapter no longer registered; skip silently
+			}
+			toRemove = append(toRemove, Action{
+				Pkg:          schema.Package{ID: lp.ID},
+				Manager:      lp.Manager,
+				PkgName:      lp.PkgName,
+				UninstallCmd: a.PlanUninstall(lp.PkgName),
+			})
 			continue
 		}
-		a := adapter.ByName(lp.Manager)
-		if a == nil {
-			continue // adapter no longer registered; skip silently
+		// In desired — skip packages queued for reinstall; they must not appear in Unchanged.
+		if versionDrifted(specByID[lp.ID], lp) {
+			continue
 		}
-		toRemove = append(toRemove, Action{
-			Pkg:          schema.Package{ID: lp.ID},
-			Manager:      lp.Manager,
-			PkgName:      lp.PkgName,
-			UninstallCmd: a.PlanUninstall(lp.PkgName),
-		})
+		unchanged = append(unchanged, lp)
 	}
 
 	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged}
@@ -280,19 +310,24 @@ type ApplyExecution struct {
 // ExecuteApply runs all removals then all installs from a ReconcileResult.
 // Removals are run first (mirrors how package managers handle upgrades/downgrades).
 // Cache-clean commands run once per manager that had at least one successful removal.
+// ctx controls the deadline for every subprocess; use context.Background() for no timeout.
 // Returns an ApplyExecution so the caller can write an updated lock file that
 // reflects only what actually succeeded.
-func ExecuteApply(result ReconcileResult, stdin io.Reader, stdout, stderr io.Writer) ApplyExecution {
+func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, stdout, stderr io.Writer) ApplyExecution {
 	var out ApplyExecution
 	cleanManagers := make(map[string]bool)
 
 	for _, a := range result.ToRemove {
 		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.UninstallCmd, " "))
-		cmd := exec.Command(a.UninstallCmd[0], a.UninstallCmd[1:]...)
+		slog.Debug("spawn", "cmd", strings.Join(a.UninstallCmd, " "))
+		start := time.Now()
+		cmd := exec.CommandContext(ctx, a.UninstallCmd[0], a.UninstallCmd[1:]...)
 		cmd.Stdin = stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		slog.Debug("done", "cmd", a.UninstallCmd[0], "duration", time.Since(start), "err", err)
+		if err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("remove %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
 			out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
@@ -307,11 +342,15 @@ func ExecuteApply(result ReconcileResult, stdin io.Reader, stdout, stderr io.Wri
 		}
 		for _, cleanCmd := range mgr.PlanClean() {
 			fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-			cmd := exec.Command(cleanCmd[0], cleanCmd[1:]...)
+			slog.Debug("spawn", "cmd", strings.Join(cleanCmd, " "))
+			start := time.Now()
+			cmd := exec.CommandContext(ctx, cleanCmd[0], cleanCmd[1:]...)
 			cmd.Stdin = stdin
 			cmd.Stdout = stdout
 			cmd.Stderr = stderr
-			if err := cmd.Run(); err != nil {
+			err := cmd.Run()
+			slog.Debug("done", "cmd", cleanCmd[0], "duration", time.Since(start), "err", err)
+			if err != nil {
 				out.Errors = append(out.Errors, fmt.Errorf("cache clean (via %s): %w", managerName, err))
 			}
 		}
@@ -322,18 +361,29 @@ func ExecuteApply(result ReconcileResult, stdin io.Reader, stdout, stderr io.Wri
 			continue
 		}
 		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
-		cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
+		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
+		start := time.Now()
+		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)
 		cmd.Stdin = stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		slog.Debug("done", "cmd", a.Cmd[0], "duration", time.Since(start), "err", err)
+		if err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
-			out.Installed = append(out.Installed, gpmfile.LockedPackage{
+			lp := gpmfile.LockedPackage{
 				ID:      a.Pkg.ID,
 				Manager: a.Manager,
 				PkgName: a.PkgName,
-			})
+			}
+			// Best-effort version capture; ignore errors (non-critical).
+			if mgr := adapter.ByName(a.Manager); mgr != nil {
+				if v, err := mgr.QueryVersion(a.PkgName); err == nil {
+					lp.InstalledVersion = v
+				}
+			}
+			out.Installed = append(out.Installed, lp)
 		}
 	}
 

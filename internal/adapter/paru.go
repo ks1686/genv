@@ -29,3 +29,16 @@ func (Paru) PlanClean() [][]string {
 }
 
 func (Paru) Query(pkgName string) (bool, error) { return runQuery("paru", "-Qi", pkgName) }
+
+// ListInstalled delegates to pacman since paru manages the same pacman DB.
+func (Paru) ListInstalled() ([]string, error) {
+	return runListOutput("pacman", "-Qqe")
+}
+
+func (Paru) QueryVersion(pkgName string) (string, error) {
+	out, err := runVersionOutput("paru", "-Q", pkgName)
+	if err != nil || out == "" {
+		return out, err
+	}
+	return parseMgrQueryVersion(out), nil
+}

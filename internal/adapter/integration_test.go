@@ -185,11 +185,11 @@ func TestSnap(t *testing.T) {
 
 func TestBrew(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Brew{},
-		wantBin:        "brew",
-		explicitMap:    map[string]string{"brew": "neovim"},
-		explicitWant:   "neovim",
-		knownInstalled: "ca-certificates",
+		a:            adapter.Brew{},
+		wantBin:      "brew",
+		explicitMap:  map[string]string{"brew": "neovim"},
+		explicitWant: "neovim",
+		// No knownInstalled: no Homebrew formula is universally pre-installed.
 	})
 }
 

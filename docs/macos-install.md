@@ -100,17 +100,7 @@ Your `gpm.json` lives at `~/.config/gpm/gpm.json`. Commit it to your dotfiles re
 ## Known limitations on macOS
 
 - **Homebrew install time** — `brew install` for large packages (e.g. gcc, llvm) can take several minutes. This is a Homebrew limitation, not gpm's.
-- **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). gpm defaults to formulae. Use `--prefer brew` with a `managers` map entry to target a cask explicitly:
-
-  ```json
-  {
-    "id": "firefox",
-    "managers": {
-      "brew": "firefox",
-      "brew_cask": "firefox"
-    }
-  }
-  ```
+- **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). gpm currently treats Homebrew as a single `brew` manager and defaults to formulae, relying on Homebrew's own resolution rules. If you specifically need the cask variant, install it manually with `brew install --cask <name>` or manage that application outside of gpm for now.
 
 - **Apple Silicon vs Intel** — Homebrew installs to `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel. gpm handles both automatically via PATH detection.
 - **macports** — If you use MacPorts instead of Homebrew, set `"prefer": "macports"` on packages where you want it used.

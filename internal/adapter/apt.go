@@ -30,3 +30,12 @@ func (Apt) PlanClean() [][]string {
 }
 
 func (Apt) Query(pkgName string) (bool, error) { return runQuery("dpkg", "-s", pkgName) }
+
+// ListInstalled returns manually-installed packages (excludes auto-installed deps).
+func (Apt) ListInstalled() ([]string, error) {
+	return runListOutput("apt-mark", "showmanual")
+}
+
+func (Apt) QueryVersion(pkgName string) (string, error) {
+	return runVersionOutput("dpkg-query", "-W", "-f=${Version}", pkgName)
+}

@@ -1,5 +1,7 @@
 package adapter
 
+import "strings"
+
 // Flatpak is the adapter for the Flatpak application sandbox runtime.
 type Flatpak struct{}
 
@@ -27,3 +29,23 @@ func (Flatpak) PlanClean() [][]string {
 }
 
 func (Flatpak) Query(pkgName string) (bool, error) { return runQuery("flatpak", "info", pkgName) }
+
+// ListInstalled returns application IDs of installed Flatpak apps (not runtimes).
+func (Flatpak) ListInstalled() ([]string, error) {
+	return runListOutput("flatpak", "list", "--app", "--columns=application")
+}
+
+func (Flatpak) QueryVersion(pkgName string) (string, error) {
+	// Parse "Version:" from "flatpak info <pkg>" output.
+	out, err := runVersionOutput("flatpak", "info", pkgName)
+	if err != nil || out == "" {
+		return out, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if after, ok := strings.CutPrefix(line, "Version:"); ok {
+			return strings.TrimSpace(after), nil
+		}
+	}
+	return "", nil
+}

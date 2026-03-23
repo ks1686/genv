@@ -8,6 +8,8 @@ builds:
     binary: gpm
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
     goos:
       - linux
       - darwin
@@ -30,6 +32,22 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+# ── Keyless signing via Sigstore/cosign ────────────────────────────────────────
+# Signs the checksums file using cosign's keyless (OIDC) workflow.
+# Requires: sigstore/cosign-installer step + id-token: write permission in the
+# release workflow. Produces checksums.txt.sig and checksums.txt.pem alongside
+# every release.
+signs:
+  - cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --output-certificate=${certificate}
+      - --output-signature=${signature}
+      - ${artifact}
+    artifacts: checksum
+    output: true
 
 # ── Homebrew tap ──────────────────────────────────────────────────────────────
 # Publishes a cask to ks1686/homebrew-tap on every non-prerelease tag.
