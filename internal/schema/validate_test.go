@@ -350,6 +350,9 @@ func TestParseAndValidate_MultipleValidPackages(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected validation errors: %v", errs)
 	}
+	if f == nil {
+		t.Fatal("ParseAndValidate returned nil")
+	}
 	if len(f.Packages) != 3 {
 		t.Fatalf("expected 3 packages, got %d", len(f.Packages))
 	}

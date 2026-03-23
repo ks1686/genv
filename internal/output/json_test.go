@@ -160,7 +160,7 @@ func TestWrite_ApplyResult(t *testing.T) {
 
 func TestWrite_EndsWithNewline(t *testing.T) {
 	var buf bytes.Buffer
-	output.Write(&buf, output.Envelope{Command: "apply", OK: true}) //nolint
+	_ = output.Write(&buf, output.Envelope{Command: "apply", OK: true})
 	b := buf.Bytes()
 	if len(b) == 0 || b[len(b)-1] != '\n' {
 		t.Errorf("Write should end with newline, got: %q", string(b))

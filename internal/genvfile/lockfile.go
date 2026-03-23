@@ -20,7 +20,7 @@ type LockedPackage struct {
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
-// LockFile is the on-disk representation of genv's applied state.
+// LockFile is the on-disk representation of the applied state tracked by genv.
 type LockFile struct {
 	SchemaVersion string          `json:"schemaVersion"`
 	Packages      []LockedPackage `json:"packages"`
@@ -33,7 +33,7 @@ func ReadLock(path string) (*LockFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &LockFile{SchemaVersion: schema.SchemaVersion}, nil
+			return &LockFile{SchemaVersion: schema.Version}, nil
 		}
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func ReadLock(path string) (*LockFile, error) {
 func WriteLock(path string, lf *LockFile) error {
 	data, err := json.MarshalIndent(lf, "", "  ")
 	if err != nil {
-		return fmt.Errorf("serialising lock file: %w", err)
+		return fmt.Errorf("serializing lock file: %w", err)
 	}
 	data = append(data, '\n')
 	dir := filepath.Dir(path)

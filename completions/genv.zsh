@@ -1,6 +1,8 @@
 #compdef genv
 
 _genv() {
+	local state line
+	# shellcheck disable=SC2034
 	local -a commands
 	commands=(
 		'add:Add a package to the spec and install it now'
@@ -14,7 +16,7 @@ _genv() {
 		'scan:Discover all installed packages and bulk-adopt them into genv.json'
 		'status:Show diff between genv.json, the lock file, and recorded versions'
 		'clean:Clear the cache of all detected package managers'
-		'edit:Open genv.json in $EDITOR'
+		"edit:Open genv.json in \$EDITOR"
 		'version:Show genv build version information'
 		'help:Show this help text'
 	)
@@ -29,7 +31,7 @@ _genv() {
 		_describe -t commands 'genv command' commands
 		;;
 	args)
-		case $line[1] in
+		case ${line[1]} in
 		add | adopt)
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \

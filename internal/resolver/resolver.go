@@ -18,6 +18,11 @@ import (
 	"github.com/ks1686/genv/internal/version"
 )
 
+// fprintf/fPrintln/fprint wrap fmt write functions to discard unactionable I/O errors.
+func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
+func fprint(w io.Writer, a ...any)                  { _, _ = fmt.Fprint(w, a...) }
+
 // Detect returns the set of package manager names available on the current host
 // by checking each registered adapter's binary in PATH.
 func Detect() map[string]bool {
@@ -36,7 +41,7 @@ type Action struct {
 	Pkg          schema.Package
 	Manager      string   // empty if unresolved
 	PkgName      string   // concrete name to pass to the manager
-	Cmd          []string // install command; nil if unresolved
+	Cmd          []string // installation command; nil if unresolved
 	UninstallCmd []string // uninstall command; nil if unresolved
 }
 
@@ -60,7 +65,7 @@ func Plan(f *schema.GenvFile, available map[string]bool) []Action {
 }
 
 func resolve(pkg schema.Package, available map[string]bool) Action {
-	// 1. Honour the prefer hint if that manager is available.
+	// 1. Honor the prefer hint if that manager is available.
 	// ByName is guaranteed non-nil here: available is built from adapter.All
 	// in Detect(), so any name present in available has a registered adapter.
 	if pkg.Prefer != "" && available[pkg.Prefer] {
@@ -91,7 +96,7 @@ func resolve(pkg schema.Package, available map[string]bool) Action {
 	return Action{Pkg: pkg}
 }
 
-// PrintPlan writes a human-readable install plan to w and returns the number
+// PrintPlan writes a human-readable installation plan to w and returns the number
 // of resolved and unresolved packages so callers can act on the counts without
 // a second pass over the actions slice.
 func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
@@ -104,31 +109,31 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 	}
 
 	total := len(actions)
-	fmt.Fprintf(w, "Install plan — %d package", total)
+	fprintf(w, "Installation plan — %d package", total)
 	if total != 1 {
-		fmt.Fprint(w, "s")
+		fprint(w, "s")
 	}
 	if unresolved > 0 {
-		fmt.Fprintf(w, " (%d unresolved)", unresolved)
+		fprintf(w, " (%d unresolved)", unresolved)
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w)
+	fPrintln(w)
+	fPrintln(w)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range actions {
 		if a.Resolved() {
-			fmt.Fprintf(tw, "  %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
 		} else {
-			fmt.Fprintf(tw, "  %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
+			fprintf(tw, "  %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
 		}
 	}
-	tw.Flush()
-	fmt.Fprintln(w)
+	_ = tw.Flush()
+	fPrintln(w)
 
 	if unresolved > 0 {
-		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
-		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
-		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
+		fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
+		fPrintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
+		fPrintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
 	return
 }
@@ -145,7 +150,7 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 		if !a.Resolved() {
 			continue
 		}
-		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
+		fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
 		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)
@@ -163,7 +168,7 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 
 // ---- Reconcile (genv apply) --------------------------------------------------
 
-// versionDrifted reports whether lp's recorded InstalledVersion fails the
+// versionDrifted reports whether the InstalledVersion recorded for lp fails the
 // version constraint in pkg. Returns false when InstalledVersion is empty
 // (old lock entries without version data are never treated as drifted).
 func versionDrifted(pkg schema.Package, lp genvfile.LockedPackage) bool {
@@ -207,7 +212,7 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 		}
 		// Package is already in the lock. Check version constraint: if the lock
 		// recorded an InstalledVersion and it no longer satisfies the spec
-		// constraint, queue a reinstall.
+		// constraint, queue for reinstallation.
 		if versionDrifted(pkg, lp) {
 			toInstall = append(toInstall, resolve(pkg, available))
 		}
@@ -249,9 +254,9 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	unchanged := len(result.Unchanged)
 	total := toInstall + toRemove + unchanged
 
-	fmt.Fprintf(w, "Apply plan — %d package", total)
+	fprintf(w, "Apply plan — %d package", total)
 	if total != 1 {
-		fmt.Fprint(w, "s")
+		fprint(w, "s")
 	}
 	var parts []string
 	if toInstall > 0 {
@@ -264,27 +269,27 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 		parts = append(parts, fmt.Sprintf("%d up to date", unchanged))
 	}
 	if len(parts) > 0 {
-		fmt.Fprintf(w, " (%s)", strings.Join(parts, ", "))
+		fprintf(w, " (%s)", strings.Join(parts, ", "))
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w)
+	fPrintln(w)
+	fPrintln(w)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range result.ToInstall {
 		if a.Resolved() {
-			fmt.Fprintf(tw, "  + %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  + %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
 		} else {
-			fmt.Fprintf(tw, "  + %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
+			fprintf(tw, "  + %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
 		}
 	}
 	for _, a := range result.ToRemove {
-		fmt.Fprintf(tw, "  - %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
+		fprintf(tw, "  - %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
 	}
 	for _, lp := range result.Unchanged {
-		fmt.Fprintf(tw, "    %s\tvia %s\t(up to date)\n", lp.ID, lp.Manager)
+		fprintf(tw, "    %s\tvia %s\t(up to date)\n", lp.ID, lp.Manager)
 	}
-	tw.Flush()
-	fmt.Fprintln(w)
+	_ = tw.Flush()
+	fPrintln(w)
 
 	for _, a := range result.ToInstall {
 		if !a.Resolved() {
@@ -292,9 +297,9 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 		}
 	}
 	if unresolved > 0 {
-		fmt.Fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
-		fmt.Fprintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
-		fmt.Fprintln(w, "Use --strict to treat unresolved packages as a hard error.")
+		fprintf(w, "%d package(s) could not be resolved: no compatible manager found on this host.\n", unresolved)
+		fPrintln(w, "Hint: install a supported package manager or add a 'managers' entry in genv.json.")
+		fPrintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
 	return
 }
@@ -318,7 +323,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 	cleanManagers := make(map[string]bool)
 
 	for _, a := range result.ToRemove {
-		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.UninstallCmd, " "))
+		fprintf(stdout, "\n==> %s\n", strings.Join(a.UninstallCmd, " "))
 		slog.Debug("spawn", "cmd", strings.Join(a.UninstallCmd, " "))
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, a.UninstallCmd[0], a.UninstallCmd[1:]...)
@@ -341,7 +346,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 			continue
 		}
 		for _, cleanCmd := range mgr.PlanClean() {
-			fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
+			fprintf(stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
 			slog.Debug("spawn", "cmd", strings.Join(cleanCmd, " "))
 			start := time.Now()
 			cmd := exec.CommandContext(ctx, cleanCmd[0], cleanCmd[1:]...)
@@ -360,7 +365,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 		if !a.Resolved() {
 			continue
 		}
-		fmt.Fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
+		fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
 		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)

@@ -9,7 +9,7 @@ import (
 
 func newFile(pkgs ...schema.Package) *schema.GenvFile {
 	return &schema.GenvFile{
-		SchemaVersion: schema.SchemaVersion,
+		SchemaVersion: schema.Version,
 		Packages:      pkgs,
 	}
 }
@@ -156,7 +156,7 @@ func TestAdd_AllKnownManagers(t *testing.T) {
 }
 
 // TestAdd_VersionStoredVerbatim verifies that the version string is stored as-is,
-// without any normalisation.
+// without any normalization.
 func TestAdd_VersionStoredVerbatim(t *testing.T) {
 	f := newFile()
 	const ver = "0.10.5-beta+build.123"

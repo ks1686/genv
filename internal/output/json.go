@@ -58,7 +58,7 @@ type ApplyResult struct {
 	Uninstalled []string `json:"uninstalled"`
 }
 
-// Write serialises env to w as a single JSON line followed by a newline.
+// Write serializes env to w as a single JSON line followed by a newline.
 func Write(w io.Writer, env Envelope) error {
 	return json.NewEncoder(w).Encode(env)
 }

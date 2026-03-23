@@ -12,23 +12,6 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 )
 
-// withWorkDir changes the working directory for the duration of the test.
-func withWorkDir(t *testing.T, dir string) {
-	t.Helper()
-	orig, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
-			t.Errorf("cleanup: failed to restore working directory: %v", err)
-		}
-	})
-}
-
 // writeLock writes a minimal lock file with the given packages so tests can
 // exercise commands that depend on prior installed state.
 func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {
@@ -74,9 +57,9 @@ func TestRun_Version(t *testing.T) {
 }
 
 // ---- genv add ----------------------------------------------------------------
-// add writes to genv.json and attempts a best-effort install.
-// Install failure is non-fatal (no package manager in CI), so all spec-update
-// tests expect exitOK regardless of whether the install succeeds.
+// add writes to genv.json and attempts a best-effort installation.
+// Installation failure is non-fatal (no package manager in CI), so all spec-update
+// tests expect exitOK regardless of whether the installation succeeds.
 
 func TestAddCmd_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
@@ -229,7 +212,7 @@ func TestAddCmd_IOError(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 	code := run([]string{"add", "--file", path, "git"})
 	if code != exitIO {
 		t.Errorf("io error on add: expected exitIO (%d), got %d", exitIO, code)
@@ -347,7 +330,7 @@ func TestRemoveCmd_IOError(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 	code := run([]string{"remove", "--file", path, "git"})
 	if code != exitIO {
 		t.Errorf("io error: expected exitIO (%d), got %d", exitIO, code)
@@ -639,7 +622,7 @@ func TestListCmd_IOError(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(lockPath, 0o644) })
 	code := run([]string{"list", "--file", path})
 	if code != exitIO {
 		t.Errorf("io error: expected exitIO (%d), got %d", exitIO, code)
@@ -811,13 +794,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	os.Stdout = wp
 	fn()
-	wp.Close()
+	_ = wp.Close()
 	os.Stdout = old
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, rp); err != nil {
 		t.Fatalf("io.Copy: %v", err)
 	}
-	rp.Close()
+	_ = rp.Close()
 	return buf.String()
 }
 

@@ -29,14 +29,14 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    extra_files:
-      - glob: completions/*
+    files:
+      - src: completions/*
 
 checksum:
   name_template: checksums.txt
 
 # ── Keyless signing via Sigstore/cosign ────────────────────────────────────────
-# Signs the checksums file using cosign's keyless (OIDC) workflow.
+# Signs the checksums file using the cosign keyless (OIDC) workflow.
 # Requires: sigstore/cosign-installer step + id-token: write permission in the
 # release workflow. Produces checksums.txt.sig and checksums.txt.pem alongside
 # every release.

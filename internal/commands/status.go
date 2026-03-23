@@ -39,7 +39,7 @@ type StatusEntry struct {
 
 // Status computes the three-way diff between the spec (genv.json) and the lock
 // file (genv.lock.json). It does not query the live system — the lock file is
-// genv's record of what it last installed.
+// the record of what genv last installed.
 //
 // Categories:
 //   - ok:      in spec and lock, version constraint satisfied (or unconstrained)

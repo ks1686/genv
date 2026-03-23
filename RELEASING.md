@@ -8,7 +8,7 @@ automatically when an annotated tag is pushed. GoReleaser handles all three.
 ## Versioning
 
 | Tag | Meaning |
-|-----|---------|
+| --- | ------- |
 | `v0.1.0-beta.1` | First public prerelease (shipped) |
 | `v0.1.0` | First stable release — M1 and M2 complete on Linux |
 | `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
@@ -213,7 +213,7 @@ Artifacts land in `./dist/`. Nothing is published.
 These are not yet set up but are candidates for later milestones:
 
 | Channel | Complexity | Notes |
-|---------|-----------|-------|
+| ------- | ---------- | ----- |
 | Snap Store | Medium | Needs `snapcraft.yaml` + `SNAPCRAFT_STORE_CREDENTIALS` secret |
 | Flathub | High | Requires a PR to `flathub/flathub`; not fully automatable |
 | apt PPA | High | Needs a Launchpad account and `.deb` packaging |

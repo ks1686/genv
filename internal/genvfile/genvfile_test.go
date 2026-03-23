@@ -11,8 +11,8 @@ import (
 
 func TestNew(t *testing.T) {
 	f := New()
-	if f.SchemaVersion != schema.SchemaVersion {
-		t.Errorf("SchemaVersion = %q, want %q", f.SchemaVersion, schema.SchemaVersion)
+	if f.SchemaVersion != schema.Version {
+		t.Errorf("SchemaVersion = %q, want %q", f.SchemaVersion, schema.Version)
 	}
 	if f.Packages == nil {
 		t.Error("Packages must be non-nil to marshal as [] not null")
@@ -24,7 +24,7 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 
 	original := &schema.GenvFile{
-		SchemaVersion: schema.SchemaVersion,
+		SchemaVersion: schema.Version,
 		Packages: []schema.Package{
 			{ID: "git", Version: "*"},
 			{ID: "neovim", Version: "0.10.*", Prefer: "brew"},
@@ -45,6 +45,9 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 	got, err := Read(path)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Read returned nil")
 	}
 
 	if got.SchemaVersion != original.SchemaVersion {
@@ -109,7 +112,7 @@ func TestReadOrNew_CreatesNew(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected non-nil GenvFile")
 	}
-	if f.SchemaVersion != schema.SchemaVersion {
+	if f.SchemaVersion != schema.Version {
 		t.Errorf("SchemaVersion = %q", f.SchemaVersion)
 	}
 }
@@ -179,7 +182,7 @@ func TestRead_PermissionError(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 
 	_, err := Read(path)
 	if err == nil {
@@ -195,7 +198,7 @@ func TestRead_PermissionError(t *testing.T) {
 
 func TestWrite_CreatesParentDirs(t *testing.T) {
 	// Write must create any missing parent directories (e.g. ~/.config/genv/)
-	// so that first-run behaviour is self-bootstrapping.
+	// so that first-run behavior is self-bootstrapping.
 	path := filepath.Join(t.TempDir(), "nonexistent", "subdir", "genv.json")
 	if err := Write(path, New()); err != nil {
 		t.Fatalf("expected Write to create parent dirs, got error: %v", err)
@@ -239,7 +242,7 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 	}
 
 	second := &schema.GenvFile{
-		SchemaVersion: schema.SchemaVersion,
+		SchemaVersion: schema.Version,
 		Packages: []schema.Package{
 			{ID: "git", Version: "1.0"},
 		},
@@ -252,6 +255,9 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read after overwrite: %v", err)
 	}
+	if got == nil {
+		t.Fatal("Read returned nil")
+	}
 	if len(got.Packages) != 1 || got.Packages[0].ID != "git" {
 		t.Errorf("expected 1 package 'git' after overwrite, got: %+v", got.Packages)
 	}
@@ -262,7 +268,7 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 func TestNew_PackagesNonNil(t *testing.T) {
 	f := New()
 	if f.Packages == nil {
-		t.Error("New().Packages must be non-nil to serialise as []")
+		t.Error("New().Packages must be non-nil to serialize as []")
 	}
 	if len(f.Packages) != 0 {
 		t.Errorf("New().Packages should be empty, got %d entries", len(f.Packages))
@@ -276,7 +282,7 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 
 	f := &schema.GenvFile{
-		SchemaVersion: schema.SchemaVersion,
+		SchemaVersion: schema.Version,
 		Packages: []schema.Package{
 			{
 				ID:      "firefox",

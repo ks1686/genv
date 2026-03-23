@@ -1,14 +1,13 @@
 # bash completion for genv
 
 _genv() {
-	local i cur prev opts cmds
+	local i cur opts cmds
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
-	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	cmd=""
 	opts=""
 
-	for i in ${COMP_WORDS[@]}; do
+	for i in "${COMP_WORDS[@]}"; do
 		case "${i}" in
 		add | remove | rm | adopt | disown | list | ls | apply | scan | status | clean | edit | version | help)
 			cmd="${i}"
@@ -19,11 +18,11 @@ _genv() {
 
 	if [[ -z "${cmd}" ]]; then
 		if [[ "${cur}" == -* ]]; then
-			COMPREPLY=($(compgen -W "--file" -- ${cur}))
+			mapfile -t COMPREPLY < <(compgen -W "--file" -- "${cur}")
 			return 0
 		fi
 		cmds="add remove rm adopt disown list ls apply scan status clean edit version help"
-		COMPREPLY=($(compgen -W "${cmds}" -- ${cur}))
+		mapfile -t COMPREPLY < <(compgen -W "${cmds}" -- "${cur}")
 		return 0
 	fi
 
@@ -46,7 +45,7 @@ _genv() {
 	esac
 
 	if [[ "${cur}" == -* ]]; then
-		COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
+		mapfile -t COMPREPLY < <(compgen -W "${opts}" -- "${cur}")
 		return 0
 	fi
 

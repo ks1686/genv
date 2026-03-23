@@ -49,7 +49,7 @@ type Adapter interface {
 
 	// QueryVersion returns the installed version string for pkgName.
 	// Returns "", nil when the package is not installed or the version cannot be
-	// determined. Version strings are manager-specific and not normalised.
+	// determined. Version strings are manager-specific and not normalized.
 	QueryVersion(pkgName string) (string, error)
 }
 
@@ -119,8 +119,7 @@ func runQuery(cmd string, args ...string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		return false, nil
 	}
 	return false, err
@@ -131,8 +130,7 @@ func runQuery(cmd string, args ...string) (bool, error) {
 func runListOutput(cmd string, args ...string) ([]string, error) {
 	out, err := exec.Command(cmd, args...).Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
 			return nil, nil
 		}
 		return nil, err
@@ -152,8 +150,7 @@ func runListOutput(cmd string, args ...string) ([]string, error) {
 func runVersionOutput(cmd string, args ...string) (string, error) {
 	out, err := exec.Command(cmd, args...).Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
 			return "", nil
 		}
 		return "", err

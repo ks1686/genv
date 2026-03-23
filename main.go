@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +25,7 @@ import (
 const (
 	exitOK         = 0 // success
 	exitUsage      = 1 // bad arguments or unknown command
-	exitIO         = 2 // filesystem or serialisation error
+	exitIO         = 2 // filesystem or serialization error
 	exitValidation = 3 // genv.json fails schema validation
 	exitLogic      = 4 // semantic error (duplicate id, not found, etc.)
 )
@@ -73,7 +74,7 @@ func run(args []string) int {
 		printUsage()
 		return exitOK
 	default:
-		fmt.Fprintf(os.Stderr, "genv: unknown command %q\n\nRun 'genv help' for usage.\n", args[0])
+		fprintf(os.Stderr, "genv: unknown command %q\n\nRun 'genv help' for usage.\n", args[0])
 		return exitUsage
 	}
 }
@@ -89,10 +90,17 @@ func defaultSpecPath() string {
 	return p
 }
 
+// fprintf/fPrintln/fprint are write helpers that discard the unactionable
+// return values of terminal I/O calls — write errors to stdout/stderr are
+// not recoverable in a CLI.
+func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
+func fprint(w io.Writer, a ...any)                  { _, _ = fmt.Fprint(w, a...) }
+
 // confirm writes prompt to stdout and reads a y/Y response from stdin.
 // Returns true if the user confirmed.
 func confirm(prompt string) bool {
-	fmt.Fprint(os.Stdout, prompt)
+	fprint(os.Stdout, prompt)
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	answer = strings.TrimSpace(answer)
 	return answer == "y" || answer == "Y"
@@ -103,9 +111,9 @@ func confirm(prompt string) bool {
 func addCmd(args []string) int {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv add <id> [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv add <id> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -119,21 +127,21 @@ func addCmd(args []string) int {
 		return exitUsage
 	}
 	if id == "" {
-		fmt.Fprintln(os.Stderr, "genv add: missing package id")
+		fPrintln(os.Stderr, "genv add: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv add: --manager: %v\n", err)
+		fprintf(os.Stderr, "genv add: --manager: %v\n", err)
 		return exitUsage
 	}
 
 	// 1. Update genv.json.
 	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -141,7 +149,7 @@ func addCmd(args []string) int {
 	}
 
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
 			return exitLogic
 		}
@@ -149,11 +157,11 @@ func addCmd(args []string) int {
 	}
 
 	if err := genvfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 	if isNew {
-		fmt.Fprintf(os.Stdout, "created %s\n", *file)
+		fprintf(os.Stdout, "created %s\n", *file)
 	}
 
 	// 2. Resolve and install the package.
@@ -161,21 +169,21 @@ func addCmd(args []string) int {
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
-		fmt.Fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'genv apply' after installing a compatible package manager)\n", id)
+		fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'genv apply' after installing a compatible package manager)\n", id)
 		return exitOK
 	}
 
-	fmt.Fprintf(os.Stdout, "added %s — installing via %s\n", id, action.Manager)
-	fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(action.Cmd, " "))
+	fprintf(os.Stdout, "added %s — installing via %s\n", id, action.Manager)
+	fprintf(os.Stdout, "\n==> %s\n", strings.Join(action.Cmd, " "))
 	cmd := exec.Command(action.Cmd[0], action.Cmd[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		// Install failure is non-fatal: the spec was already updated.
+		// Installation failure is non-fatal: the spec was already updated.
 		// The user can run 'genv apply' to retry.
-		fmt.Fprintf(os.Stderr, "genv: install failed: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Package was added to spec. Run 'genv apply' to retry.")
+		fprintf(os.Stderr, "genv: installation failed: %v\n", err)
+		fPrintln(os.Stderr, "Package was added to spec. Run 'genv apply' to retry.")
 		return exitOK
 	}
 
@@ -183,7 +191,7 @@ func addCmd(args []string) int {
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
@@ -192,7 +200,7 @@ func addCmd(args []string) int {
 		PkgName: action.PkgName,
 	})
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
@@ -204,9 +212,9 @@ func addCmd(args []string) int {
 func removeCmd(args []string) int {
 	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv remove <id> [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv remove <id> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -216,7 +224,7 @@ func removeCmd(args []string) int {
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "genv remove: missing package id")
+		fPrintln(os.Stderr, "genv remove: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
@@ -226,10 +234,10 @@ func removeCmd(args []string) int {
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "genv: %s not found\n", *file)
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
 			return exitLogic
 		}
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -237,12 +245,12 @@ func removeCmd(args []string) int {
 	}
 
 	if err := commands.Remove(f, id); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitLogic
 	}
 
 	if err := genvfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
@@ -250,7 +258,7 @@ func removeCmd(args []string) int {
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -266,46 +274,46 @@ func removeCmd(args []string) int {
 
 	if locked == nil {
 		// Never installed by genv — nothing to uninstall on the system.
-		fmt.Fprintf(os.Stdout, "removed %s from spec (was not installed by genv)\n", id)
+		fprintf(os.Stdout, "removed %s from spec (was not installed by genv)\n", id)
 		return exitOK
 	}
 
 	// 3. Uninstall from the system using the manager recorded in the lock.
 	mgr := adapter.ByName(locked.Manager)
 	if mgr == nil {
-		fmt.Fprintf(os.Stderr, "genv: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
+		fprintf(os.Stderr, "genv: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
 		return exitLogic
 	}
 
 	uninstallCmd := mgr.PlanUninstall(locked.PkgName)
-	fmt.Fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
-	fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
+	fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
+	fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
 	cmd := exec.Command(uninstallCmd[0], uninstallCmd[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	uninstallErr := cmd.Run()
 	if uninstallErr != nil {
-		fmt.Fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
+		fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
 		// Still update the lock — the package is removed from the spec.
 	}
 
 	// Cache clean.
 	for _, cleanCmd := range mgr.PlanClean() {
-		fmt.Fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
+		fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
 		c := exec.Command(cleanCmd[0], cleanCmd[1:]...)
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 		if err := c.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
+			fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
 		}
 	}
 
 	// 4. Update lock file (remove the entry regardless of uninstall success).
 	lf.Packages = remaining
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
@@ -321,9 +329,9 @@ func removeCmd(args []string) int {
 func adoptCmd(args []string) int {
 	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv adopt <id> [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv adopt <id> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -337,14 +345,14 @@ func adoptCmd(args []string) int {
 		return exitUsage
 	}
 	if id == "" {
-		fmt.Fprintln(os.Stderr, "genv adopt: missing package id")
+		fPrintln(os.Stderr, "genv adopt: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv adopt: --manager: %v\n", err)
+		fprintf(os.Stderr, "genv adopt: --manager: %v\n", err)
 		return exitUsage
 	}
 
@@ -353,7 +361,7 @@ func adoptCmd(args []string) int {
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
-		fmt.Fprintf(os.Stderr, "genv adopt: no available manager for %q — install a compatible package manager first\n", id)
+		fprintf(os.Stderr, "genv adopt: no available manager for %q — install a compatible package manager first\n", id)
 		return exitLogic
 	}
 
@@ -361,18 +369,18 @@ func adoptCmd(args []string) int {
 	mgr := adapter.ByName(action.Manager)
 	installed, err := mgr.Query(action.PkgName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv adopt: querying %s: %v\n", action.Manager, err)
+		fprintf(os.Stderr, "genv adopt: querying %s: %v\n", action.Manager, err)
 		return exitLogic
 	}
 	if !installed {
-		fmt.Fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
+		fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
 		return exitLogic
 	}
 
 	// 3. Update genv.json.
 	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -380,7 +388,7 @@ func adoptCmd(args []string) int {
 	}
 
 	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
 			return exitLogic
 		}
@@ -388,18 +396,18 @@ func adoptCmd(args []string) int {
 	}
 
 	if err := genvfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 	if isNew {
-		fmt.Fprintf(os.Stdout, "created %s\n", *file)
+		fprintf(os.Stdout, "created %s\n", *file)
 	}
 
 	// 4. Update lock file.
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
@@ -408,11 +416,11 @@ func adoptCmd(args []string) int {
 		PkgName: action.PkgName,
 	})
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
-	fmt.Fprintf(os.Stdout, "adopted %s — now tracked via %s (already installed)\n", id, action.Manager)
+	fprintf(os.Stdout, "adopted %s — now tracked via %s (already installed)\n", id, action.Manager)
 	return exitOK
 }
 
@@ -422,9 +430,9 @@ func adoptCmd(args []string) int {
 func disownCmd(args []string) int {
 	fs := flag.NewFlagSet("disown", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv disown <id> [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv disown <id> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -434,7 +442,7 @@ func disownCmd(args []string) int {
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "genv disown: missing package id")
+		fPrintln(os.Stderr, "genv disown: missing package id")
 		fs.Usage()
 		return exitUsage
 	}
@@ -444,10 +452,10 @@ func disownCmd(args []string) int {
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "genv: %s not found\n", *file)
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
 			return exitLogic
 		}
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -455,12 +463,12 @@ func disownCmd(args []string) int {
 	}
 
 	if err := commands.Remove(f, id); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitLogic
 	}
 
 	if err := genvfile.Write(*file, f); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
@@ -468,7 +476,7 @@ func disownCmd(args []string) int {
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -483,14 +491,14 @@ func disownCmd(args []string) int {
 	}
 	lf.Packages = remaining
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
 	if wasTracked {
-		fmt.Fprintf(os.Stdout, "disowned %s — removed from tracking (package remains installed)\n", id)
+		fprintf(os.Stdout, "disowned %s — removed from tracking (package remains installed)\n", id)
 	} else {
-		fmt.Fprintf(os.Stdout, "disowned %s — removed from spec (was not in lock)\n", id)
+		fprintf(os.Stdout, "disowned %s — removed from spec (was not in lock)\n", id)
 	}
 	return exitOK
 }
@@ -500,9 +508,9 @@ func disownCmd(args []string) int {
 func listCmd(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv list [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv list [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -514,21 +522,21 @@ func listCmd(args []string) int {
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
 	}
 
 	if len(lf.Packages) == 0 {
-		fmt.Fprintln(os.Stdout, "no packages installed by genv.")
+		fPrintln(os.Stdout, "no packages installed by genv.")
 		return exitOK
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tMANAGER\tPACKAGE NAME")
+	fPrintln(tw, "ID\tMANAGER\tPACKAGE NAME")
 	for _, p := range lf.Packages {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", p.ID, p.Manager, p.PkgName)
+		fprintf(tw, "%s\t%s\t%s\n", p.ID, p.Manager, p.PkgName)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	return exitOK
 }
 
@@ -538,9 +546,9 @@ func listCmd(args []string) int {
 func applyCmd(args []string) int {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv apply [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv apply [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -569,20 +577,23 @@ func applyCmd(args []string) int {
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
+			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
 			return exitIO
 		}
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
+		return exitIO
+	}
+	if f == nil {
 		return exitIO
 	}
 
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -621,12 +632,12 @@ func applyCmd(args []string) int {
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, os.Stdout)
 
 	if toInstall == 0 && toRemove == 0 {
-		fmt.Fprintln(os.Stdout, "already up to date.")
+		fPrintln(os.Stdout, "already up to date.")
 		return exitOK
 	}
 
 	if unresolvedCount > 0 && *strict {
-		fmt.Fprintf(os.Stderr, "genv apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
+		fprintf(os.Stderr, "genv apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
 		return exitLogic
 	}
 
@@ -635,7 +646,7 @@ func applyCmd(args []string) int {
 	}
 
 	if !*yes && !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
-		fmt.Fprintln(os.Stdout, "Aborted.")
+		fPrintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
@@ -644,7 +655,7 @@ func applyCmd(args []string) int {
 
 	if len(execResult.Errors) > 0 {
 		for _, e := range execResult.Errors {
-			fmt.Fprintf(os.Stderr, "genv apply: %v\n", e)
+			fprintf(os.Stderr, "genv apply: %v\n", e)
 		}
 		return exitLogic
 	}
@@ -674,7 +685,7 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	}
 	lf.Packages = newPkgs
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 	}
 }
 
@@ -714,10 +725,10 @@ func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 	}
 }
 
-// writeJSON serialises env to w and returns an exit code.
+// writeJSON serializes env to w and returns an exit code.
 func writeJSON(w *os.File, env output.Envelope) int {
 	if err := output.Write(w, env); err != nil {
-		fmt.Fprintf(os.Stderr, "genv: writing JSON: %v\n", err)
+		fprintf(os.Stderr, "genv: writing JSON: %v\n", err)
 		return exitIO
 	}
 	if !env.OK {
@@ -746,11 +757,11 @@ func errStrings(errs []error) []string {
 func scanCmd(args []string) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv scan [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Discover all installed packages and adopt them into genv.json.")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv scan [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Discover all installed packages and adopt them into genv.json.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -774,13 +785,13 @@ func scanCmd(args []string) int {
 				Data:    output.ScanResult{Added: 0, Skipped: 0},
 			})
 		}
-		fmt.Fprintln(os.Stdout, "no supported package managers detected.")
+		fPrintln(os.Stdout, "no supported package managers detected.")
 		return exitOK
 	}
 
 	f, isNew, err := genvfile.ReadOrNew(*file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -790,7 +801,7 @@ func scanCmd(args []string) int {
 	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -811,7 +822,7 @@ func scanCmd(args []string) int {
 		}
 		pkgs, err := a.ListInstalled()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
+			fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
 			continue
 		}
 		for _, pkgName := range pkgs {
@@ -849,11 +860,11 @@ func scanCmd(args []string) int {
 
 	if added > 0 {
 		if err := genvfile.Write(*file, f); err != nil {
-			fmt.Fprintf(os.Stderr, "genv: writing spec: %v\n", err)
+			fprintf(os.Stderr, "genv: writing spec: %v\n", err)
 			return exitIO
 		}
 		if err := genvfile.WriteLock(lockPath, lf); err != nil {
-			fmt.Fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+			fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 			return exitIO
 		}
 	}
@@ -867,13 +878,13 @@ func scanCmd(args []string) int {
 	}
 
 	if added == 0 && skipped == 0 {
-		fmt.Fprintln(os.Stdout, "no packages found.")
+		fPrintln(os.Stdout, "no packages found.")
 		return exitOK
 	}
 	if isNew && added > 0 {
-		fmt.Fprintf(os.Stdout, "created %s\n", *file)
+		fprintf(os.Stdout, "created %s\n", *file)
 	}
-	fmt.Fprintf(os.Stdout, "scan complete: %d added, %d already tracked\n", added, skipped)
+	fprintf(os.Stdout, "scan complete: %d added, %d already tracked\n", added, skipped)
 	return exitOK
 }
 
@@ -885,13 +896,13 @@ func scanCmd(args []string) int {
 func statusCmd(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv status [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Show the diff between genv.json, the lock file, and recorded versions.")
-		fmt.Fprintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
-		fmt.Fprintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv status [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and recorded versions.")
+		fPrintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
+		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
@@ -909,10 +920,10 @@ func statusCmd(args []string) int {
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fmt.Fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
+			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
 			return exitIO
 		}
-		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
+		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
@@ -921,7 +932,7 @@ func statusCmd(args []string) int {
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 
@@ -950,7 +961,7 @@ func statusCmd(args []string) int {
 	}
 
 	if len(entries) == 0 {
-		fmt.Fprintln(os.Stdout, "nothing tracked.")
+		fPrintln(os.Stdout, "nothing tracked.")
 		return exitOK
 	}
 
@@ -960,9 +971,9 @@ func statusCmd(args []string) int {
 		counts[e.Kind]++
 	}
 	total := len(entries)
-	fmt.Fprintf(os.Stdout, "Status — %d package", total)
+	fprintf(os.Stdout, "Status — %d package", total)
 	if total != 1 {
-		fmt.Fprint(os.Stdout, "s")
+		fprint(os.Stdout, "s")
 	}
 	var parts []string
 	if n := counts[commands.StatusOK]; n > 0 {
@@ -978,10 +989,10 @@ func statusCmd(args []string) int {
 		parts = append(parts, fmt.Sprintf("%d extra", n))
 	}
 	if len(parts) > 0 {
-		fmt.Fprintf(os.Stdout, " (%s)", strings.Join(parts, ", "))
+		fprintf(os.Stdout, " (%s)", strings.Join(parts, ", "))
 	}
-	fmt.Fprintln(os.Stdout)
-	fmt.Fprintln(os.Stdout)
+	fPrintln(os.Stdout)
+	fPrintln(os.Stdout)
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, e := range entries {
@@ -995,19 +1006,19 @@ func statusCmd(args []string) int {
 			if v == "" {
 				v = "*"
 			}
-			fmt.Fprintf(tw, "  ok\t%s\t%s\t%s\n", e.ID, mgr, v)
+			fprintf(tw, "  ok\t%s\t%s\t%s\n", e.ID, mgr, v)
 		case commands.StatusDrift:
-			fmt.Fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
+			fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
 				e.ID, mgr, e.SpecVersion, e.InstalledVersion)
 		case commands.StatusMissing:
 			note := "(in spec, not in lock — run 'genv apply')"
-			fmt.Fprintf(tw, "  missing\t%s\t%s\t%s\n", e.ID, mgr, note)
+			fprintf(tw, "  missing\t%s\t%s\t%s\n", e.ID, mgr, note)
 		case commands.StatusExtra:
 			note := "(in lock, not in spec — run 'genv apply' or 'genv disown')"
-			fmt.Fprintf(tw, "  extra\t%s\t%s\t%s\n", e.ID, mgr, note)
+			fprintf(tw, "  extra\t%s\t%s\t%s\n", e.ID, mgr, note)
 		}
 	}
-	tw.Flush()
+	_ = tw.Flush()
 
 	if counts[commands.StatusDrift] > 0 || counts[commands.StatusExtra] > 0 {
 		return exitLogic
@@ -1020,9 +1031,9 @@ func statusCmd(args []string) int {
 func cleanCmd(args []string) int {
 	fs := flag.NewFlagSet("clean", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: genv clean [flags]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "flags:")
+		fPrintln(os.Stderr, "usage: genv clean [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 	dryRun := fs.Bool("dry-run", false, "print the clean commands without executing")
@@ -1032,7 +1043,7 @@ func cleanCmd(args []string) int {
 
 	availableNames := resolver.Detect()
 	if len(availableNames) == 0 {
-		fmt.Fprintln(os.Stdout, "no supported package managers detected.")
+		fPrintln(os.Stdout, "no supported package managers detected.")
 		return exitOK
 	}
 
@@ -1045,9 +1056,9 @@ func cleanCmd(args []string) int {
 		if len(cmds) == 0 {
 			continue
 		}
-		fmt.Fprintf(os.Stdout, "\n[%s]\n", mgr.Name())
+		fprintf(os.Stdout, "\n[%s]\n", mgr.Name())
 		for _, cleanCmd := range cmds {
-			fmt.Fprintf(os.Stdout, "==> %s\n", strings.Join(cleanCmd, " "))
+			fprintf(os.Stdout, "==> %s\n", strings.Join(cleanCmd, " "))
 			if *dryRun {
 				continue
 			}
@@ -1056,7 +1067,7 @@ func cleanCmd(args []string) int {
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
 			if err := c.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "genv clean: %s: %v\n", mgr.Name(), err)
+				fprintf(os.Stderr, "genv clean: %s: %v\n", mgr.Name(), err)
 				exitCode = exitLogic
 			}
 		}
@@ -1086,7 +1097,7 @@ func editCmd(args []string) int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "genv edit: %v\n", err)
+		fprintf(os.Stderr, "genv edit: %v\n", err)
 		return exitLogic
 	}
 	return exitOK
@@ -1139,7 +1150,7 @@ func parseManagerFlag(s string) (map[string]string, error) {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `genv — global environment manager
+	fprint(os.Stderr, `genv — global environment manager
 
 Usage:
   genv <command> [flags]
@@ -1189,16 +1200,16 @@ Clean-specific flags:
 Exit codes:
   0  success (status: all ok or missing only)
   1  bad arguments or unknown command
-  2  filesystem or serialisation error
+  2  filesystem or serialization error
   3  genv.json fails schema validation
   4  semantic error — also returned by 'genv status' when drift or extra entries exist
 
 `)
-	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
+	fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
 }
 
 func printVersion() {
-	fmt.Fprintf(os.Stdout, "genv %s\n", version)
-	fmt.Fprintf(os.Stdout, "commit: %s\n", commit)
-	fmt.Fprintf(os.Stdout, "built:  %s\n", date)
+	fprintf(os.Stdout, "genv %s\n", version)
+	fprintf(os.Stdout, "commit: %s\n", commit)
+	fprintf(os.Stdout, "built:  %s\n", date)
 }
