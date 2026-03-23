@@ -15,7 +15,7 @@ Second stable release of `genv`. Milestones M3, M4, and M5 are complete. All fiv
 
 - `genv apply --yes` — skips the confirmation prompt; safe for CI pipelines and bootstrap scripts.
 - `genv apply --json`, `genv status --json`, `genv scan --json` — emits a stable JSON envelope to stdout and routes subprocess output to stderr, keeping stdout clean for `jq` and other tools.
-- `genv apply --timeout <duration>` — sets a per-subprocess deadline (e.g. `--timeout 5m`); the process is cancelled cleanly when the deadline fires.
+- `genv apply --timeout <duration>` — sets a per-subprocess deadline (e.g. `--timeout 5m`); the process is canceled cleanly when the deadline fires.
 - `genv apply --debug`, `genv status --debug`, `genv scan --debug` — enables debug-level structured logging to stderr via `log/slog`, including subprocess spawn events with elapsed duration.
 
 ### Reproducibility
@@ -32,7 +32,7 @@ Second stable release of `genv`. Milestones M3, M4, and M5 are complete. All fiv
 ### Cross-platform (M5)
 
 - macOS `brew` and `macports` adapters validated in the `macos-latest` CI runner.
-- WSL2 detection sanitises `$PATH` to strip Windows-host binary paths, preventing Windows binaries from shadowing Linux ones.
+- WSL2 detection sanitizes `$PATH` to strip Windows-host binary paths, preventing Windows binaries from shadowing Linux ones.
 - Install guides added for [macOS](docs/macos-install.md) and [WSL2](docs/wsl2-install.md).
 
 ### Internal

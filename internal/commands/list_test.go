@@ -125,7 +125,7 @@ func TestList_DashForNoManagers(t *testing.T) {
 	List(f, &buf)
 	out := buf.String()
 	// There should be a "-" for managers.  The prefer column shows "brew", so
-	// the "-" is from the managers column.
+	// the "-" is from the managers' column.
 	if !strings.Contains(out, "-") {
 		t.Errorf("expected '-' for empty managers, got: %q", out)
 	}
