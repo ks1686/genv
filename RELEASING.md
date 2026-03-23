@@ -11,9 +11,9 @@ automatically when an annotated tag is pushed. GoReleaser handles all three.
 |-----|---------|
 | `v0.1.0-beta.1` | First public prerelease (shipped) |
 | `v0.1.0` | First stable release — M1 and M2 complete on Linux |
-| `v0.2.0` | M3 complete (scan, version pinning, status) |
-| `v0.3.0` | M4 complete (reliability and automation) |
-| `v0.4.0` | M5 complete (macOS and WSL2 support) |
+| `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
+| `v0.3.0` | M6 complete (API stability, test coverage, performance benchmarks, security audit) |
+| `v0.4.0` | M7 complete (shell completions, gpm validate/upgrade/init, improved errors) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
