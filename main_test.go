@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -793,6 +796,338 @@ func TestParseManagerFlag(t *testing.T) {
 				t.Errorf("parseManagerFlag(%q): got %d entries, want %d", tc.input, len(got), tc.wantLen)
 			}
 		}
+	}
+}
+
+// captureStdout redirects os.Stdout to a pipe for the duration of fn and
+// returns everything written to stdout. Not goroutine-safe; do not call
+// t.Parallel() in tests that use this helper.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	rp, wp, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = wp
+	fn()
+	wp.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, rp); err != nil {
+		t.Fatalf("io.Copy: %v", err)
+	}
+	rp.Close()
+	return buf.String()
+}
+
+// ---- gpm scan ---------------------------------------------------------------
+
+func TestScanCmd_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	// scan must not crash regardless of what managers are available in CI.
+	code := run([]string{"scan", "--file", path})
+	if code != exitOK {
+		t.Errorf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestScanCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"scan", "--file", path, "--no-such-flag"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestScanCmd_InvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"scan", "--file", path})
+	if code != exitValidation {
+		t.Errorf("invalid file: expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestScanCmd_JsonOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"scan", "--file", path, "--json"})
+	})
+	if code != exitOK {
+		t.Fatalf("scan --json: expected exitOK (%d), got %d", exitOK, code)
+	}
+	var env map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("scan --json output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	if env["command"] != "scan" {
+		t.Errorf("JSON command: got %v, want %q", env["command"], "scan")
+	}
+	if _, ok := env["ok"]; !ok {
+		t.Error("JSON envelope missing 'ok' field")
+	}
+}
+
+func TestScanCmd_Debug_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"scan", "--file", path, "--debug"})
+	if code != exitOK {
+		t.Errorf("scan --debug: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+// ---- gpm status -------------------------------------------------------------
+
+func TestStatusCmd_FileNotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"status", "--file", path})
+	if code != exitIO {
+		t.Errorf("missing spec: expected exitIO (%d), got %d", exitIO, code)
+	}
+}
+
+func TestStatusCmd_NothingTracked(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"status", "--file", path})
+	if code != exitOK {
+		t.Errorf("empty: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestStatusCmd_AllOK(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	run([]string{"add", "--file", path, "git"})
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+	})
+
+	code := run([]string{"status", "--file", path})
+	if code != exitOK {
+		t.Errorf("all ok: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestStatusCmd_MissingEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+
+	// Package in spec but not in lock — "missing" exits OK (not drift/extra).
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"status", "--file", path})
+	if code != exitOK {
+		t.Errorf("missing: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestStatusCmd_ExtraEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	// Empty spec but lock has git → "extra" exits with exitLogic.
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+	})
+	code := run([]string{"status", "--file", path})
+	if code != exitLogic {
+		t.Errorf("extra: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestStatusCmd_DriftEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	run([]string{"add", "--file", path, "--version", "2.0.*", "git"})
+	// Lock records version 1.x — does not satisfy "2.0.*" → drift.
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git", InstalledVersion: "1.9.0"},
+	})
+	code := run([]string{"status", "--file", path})
+	if code != exitLogic {
+		t.Errorf("drift: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestStatusCmd_InvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"status", "--file", path})
+	if code != exitValidation {
+		t.Errorf("invalid file: expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestStatusCmd_FlagParseError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	code := run([]string{"status", "--file", path, "--no-such-flag"})
+	if code != exitUsage {
+		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestStatusCmd_JsonOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	run([]string{"add", "--file", path, "git"})
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"status", "--file", path, "--json"})
+	})
+	if code != exitOK {
+		t.Fatalf("status --json: expected exitOK (%d), got %d", exitOK, code)
+	}
+	var env map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("status --json output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	if env["command"] != "status" {
+		t.Errorf("JSON command: got %v, want %q", env["command"], "status")
+	}
+	if _, ok := env["ok"]; !ok {
+		t.Error("JSON envelope missing 'ok' field")
+	}
+	data, ok := env["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("JSON data field missing or wrong type: %v", env["data"])
+	}
+	if _, ok := data["entries"]; !ok {
+		t.Error("JSON data missing 'entries' field")
+	}
+}
+
+func TestStatusCmd_Debug_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	code := run([]string{"status", "--file", path, "--debug"})
+	if code != exitOK {
+		t.Errorf("status --debug: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+// ---- gpm apply new flags ----------------------------------------------------
+
+func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	run([]string{"add", "--file", path, "git"})
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+	})
+
+	// --yes with an up-to-date state exits OK immediately (no prompt, no work).
+	code := run([]string{"apply", "--file", path, "--yes"})
+	if code != exitOK {
+		t.Errorf("--yes up to date: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestApplyCmd_Debug_DryRun_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"apply", "--file", path, "--dry-run", "--debug"})
+	if code != exitOK {
+		t.Errorf("--debug dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	run([]string{"add", "--file", path, "git"})
+	code := run([]string{"apply", "--file", path, "--dry-run", "--timeout", "5m"})
+	if code != exitOK {
+		t.Errorf("--timeout dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	run([]string{"add", "--file", path, "git"})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"apply", "--file", path, "--dry-run", "--json"})
+	})
+	if code != exitOK {
+		t.Fatalf("apply --dry-run --json: expected exitOK (%d), got %d", exitOK, code)
+	}
+	var env map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("apply --json output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	if env["command"] != "apply" {
+		t.Errorf("JSON command: got %v, want %q", env["command"], "apply")
+	}
+	if _, ok := env["ok"]; !ok {
+		t.Error("JSON envelope missing 'ok' field")
+	}
+	data, ok := env["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("JSON data field missing or wrong type: %v", env["data"])
+	}
+	if _, ok := data["toInstall"]; !ok {
+		t.Error("JSON plan data missing 'toInstall' field")
+	}
+}
+
+func TestApplyCmd_AlreadyUpToDate_JsonOutput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gpm.json")
+	lockPath := filepath.Join(dir, "gpm.lock.json")
+
+	run([]string{"add", "--file", path, "git"})
+	writeLock(t, lockPath, []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"apply", "--file", path, "--json"})
+	})
+	// Up-to-date with --json: the "already up to date" path still exits OK.
+	// In JSON mode there's no work to do, so the apply skips to the plan check.
+	// Note: apply --json without --dry-run and with toInstall==0 exits OK.
+	if code != exitOK {
+		t.Errorf("apply --json up-to-date: expected exitOK (%d), got %d\noutput: %s", exitOK, code, out)
 	}
 }
 
