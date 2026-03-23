@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.2.0 - 2026-03-22
+## v0.2.0 - 2026-03-23
 
 Second stable release of `gpm`. Milestones M3, M4, and M5 are complete. All five delivery milestones are now done.
 

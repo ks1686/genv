@@ -1,0 +1,115 @@
+.TH GPM 1 "March 2026" "gpm 0.2.0" "User Commands"
+.SH NAME
+gpm \- global package manager
+.SH SYNOPSIS
+.B gpm
+<command> [flags]
+.SH DESCRIPTION
+Track, sync, and reproduce your software environment across Linux, macOS, and WSL2.
+.SH COMMANDS
+.TP
+.B add <id> [flags]
+Add a package to the spec and install it now.
+.TP
+.B remove <id>
+Remove a package from the spec and uninstall it now. Alias: rm.
+.TP
+.B adopt <id> [flags]
+Track an already-installed package in gpm.json without reinstalling.
+.TP
+.B disown <id>
+Stop tracking a package in gpm.json without uninstalling it.
+.TP
+.B scan [flags]
+Discover all installed packages and bulk-adopt them into gpm.json.
+.TP
+.B status [flags]
+Show diff between gpm.json, the lock file, and recorded versions.
+.TP
+.B list
+List all packages installed by gpm. Alias: ls.
+.TP
+.B apply [flags]
+Reconcile system state with gpm.json (install added, remove deleted).
+.TP
+.B clean [\-\-dry\-run]
+Clear the cache of all detected package managers.
+.TP
+.B edit
+Open gpm.json in $EDITOR.
+.TP
+.B version
+Show gpm build version information.
+.TP
+.B help
+Show this help text.
+.SH COMMON FLAGS
+.TP
+.B \-\-file <path>
+Path to gpm.json (default: $XDG_CONFIG_HOME/gpm/gpm.json or ~/.config/gpm/gpm.json, falling back to ./gpm.json)
+.SH COMMAND-SPECIFIC FLAGS
+.SS add / adopt
+.TP
+.B \-\-version <ver>
+Version constraint, e.g. "0.10.*"
+.TP
+.B \-\-prefer <mgr>
+Preferred manager, e.g. brew
+.TP
+.B \-\-manager <mgr:name,...>
+Manager-specific package names, e.g. flatpak:org.mozilla.firefox,brew:firefox
+.SS apply
+.TP
+.B \-\-dry\-run
+Print the reconcile plan without executing
+.TP
+.B \-\-strict
+Exit with an error if any package cannot be resolved
+.TP
+.B \-\-yes
+Skip the confirmation prompt (for CI and scripts)
+.TP
+.B \-\-json
+Emit machine-readable JSON to stdout
+.TP
+.B \-\-timeout <duration>
+Per-subprocess timeout, e.g. 5m or 30s (0 = none)
+.TP
+.B \-\-debug
+Emit debug-level structured logs to stderr
+.SS status / scan
+.TP
+.B \-\-json
+Emit machine-readable JSON to stdout
+.TP
+.B \-\-debug
+Emit debug-level structured logs to stderr
+.SS clean
+.TP
+.B \-\-dry\-run
+Print the clean commands without executing
+.SH EXIT CODES
+.TP
+.B 0
+success (status: all ok or missing only)
+.TP
+.B 1
+bad arguments or unknown command
+.TP
+.B 2
+filesystem or serialisation error
+.TP
+.B 3
+gpm.json fails schema validation
+.TP
+.B 4
+semantic error — also returned by 'gpm status' when drift or extra entries exist
+.SH FILES
+.TP
+.B ~/.config/gpm/gpm.json
+The default specification file.
+.TP
+.B ~/.config/gpm/gpm.lock.json
+The default lock file.
+.SH AUTHOR
+gpm contributors.
