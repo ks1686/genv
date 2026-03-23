@@ -31,6 +31,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ks1686/genv/internal/genvfile"
 )
 
 // genvBin is the path to the compiled genv binary, populated by TestMain.
@@ -73,7 +75,7 @@ func newRunner(t *testing.T, prefer string) *runner {
 	return &runner{
 		bin:      genvBin,
 		genvJSON: g,
-		lockJSON: strings.TrimSuffix(g, ".json") + ".lock.json",
+		lockJSON: genvfile.LockPathFrom(g),
 		prefer:   prefer,
 	}
 }
@@ -170,7 +172,10 @@ func (r *runner) writeSpec(t *testing.T, ids ...string) {
 	for i, id := range ids {
 		pkgs[i] = pkg{ID: id, Prefer: r.prefer}
 	}
-	data, _ := json.MarshalIndent(spec{SchemaVersion: "1", Packages: pkgs}, "", "  ")
+	data, err := json.MarshalIndent(spec{SchemaVersion: "1", Packages: pkgs}, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal spec: %v", err)
+	}
 	if err := os.WriteFile(r.genvJSON, append(data, '\n'), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -186,12 +191,13 @@ func (r *runner) clearLock(t *testing.T) {
 
 func (r *runner) assertInSpec(t *testing.T, id string) {
 	t.Helper()
-	for _, s := range r.specIDs(t) {
+	ids := r.specIDs(t)
+	for _, s := range ids {
 		if s == id {
 			return
 		}
 	}
-	t.Errorf("expected %q in genv.json; current ids: %v", id, r.specIDs(t))
+	t.Errorf("expected %q in genv.json; current ids: %v", id, ids)
 }
 
 func (r *runner) assertNotInSpec(t *testing.T, id string) {
@@ -225,6 +231,28 @@ func (r *runner) assertNotInLock(t *testing.T, id string) {
 			return
 		}
 	}
+}
+
+// assertJSONCommand decodes a JSON envelope from stdout and checks the command field.
+func assertJSONCommand(t *testing.T, stdout, wantCmd string) {
+	t.Helper()
+	var env struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("%s --json: invalid JSON: %v\noutput: %q", wantCmd, err, stdout)
+	}
+	if env.Command != wantCmd {
+		t.Errorf("command: got %q, want %q", env.Command, wantCmd)
+	}
+}
+
+// pkgArgs builds the arg list for a package command, appending --prefer when set.
+func pkgArgs(id, prefer string) []string {
+	if prefer == "" {
+		return []string{id}
+	}
+	return []string{id, "--prefer", prefer}
 }
 
 // ── suite ─────────────────────────────────────────────────────────────────────
@@ -319,10 +347,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	// ── genv add ───────────────────────────────────────────────────────────────
 
 	// build the add-command args (--prefer injected when configured)
-	addArgs := []string{cfg.testPkg}
-	if cfg.preferFlag != "" {
-		addArgs = append(addArgs, "--prefer", cfg.preferFlag)
-	}
+	addArgs := pkgArgs(cfg.testPkg, cfg.preferFlag)
 
 	t.Run("add_creates_spec_entry", func(t *testing.T) {
 		stdout, _, code := r.genv("", "add", addArgs...)
@@ -351,16 +376,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		if code != 0 {
 			t.Fatalf("apply --dry-run --json: exit %d, want 0", code)
 		}
-		var env struct {
-			Command string `json:"command"`
-			OK      bool   `json:"ok"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
-			t.Fatalf("apply --dry-run --json: invalid JSON: %v\noutput: %q", err, stdout)
-		}
-		if env.Command != "apply" {
-			t.Errorf("command: got %q, want %q", env.Command, "apply")
-		}
+		assertJSONCommand(t, stdout, "apply")
 	})
 
 	t.Run("status_json_valid", func(t *testing.T) {
@@ -368,16 +384,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		if code != 0 {
 			t.Fatalf("genv status --json: exit %d, want 0", code)
 		}
-		var env struct {
-			Command string `json:"command"`
-			OK      bool   `json:"ok"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
-			t.Fatalf("status --json: invalid JSON: %v\noutput: %q", err, stdout)
-		}
-		if env.Command != "status" {
-			t.Errorf("command: got %q, want %q", env.Command, "status")
-		}
+		assertJSONCommand(t, stdout, "status")
 	})
 
 	if cfg.canInstall {
@@ -588,10 +595,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		// testPkg is installed on the system but not tracked by genv
 		// (state left by disown_removes_tracking_keeps_package_installed above).
 
-		adoptArgs := []string{cfg.testPkg}
-		if cfg.preferFlag != "" {
-			adoptArgs = append(adoptArgs, "--prefer", cfg.preferFlag)
-		}
+		adoptArgs := pkgArgs(cfg.testPkg, cfg.preferFlag)
 
 		t.Run("adopt_tracks_already_installed_package", func(t *testing.T) {
 			stdout, _, code := r.genv("", "adopt", adoptArgs...)
@@ -622,11 +626,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		})
 
 		t.Run("adopt_not_installed_fails", func(t *testing.T) {
-			notInstalledArgs := []string{"genv-e2e-definitely-not-installed-xyzzy"}
-			if cfg.preferFlag != "" {
-				notInstalledArgs = append(notInstalledArgs, "--prefer", cfg.preferFlag)
-			}
-			_, stderr, code := r.genv("", "adopt", notInstalledArgs...)
+			_, stderr, code := r.genv("", "adopt", pkgArgs("genv-e2e-definitely-not-installed-xyzzy", cfg.preferFlag)...)
 			if code == 0 {
 				t.Error("adopt not-installed: expected non-zero exit, got 0")
 			}
@@ -654,19 +654,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		if code != 0 {
 			t.Fatalf("genv scan --json: exit %d, want 0", code)
 		}
-		var env struct {
-			Command string `json:"command"`
-			OK      bool   `json:"ok"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
-			t.Fatalf("scan --json: invalid JSON: %v\noutput: %q", err, stdout)
-		}
-		if env.Command != "scan" {
-			t.Errorf("command: got %q, want %q", env.Command, "scan")
-		}
-		if !env.OK {
-			t.Errorf("ok: expected true")
-		}
+		assertJSONCommand(t, stdout, "scan")
 	})
 
 	// ── remove of an untracked package fails ──────────────────────────────────

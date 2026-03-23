@@ -78,12 +78,6 @@ func run(args []string) int {
 	}
 }
 
-// lockPathFrom derives the lock file path from the genv.json path.
-// "genv.json" → "genv.lock.json", "custom.json" → "custom.lock.json".
-func lockPathFrom(jsonPath string) string {
-	return strings.TrimSuffix(jsonPath, ".json") + ".lock.json"
-}
-
 // defaultSpecPath returns the XDG-aware default path for genv.json.
 // Falls back to "genv.json" in the current directory if the config dir cannot
 // be determined (e.g. no home directory set).
@@ -186,7 +180,7 @@ func addCmd(args []string) int {
 	}
 
 	// 3. Update lock file.
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -253,7 +247,7 @@ func removeCmd(args []string) int {
 	}
 
 	// 2. Find the package in the lock file to know which manager installed it.
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -402,7 +396,7 @@ func adoptCmd(args []string) int {
 	}
 
 	// 4. Update lock file.
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -471,7 +465,7 @@ func disownCmd(args []string) int {
 	}
 
 	// 2. Remove from lock file without uninstalling.
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -518,7 +512,7 @@ func listCmd(args []string) int {
 		return exitUsage
 	}
 
-	lf, err := genvfile.ReadLock(lockPathFrom(*file))
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
@@ -585,7 +579,7 @@ func applyCmd(args []string) int {
 		return exitIO
 	}
 
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -793,7 +787,7 @@ func scanCmd(args []string) int {
 		return exitIO
 	}
 
-	lockPath := lockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(*file)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -925,7 +919,7 @@ func statusCmd(args []string) int {
 		return exitIO
 	}
 
-	lf, err := genvfile.ReadLock(lockPathFrom(*file))
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO

@@ -36,6 +36,12 @@ func DefaultSpecPath() (string, error) {
 	return filepath.Join(dir, "genv.json"), nil
 }
 
+// LockPathFrom derives the lock file path from a genv.json path.
+// "genv.json" → "genv.lock.json", "custom.json" → "custom.lock.json".
+func LockPathFrom(specPath string) string {
+	return strings.TrimSuffix(specPath, ".json") + ".lock.json"
+}
+
 // ErrNotFound is returned by Read when the file does not exist.
 var ErrNotFound = errors.New("genv.json not found")
 
