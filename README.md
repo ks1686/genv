@@ -51,7 +51,7 @@ brew install genv
 ### Linux — Arch / Manjaro
 
 ```bash
-paru -S genv-bin      # or: yay -S genv-bin
+paru -S genv      # or: yay -S genv
 ```
 
 ### Linux — other distros

@@ -52,7 +52,7 @@ brew tap ks1686/tap
 brew install genv
 ```
 
-### 3. AUR (`genv-bin`)
+### 3. AUR (`genv`)
 
 GoReleaser pushes a PKGBUILD to AUR via SSH. It updates an existing package — it does
 not create a new one. The first publish must be done manually.
@@ -68,30 +68,28 @@ ssh-keygen -t ed25519 -C "aur-genv" -f ~/.ssh/aur_genv
 
 Add the public key to your AUR account: https://aur.archlinux.org/account/ → SSH keys.
 
-**3c. Create the `genv-bin` package on AUR** (one-time manual step):
+**3c. Create the `genv` package on AUR** (one-time manual step):
 
 ```bash
 # Clone the (empty) AUR repo — this creates the package namespace
-git clone ssh://aur@aur.archlinux.org/genv-bin.git /tmp/genv-bin
-cd /tmp/genv-bin
+git clone ssh://aur@aur.archlinux.org/genv.git /tmp/genv-aur
+cd /tmp/genv-aur
 
-# Write an initial PKGBUILD pointing at the v0.1.0 release
+# Write an initial PKGBUILD pointing at the v0.2.0 release
 # (GoReleaser will update this on every subsequent tag push)
 cat > PKGBUILD << 'EOF'
 # Maintainer: ks1686 <ks1686@users.noreply.github.com>
-pkgname=genv-bin
-pkgver=0.1.0
+pkgname=genv
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
 arch=('x86_64' 'aarch64')
 url="https://github.com/ks1686/genv"
 license=('MIT')
-provides=('genv')
-conflicts=('genv')
 source_x86_64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_amd64.tar.gz")
 source_aarch64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_arm64.tar.gz")
 # Fill in sha256sums after downloading the release artifacts:
-# sha256sum genv_0.1.0_linux_amd64.tar.gz genv_0.1.0_linux_arm64.tar.gz
+# sha256sum genv_0.2.0_linux_amd64.tar.gz genv_0.2.0_linux_arm64.tar.gz
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
@@ -104,7 +102,7 @@ EOF
 makepkg --printsrcinfo > .SRCINFO
 
 git add PKGBUILD .SRCINFO
-git commit -m "Initial release v0.1.0"
+git commit -m "Initial release v0.2.0"
 git push
 ```
 
@@ -125,7 +123,7 @@ cat ~/.ssh/aur_genv
 Users install after setup:
 
 ```bash
-paru -S genv-bin   # or: yay -S genv-bin
+paru -S genv   # or: yay -S genv
 ```
 
 ---
@@ -159,7 +157,7 @@ paru -S genv-bin   # or: yay -S genv-bin
    - Generate `checksums.txt`
    - Publish a GitHub Release with all artifacts
    - Push the Homebrew formula to `ks1686/homebrew-tap`
-   - Push an updated PKGBUILD to AUR (`genv-bin`)
+   - Push an updated PKGBUILD to AUR (`genv`)
 
 6. **Verify** by downloading one artifact and running:
 
@@ -178,7 +176,7 @@ paru -S genv-bin   # or: yay -S genv-bin
 8. **Verify AUR** (on any Arch machine):
 
    ```bash
-   paru -Sy genv-bin
+   paru -Sy genv
    genv version
    ```
 
