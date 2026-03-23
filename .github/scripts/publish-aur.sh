@@ -45,6 +45,9 @@ sha256sums_aarch64=('__SHA256_ARM64__')
 
 package() {
 	install -Dm755 "./genv" "${pkgdir}/usr/bin/genv"
+	install -Dm644 "completions/genv.zsh"  "${pkgdir}/usr/share/zsh/site-functions/_genv"
+	install -Dm644 "completions/genv.bash" "${pkgdir}/usr/share/bash-completion/completions/genv"
+	install -Dm644 "completions/genv.fish" "${pkgdir}/usr/share/fish/vendor_completions.d/genv.fish"
 }
 PKGEOF
 
