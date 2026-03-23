@@ -21,17 +21,17 @@ brew --version
 
 ---
 
-## Step 2 — Install gpm
+## Step 2 — Install genv
 
 ```bash
 brew tap ks1686/tap
-brew install gpm
+brew install genv
 ```
 
 Verify:
 
 ```bash
-gpm version
+genv version
 ```
 
 ---
@@ -39,7 +39,7 @@ gpm version
 ## Step 3 — Create your config
 
 ```bash
-mkdir -p ~/.config/gpm && cat > ~/.config/gpm/gpm.json << 'EOF'
+mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
   "schemaVersion": "1",
   "packages": []
@@ -52,20 +52,20 @@ EOF
 ## Step 4 — Add your first package
 
 ```bash
-gpm add jq
+genv add jq
 ```
 
-- This adds `jq` to your `gpm.json` and installs it immediately via `brew`
+- This adds `jq` to your `genv.json` and installs it immediately via `brew`
 
 Verify:
 
 ```bash
 jq --version
-gpm list
+genv list
 ```
 
 - `jq --version` should print a version number ✅
-- `gpm list` should show `jq` as a tracked package ✅
+- `genv list` should show `jq` as a tracked package ✅
 
 ---
 
@@ -74,35 +74,35 @@ gpm list
 Edit your spec to add more packages:
 
 ```bash
-gpm edit
+genv edit
 ```
 
 Then preview what will change before applying:
 
 ```bash
-gpm apply --dry-run
+genv apply --dry-run
 ```
 
 When ready:
 
 ```bash
-gpm apply
+genv apply
 ```
 
 ---
 
 ## Step 6 — Done!
 
-Your `gpm.json` lives at `~/.config/gpm/gpm.json`. Commit it to your dotfiles repo and run `gpm apply` on any new Mac to reproduce your environment.
+Your `genv.json` lives at `~/.config/genv/genv.json`. Commit it to your dotfiles repo and run `genv apply` on any new Mac to reproduce your environment.
 
 ---
 
 ## Known limitations on macOS
 
-- **Homebrew install time** — `brew install` for large packages (e.g. gcc, llvm) can take several minutes. This is a Homebrew limitation, not gpm's.
-- **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). gpm currently treats Homebrew as a single `brew` manager and defaults to formulae, relying on Homebrew's own resolution rules. If you specifically need the cask variant, install it manually with `brew install --cask <name>` or manage that application outside of gpm for now.
+- **Homebrew install time** — `brew install` for large packages (e.g. gcc, llvm) can take several minutes. This is a Homebrew limitation, not genv's.
+- **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). genv currently treats Homebrew as a single `brew` manager and defaults to formulae, relying on Homebrew's own resolution rules. If you specifically need the cask variant, install it manually with `brew install --cask <name>` or manage that application outside of genv for now.
 
-- **Apple Silicon vs Intel** — Homebrew installs to `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel. gpm handles both automatically via PATH detection.
+- **Apple Silicon vs Intel** — Homebrew installs to `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel. genv handles both automatically via PATH detection.
 - **macports** — If you use MacPorts instead of Homebrew, set `"prefer": "macports"` on packages where you want it used.
 
 ---

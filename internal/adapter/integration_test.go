@@ -22,11 +22,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/adapter"
+	"github.com/ks1686/genv/internal/adapter"
 )
 
 // knownAbsent is a package name that should never be installed anywhere.
-const knownAbsent = "gpm-integration-test-nonexistent-package-xyzzy"
+const knownAbsent = "genv-integration-test-nonexistent-package-xyzzy"
 
 // adapterSuite holds the per-adapter configuration used by runAdapterSuite.
 type adapterSuite struct {

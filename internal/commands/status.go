@@ -1,9 +1,9 @@
 package commands
 
 import (
-	"github.com/ks1686/gpm/internal/gpmfile"
-	"github.com/ks1686/gpm/internal/schema"
-	"github.com/ks1686/gpm/internal/version"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/version"
 )
 
 // StatusKind classifies a package's current state relative to the spec and lock.
@@ -19,11 +19,11 @@ const (
 	StatusDrift StatusKind = "drift"
 
 	// StatusMissing means the package is in the spec but has no lock entry —
-	// it has never been installed by gpm (run 'gpm apply').
+	// it has never been installed by genv (run 'genv apply').
 	StatusMissing StatusKind = "missing"
 
 	// StatusExtra means the package is in the lock but not in the spec —
-	// it was removed from the spec without being uninstalled (run 'gpm apply').
+	// it was removed from the spec without being uninstalled (run 'genv apply').
 	StatusExtra StatusKind = "extra"
 )
 
@@ -33,21 +33,21 @@ type StatusEntry struct {
 	Manager          string // empty for StatusMissing entries
 	PkgName          string
 	Kind             StatusKind
-	SpecVersion      string // constraint from gpm.json, may be empty
+	SpecVersion      string // constraint from genv.json, may be empty
 	InstalledVersion string // recorded version from lock, may be empty
 }
 
-// Status computes the three-way diff between the spec (gpm.json) and the lock
-// file (gpm.lock.json). It does not query the live system — the lock file is
-// gpm's record of what it last installed.
+// Status computes the three-way diff between the spec (genv.json) and the lock
+// file (genv.lock.json). It does not query the live system — the lock file is
+// genv's record of what it last installed.
 //
 // Categories:
 //   - ok:      in spec and lock, version constraint satisfied (or unconstrained)
 //   - drift:   in spec and lock, but InstalledVersion fails the spec constraint
-//   - missing: in spec only (gpm apply needed)
-//   - extra:   in lock only (removed from spec without gpm remove / gpm apply)
-func Status(f *schema.GpmFile, lf *gpmfile.LockFile) []StatusEntry {
-	lockByID := make(map[string]gpmfile.LockedPackage, len(lf.Packages))
+//   - missing: in spec only (genv apply needed)
+//   - extra:   in lock only (removed from spec without genv remove / genv apply)
+func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
+	lockByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
 	for _, lp := range lf.Packages {
 		lockByID[lp.ID] = lp
 	}

@@ -52,7 +52,7 @@ func TestParseAndValidate_Valid(t *testing.T) {
 				t.Fatalf("unexpected validation errors: %v", errs)
 			}
 			if f == nil {
-				t.Fatal("expected non-nil GpmFile")
+				t.Fatal("expected non-nil GenvFile")
 			}
 		})
 	}

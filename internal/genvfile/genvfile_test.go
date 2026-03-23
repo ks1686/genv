@@ -1,4 +1,4 @@
-package gpmfile
+package genvfile
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 func TestNew(t *testing.T) {
@@ -21,9 +21,9 @@ func TestNew(t *testing.T) {
 
 func TestWriteAndRead_Roundtrip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
-	original := &schema.GpmFile{
+	original := &schema.GenvFile{
 		SchemaVersion: schema.SchemaVersion,
 		Packages: []schema.Package{
 			{ID: "git", Version: "*"},
@@ -78,7 +78,7 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 func TestWrite_IsAtomic(t *testing.T) {
 	// After a successful Write, there should be no leftover .tmp file.
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := Write(path, New()); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -89,7 +89,7 @@ func TestWrite_IsAtomic(t *testing.T) {
 }
 
 func TestRead_NotFound(t *testing.T) {
-	_, err := Read("/nonexistent/path/gpm.json")
+	_, err := Read("/nonexistent/path/genv.json")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestRead_NotFound(t *testing.T) {
 
 func TestReadOrNew_CreatesNew(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	f, isNew, err := ReadOrNew(path)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestReadOrNew_CreatesNew(t *testing.T) {
 		t.Error("isNew should be true for a missing file")
 	}
 	if f == nil {
-		t.Fatal("expected non-nil GpmFile")
+		t.Fatal("expected non-nil GenvFile")
 	}
 	if f.SchemaVersion != schema.SchemaVersion {
 		t.Errorf("SchemaVersion = %q", f.SchemaVersion)
@@ -116,7 +116,7 @@ func TestReadOrNew_CreatesNew(t *testing.T) {
 
 func TestReadOrNew_ReadsExisting(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := Write(path, New()); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -130,13 +130,13 @@ func TestReadOrNew_ReadsExisting(t *testing.T) {
 		t.Error("isNew should be false for an existing file")
 	}
 	if f == nil {
-		t.Fatal("expected non-nil GpmFile")
+		t.Fatal("expected non-nil GenvFile")
 	}
 }
 
 func TestRead_ValidationError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	bad := []byte(`{"schemaVersion":"2","packages":[]}`)
 	if err := os.WriteFile(path, bad, 0o644); err != nil {
@@ -154,7 +154,7 @@ func TestRead_ValidationError(t *testing.T) {
 
 func TestRead_SyntaxError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	bad := []byte(`{"schemaVersion": "1", "packages": [`)
 	if err := os.WriteFile(path, bad, 0o644); err != nil {
@@ -174,7 +174,7 @@ func TestRead_PermissionError(t *testing.T) {
 	// Write a valid file then remove all permissions so os.ReadFile returns a
 	// permission-denied error, which is neither ErrNotFound nor ErrInvalidFile.
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -194,14 +194,14 @@ func TestRead_PermissionError(t *testing.T) {
 }
 
 func TestWrite_CreatesParentDirs(t *testing.T) {
-	// Write must create any missing parent directories (e.g. ~/.config/gpm/)
+	// Write must create any missing parent directories (e.g. ~/.config/genv/)
 	// so that first-run behaviour is self-bootstrapping.
-	path := filepath.Join(t.TempDir(), "nonexistent", "subdir", "gpm.json")
+	path := filepath.Join(t.TempDir(), "nonexistent", "subdir", "genv.json")
 	if err := Write(path, New()); err != nil {
 		t.Fatalf("expected Write to create parent dirs, got error: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected gpm.json to exist after Write: %v", err)
+		t.Fatalf("expected genv.json to exist after Write: %v", err)
 	}
 }
 
@@ -209,7 +209,7 @@ func TestWrite_CreatesParentDirs(t *testing.T) {
 // when the existing file fails schema validation (it must NOT return isNew=true).
 func TestReadOrNew_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -231,14 +231,14 @@ func TestReadOrNew_InvalidFile(t *testing.T) {
 // file replaces its content correctly.
 func TestWrite_OverwritesExistingFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	first := New()
 	if err := Write(path, first); err != nil {
 		t.Fatalf("first Write: %v", err)
 	}
 
-	second := &schema.GpmFile{
+	second := &schema.GenvFile{
 		SchemaVersion: schema.SchemaVersion,
 		Packages: []schema.Package{
 			{ID: "git", Version: "1.0"},
@@ -273,9 +273,9 @@ func TestNew_PackagesNonNil(t *testing.T) {
 // that can be re-read by Read.
 func TestWrite_ProducesValidJSON(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		SchemaVersion: schema.SchemaVersion,
 		Packages: []schema.Package{
 			{

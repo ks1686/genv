@@ -4,11 +4,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
-func newFile(pkgs ...schema.Package) *schema.GpmFile {
-	return &schema.GpmFile{
+func newFile(pkgs ...schema.Package) *schema.GenvFile {
+	return &schema.GenvFile{
 		SchemaVersion: schema.SchemaVersion,
 		Packages:      pkgs,
 	}

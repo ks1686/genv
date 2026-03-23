@@ -27,20 +27,20 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
-// ParseAndValidate parses data as a gpm.json file and validates it against
+// ParseAndValidate parses data as a genv.json file and validates it against
 // schema v1 rules.
 //
 // A non-nil error indicates a fatal parse failure (e.g. malformed JSON).
 // Semantic validation problems are returned as a []ValidationError slice
-// alongside a best-effort *GpmFile.  Both can be non-nil at the same time.
-func ParseAndValidate(data []byte) (*GpmFile, []ValidationError, error) {
+// alongside a best-effort *GenvFile.  Both can be non-nil at the same time.
+func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	// Build a (path → position) index from the raw token stream.
 	// Errors here are non-fatal; the index may be partial on malformed input.
 	positions := make(map[string]Position)
 	locateFields(data, positions)
 
 	// Unmarshal into the typed struct, turning JSON errors into user messages.
-	var f GpmFile
+	var f GenvFile
 	if err := json.Unmarshal(data, &f); err != nil {
 		var syntaxErr *json.SyntaxError
 		var typeErr *json.UnmarshalTypeError

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 func TestList_NilFile(t *testing.T) {

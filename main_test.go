@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/gpmfile"
+	"github.com/ks1686/genv/internal/genvfile"
 )
 
 // withWorkDir changes the working directory for the duration of the test.
@@ -31,10 +31,10 @@ func withWorkDir(t *testing.T, dir string) {
 
 // writeLock writes a minimal lock file with the given packages so tests can
 // exercise commands that depend on prior installed state.
-func writeLock(t *testing.T, lockPath string, pkgs []gpmfile.LockedPackage) {
+func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {
 	t.Helper()
-	lf := &gpmfile.LockFile{SchemaVersion: "1", Packages: pkgs}
-	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+	lf := &genvfile.LockFile{SchemaVersion: "1", Packages: pkgs}
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		t.Fatalf("writeLock: %v", err)
 	}
 }
@@ -73,27 +73,27 @@ func TestRun_Version(t *testing.T) {
 	}
 }
 
-// ---- gpm add ----------------------------------------------------------------
-// add writes to gpm.json and attempts a best-effort install.
+// ---- genv add ----------------------------------------------------------------
+// add writes to genv.json and attempts a best-effort install.
 // Install failure is non-fatal (no package manager in CI), so all spec-update
 // tests expect exitOK regardless of whether the install succeeds.
 
 func TestAddCmd_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "git"})
 	if code != exitOK {
 		t.Fatalf("expected exitOK, got %d", code)
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected gpm.json to exist: %v", err)
+		t.Fatalf("expected genv.json to exist: %v", err)
 	}
 }
 
 func TestAddCmd_DuplicateFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if code := run([]string{"add", "--file", path, "git"}); code != exitOK {
 		t.Fatalf("first add: expected exitOK, got %d", code)
@@ -106,7 +106,7 @@ func TestAddCmd_DuplicateFails(t *testing.T) {
 
 func TestAddCmd_WithVersionAndPrefer(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--version", "0.10.*", "--prefer", "brew", "neovim"})
 	if code != exitOK {
@@ -128,7 +128,7 @@ func TestAddCmd_WithVersionAndPrefer(t *testing.T) {
 
 func TestAddCmd_WithManagerFlag(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "flatpak:org.mozilla.firefox,brew:firefox", "firefox"})
 	if code != exitOK {
@@ -147,7 +147,7 @@ func TestAddCmd_WithManagerFlag(t *testing.T) {
 
 func TestAddCmd_FlagsAfterID(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "neovim", "--version", "0.10.*", "--prefer", "brew"})
 	if code != exitOK {
@@ -169,7 +169,7 @@ func TestAddCmd_FlagsAfterID(t *testing.T) {
 
 func TestAddCmd_FlagsBeforeID(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--version", "1.0.*", "--prefer", "brew", "neovim"})
 	if code != exitOK {
@@ -191,7 +191,7 @@ func TestAddCmd_FlagsBeforeID(t *testing.T) {
 
 func TestAddCmd_UnknownPreferFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--prefer", "yum", "git"})
 	if code != exitUsage {
@@ -201,7 +201,7 @@ func TestAddCmd_UnknownPreferFails(t *testing.T) {
 
 func TestAddCmd_MissingIDFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path})
 	if code != exitUsage {
@@ -211,7 +211,7 @@ func TestAddCmd_MissingIDFails(t *testing.T) {
 
 func TestAddCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -224,7 +224,7 @@ func TestAddCmd_InvalidFileFails(t *testing.T) {
 
 func TestAddCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -238,7 +238,7 @@ func TestAddCmd_IOError(t *testing.T) {
 
 func TestAddCmd_BadManagerFormatFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "notaformat", "git"})
 	if code != exitUsage {
@@ -248,7 +248,7 @@ func TestAddCmd_BadManagerFormatFails(t *testing.T) {
 
 func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "yum:git", "git"})
 	if code != exitUsage {
@@ -256,11 +256,11 @@ func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
 	}
 }
 
-// ---- gpm remove -------------------------------------------------------------
+// ---- genv remove -------------------------------------------------------------
 
 func TestRemoveCmd_Basic(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
@@ -285,7 +285,7 @@ func TestRemoveCmd_Basic(t *testing.T) {
 
 func TestRemoveCmd_NotFound(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 
@@ -297,7 +297,7 @@ func TestRemoveCmd_NotFound(t *testing.T) {
 
 func TestRemoveCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"remove", "--file", path, "git"})
 	if code != exitLogic {
@@ -307,7 +307,7 @@ func TestRemoveCmd_FileNotFound(t *testing.T) {
 
 func TestRemoveCmd_AliasRm(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"rm", "--file", path, "git"})
@@ -318,7 +318,7 @@ func TestRemoveCmd_AliasRm(t *testing.T) {
 
 func TestRemoveCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -331,7 +331,7 @@ func TestRemoveCmd_InvalidFileFails(t *testing.T) {
 
 func TestRemoveCmd_MissingID(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"remove", "--file", path})
@@ -342,7 +342,7 @@ func TestRemoveCmd_MissingID(t *testing.T) {
 
 func TestRemoveCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -356,7 +356,7 @@ func TestRemoveCmd_IOError(t *testing.T) {
 
 func TestRemoveCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"remove", "--file", path, "--no-such-flag", "git"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
@@ -365,7 +365,7 @@ func TestRemoveCmd_FlagParseError(t *testing.T) {
 
 func TestRemoveCmd_MultiplePackages(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
@@ -392,7 +392,7 @@ func TestRemoveCmd_MultiplePackages(t *testing.T) {
 	}
 }
 
-// ---- gpm adopt --------------------------------------------------------------
+// ---- genv adopt --------------------------------------------------------------
 // adopt requires the package to already be installed on the system.
 // In CI no package manager is guaranteed to be present, so tests that reach
 // the query step will get either "no manager available" or "not installed" —
@@ -400,7 +400,7 @@ func TestRemoveCmd_MultiplePackages(t *testing.T) {
 
 func TestAdoptCmd_MissingIDFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"adopt", "--file", path})
 	if code != exitUsage {
@@ -410,7 +410,7 @@ func TestAdoptCmd_MissingIDFails(t *testing.T) {
 
 func TestAdoptCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -425,7 +425,7 @@ func TestAdoptCmd_InvalidFileFails(t *testing.T) {
 
 func TestAdoptCmd_AlreadyTrackedFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	// adopt on an already-tracked package should return exitLogic.
@@ -438,7 +438,7 @@ func TestAdoptCmd_AlreadyTrackedFails(t *testing.T) {
 
 func TestAdoptCmd_BadManagerFormatFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"adopt", "--file", path, "--manager", "notaformat", "git"})
 	if code != exitUsage {
@@ -448,7 +448,7 @@ func TestAdoptCmd_BadManagerFormatFails(t *testing.T) {
 
 func TestAdoptCmd_UnknownPreferFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	// --prefer validation happens inside commands.Add, which is called after the
 	// query; in CI the query fails first. Both lead to exitLogic or exitUsage.
@@ -460,7 +460,7 @@ func TestAdoptCmd_UnknownPreferFails(t *testing.T) {
 
 func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	// In any environment: either no manager resolves (exitLogic) or the package
 	// is not installed (exitLogic). Both are acceptable outcomes for this test.
@@ -470,18 +470,18 @@ func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 	}
 }
 
-// ---- gpm disown -------------------------------------------------------------
-// disown removes the package from gpm.json and the lock file without uninstalling.
+// ---- genv disown -------------------------------------------------------------
+// disown removes the package from genv.json and the lock file without uninstalling.
 
 func TestDisownCmd_Basic(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	// Set up: git and neovim in spec and lock.
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 		{ID: "neovim", Manager: "apt", PkgName: "neovim"},
 	})
@@ -504,7 +504,7 @@ func TestDisownCmd_Basic(t *testing.T) {
 	}
 
 	// git must be gone from lock.
-	lf, err := gpmfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		t.Fatalf("ReadLock: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestDisownCmd_Basic(t *testing.T) {
 
 func TestDisownCmd_NotInSpec(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"disown", "--file", path, "neovim"})
@@ -528,7 +528,7 @@ func TestDisownCmd_NotInSpec(t *testing.T) {
 
 func TestDisownCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"disown", "--file", path, "git"})
 	if code != exitLogic {
@@ -538,7 +538,7 @@ func TestDisownCmd_FileNotFound(t *testing.T) {
 
 func TestDisownCmd_MissingID(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"disown", "--file", path})
@@ -549,7 +549,7 @@ func TestDisownCmd_MissingID(t *testing.T) {
 
 func TestDisownCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -562,9 +562,9 @@ func TestDisownCmd_InvalidFileFails(t *testing.T) {
 
 func TestDisownCmd_NotInLock(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
-	// Package in spec but never in lock (never installed by gpm).
+	// Package in spec but never in lock (never installed by genv).
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"disown", "--file", path, "git"})
 	if code != exitOK {
@@ -583,19 +583,19 @@ func TestDisownCmd_NotInLock(t *testing.T) {
 
 func TestDisownCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"disown", "--file", path, "--no-such-flag", "git"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
 	}
 }
 
-// ---- gpm list ---------------------------------------------------------------
-// list reads from the lock file, not gpm.json.
+// ---- genv list ---------------------------------------------------------------
+// list reads from the lock file, not genv.json.
 
 func TestListCmd_Empty(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	// No lock file exists — should succeed with "no packages installed".
 	code := run([]string{"list", "--file", path})
@@ -606,7 +606,7 @@ func TestListCmd_Empty(t *testing.T) {
 
 func TestListCmd_AliasLs(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"ls", "--file", path})
 	if code != exitOK {
@@ -616,10 +616,10 @@ func TestListCmd_AliasLs(t *testing.T) {
 
 func TestListCmd_ShowsLockedPackages(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
 	})
@@ -632,8 +632,8 @@ func TestListCmd_ShowsLockedPackages(t *testing.T) {
 
 func TestListCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	// Make the lock file unreadable.
 	if err := os.WriteFile(lockPath, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
@@ -648,18 +648,18 @@ func TestListCmd_IOError(t *testing.T) {
 
 func TestListCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"list", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
 	}
 }
 
-// ---- gpm apply --------------------------------------------------------------
+// ---- genv apply --------------------------------------------------------------
 
 func TestApplyCmd_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "--prefer", "brew", "neovim"})
@@ -672,7 +672,7 @@ func TestApplyCmd_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_DryRun_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"apply", "--file", path, "--dry-run"})
 	if code != exitIO {
@@ -682,7 +682,7 @@ func TestApplyCmd_DryRun_FileNotFound(t *testing.T) {
 
 func TestApplyCmd_DryRun_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -695,7 +695,7 @@ func TestApplyCmd_DryRun_InvalidFile(t *testing.T) {
 
 func TestApplyCmd_DryRun_EmptyPackages(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -709,7 +709,7 @@ func TestApplyCmd_DryRun_EmptyPackages(t *testing.T) {
 
 func TestApplyCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
 
@@ -722,14 +722,14 @@ func TestApplyCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
 
 func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	// Desired: git, neovim. Previously applied: git, htop.
 	// Expected: install neovim, remove htop, git unchanged.
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 		{ID: "htop", Manager: "apt", PkgName: "htop"},
 	})
@@ -742,11 +742,11 @@ func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 
 func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "git"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 
@@ -759,7 +759,7 @@ func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 
 func TestApplyCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"apply", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
@@ -821,11 +821,11 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// ---- gpm scan ---------------------------------------------------------------
+// ---- genv scan ---------------------------------------------------------------
 
 func TestScanCmd_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	// scan must not crash regardless of what managers are available in CI.
 	code := run([]string{"scan", "--file", path})
 	if code != exitOK {
@@ -835,7 +835,7 @@ func TestScanCmd_NoCrash(t *testing.T) {
 
 func TestScanCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"scan", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
@@ -844,7 +844,7 @@ func TestScanCmd_FlagParseError(t *testing.T) {
 
 func TestScanCmd_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -856,7 +856,7 @@ func TestScanCmd_InvalidFile(t *testing.T) {
 
 func TestScanCmd_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	var code int
 	out := captureStdout(t, func() {
 		code = run([]string{"scan", "--file", path, "--json"})
@@ -878,18 +878,18 @@ func TestScanCmd_JsonOutput(t *testing.T) {
 
 func TestScanCmd_Debug_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"scan", "--file", path, "--debug"})
 	if code != exitOK {
 		t.Errorf("scan --debug: expected exitOK (%d), got %d", exitOK, code)
 	}
 }
 
-// ---- gpm status -------------------------------------------------------------
+// ---- genv status -------------------------------------------------------------
 
 func TestStatusCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"status", "--file", path})
 	if code != exitIO {
 		t.Errorf("missing spec: expected exitIO (%d), got %d", exitIO, code)
@@ -898,7 +898,7 @@ func TestStatusCmd_FileNotFound(t *testing.T) {
 
 func TestStatusCmd_NothingTracked(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -910,11 +910,11 @@ func TestStatusCmd_NothingTracked(t *testing.T) {
 
 func TestStatusCmd_AllOK(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "git"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 
@@ -926,7 +926,7 @@ func TestStatusCmd_AllOK(t *testing.T) {
 
 func TestStatusCmd_MissingEntry(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 
 	// Package in spec but not in lock — "missing" exits OK (not drift/extra).
 	run([]string{"add", "--file", path, "git"})
@@ -938,14 +938,14 @@ func TestStatusCmd_MissingEntry(t *testing.T) {
 
 func TestStatusCmd_ExtraEntry(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	// Empty spec but lock has git → "extra" exits with exitLogic.
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 	code := run([]string{"status", "--file", path})
@@ -956,12 +956,12 @@ func TestStatusCmd_ExtraEntry(t *testing.T) {
 
 func TestStatusCmd_DriftEntry(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "--version", "2.0.*", "git"})
 	// Lock records version 1.x — does not satisfy "2.0.*" → drift.
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git", InstalledVersion: "1.9.0"},
 	})
 	code := run([]string{"status", "--file", path})
@@ -972,7 +972,7 @@ func TestStatusCmd_DriftEntry(t *testing.T) {
 
 func TestStatusCmd_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -984,7 +984,7 @@ func TestStatusCmd_InvalidFile(t *testing.T) {
 
 func TestStatusCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"status", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
@@ -993,11 +993,11 @@ func TestStatusCmd_FlagParseError(t *testing.T) {
 
 func TestStatusCmd_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "git"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 
@@ -1029,7 +1029,7 @@ func TestStatusCmd_JsonOutput(t *testing.T) {
 
 func TestStatusCmd_Debug_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -1039,15 +1039,15 @@ func TestStatusCmd_Debug_NoCrash(t *testing.T) {
 	}
 }
 
-// ---- gpm apply new flags ----------------------------------------------------
+// ---- genv apply new flags ----------------------------------------------------
 
 func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "git"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 
@@ -1060,7 +1060,7 @@ func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 
 func TestApplyCmd_Debug_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"apply", "--file", path, "--dry-run", "--debug"})
 	if code != exitOK {
@@ -1070,7 +1070,7 @@ func TestApplyCmd_Debug_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"apply", "--file", path, "--dry-run", "--timeout", "5m"})
 	if code != exitOK {
@@ -1080,7 +1080,7 @@ func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
+	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 
 	var code int
@@ -1111,11 +1111,11 @@ func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
 
 func TestApplyCmd_AlreadyUpToDate_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gpm.json")
-	lockPath := filepath.Join(dir, "gpm.lock.json")
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	run([]string{"add", "--file", path, "git"})
-	writeLock(t, lockPath, []gpmfile.LockedPackage{
+	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"},
 	})
 

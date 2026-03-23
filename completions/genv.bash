@@ -1,6 +1,6 @@
-# bash completion for gpm
+# bash completion for genv
 
-_gpm() {
+_genv() {
 	local i cur prev opts cmds
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
@@ -53,4 +53,4 @@ _gpm() {
 	return 0
 }
 
-complete -F _gpm gpm
+complete -F _genv genv

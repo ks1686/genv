@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 func TestRemove_Basic(t *testing.T) {

@@ -3,19 +3,19 @@ package commands
 import (
 	"testing"
 
-	"github.com/ks1686/gpm/internal/gpmfile"
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 func TestStatus_AllOK(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "vim", Version: "9.*"},
 		},
 	}
-	lf := &gpmfile.LockFile{
-		Packages: []gpmfile.LockedPackage{
+	lf := &genvfile.LockFile{
+		Packages: []genvfile.LockedPackage{
 			{ID: "git", Manager: "apt", PkgName: "git", InstalledVersion: "2.43.0"},
 			{ID: "vim", Manager: "apt", PkgName: "vim", InstalledVersion: "9.1.0"},
 		},
@@ -32,10 +32,10 @@ func TestStatus_AllOK(t *testing.T) {
 }
 
 func TestStatus_Missing(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{{ID: "curl"}},
 	}
-	lf := &gpmfile.LockFile{}
+	lf := &genvfile.LockFile{}
 	entries := Status(f, lf)
 	if len(entries) != 1 {
 		t.Fatalf("len = %d, want 1", len(entries))
@@ -49,9 +49,9 @@ func TestStatus_Missing(t *testing.T) {
 }
 
 func TestStatus_Extra(t *testing.T) {
-	f := &schema.GpmFile{}
-	lf := &gpmfile.LockFile{
-		Packages: []gpmfile.LockedPackage{
+	f := &schema.GenvFile{}
+	lf := &genvfile.LockFile{
+		Packages: []genvfile.LockedPackage{
 			{ID: "htop", Manager: "pacman", PkgName: "htop", InstalledVersion: "3.3.0"},
 		},
 	}
@@ -65,11 +65,11 @@ func TestStatus_Extra(t *testing.T) {
 }
 
 func TestStatus_Drift(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{{ID: "neovim", Version: "0.10.*"}},
 	}
-	lf := &gpmfile.LockFile{
-		Packages: []gpmfile.LockedPackage{
+	lf := &genvfile.LockFile{
+		Packages: []genvfile.LockedPackage{
 			{ID: "neovim", Manager: "brew", PkgName: "neovim", InstalledVersion: "0.9.5"},
 		},
 	}
@@ -84,11 +84,11 @@ func TestStatus_Drift(t *testing.T) {
 
 func TestStatus_NoDriftWhenNoInstalledVersion(t *testing.T) {
 	// Old lock entries without InstalledVersion should not cause drift.
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{{ID: "git", Version: "2.40.*"}},
 	}
-	lf := &gpmfile.LockFile{
-		Packages: []gpmfile.LockedPackage{
+	lf := &genvfile.LockFile{
+		Packages: []genvfile.LockedPackage{
 			{ID: "git", Manager: "apt", PkgName: "git"}, // InstalledVersion is ""
 		},
 	}
@@ -102,22 +102,22 @@ func TestStatus_NoDriftWhenNoInstalledVersion(t *testing.T) {
 }
 
 func TestStatus_Empty(t *testing.T) {
-	entries := Status(&schema.GpmFile{}, &gpmfile.LockFile{})
+	entries := Status(&schema.GenvFile{}, &genvfile.LockFile{})
 	if len(entries) != 0 {
 		t.Errorf("expected empty entries for empty spec+lock, got %d", len(entries))
 	}
 }
 
 func TestStatus_Mixed(t *testing.T) {
-	f := &schema.GpmFile{
+	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "git"},                 // in lock → ok
 			{ID: "curl"},                // not in lock → missing
 			{ID: "vim", Version: "9.*"}, // in lock, version drifts → drift
 		},
 	}
-	lf := &gpmfile.LockFile{
-		Packages: []gpmfile.LockedPackage{
+	lf := &genvfile.LockFile{
+		Packages: []genvfile.LockedPackage{
 			{ID: "git", Manager: "apt", PkgName: "git", InstalledVersion: "2.43.0"},
 			{ID: "vim", Manager: "apt", PkgName: "vim", InstalledVersion: "8.2.0"},
 			{ID: "htop", Manager: "apt", PkgName: "htop"}, // extra

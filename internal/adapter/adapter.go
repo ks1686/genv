@@ -14,7 +14,7 @@ import (
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.
 type Adapter interface {
-	// Name returns the canonical manager identifier used in gpm.json
+	// Name returns the canonical manager identifier used in genv.json
 	// (e.g. "apt", "brew", "flatpak").
 	Name() string
 
@@ -22,7 +22,7 @@ type Adapter interface {
 	Available() bool
 
 	// NormalizeID returns the concrete package name for this manager.
-	// managers is the optional per-manager name overrides from the gpm.json
+	// managers is the optional per-manager name overrides from the genv.json
 	// "managers" field. Returns the resolved name and true if an explicit
 	// mapping was found; returns id and false when falling back to the ID.
 	NormalizeID(id string, managers map[string]string) (name string, explicit bool)
@@ -44,7 +44,7 @@ type Adapter interface {
 
 	// ListInstalled returns the concrete package names of all packages currently
 	// installed via this manager. Returns nil, nil when the manager is unavailable
-	// or no packages are installed. Names are manager-specific identifiers, not gpm IDs.
+	// or no packages are installed. Names are manager-specific identifiers, not genv IDs.
 	ListInstalled() ([]string, error)
 
 	// QueryVersion returns the installed version string for pkgName.
@@ -55,7 +55,7 @@ type Adapter interface {
 
 // All is the ordered registry of every known adapter.
 // The slice order determines fallback priority: when no preference is
-// specified in gpm.json the first available adapter wins.
+// specified in genv.json the first available adapter wins.
 var All = []Adapter{
 	Brew{},
 	MacPorts{},

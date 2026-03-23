@@ -1,18 +1,18 @@
 //go:build integration
 
-// Package e2e_test contains end-to-end tests for the gpm binary.
+// Package e2e_test contains end-to-end tests for the genv binary.
 //
 // Unlike the adapter-layer integration tests (internal/adapter/integration_test.go),
-// these tests build the real gpm binary and exercise every M1/M2 command
+// these tests build the real genv binary and exercise every M1/M2 command
 // against a live package manager on the host:
 //
-//   - gpm add / remove / list (ls) / apply / apply --dry-run / clean / clean --dry-run
-//   - gpm adopt: verify already-installed package is tracked without reinstalling
-//   - gpm disown: verify package is untracked without being uninstalled
+//   - genv add / remove / list (ls) / apply / apply --dry-run / clean / clean --dry-run
+//   - genv adopt: verify already-installed package is tracked without reinstalling
+//   - genv disown: verify package is untracked without being uninstalled
 //   - lock-file integrity after every mutation
-//   - gpm apply reconcile: install newly-added packages, remove deleted ones
-//   - gpm apply --strict with a fully-resolved plan
-//   - error paths: duplicate add, remove/adopt/disown of untracked package, apply with no gpm.json
+//   - genv apply reconcile: install newly-added packages, remove deleted ones
+//   - genv apply --strict with a fully-resolved plan
+//   - error paths: duplicate add, remove/adopt/disown of untracked package, apply with no genv.json
 //   - command aliases: ls, rm
 //
 // Each TestE2E* function skips itself when its adapter binary is absent,
@@ -33,17 +33,17 @@ import (
 	"testing"
 )
 
-// gpmBin is the path to the compiled gpm binary, populated by TestMain.
+// gpmBin is the path to the compiled genv binary, populated by TestMain.
 var gpmBin string
 
 func TestMain(m *testing.M) {
-	tmp, err := os.MkdirTemp("", "gpm-e2e-bin-*")
+	tmp, err := os.MkdirTemp("", "genv-e2e-bin-*")
 	if err != nil {
 		panic("mkdirtemp: " + err.Error())
 	}
 
-	bin := filepath.Join(tmp, "gpm")
-	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/ks1686/gpm").CombinedOutput()
+	bin := filepath.Join(tmp, "genv")
+	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/ks1686/genv").CombinedOutput()
 	if err != nil {
 		os.RemoveAll(tmp)
 		panic("go build failed:\n" + string(out))
@@ -63,13 +63,13 @@ type runner struct {
 	bin      string
 	gpmJSON  string
 	lockJSON string
-	prefer   string // if non-empty, passed as --prefer on gpm add and written into specs
+	prefer   string // if non-empty, passed as --prefer on genv add and written into specs
 }
 
 func newRunner(t *testing.T, prefer string) *runner {
 	t.Helper()
 	dir := t.TempDir()
-	g := filepath.Join(dir, "gpm.json")
+	g := filepath.Join(dir, "genv.json")
 	return &runner{
 		bin:      gpmBin,
 		gpmJSON:  g,
@@ -78,7 +78,7 @@ func newRunner(t *testing.T, prefer string) *runner {
 	}
 }
 
-// rawExec runs the gpm binary with the given args and optional stdin.
+// rawExec runs the genv binary with the given args and optional stdin.
 // Returns stdout, stderr, and exit code (0 on success).
 func (r *runner) rawExec(stdinData string, args ...string) (stdout, stderr string, code int) {
 	cmd := exec.Command(r.bin, args...)
@@ -98,9 +98,9 @@ func (r *runner) rawExec(stdinData string, args ...string) (stdout, stderr strin
 	return outBuf.String(), errBuf.String(), code
 }
 
-// gpm runs a gpm subcommand with --file injected as the second argument.
+// genv runs a genv subcommand with --file injected as the second argument.
 // Use rawExec for commands that do not accept --file (help, clean).
-func (r *runner) gpm(stdinData, subcmd string, extra ...string) (stdout, stderr string, code int) {
+func (r *runner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr string, code int) {
 	args := make([]string, 0, 3+len(extra))
 	args = append(args, subcmd, "--file", r.gpmJSON)
 	args = append(args, extra...)
@@ -109,7 +109,7 @@ func (r *runner) gpm(stdinData, subcmd string, extra ...string) (stdout, stderr 
 
 // ── spec / lock helpers ───────────────────────────────────────────────────────
 
-// specIDs returns the package IDs currently in gpm.json.
+// specIDs returns the package IDs currently in genv.json.
 func (r *runner) specIDs(t *testing.T) []string {
 	t.Helper()
 	data, err := os.ReadFile(r.gpmJSON)
@@ -134,7 +134,7 @@ func (r *runner) specIDs(t *testing.T) []string {
 	return ids
 }
 
-// lockPackages returns the packages slice from gpm.lock.json.
+// lockPackages returns the packages slice from genv.lock.json.
 func (r *runner) lockPackages(t *testing.T) []map[string]string {
 	t.Helper()
 	data, err := os.ReadFile(r.lockJSON)
@@ -153,9 +153,9 @@ func (r *runner) lockPackages(t *testing.T) []map[string]string {
 	return lf.Packages
 }
 
-// writeSpec writes a minimal gpm.json containing exactly the given package IDs.
+// writeSpec writes a minimal genv.json containing exactly the given package IDs.
 // Each entry gets the runner's prefer field (if set) so that apply tests resolve
-// to the same adapter as gpm add.
+// to the same adapter as genv add.
 func (r *runner) writeSpec(t *testing.T, ids ...string) {
 	t.Helper()
 	type pkg struct {
@@ -176,7 +176,7 @@ func (r *runner) writeSpec(t *testing.T, ids ...string) {
 	}
 }
 
-// clearLock deletes gpm.lock.json, simulating a first-run state.
+// clearLock deletes genv.lock.json, simulating a first-run state.
 func (r *runner) clearLock(t *testing.T) {
 	t.Helper()
 	if err := os.Remove(r.lockJSON); err != nil && !os.IsNotExist(err) {
@@ -191,14 +191,14 @@ func (r *runner) assertInSpec(t *testing.T, id string) {
 			return
 		}
 	}
-	t.Errorf("expected %q in gpm.json; current ids: %v", id, r.specIDs(t))
+	t.Errorf("expected %q in genv.json; current ids: %v", id, r.specIDs(t))
 }
 
 func (r *runner) assertNotInSpec(t *testing.T, id string) {
 	t.Helper()
 	for _, s := range r.specIDs(t) {
 		if s == id {
-			t.Errorf("expected %q absent from gpm.json, but it is present", id)
+			t.Errorf("expected %q absent from genv.json, but it is present", id)
 			return
 		}
 	}
@@ -214,14 +214,14 @@ func (r *runner) assertInLock(t *testing.T, id, manager string) {
 			return
 		}
 	}
-	t.Errorf("expected %q in gpm.lock.json with manager=%q; current entries: %v", id, manager, r.lockPackages(t))
+	t.Errorf("expected %q in genv.lock.json with manager=%q; current entries: %v", id, manager, r.lockPackages(t))
 }
 
 func (r *runner) assertNotInLock(t *testing.T, id string) {
 	t.Helper()
 	for _, p := range r.lockPackages(t) {
 		if p["id"] == id {
-			t.Errorf("expected %q absent from gpm.lock.json, but it is present", id)
+			t.Errorf("expected %q absent from genv.lock.json, but it is present", id)
 			return
 		}
 	}
@@ -234,7 +234,7 @@ type suiteConfig struct {
 	adapterName string // e.g. "apt" — must match the adapter's Name()
 	checkBin    string // binary that must exist in PATH for this adapter
 	testPkg     string // small package to install and remove during tests
-	preferFlag  string // if non-empty, passed as --prefer on gpm add (and written into specs)
+	preferFlag  string // if non-empty, passed as --prefer on genv add (and written into specs)
 	canInstall  bool   // false when install requires infra absent in CI (e.g. flatpak remotes)
 }
 
@@ -255,14 +255,14 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	t.Run("help", func(t *testing.T) {
 		_, _, code := r.rawExec("", "help")
 		if code != 0 {
-			t.Errorf("gpm help: exit %d, want 0", code)
+			t.Errorf("genv help: exit %d, want 0", code)
 		}
 	})
 
 	t.Run("help_flag", func(t *testing.T) {
 		_, _, code := r.rawExec("", "--help")
 		if code != 0 {
-			t.Errorf("gpm --help: exit %d, want 0", code)
+			t.Errorf("genv --help: exit %d, want 0", code)
 		}
 	})
 
@@ -279,9 +279,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	// ── list / ls on empty state ──────────────────────────────────────────────
 
 	t.Run("list_empty", func(t *testing.T) {
-		stdout, _, code := r.gpm("", "list")
+		stdout, _, code := r.genv("", "list")
 		if code != 0 {
-			t.Fatalf("gpm list: exit %d, want 0", code)
+			t.Fatalf("genv list: exit %d, want 0", code)
 		}
 		if !strings.Contains(stdout, "no packages installed") {
 			t.Errorf("expected empty-list message, got: %q", stdout)
@@ -289,34 +289,34 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	})
 
 	t.Run("ls_alias_empty", func(t *testing.T) {
-		stdout, _, code := r.gpm("", "ls")
+		stdout, _, code := r.genv("", "ls")
 		if code != 0 {
-			t.Fatalf("gpm ls: exit %d, want 0", code)
+			t.Fatalf("genv ls: exit %d, want 0", code)
 		}
 		if !strings.Contains(stdout, "no packages installed") {
 			t.Errorf("ls alias: expected empty-list message, got: %q", stdout)
 		}
 	})
 
-	// ── apply with missing gpm.json ───────────────────────────────────────────
+	// ── apply with missing genv.json ───────────────────────────────────────────
 
 	t.Run("apply_missing_spec_fails", func(t *testing.T) {
 		r2 := newRunner(t, cfg.preferFlag)
-		_, _, code := r2.gpm("", "apply", "--dry-run")
+		_, _, code := r2.genv("", "apply", "--dry-run")
 		if code == 0 {
-			t.Error("apply --dry-run with no gpm.json: expected non-zero exit, got 0")
+			t.Error("apply --dry-run with no genv.json: expected non-zero exit, got 0")
 		}
 	})
 
 	t.Run("status_no_spec_fails", func(t *testing.T) {
 		r2 := newRunner(t, cfg.preferFlag)
-		_, _, code := r2.gpm("", "status")
+		_, _, code := r2.genv("", "status")
 		if code == 0 {
-			t.Error("status with no gpm.json: expected non-zero exit, got 0")
+			t.Error("status with no genv.json: expected non-zero exit, got 0")
 		}
 	})
 
-	// ── gpm add ───────────────────────────────────────────────────────────────
+	// ── genv add ───────────────────────────────────────────────────────────────
 
 	// build the add-command args (--prefer injected when configured)
 	addArgs := []string{cfg.testPkg}
@@ -325,9 +325,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	}
 
 	t.Run("add_creates_spec_entry", func(t *testing.T) {
-		stdout, _, code := r.gpm("", "add", addArgs...)
+		stdout, _, code := r.genv("", "add", addArgs...)
 		if code != 0 {
-			t.Fatalf("gpm add %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+			t.Fatalf("genv add %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
 		}
 		r.assertInSpec(t, cfg.testPkg)
 	})
@@ -337,9 +337,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		r2 := newRunner(t, cfg.preferFlag)
 		r2.writeSpec(t, cfg.testPkg)
 		// no lock written — package is in spec but not yet installed/tracked
-		stdout, _, code := r2.gpm("", "status")
+		stdout, _, code := r2.genv("", "status")
 		if code != 0 {
-			t.Fatalf("gpm status: exit %d, want 0", code)
+			t.Fatalf("genv status: exit %d, want 0", code)
 		}
 		if !strings.Contains(stdout, "missing") {
 			t.Errorf("expected 'missing' in status output, got: %q", stdout)
@@ -347,7 +347,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	})
 
 	t.Run("apply_dry_run_json_valid", func(t *testing.T) {
-		stdout, _, code := r.gpm("", "apply", "--dry-run", "--json")
+		stdout, _, code := r.genv("", "apply", "--dry-run", "--json")
 		if code != 0 {
 			t.Fatalf("apply --dry-run --json: exit %d, want 0", code)
 		}
@@ -364,9 +364,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	})
 
 	t.Run("status_json_valid", func(t *testing.T) {
-		stdout, _, code := r.gpm("", "status", "--json")
+		stdout, _, code := r.genv("", "status", "--json")
 		if code != 0 {
-			t.Fatalf("gpm status --json: exit %d, want 0", code)
+			t.Fatalf("genv status --json: exit %d, want 0", code)
 		}
 		var env struct {
 			Command string `json:"command"`
@@ -386,9 +386,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		})
 
 		t.Run("status_ok_after_install", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "status")
+			stdout, _, code := r.genv("", "status")
 			if code != 0 {
-				t.Fatalf("gpm status: exit %d, want 0", code)
+				t.Fatalf("genv status: exit %d, want 0", code)
 			}
 			if !strings.Contains(stdout, "ok") {
 				t.Errorf("expected 'ok' in status output after install, got: %q", stdout)
@@ -398,9 +398,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		// ── list / ls after install ────────────────────────────────────────────
 
 		t.Run("list_shows_installed_package", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "list")
+			stdout, _, code := r.genv("", "list")
 			if code != 0 {
-				t.Fatalf("gpm list: exit %d, want 0", code)
+				t.Fatalf("genv list: exit %d, want 0", code)
 			}
 			if !strings.Contains(stdout, cfg.testPkg) {
 				t.Errorf("expected %q in list output, got: %q", cfg.testPkg, stdout)
@@ -411,9 +411,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		})
 
 		t.Run("ls_alias_shows_installed_package", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "ls")
+			stdout, _, code := r.genv("", "ls")
 			if code != 0 {
-				t.Fatalf("gpm ls: exit %d, want 0", code)
+				t.Fatalf("genv ls: exit %d, want 0", code)
 			}
 			if !strings.Contains(stdout, cfg.testPkg) {
 				t.Errorf("ls alias: expected %q in output, got: %q", cfg.testPkg, stdout)
@@ -423,7 +423,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		// ── duplicate add rejected ─────────────────────────────────────────────
 
 		t.Run("add_duplicate_rejected", func(t *testing.T) {
-			_, stderr, code := r.gpm("", "add", addArgs...)
+			_, stderr, code := r.genv("", "add", addArgs...)
 			if code == 0 {
 				t.Error("duplicate add: expected non-zero exit, got 0")
 			}
@@ -435,7 +435,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		// ── apply --dry-run: up to date ────────────────────────────────────────
 
 		t.Run("apply_dry_run_up_to_date", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "apply", "--dry-run")
+			stdout, _, code := r.genv("", "apply", "--dry-run")
 			if code != 0 {
 				t.Fatalf("apply --dry-run (up-to-date): exit %d, want 0", code)
 			}
@@ -444,21 +444,21 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			}
 		})
 
-		// ── gpm remove ────────────────────────────────────────────────────────
+		// ── genv remove ────────────────────────────────────────────────────────
 
 		t.Run("remove_updates_spec_and_lock", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "remove", cfg.testPkg)
+			stdout, _, code := r.genv("", "remove", cfg.testPkg)
 			if code != 0 {
-				t.Fatalf("gpm remove %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+				t.Fatalf("genv remove %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
 			}
 			r.assertNotInSpec(t, cfg.testPkg)
 			r.assertNotInLock(t, cfg.testPkg)
 		})
 
 		t.Run("list_empty_after_remove", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "list")
+			stdout, _, code := r.genv("", "list")
 			if code != 0 {
-				t.Fatalf("gpm list: exit %d, want 0", code)
+				t.Fatalf("genv list: exit %d, want 0", code)
 			}
 			if !strings.Contains(stdout, "no packages installed") {
 				t.Errorf("expected empty-list message after remove, got: %q", stdout)
@@ -468,12 +468,12 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		// ── rm alias ──────────────────────────────────────────────────────────
 
 		t.Run("rm_alias", func(t *testing.T) {
-			if _, _, code := r.gpm("", "add", addArgs...); code != 0 {
-				t.Fatalf("setup: gpm add: exit %d", code)
+			if _, _, code := r.genv("", "add", addArgs...); code != 0 {
+				t.Fatalf("setup: genv add: exit %d", code)
 			}
-			_, _, code := r.gpm("", "rm", cfg.testPkg)
+			_, _, code := r.genv("", "rm", cfg.testPkg)
 			if code != 0 {
-				t.Errorf("gpm rm: exit %d, want 0", code)
+				t.Errorf("genv rm: exit %d, want 0", code)
 			}
 			r.assertNotInSpec(t, cfg.testPkg)
 			r.assertNotInLock(t, cfg.testPkg)
@@ -487,21 +487,21 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			r.writeSpec(t, cfg.testPkg)
 			r.clearLock(t)
 			// No stdin provided; --yes must suppress the confirmation prompt.
-			stdout, _, code := r.gpm("", "apply", "--dry-run", "--yes")
+			stdout, _, code := r.genv("", "apply", "--dry-run", "--yes")
 			if code != 0 {
 				t.Fatalf("apply --dry-run --yes: exit %d\nstdout: %s", code, stdout)
 			}
 		})
 
 		// ── apply: install path ───────────────────────────────────────────────
-		// Write spec directly (bypasses gpm add) and run apply from a clean lock.
+		// Write spec directly (bypasses genv add) and run apply from a clean lock.
 
 		t.Run("apply_installs_from_spec", func(t *testing.T) {
 			r.writeSpec(t, cfg.testPkg)
 			r.clearLock(t)
-			stdout, _, code := r.gpm("y\n", "apply")
+			stdout, _, code := r.genv("y\n", "apply")
 			if code != 0 {
-				t.Fatalf("gpm apply (install): exit %d\nstdout: %s", code, stdout)
+				t.Fatalf("genv apply (install): exit %d\nstdout: %s", code, stdout)
 			}
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
 		})
@@ -511,7 +511,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		t.Run("apply_dry_run_shows_plan", func(t *testing.T) {
 			// spec has testPkg; clear the lock so apply would need to install
 			r.clearLock(t)
-			stdout, _, code := r.gpm("", "apply", "--dry-run")
+			stdout, _, code := r.genv("", "apply", "--dry-run")
 			if code != 0 {
 				t.Fatalf("apply --dry-run (plan): exit %d", code)
 			}
@@ -528,13 +528,13 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 
 		t.Run("apply_removes_deleted_from_spec", func(t *testing.T) {
 			r.writeSpec(t, cfg.testPkg)
-			if _, _, code := r.gpm("y\n", "apply"); code != 0 {
+			if _, _, code := r.genv("y\n", "apply"); code != 0 {
 				t.Fatalf("setup apply: exit %d", code)
 			}
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
 
 			r.writeSpec(t) // empty spec — package "deleted" by user
-			stdout, _, code := r.gpm("y\n", "apply")
+			stdout, _, code := r.genv("y\n", "apply")
 			if code != 0 {
 				t.Fatalf("apply (remove path): exit %d\nstdout: %s", code, stdout)
 			}
@@ -546,29 +546,29 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		t.Run("apply_strict_all_resolved", func(t *testing.T) {
 			r.writeSpec(t, cfg.testPkg)
 			r.clearLock(t)
-			stdout, _, code := r.gpm("y\n", "apply", "--strict")
+			stdout, _, code := r.genv("y\n", "apply", "--strict")
 			if code != 0 {
 				t.Fatalf("apply --strict (all resolved): exit %d\nstdout: %s", code, stdout)
 			}
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
 			// clean up so later tests start from an empty state
-			r.gpm("", "remove", cfg.testPkg)
+			r.genv("", "remove", cfg.testPkg)
 		})
 
-		// ── gpm disown ────────────────────────────────────────────────────────
+		// ── genv disown ────────────────────────────────────────────────────────
 		// Install and track testPkg, then disown it. The package must remain
 		// installed on the system but disappear from spec and lock.
 
 		t.Run("disown_removes_tracking_keeps_package_installed", func(t *testing.T) {
-			if _, _, code := r.gpm("", "add", addArgs...); code != 0 {
-				t.Fatalf("setup disown: gpm add exit %d", code)
+			if _, _, code := r.genv("", "add", addArgs...); code != 0 {
+				t.Fatalf("setup disown: genv add exit %d", code)
 			}
 			r.assertInSpec(t, cfg.testPkg)
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
 
-			stdout, _, code := r.gpm("", "disown", cfg.testPkg)
+			stdout, _, code := r.genv("", "disown", cfg.testPkg)
 			if code != 0 {
-				t.Fatalf("gpm disown %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+				t.Fatalf("genv disown %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
 			}
 			r.assertNotInSpec(t, cfg.testPkg)
 			r.assertNotInLock(t, cfg.testPkg)
@@ -578,14 +578,14 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		})
 
 		t.Run("disown_not_tracked_fails", func(t *testing.T) {
-			_, _, code := r.gpm("", "disown", "gpm-e2e-never-tracked-xyzzy")
+			_, _, code := r.genv("", "disown", "genv-e2e-never-tracked-xyzzy")
 			if code == 0 {
 				t.Error("disown untracked: expected non-zero exit, got 0")
 			}
 		})
 
-		// ── gpm adopt ────────────────────────────────────────────────────────
-		// testPkg is installed on the system but not tracked by gpm
+		// ── genv adopt ────────────────────────────────────────────────────────
+		// testPkg is installed on the system but not tracked by genv
 		// (state left by disown_removes_tracking_keeps_package_installed above).
 
 		adoptArgs := []string{cfg.testPkg}
@@ -594,9 +594,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		}
 
 		t.Run("adopt_tracks_already_installed_package", func(t *testing.T) {
-			stdout, _, code := r.gpm("", "adopt", adoptArgs...)
+			stdout, _, code := r.genv("", "adopt", adoptArgs...)
 			if code != 0 {
-				t.Fatalf("gpm adopt %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
+				t.Fatalf("genv adopt %s: exit %d\nstdout: %s", cfg.testPkg, code, stdout)
 			}
 			r.assertInSpec(t, cfg.testPkg)
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
@@ -610,7 +610,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 
 		t.Run("adopt_already_tracked_fails", func(t *testing.T) {
 			// testPkg is now tracked from the previous subtest.
-			_, stderr, code := r.gpm("", "adopt", adoptArgs...)
+			_, stderr, code := r.genv("", "adopt", adoptArgs...)
 			if code == 0 {
 				t.Error("adopt already-tracked: expected non-zero exit, got 0")
 			}
@@ -618,15 +618,15 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 				t.Errorf("expected 'already tracked' in stderr, got: %q", stderr)
 			}
 			// clean up so the package is gone for the not-installed test
-			r.gpm("", "remove", cfg.testPkg)
+			r.genv("", "remove", cfg.testPkg)
 		})
 
 		t.Run("adopt_not_installed_fails", func(t *testing.T) {
-			notInstalledArgs := []string{"gpm-e2e-definitely-not-installed-xyzzy"}
+			notInstalledArgs := []string{"genv-e2e-definitely-not-installed-xyzzy"}
 			if cfg.preferFlag != "" {
 				notInstalledArgs = append(notInstalledArgs, "--prefer", cfg.preferFlag)
 			}
-			_, stderr, code := r.gpm("", "adopt", notInstalledArgs...)
+			_, stderr, code := r.genv("", "adopt", notInstalledArgs...)
 			if code == 0 {
 				t.Error("adopt not-installed: expected non-zero exit, got 0")
 			}
@@ -636,23 +636,23 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		})
 	}
 
-	// ── gpm scan ──────────────────────────────────────────────────────────────
+	// ── genv scan ──────────────────────────────────────────────────────────────
 	// scan bulk-adopts installed packages; use isolated runners to avoid
 	// polluting the shared runner's spec/lock with every system package.
 
 	t.Run("scan_exits_ok", func(t *testing.T) {
 		r2 := newRunner(t, cfg.preferFlag)
-		_, _, code := r2.gpm("", "scan")
+		_, _, code := r2.genv("", "scan")
 		if code != 0 {
-			t.Errorf("gpm scan: exit %d, want 0", code)
+			t.Errorf("genv scan: exit %d, want 0", code)
 		}
 	})
 
 	t.Run("scan_json_valid", func(t *testing.T) {
 		r2 := newRunner(t, cfg.preferFlag)
-		stdout, _, code := r2.gpm("", "scan", "--json")
+		stdout, _, code := r2.genv("", "scan", "--json")
 		if code != 0 {
-			t.Fatalf("gpm scan --json: exit %d, want 0", code)
+			t.Fatalf("genv scan --json: exit %d, want 0", code)
 		}
 		var env struct {
 			Command string `json:"command"`
@@ -672,25 +672,25 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	// ── remove of an untracked package fails ──────────────────────────────────
 
 	t.Run("remove_not_tracked_fails", func(t *testing.T) {
-		_, _, code := r.gpm("", "remove", "gpm-e2e-never-tracked-xyzzy")
+		_, _, code := r.genv("", "remove", "genv-e2e-never-tracked-xyzzy")
 		if code == 0 {
 			t.Error("remove untracked: expected non-zero exit, got 0")
 		}
 	})
 
-	// ── gpm clean ─────────────────────────────────────────────────────────────
+	// ── genv clean ─────────────────────────────────────────────────────────────
 
 	t.Run("clean_dry_run", func(t *testing.T) {
 		_, _, code := r.rawExec("", "clean", "--dry-run")
 		if code != 0 {
-			t.Errorf("gpm clean --dry-run: exit %d, want 0", code)
+			t.Errorf("genv clean --dry-run: exit %d, want 0", code)
 		}
 	})
 
 	t.Run("clean", func(t *testing.T) {
 		_, _, code := r.rawExec("", "clean")
 		if code != 0 {
-			t.Errorf("gpm clean: exit %d, want 0", code)
+			t.Errorf("genv clean: exit %d, want 0", code)
 		}
 	})
 }
@@ -749,7 +749,7 @@ func TestE2EYay(t *testing.T) {
 
 // TestE2EFlatpak tests all non-install commands. Real flatpak installs require
 // a configured remote (e.g. Flathub) which is not set up in the CI containers.
-// gpm add still exits 0 even when the install fails (non-fatal by design), so
+// genv add still exits 0 even when the install fails (non-fatal by design), so
 // spec/lock mutations and all read-only commands are still fully exercised.
 func TestE2EFlatpak(t *testing.T) {
 	runE2ESuite(t, suiteConfig{

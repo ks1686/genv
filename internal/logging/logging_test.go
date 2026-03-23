@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/ks1686/gpm/internal/logging"
+	"github.com/ks1686/genv/internal/logging"
 )
 
 func TestInit_NoCrash(t *testing.T) {

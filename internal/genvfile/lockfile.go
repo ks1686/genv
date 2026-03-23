@@ -1,4 +1,4 @@
-package gpmfile
+package genvfile
 
 import (
 	"encoding/json"
@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ks1686/gpm/internal/schema"
+	"github.com/ks1686/genv/internal/schema"
 )
 
-// LockedPackage records how one package was last applied by gpm: which manager
+// LockedPackage records how one package was last applied by genv: which manager
 // was chosen, what concrete package name was passed to it, and the version that
 // was installed. InstalledVersion is empty for entries written before M3.
 type LockedPackage struct {
@@ -20,7 +20,7 @@ type LockedPackage struct {
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
-// LockFile is the on-disk representation of gpm's applied state.
+// LockFile is the on-disk representation of genv's applied state.
 type LockFile struct {
 	SchemaVersion string          `json:"schemaVersion"`
 	Packages      []LockedPackage `json:"packages"`
@@ -28,7 +28,7 @@ type LockFile struct {
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),
 // it returns an empty LockFile with no error — the caller treats that as a
-// clean slate and will install everything in gpm.json.
+// clean slate and will install everything in genv.json.
 func ReadLock(path string) (*LockFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -45,7 +45,7 @@ func ReadLock(path string) (*LockFile, error) {
 }
 
 // WriteLock atomically writes lf to path using a temp-file + rename, matching
-// the same safety pattern as Write for gpm.json.
+// the same safety pattern as Write for genv.json.
 func WriteLock(path string, lf *LockFile) error {
 	data, err := json.MarshalIndent(lf, "", "  ")
 	if err != nil {
