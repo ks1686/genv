@@ -201,6 +201,64 @@ Acceptance criteria:
 - [ ] `genv upgrade` updates `installedVersion` in the lock after successfully upgrading.
 - [ ] Every error message references a corrective action or relevant flag.
 
+## Milestone M8 - Environment Variables and Shell Globals
+
+Goal: Extend genv to manage global shell environment variables as part of the reproducible environment.
+
+Target outcomes:
+
+- Users can declare shell environment variables in `genv.json` and apply them to their shell profile.
+- Variables are tracked in the lock file alongside packages so the full environment state is reproducible.
+- `genv apply` handles variable addition, update, and removal cleanly without duplicating shell profile entries.
+
+Checklist:
+
+- [ ] Extend `genv.json` schema (v2) to accept an `env` block mapping variable names to values.
+- [ ] Implement `genv env set <NAME> <value>` — add or update a variable in the spec.
+- [ ] Implement `genv env unset <NAME>` — remove a variable from the spec.
+- [ ] Implement `genv env list` — show all declared variables and their current resolved values.
+- [ ] Implement apply logic: write variables to a managed shell profile fragment (e.g. `~/.config/genv/env.sh`) sourced by the user's shell rc.
+- [ ] Track applied variable state in `genv.lock.json` so drift is detectable.
+- [ ] Implement `genv status` drift detection for env variables (declared vs. actually exported).
+- [ ] Support secret redaction in `--json` output for variables marked `sensitive: true`.
+- [ ] Add unit and integration tests for env apply, update, and removal.
+
+Acceptance criteria:
+
+- [ ] `genv apply` on a spec with an `env` block exports the declared variables in a new shell session.
+- [ ] Removing a variable from the spec and re-running `genv apply` removes it from the managed fragment.
+- [ ] `genv status` surfaces variables that are in the spec but not currently exported, and vice versa.
+- [ ] Sensitive variables are redacted in `--json` output and log output.
+
+## Milestone M9 - Shell Configuration Management
+
+Goal: Extend genv to manage basic shell configuration (aliases, functions, and rc snippets) as a first-class environment concern.
+
+Target outcomes:
+
+- Users can declare shell aliases and small rc snippets in `genv.json` and have them applied consistently across machines.
+- Shell config state is versioned and reproducible alongside packages and env vars.
+- genv does not own the entire shell rc — it manages a scoped fragment and sources it, leaving user customizations intact.
+
+Checklist:
+
+- [ ] Extend `genv.json` schema (v2 or v3) to accept a `shell` block with `aliases`, `functions`, and `source` fields.
+- [ ] Implement `genv shell alias set <name> <value>` and `genv shell alias unset <name>`.
+- [ ] Implement apply logic: write aliases and functions to a managed fragment (e.g. `~/.config/genv/shell.sh`).
+- [ ] Implement safe rc injection: detect whether the managed fragment is already sourced in `~/.bashrc`, `~/.zshrc`, etc., and add the source line only once.
+- [ ] Implement `genv shell status` — diff between declared shell config and what is currently active.
+- [ ] Support per-shell targeting (bash-only alias vs. zsh-only alias vs. both).
+- [ ] Add `genv shell edit` — open the managed fragment in `$EDITOR` for manual overrides.
+- [ ] Track applied shell config in `genv.lock.json`.
+- [ ] Add unit and integration tests for fragment generation and rc injection.
+
+Acceptance criteria:
+
+- [ ] `genv apply` on a spec with a `shell.aliases` block makes those aliases available in a new shell session.
+- [ ] Re-running apply after removing an alias cleanly removes it from the managed fragment.
+- [ ] The source line is injected exactly once into the user's rc file, even if `genv apply` is run multiple times.
+- [ ] `genv shell status` reports drift between the spec and the active shell session.
+
 ## Cross-Cutting Quality Gates
 
 These gates apply to every milestone.
@@ -218,8 +276,9 @@ These gates apply to every milestone.
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [ ] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [ ] v1.1.0+ — iterate on user feedback, add features, and expand platform support as needed
-- [ ] v2.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
-- [ ] v3.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip) and/or a plugin system for custom managers
+- [ ] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
+- [ ] v3.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
+- [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip) and/or a plugin system for custom managers
 
 ## How to Contribute Against This Roadmap
 

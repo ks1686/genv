@@ -33,8 +33,8 @@ import (
 	"testing"
 )
 
-// gpmBin is the path to the compiled genv binary, populated by TestMain.
-var gpmBin string
+// genvBin is the path to the compiled genv binary, populated by TestMain.
+var genvBin string
 
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "genv-e2e-bin-*")
@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 		os.RemoveAll(tmp)
 		panic("go build failed:\n" + string(out))
 	}
-	gpmBin = bin
+	genvBin = bin
 
 	code := m.Run()
 	os.RemoveAll(tmp)
@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 // flag so every helper can inject them consistently.
 type runner struct {
 	bin      string
-	gpmJSON  string
+	genvJSON string
 	lockJSON string
 	prefer   string // if non-empty, passed as --prefer on genv add and written into specs
 }
@@ -71,8 +71,8 @@ func newRunner(t *testing.T, prefer string) *runner {
 	dir := t.TempDir()
 	g := filepath.Join(dir, "genv.json")
 	return &runner{
-		bin:      gpmBin,
-		gpmJSON:  g,
+		bin:      genvBin,
+		genvJSON: g,
 		lockJSON: strings.TrimSuffix(g, ".json") + ".lock.json",
 		prefer:   prefer,
 	}
@@ -102,7 +102,7 @@ func (r *runner) rawExec(stdinData string, args ...string) (stdout, stderr strin
 // Use rawExec for commands that do not accept --file (help, clean).
 func (r *runner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr string, code int) {
 	args := make([]string, 0, 3+len(extra))
-	args = append(args, subcmd, "--file", r.gpmJSON)
+	args = append(args, subcmd, "--file", r.genvJSON)
 	args = append(args, extra...)
 	return r.rawExec(stdinData, args...)
 }
@@ -112,7 +112,7 @@ func (r *runner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr
 // specIDs returns the package IDs currently in genv.json.
 func (r *runner) specIDs(t *testing.T) []string {
 	t.Helper()
-	data, err := os.ReadFile(r.gpmJSON)
+	data, err := os.ReadFile(r.genvJSON)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -171,7 +171,7 @@ func (r *runner) writeSpec(t *testing.T, ids ...string) {
 		pkgs[i] = pkg{ID: id, Prefer: r.prefer}
 	}
 	data, _ := json.MarshalIndent(spec{SchemaVersion: "1", Packages: pkgs}, "", "  ")
-	if err := os.WriteFile(r.gpmJSON, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(r.genvJSON, append(data, '\n'), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
 }
