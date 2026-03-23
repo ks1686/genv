@@ -19,9 +19,9 @@ import (
 )
 
 // fprintf/fPrintln/fprint wrap fmt write functions to discard unactionable I/O errors.
-func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
-func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
-func fprint(w io.Writer, a ...any)                  { _, _ = fmt.Fprint(w, a...) }
+func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...) }
+func fprint(w io.Writer, a ...any)                 { _, _ = fmt.Fprint(w, a...) }
 
 // Detect returns the set of package manager names available on the current host
 // by checking each registered adapter's binary in PATH.

@@ -11,8 +11,8 @@ import (
 )
 
 // fprintf/fPrintln wrap fmt write functions to discard unactionable I/O errors.
-func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
-func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
+func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...) }
 
 // List writes a tabular summary of f's packages to w.
 // Passing a nil f (file not found) or an empty package list prints a friendly message.
