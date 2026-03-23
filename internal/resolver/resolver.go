@@ -303,7 +303,7 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 // the lock file: only successful operations change persisted state.
 type ApplyExecution struct {
 	Installed   []genvfile.LockedPackage // successfully installed
-	Uninstalled []string                // IDs successfully removed
+	Uninstalled []string                 // IDs successfully removed
 	Errors      []error
 }
 
