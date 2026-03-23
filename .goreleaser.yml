@@ -68,33 +68,6 @@ homebrew_casks:
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
 
-# ── AUR (Arch User Repository) ────────────────────────────────────────────────
-# Publishes a PKGBUILD to aur.archlinux.org/genv.git on every non-prerelease.
-# Package name is genv.
-#
-# Requires secret: AUR_KEY (SSH private key of an AUR account that owns genv).
-# One-time manual step: create the AUR package at https://aur.archlinux.org/
-# before the first automated publish (GoReleaser only updates, not creates).
-#
-# Install after setup:
-#   paru -S genv   # or yay, or manual makepkg
-aurs:
-  - name: genv
-    homepage: "https://github.com/ks1686/genv"
-    description: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
-    maintainers:
-      - "ks1686 <ks1686@users.noreply.github.com>"
-    license: MIT
-    private_key: "{{ .Env.AUR_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/genv.git"
-    provides: []
-    conflicts: []
-    package: |-
-      install -Dm755 "./genv" "${pkgdir}/usr/bin/genv"
-    commit_author:
-      name: ks1686
-      email: ks1686@users.noreply.github.com
-    skip_upload: auto  # skips pre-releases automatically
 
 changelog:
   sort: asc

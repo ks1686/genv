@@ -42,4 +42,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Publish to AUR
+        if: "!contains(github.ref_name, '-')"
+        env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
+          VERSION: ${{ github.ref_name }}
+        run: bash .github/scripts/publish-aur.sh "${VERSION#v}"
