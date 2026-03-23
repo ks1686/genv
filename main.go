@@ -1139,7 +1139,7 @@ func parseManagerFlag(s string) (map[string]string, error) {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `genv — global package manager
+	fmt.Fprint(os.Stderr, `genv — global environment manager
 
 Usage:
   genv <command> [flags]
