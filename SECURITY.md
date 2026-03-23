@@ -4,10 +4,10 @@
 
 `genv` is pre-1.0 software. Only the latest release receives security fixes.
 
-| Version      | Supported          |
-| ------------ | ------------------ |
-| latest (0.x) | :white_check_mark: |
-| older 0.x    | :x:                |
+| Version       | Supported |
+| ------------- | --------- |
+| latest (0.x)  | Yes       |
+| older 0.x     | No        |
 
 ## Reporting a Vulnerability
 

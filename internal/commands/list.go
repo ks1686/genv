@@ -10,18 +10,22 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+// fprintf/fPrintln wrap fmt write functions to discard unactionable I/O errors.
+func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
+
 // List writes a tabular summary of f's packages to w.
 // Passing a nil f (file not found) or an empty package list prints a friendly message.
 func List(f *schema.GenvFile, w io.Writer) {
 	if f == nil || len(f.Packages) == 0 {
-		fmt.Fprintln(w, "no packages tracked")
+		fPrintln(w, "no packages tracked")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(tw, "ID\tVERSION\tPREFER\tMANAGERS")
-	fmt.Fprintln(tw, "--\t-------\t------\t--------")
+	fPrintln(tw, "ID\tVERSION\tPREFER\tMANAGERS")
+	fPrintln(tw, "--\t-------\t------\t--------")
 
 	for _, p := range f.Packages {
 		ver := p.Version
@@ -48,8 +52,8 @@ func List(f *schema.GenvFile, w io.Writer) {
 			managers = strings.Join(parts, ", ")
 		}
 
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", p.ID, ver, prefer, managers)
+		fprintf(tw, "%s\t%s\t%s\t%s\n", p.ID, ver, prefer, managers)
 	}
 
-	tw.Flush()
+	_ = tw.Flush()
 }

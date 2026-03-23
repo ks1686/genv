@@ -10,7 +10,7 @@
 //   - genv adopt: verify already-installed package is tracked without reinstalling
 //   - genv disown: verify package is untracked without being uninstalled
 //   - lock-file integrity after every mutation
-//   - genv apply reconcile: install newly-added packages, remove deleted ones
+//   - genv apply to reconcile: install newly-added packages, remove deleted ones
 //   - genv apply --strict with a fully-resolved plan
 //   - error paths: duplicate add, remove/adopt/disown of untracked package, apply with no genv.json
 //   - command aliases: ls, rm
@@ -489,7 +489,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 
 		// ── apply --yes: non-interactive mode ────────────────────────────────
 		// Verify --yes flag is accepted and suppresses the interactive prompt.
-		// Uses --dry-run to avoid actual installation side-effects.
+		// Uses --dry-run to avoid actual installation side effects.
 
 		t.Run("apply_yes_bypasses_prompt", func(t *testing.T) {
 			r.writeSpec(t, cfg.testPkg)
@@ -501,7 +501,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			}
 		})
 
-		// ── apply: install path ───────────────────────────────────────────────
+		// ── apply: installation path ─────────────────────────────────────────
 		// Write spec directly (bypasses genv add) and run apply from a clean lock.
 
 		t.Run("apply_installs_from_spec", func(t *testing.T) {

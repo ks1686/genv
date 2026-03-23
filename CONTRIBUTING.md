@@ -26,7 +26,7 @@ If something crashes, produces wrong output, or behaves unexpectedly, please ope
 
 ## How to contribute
 
-1. **Check existing issues** — search [Issues](../../issues) before opening a new one to avoid duplicates.
+1. **Check existing issues** — search [Issues](https://github.com/ks1686/genv/issues) before opening a new one to avoid duplicates.
 2. **Open an issue first** — for anything beyond a trivial fix, open an issue to discuss the problem before sending a PR.
 3. **Fork and branch** — work in a feature branch off `main`:
    ```bash

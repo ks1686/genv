@@ -89,13 +89,13 @@ func ReadOrNew(path string) (f *schema.GenvFile, isNew bool, err error) {
 // New returns a minimal, valid GenvFile ready to be populated.
 func New() *schema.GenvFile {
 	return &schema.GenvFile{
-		SchemaVersion: schema.SchemaVersion,
+		SchemaVersion: schema.Version,
 		Packages:      []schema.Package{},
 	}
 }
 
-// Write serialises f to path with 2-space indentation.
-// The write is atomic: it writes to a temp file then renames, so a crash
+// Write serializes f to path with 2-space indentation.
+// Writing is atomic: it writes to a temp file then renames, so a crash
 // mid-write cannot leave a half-written genv.json.
 func Write(path string, f *schema.GenvFile) error {
 	data, err := json.MarshalIndent(f, "", "  ")

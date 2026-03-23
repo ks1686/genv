@@ -30,7 +30,7 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 ## Supported platforms and package managers
 
 | Platform | Managers                                                               |
-|----------|------------------------------------------------------------------------|
+| -------- | ---------------------------------------------------------------------- |
 | Linux    | `apt`, `dnf`, `pacman`, `paru`, `yay`, `linuxbrew`, `flatpak`, `snap`  |
 | macOS    | `brew` (formulae + casks), `macports`                                  |
 | Windows  | WSL2 (targets the Linux userland inside WSL2)                          |
@@ -56,7 +56,7 @@ paru -S genv      # or: yay -S genv
 
 ### Linux — other distros
 
-Download a pre-built binary from [Releases](../../releases/latest):
+Download a pre-built binary from [Releases](https://github.com/ks1686/genv/releases/latest):
 
 ```bash
 # example for x86-64 Linux
@@ -137,7 +137,7 @@ Your `genv.json` lives at `~/.config/genv/genv.json` by default (respects `$XDG_
 `genv` maintains two files side by side:
 
 | File | Default location | Purpose |
-| --- | --- | --- |
+| ---- | ---------------- | ------- |
 | `genv.json` | `~/.config/genv/genv.json` | **Desired state** — what you want installed. Edit via `genv add`/`genv remove`/`genv edit`/`genv scan`. |
 | `genv.lock.json` | `~/.config/genv/genv.lock.json` | **Applied state** — what genv last installed, via which manager. Auto-managed; do not edit by hand. |
 
@@ -263,7 +263,7 @@ genv apply --yes --json 2>/dev/null
 
 The envelope format:
 
-```json
+```
 {
   "command": "apply",
   "ok": true,
@@ -281,7 +281,7 @@ The envelope format:
 When genv needs to install a package it:
 
 1. Detects which package managers are available on the host.
-2. Honours the `prefer` hint if that manager is available.
+2. Honors the `prefer` hint if that manager is available.
 3. Falls back to the first available manager listed in the `managers` map.
 4. Falls back to the first available manager in the registry, using the package ID as the name.
 
@@ -292,10 +292,10 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|
+| ---- | ------- |
 | 0 | Success |
 | 1 | Bad arguments or unknown command |
-| 2 | Filesystem or serialisation error |
+| 2 | Filesystem or serialization error |
 | 3 | `genv.json` fails schema validation |
 | 4 | Semantic error — also returned by `genv status` when drift or extra entries exist |
 

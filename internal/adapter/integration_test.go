@@ -37,7 +37,7 @@ type adapterSuite struct {
 	knownInstalled string            // a package reliably installed on this host; empty = skip
 }
 
-// runAdapterSuite runs the standard set of sub-tests for one adapter.
+// runAdapterSuite runs the standard set of subtests for one adapter.
 // It is called by each per-adapter TestXxx function so that -run TestApt etc.
 // continue to work while the test logic lives in exactly one place.
 func runAdapterSuite(t *testing.T, s adapterSuite) {

@@ -74,11 +74,11 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != SchemaVersion {
+	} else if f.SchemaVersion != Version {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q", f.SchemaVersion, SchemaVersion),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q", f.SchemaVersion, Version),
 		})
 	}
 
@@ -216,7 +216,7 @@ func walkObjectBody(dec *json.Decoder, data []byte, path string, pos map[string]
 		}
 		walkValue(dec, data, childPath, pos)
 	}
-	dec.Token() // consume closing }
+	_, _ = dec.Token() // consume closing }
 }
 
 func walkArrayBody(dec *json.Decoder, data []byte, path string, pos map[string]Position) {
@@ -224,5 +224,5 @@ func walkArrayBody(dec *json.Decoder, data []byte, path string, pos map[string]P
 		childPath := fmt.Sprintf("%s[%d]", path, i)
 		walkValue(dec, data, childPath, pos)
 	}
-	dec.Token() // consume closing ]
+	_, _ = dec.Token() // consume closing ]
 }

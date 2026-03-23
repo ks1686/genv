@@ -597,7 +597,7 @@ func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
 // absent from the lock ends up in ToInstall.
 func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 	desired := []schema.Package{{ID: "git"}}
-	managed := []genvfile.LockedPackage{} // empty lock
+	var managed []genvfile.LockedPackage // empty lock
 	result := Reconcile(desired, managed, map[string]bool{"brew": true})
 	if len(result.ToInstall) != 1 {
 		t.Fatalf("ToInstall: got %d, want 1", len(result.ToInstall))
@@ -613,7 +613,7 @@ func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 // TestReconcile_RemovedPackage_ToRemove verifies that a package in the lock
 // but absent from the spec ends up in ToRemove.
 func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {
-	desired := []schema.Package{}
+	var desired []schema.Package
 	managed := []genvfile.LockedPackage{
 		{ID: "htop", Manager: "brew", PkgName: "htop"},
 	}

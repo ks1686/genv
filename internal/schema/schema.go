@@ -1,10 +1,10 @@
 // Package schema defines the genv.json v1 data model and validation logic.
 package schema
 
-// SchemaVersion is the only accepted value for the schemaVersion field.
-const SchemaVersion = "1"
+// Version is the only accepted value for the schemaVersion field.
+const Version = "1"
 
-// KnownManagers is the set of package-manager IDs recognised in schema v1.
+// KnownManagers is the set of package-manager IDs recognized in schema v1.
 var KnownManagers = map[string]bool{
 	"apt":       true,
 	"dnf":       true,
