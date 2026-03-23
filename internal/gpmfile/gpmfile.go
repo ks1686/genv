@@ -98,8 +98,9 @@ func Write(path string, f *schema.GpmFile) error {
 	}
 	data = append(data, '\n')
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating directory %s: %w", dir, err)
 	}
 
 	tmp := path + ".tmp"

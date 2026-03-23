@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Adapter is the capability contract every package manager must satisfy.
@@ -40,6 +41,16 @@ type Adapter interface {
 	// Query reports whether pkgName is already installed on this host.
 	// Returns false, nil when the package is absent (not an error condition).
 	Query(pkgName string) (bool, error)
+
+	// ListInstalled returns the concrete package names of all packages currently
+	// installed via this manager. Returns nil, nil when the manager is unavailable
+	// or no packages are installed. Names are manager-specific identifiers, not gpm IDs.
+	ListInstalled() ([]string, error)
+
+	// QueryVersion returns the installed version string for pkgName.
+	// Returns "", nil when the package is not installed or the version cannot be
+	// determined. Version strings are manager-specific and not normalised.
+	QueryVersion(pkgName string) (string, error)
 }
 
 // All is the ordered registry of every known adapter.
@@ -113,4 +124,48 @@ func runQuery(cmd string, args ...string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// runListOutput runs cmd and returns stdout split into trimmed, non-empty lines.
+// A non-zero exit code is treated as "no packages" (nil, nil), not an error.
+func runListOutput(cmd string, args ...string) ([]string, error) {
+	out, err := exec.Command(cmd, args...).Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var result []string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	return result, nil
+}
+
+// runVersionOutput runs cmd and returns trimmed stdout as the version string.
+// A non-zero exit code is treated as "not installed" ("", nil), not an error.
+func runVersionOutput(cmd string, args ...string) (string, error) {
+	out, err := exec.Command(cmd, args...).Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// parseMgrQueryVersion extracts the version from "pkgname version" output,
+// as produced by pacman-style query commands (pacman -Q, paru -Q, yay -Q).
+func parseMgrQueryVersion(out string) string {
+	if parts := strings.SplitN(out, " ", 2); len(parts) == 2 {
+		return parts[1]
+	}
+	return ""
 }

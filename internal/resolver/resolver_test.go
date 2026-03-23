@@ -2,10 +2,12 @@ package resolver
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/ks1686/gpm/internal/adapter"
+	"github.com/ks1686/gpm/internal/gpmfile"
 	"github.com/ks1686/gpm/internal/schema"
 )
 
@@ -269,7 +271,7 @@ func TestExecute_SkipsUnresolved(t *testing.T) {
 		{Pkg: schema.Package{ID: "mystery"}, Manager: "", Cmd: nil},
 	}
 	var out, errOut bytes.Buffer
-	errs := Execute(actions, nil, &out, &errOut)
+	errs := Execute(context.Background(), actions, nil, &out, &errOut)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for all-unresolved actions, got: %v", errs)
 	}
@@ -289,7 +291,7 @@ func TestExecute_RunsCommand(t *testing.T) {
 		},
 	}
 	var out, errOut bytes.Buffer
-	errs := Execute(actions, nil, &out, &errOut)
+	errs := Execute(context.Background(), actions, nil, &out, &errOut)
 	if len(errs) != 0 {
 		t.Fatalf("Execute with 'echo': unexpected errors: %v", errs)
 	}
@@ -309,7 +311,7 @@ func TestExecute_FailedCommand(t *testing.T) {
 		},
 	}
 	var out, errOut bytes.Buffer
-	errs := Execute(actions, nil, &out, &errOut)
+	errs := Execute(context.Background(), actions, nil, &out, &errOut)
 	if len(errs) == 0 {
 		t.Error("expected error for failing command, got none")
 	}
@@ -520,7 +522,7 @@ func TestExecute_MultipleActions(t *testing.T) {
 		},
 	}
 	var out, errOut strings.Builder
-	errs := Execute(actions, nil, &out, &errOut)
+	errs := Execute(context.Background(), actions, nil, &out, &errOut)
 	if len(errs) != 0 {
 		t.Fatalf("Execute: unexpected errors: %v", errs)
 	}
@@ -549,7 +551,7 @@ func TestExecute_MixedResolvedAndUnresolved(t *testing.T) {
 		{Pkg: schema.Package{ID: "another-mystery"}, Manager: "", Cmd: nil},
 	}
 	var out, errOut strings.Builder
-	errs := Execute(actions, nil, &out, &errOut)
+	errs := Execute(context.Background(), actions, nil, &out, &errOut)
 	if len(errs) != 0 {
 		t.Fatalf("Execute: unexpected errors: %v", errs)
 	}
@@ -584,5 +586,133 @@ func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
 	}
 	if a.PkgName != "firefox" {
 		t.Errorf("pkgName: got %q, want %q", a.PkgName, "firefox")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Reconcile regression tests — lock replay and version-constraint behavior
+// ---------------------------------------------------------------------------
+
+// TestReconcile_NewPackage_ToInstall verifies that a package in the spec but
+// absent from the lock ends up in ToInstall.
+func TestReconcile_NewPackage_ToInstall(t *testing.T) {
+	desired := []schema.Package{{ID: "git"}}
+	managed := []gpmfile.LockedPackage{} // empty lock
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.ToInstall) != 1 {
+		t.Fatalf("ToInstall: got %d, want 1", len(result.ToInstall))
+	}
+	if result.ToInstall[0].Pkg.ID != "git" {
+		t.Errorf("ToInstall[0].Pkg.ID = %q, want \"git\"", result.ToInstall[0].Pkg.ID)
+	}
+	if len(result.ToRemove) != 0 || len(result.Unchanged) != 0 {
+		t.Errorf("unexpected ToRemove/Unchanged entries")
+	}
+}
+
+// TestReconcile_RemovedPackage_ToRemove verifies that a package in the lock
+// but absent from the spec ends up in ToRemove.
+func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {
+	desired := []schema.Package{}
+	managed := []gpmfile.LockedPackage{
+		{ID: "htop", Manager: "brew", PkgName: "htop"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.ToRemove) != 1 {
+		t.Fatalf("ToRemove: got %d, want 1", len(result.ToRemove))
+	}
+	if result.ToRemove[0].Pkg.ID != "htop" {
+		t.Errorf("ToRemove[0].Pkg.ID = %q, want \"htop\"", result.ToRemove[0].Pkg.ID)
+	}
+}
+
+// TestReconcile_Unchanged_NoVersion verifies that a package in both spec and
+// lock with no version constraint stays Unchanged.
+func TestReconcile_Unchanged_NoVersion(t *testing.T) {
+	desired := []schema.Package{{ID: "git"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.Unchanged) != 1 {
+		t.Fatalf("Unchanged: got %d, want 1", len(result.Unchanged))
+	}
+	if len(result.ToInstall) != 0 {
+		t.Errorf("unexpected ToInstall: %v", result.ToInstall)
+	}
+}
+
+// TestReconcile_VersionSatisfied_StaysUnchanged verifies that a lock entry
+// whose InstalledVersion satisfies the spec constraint stays Unchanged.
+func TestReconcile_VersionSatisfied_StaysUnchanged(t *testing.T) {
+	desired := []schema.Package{{ID: "vim", Version: "9.*"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "vim", Manager: "brew", PkgName: "vim", InstalledVersion: "9.1.0"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.Unchanged) != 1 {
+		t.Fatalf("Unchanged: got %d, want 1 (version 9.1.0 satisfies 9.*)", len(result.Unchanged))
+	}
+	if len(result.ToInstall) != 0 {
+		t.Errorf("unexpected reinstall queued for satisfying version")
+	}
+}
+
+// TestReconcile_VersionDrift_MovesToInstall verifies that a lock entry whose
+// InstalledVersion does not satisfy the spec constraint is queued for reinstall.
+func TestReconcile_VersionDrift_MovesToInstall(t *testing.T) {
+	desired := []schema.Package{{ID: "neovim", Version: "0.10.*"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "neovim", Manager: "brew", PkgName: "neovim", InstalledVersion: "0.9.5"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.ToInstall) != 1 {
+		t.Fatalf("ToInstall: got %d, want 1 (0.9.5 does not satisfy 0.10.*)", len(result.ToInstall))
+	}
+	if len(result.Unchanged) != 0 {
+		t.Errorf("drifted package must not appear in Unchanged")
+	}
+}
+
+// TestReconcile_NoInstalledVersion_AlwaysUnchanged verifies backward
+// compatibility: old lock entries with empty InstalledVersion are never
+// treated as drifted, even when the spec has a version constraint.
+func TestReconcile_NoInstalledVersion_AlwaysUnchanged(t *testing.T) {
+	desired := []schema.Package{{ID: "git", Version: "2.40.*"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "git", Manager: "apt", PkgName: "git"}, // InstalledVersion == ""
+	}
+	result := Reconcile(desired, managed, map[string]bool{"apt": true})
+	if len(result.Unchanged) != 1 {
+		t.Fatalf("Unchanged: got %d, want 1 (old lock entries must not cause drift)", len(result.Unchanged))
+	}
+	if len(result.ToInstall) != 0 {
+		t.Errorf("old lock entry with empty InstalledVersion must not be queued for reinstall")
+	}
+}
+
+// TestReconcile_ExactVersionMatch_StaysUnchanged verifies an exact-version
+// constraint is satisfied by an identical InstalledVersion.
+func TestReconcile_ExactVersionMatch_StaysUnchanged(t *testing.T) {
+	desired := []schema.Package{{ID: "ripgrep", Version: "14.1.0"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "14.1.0"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.Unchanged) != 1 {
+		t.Fatalf("Unchanged: got %d, want 1", len(result.Unchanged))
+	}
+}
+
+// TestReconcile_ExactVersionMismatch_MovesToInstall verifies that an exact
+// constraint with a different installed version is treated as drift.
+func TestReconcile_ExactVersionMismatch_MovesToInstall(t *testing.T) {
+	desired := []schema.Package{{ID: "ripgrep", Version: "14.1.0"}}
+	managed := []gpmfile.LockedPackage{
+		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "13.0.0"},
+	}
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
+	if len(result.ToInstall) != 1 {
+		t.Fatalf("ToInstall: got %d, want 1", len(result.ToInstall))
 	}
 }

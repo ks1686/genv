@@ -27,3 +27,17 @@ func (Pacman) PlanClean() [][]string {
 }
 
 func (Pacman) Query(pkgName string) (bool, error) { return runQuery("pacman", "-Qi", pkgName) }
+
+// ListInstalled returns explicitly-installed packages (not pulled-in deps).
+func (Pacman) ListInstalled() ([]string, error) {
+	return runListOutput("pacman", "-Qqe")
+}
+
+func (Pacman) QueryVersion(pkgName string) (string, error) {
+	// "pacman -Q pkgname" outputs "pkgname 1.0.0-1"; return only the version part.
+	out, err := runVersionOutput("pacman", "-Q", pkgName)
+	if err != nil || out == "" {
+		return out, err
+	}
+	return parseMgrQueryVersion(out), nil
+}

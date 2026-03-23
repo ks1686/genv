@@ -11,13 +11,13 @@ import (
 )
 
 // LockedPackage records how one package was last applied by gpm: which manager
-// was chosen and what concrete package name was passed to it. This is needed
-// so that uninstall uses the same manager that did the original install, even
-// if the user has since changed their preferences in gpm.json.
+// was chosen, what concrete package name was passed to it, and the version that
+// was installed. InstalledVersion is empty for entries written before M3.
 type LockedPackage struct {
-	ID      string `json:"id"`
-	Manager string `json:"manager"`
-	PkgName string `json:"pkgName"`
+	ID               string `json:"id"`
+	Manager          string `json:"manager"`
+	PkgName          string `json:"pkgName"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
 // LockFile is the on-disk representation of gpm's applied state.
@@ -52,8 +52,9 @@ func WriteLock(path string, lf *LockFile) error {
 		return fmt.Errorf("serialising lock file: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating parent directory for lock file (%s): %w", dir, err)
 	}
 
 	tmp := path + ".tmp"

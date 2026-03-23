@@ -29,3 +29,16 @@ func (Yay) PlanClean() [][]string {
 }
 
 func (Yay) Query(pkgName string) (bool, error) { return runQuery("yay", "-Qi", pkgName) }
+
+// ListInstalled delegates to pacman since yay manages the same pacman DB.
+func (Yay) ListInstalled() ([]string, error) {
+	return runListOutput("pacman", "-Qqe")
+}
+
+func (Yay) QueryVersion(pkgName string) (string, error) {
+	out, err := runVersionOutput("yay", "-Q", pkgName)
+	if err != nil || out == "" {
+		return out, err
+	}
+	return parseMgrQueryVersion(out), nil
+}

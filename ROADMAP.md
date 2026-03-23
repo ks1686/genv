@@ -87,18 +87,18 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Implement `gpm scan` to generate `gpm.json` from currently installed packages (bulk adopt).
-- [ ] Implement package normalization and deduplication during scan.
-- [ ] Add lockfile version pinning (record resolved version after install).
-- [ ] Add lockfile precedence rules for version constraints.
-- [ ] Implement `gpm status` — diff between spec, lock, and what is actually installed on the host.
-- [ ] Add regression tests for lock replay behavior.
+- [x] Implement `gpm scan` to generate `gpm.json` from currently installed packages (bulk adopt).
+- [x] Implement package normalization and deduplication during scan.
+- [x] Add lockfile version pinning (record resolved version after install).
+- [x] Add lockfile precedence rules for version constraints.
+- [x] Implement `gpm status` — diff between spec, lock, and what is actually installed on the host.
+- [x] Add regression tests for lock replay behavior.
 
 Acceptance criteria:
 
-- [ ] Export from Machine A and install on Machine B completes with expected package coverage.
-- [ ] Re-running apply with lock data produces a stable, idempotent plan.
-- [ ] `gpm status` correctly identifies packages in the spec but not installed, and vice versa.
+- [x] Export from Machine A and install on Machine B completes with expected package coverage.
+- [x] Re-running apply with lock data produces a stable, idempotent plan.
+- [x] `gpm status` correctly identifies packages in the spec but not installed, and vice versa.
 
 ## Milestone M4 - Reliability and Automation
 
@@ -111,17 +111,17 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Add machine-readable output mode (`--json`) for plan/status/apply results.
-- [ ] Add non-interactive mode (`--yes`) to `gpm apply` for CI and bootstrap scripts.
-- [ ] Add per-manager timeout and cancellation handling.
-- [ ] Add structured logs and debug mode (`--debug`) for issue triage.
-- [ ] Publish signed release binaries and checksums via GoReleaser.
+- [x] Add machine-readable output mode (`--json`) for plan/status/apply results.
+- [x] Add non-interactive mode (`--yes`) to `gpm apply` for CI and bootstrap scripts.
+- [x] Add per-manager timeout and cancellation handling.
+- [x] Add structured logs and debug mode (`--debug`) for issue triage.
+- [x] Publish signed release binaries and checksums via GoReleaser.
 
 Acceptance criteria:
 
-- [ ] CI can run `gpm apply --dry-run --json` and parse stable output.
-- [ ] Non-interactive installs complete without prompts when `--yes` is set.
-- [ ] Release artifacts are published with reproducible version metadata.
+- [x] CI can run `gpm apply --dry-run --json` and parse stable output.
+- [x] Non-interactive installs complete without prompts when `--yes` is set.
+- [x] Release artifacts are published with reproducible version metadata.
 
 ## Milestone M5 - Cross-Platform Support (macOS and WSL2)
 
@@ -148,27 +148,82 @@ Acceptance criteria:
 - [x] `gpm apply` inside WSL2 uses Linux adapters and produces identical output to a native Linux host.
 - [x] The integration workflow runs and passes on macOS without manual intervention.
 
+## Milestone M6 - API Stability and Quality
+
+Goal: Establish stable, versioned contracts so users and tooling can rely on gpm in production.
+
+Target outcomes:
+
+- The `--json` output schema is versioned and stable across patch releases.
+- Test coverage is high enough that regressions are caught before users see them.
+- The resolver and detection path are fast enough for interactive use.
+
+Checklist:
+
+- [ ] Add `version` field to the `--json` output envelope so consumers can detect schema changes.
+- [ ] Define and document the formal deprecation policy (major version for breaking changes).
+- [ ] Achieve ≥80% unit test line coverage across all internal packages.
+- [ ] Add property-based / fuzz tests for version constraint logic and the resolver.
+- [ ] Add end-to-end smoke tests that run `gpm apply` against real package managers in CI.
+- [ ] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI.
+- [ ] Security review: audit every adapter's shell invocations for injection vectors.
+
+Acceptance criteria:
+
+- [ ] `--json` output includes a `"version"` field and the schema is documented.
+- [ ] All internal packages reach ≥80% line coverage as reported by `go test -cover`.
+- [ ] CI enforces the cold-start budget via a benchmark gate.
+- [ ] No known shell-injection vectors in any adapter after the audit.
+
+## Milestone M7 - Developer and User Experience
+
+Goal: Make gpm delightful to use daily and easy to integrate with existing workflows.
+
+Target outcomes:
+
+- Shell users get completion without extra setup.
+- Common operations that currently require editing JSON can be done interactively.
+- Error messages tell users what to do, not just what went wrong.
+
+Checklist:
+
+- [ ] Implement shell completion for bash, zsh, and fish (`gpm completion <shell>`).
+- [ ] Implement `gpm validate` — validate gpm.json schema without installing anything.
+- [ ] Implement `gpm upgrade` — re-resolve pinned version constraints and update the lock.
+- [ ] Implement `gpm init` — interactive wizard to create a new gpm.json from scratch.
+- [ ] Improve error messages: include a suggestion or next step for every user-facing error.
+- [ ] Add `--quiet` flag to suppress plan output (useful in scripts alongside `--yes`).
+
+Acceptance criteria:
+
+- [ ] `gpm completion bash | source /dev/stdin` enables tab completion for all subcommands and flags.
+- [ ] `gpm validate` exits 0 on a valid spec and 3 on an invalid one, with a clear error message.
+- [ ] `gpm upgrade` updates `installedVersion` in the lock after successfully upgrading.
+- [ ] Every error message references a corrective action or relevant flag.
+
 ## Cross-Cutting Quality Gates
 
 These gates apply to every milestone.
 
-- [ ] Document user-facing behavior changes in README and changelog.
-- [ ] Add tests for every new command or resolver rule.
-- [ ] Keep dry-run output human-readable and stable for CI snapshots.
-- [ ] Ensure commands are non-destructive unless explicitly requested.
-- [ ] Keep WSL2 behavior explicitly Linux-only (no native Windows installer scope creep).
+- [x] Document user-facing behavior changes in README and changelog.
+- [x] Add tests for every new command or resolver rule.
+- [x] Keep dry-run output human-readable and stable for CI snapshots.
+- [x] Ensure commands are non-destructive unless explicitly requested.
+- [x] Keep WSL2 behavior explicitly Linux-only (no native Windows installer scope creep).
 
 ## Release Plan
 
 - [x] v0.1.0-beta.1 — first public prerelease; M1 complete, M2 partially validated
-- [ ] v0.1.0 — first stable release; M1 and M2 complete and validated on Linux
-- [ ] v0.2.0 — M3 complete (scan, version pinning, status)
-- [ ] v0.3.0 — M4 complete (reliability and automation)
-- [ ] v0.4.0 — M5 complete (macOS and WSL2 support)
+- [x] v0.1.0 — first stable release; M1 and M2 complete and validated on Linux
+- [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
+- [ ] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
+- [ ] v1.1.0+ — iterate on user feedback, add features, and expand platform support as needed
+- [ ] v2.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
+- [ ] v3.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip) and/or a plugin system for custom managers
 
 ## How to Contribute Against This Roadmap
 
 1. Pick one unchecked item.
-2. Open an issue with milestone tag (`M1`, `M2`, `M3`, `M4`, or `M5`).
+2. Open an issue with milestone tag (`M6` or `M7`).
 3. Link tests and sample output in the PR.
 4. Update checklist state when merged.

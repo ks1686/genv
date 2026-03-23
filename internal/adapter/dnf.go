@@ -30,3 +30,11 @@ func (Dnf) PlanClean() [][]string {
 }
 
 func (Dnf) Query(pkgName string) (bool, error) { return runQuery("rpm", "-q", pkgName) }
+
+func (Dnf) ListInstalled() ([]string, error) {
+	return runListOutput("rpm", "-qa", "--qf", "%{NAME}\\n")
+}
+
+func (Dnf) QueryVersion(pkgName string) (string, error) {
+	return runVersionOutput("rpm", "-q", "--qf", "%{VERSION}", pkgName)
+}

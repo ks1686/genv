@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"github.com/ks1686/gpm/internal/adapter"
 	"github.com/ks1686/gpm/internal/commands"
 	"github.com/ks1686/gpm/internal/gpmfile"
+	"github.com/ks1686/gpm/internal/logging"
+	"github.com/ks1686/gpm/internal/output"
 	"github.com/ks1686/gpm/internal/resolver"
 	"github.com/ks1686/gpm/internal/schema"
 )
@@ -59,6 +62,10 @@ func run(args []string) int {
 		return editCmd(args[1:])
 	case "clean":
 		return cleanCmd(args[1:])
+	case "scan":
+		return scanCmd(args[1:])
+	case "status":
+		return statusCmd(args[1:])
 	case "version", "--version":
 		printVersion()
 		return exitOK
@@ -531,7 +538,7 @@ func listCmd(args []string) int {
 	return exitOK
 }
 
-// applyCmd implements `gpm apply [--dry-run] [--strict]`.
+// applyCmd implements `gpm apply [--dry-run] [--strict] [--yes] [--json] [--timeout] [--debug]`.
 // Reconciles the system against gpm.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
 func applyCmd(args []string) int {
@@ -546,9 +553,23 @@ func applyCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
 	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
 	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	timeout := fs.Duration("timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
+	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *debug {
+		logging.Init(true)
+	}
+
+	ctx := context.Background()
+	if *timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		defer cancel()
 	}
 
 	f, err := gpmfile.Read(*file)
@@ -573,6 +594,36 @@ func applyCmd(args []string) int {
 
 	available := resolver.Detect()
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
+
+	if *jsonOut {
+		// Build plan data directly from the reconcile result.
+		planData := buildPlanResult(result)
+		if *dryRun {
+			return writeJSON(os.Stdout, output.Envelope{
+				Command: "apply",
+				OK:      true,
+				Data:    planData,
+			})
+		}
+		// Execute with subprocess output routed to stderr so stdout stays clean.
+		execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
+		errs := errStrings(execResult.Errors)
+		writeLockAfterApply(lockPath, lf, result, execResult)
+		installed := make([]string, len(execResult.Installed))
+		for i, lp := range execResult.Installed {
+			installed[i] = lp.ID
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Command: "apply",
+			OK:      len(errs) == 0,
+			Data: output.ApplyResult{
+				Installed:   installed,
+				Uninstalled: execResult.Uninstalled,
+			},
+			Errors: errs,
+		})
+	}
+
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, os.Stdout)
 
 	if toInstall == 0 && toRemove == 0 {
@@ -589,14 +640,27 @@ func applyCmd(args []string) int {
 		return exitOK
 	}
 
-	if !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
+	if !*yes && !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
 		fmt.Fprintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
-	execResult := resolver.ExecuteApply(result, os.Stdin, os.Stdout, os.Stderr)
+	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
+	writeLockAfterApply(lockPath, lf, result, execResult)
 
-	// Update lock: unchanged + successfully installed + failed removals.
+	if len(execResult.Errors) > 0 {
+		for _, e := range execResult.Errors {
+			fmt.Fprintf(os.Stderr, "gpm apply: %v\n", e)
+		}
+		return exitLogic
+	}
+
+	return exitOK
+}
+
+// writeLockAfterApply updates the lock file to reflect what actually succeeded.
+// Called from both the JSON and human-readable paths of applyCmd.
+func writeLockAfterApply(lockPath string, lf *gpmfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution) {
 	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
 	for _, id := range execResult.Uninstalled {
 		uninstalledSet[id] = true
@@ -617,16 +681,343 @@ func applyCmd(args []string) int {
 	lf.Packages = newPkgs
 	if err := gpmfile.WriteLock(lockPath, lf); err != nil {
 		fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+	}
+}
+
+// buildPlanResult converts a ReconcileResult into the stable JSON PlanResult type.
+func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
+	toInstall := make([]output.PlanPackage, 0, len(result.ToInstall))
+	var unresolved int
+	for _, a := range result.ToInstall {
+		if a.Resolved() {
+			toInstall = append(toInstall, output.PlanPackage{
+				ID:      a.Pkg.ID,
+				Manager: a.Manager,
+				Cmd:     strings.Join(a.Cmd, " "),
+			})
+		} else {
+			unresolved++
+			toInstall = append(toInstall, output.PlanPackage{ID: a.Pkg.ID})
+		}
+	}
+	toRemove := make([]output.PlanPackage, 0, len(result.ToRemove))
+	for _, a := range result.ToRemove {
+		toRemove = append(toRemove, output.PlanPackage{
+			ID:      a.Pkg.ID,
+			Manager: a.Manager,
+			Cmd:     strings.Join(a.UninstallCmd, " "),
+		})
+	}
+	unchanged := make([]output.PlanPackage, 0, len(result.Unchanged))
+	for _, lp := range result.Unchanged {
+		unchanged = append(unchanged, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
+	}
+	return output.PlanResult{
+		ToInstall:  toInstall,
+		ToRemove:   toRemove,
+		Unchanged:  unchanged,
+		Unresolved: unresolved,
+	}
+}
+
+// writeJSON serialises env to w and returns an exit code.
+func writeJSON(w *os.File, env output.Envelope) int {
+	if err := output.Write(w, env); err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: writing JSON: %v\n", err)
+		return exitIO
+	}
+	if !env.OK {
+		return exitLogic
+	}
+	return exitOK
+}
+
+// errStrings converts a slice of errors to a slice of strings.
+func errStrings(errs []error) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	s := make([]string, len(errs))
+	for i, e := range errs {
+		s[i] = e.Error()
+	}
+	return s
+}
+
+// scanCmd implements `gpm scan`.
+// Discovers all packages currently installed via available package managers and
+// bulk-adopts them into gpm.json and the lock file. Packages already tracked
+// are skipped. Duplicate names discovered across multiple managers are
+// deduplicated — the first adapter in registry order wins.
+func scanCmd(args []string) int {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm scan [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Discover all installed packages and adopt them into gpm.json.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *debug {
+		logging.Init(true)
+	}
+
+	available := resolver.Detect()
+	if len(available) == 0 {
+		if *jsonOut {
+			return writeJSON(os.Stdout, output.Envelope{
+				Command: "scan",
+				OK:      true,
+				Data:    output.ScanResult{Added: 0, Skipped: 0},
+			})
+		}
+		fmt.Fprintln(os.Stdout, "no supported package managers detected.")
+		return exitOK
+	}
+
+	f, isNew, err := gpmfile.ReadOrNew(*file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
 		return exitIO
 	}
 
-	if len(execResult.Errors) > 0 {
-		for _, e := range execResult.Errors {
-			fmt.Fprintf(os.Stderr, "gpm apply: %v\n", e)
-		}
-		return exitLogic
+	lockPath := lockPathFrom(*file)
+	lf, err := gpmfile.ReadLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
 	}
 
+	// Build sets of already-tracked IDs so we can skip them.
+	trackedInSpec := make(map[string]bool, len(f.Packages))
+	for _, p := range f.Packages {
+		trackedInSpec[p.ID] = true
+	}
+
+	// Deduplicate across managers using a seen set.
+	seen := make(map[string]bool)
+	var added int
+	var skipped int
+
+	for _, a := range adapter.All {
+		if !available[a.Name()] {
+			continue
+		}
+		pkgs, err := a.ListInstalled()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gpm scan: %s: listing packages: %v\n", a.Name(), err)
+			continue
+		}
+		for _, pkgName := range pkgs {
+			if seen[pkgName] {
+				continue // already handled by a higher-priority manager
+			}
+			seen[pkgName] = true
+
+			if trackedInSpec[pkgName] {
+				skipped++
+				continue // already in spec
+			}
+
+			// Add to spec.
+			if err := commands.Add(f, pkgName, "", "", nil); err != nil {
+				// ErrAlreadyTracked can race with trackedInSpec; skip silently.
+				skipped++
+				continue
+			}
+			trackedInSpec[pkgName] = true
+
+			// Record in lock with best-effort version capture.
+			lp := gpmfile.LockedPackage{
+				ID:      pkgName,
+				Manager: a.Name(),
+				PkgName: pkgName,
+			}
+			if v, err := a.QueryVersion(pkgName); err == nil {
+				lp.InstalledVersion = v
+			}
+			lf.Packages = append(lf.Packages, lp)
+			added++
+		}
+	}
+
+	if added > 0 {
+		if err := gpmfile.Write(*file, f); err != nil {
+			fmt.Fprintf(os.Stderr, "gpm: writing spec: %v\n", err)
+			return exitIO
+		}
+		if err := gpmfile.WriteLock(lockPath, lf); err != nil {
+			fmt.Fprintf(os.Stderr, "gpm: writing lock: %v\n", err)
+			return exitIO
+		}
+	}
+
+	if *jsonOut {
+		return writeJSON(os.Stdout, output.Envelope{
+			Command: "scan",
+			OK:      true,
+			Data:    output.ScanResult{Added: added, Skipped: skipped},
+		})
+	}
+
+	if added == 0 && skipped == 0 {
+		fmt.Fprintln(os.Stdout, "no packages found.")
+		return exitOK
+	}
+	if isNew && added > 0 {
+		fmt.Fprintf(os.Stdout, "created %s\n", *file)
+	}
+	fmt.Fprintf(os.Stdout, "scan complete: %d added, %d already tracked\n", added, skipped)
+	return exitOK
+}
+
+// statusCmd implements `gpm status [--json] [--debug]`.
+// Computes a three-way diff between gpm.json, gpm.lock.json, and recorded
+// version data to surface drift, missing installs, and orphaned lock entries.
+// Exits with exitLogic when any drift or extra packages are found, so it can
+// be used as a CI gate.
+func statusCmd(args []string) int {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: gpm status [flags]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Show the diff between gpm.json, the lock file, and recorded versions.")
+		fmt.Fprintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
+		fmt.Fprintln(os.Stderr, "Run 'gpm apply' to reconcile any differences shown.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+
+	file := fs.String("file", defaultSpecPath(), "path to gpm.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *debug {
+		logging.Init(true)
+	}
+
+	f, err := gpmfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, gpmfile.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "gpm: %s not found — run 'gpm add' to create it\n", *file)
+			return exitIO
+		}
+		fmt.Fprintf(os.Stderr, "gpm: %v\n", err)
+		if errors.Is(err, gpmfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	lf, err := gpmfile.ReadLock(lockPathFrom(*file))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gpm: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	entries := commands.Status(f, lf)
+
+	if *jsonOut {
+		jsonEntries := make([]output.StatusEntry, 0, len(entries))
+		var hasDrift bool
+		for _, e := range entries {
+			jsonEntries = append(jsonEntries, output.StatusEntry{
+				ID:               e.ID,
+				Manager:          e.Manager,
+				Kind:             string(e.Kind),
+				SpecVersion:      e.SpecVersion,
+				InstalledVersion: e.InstalledVersion,
+			})
+			if e.Kind == commands.StatusDrift || e.Kind == commands.StatusExtra {
+				hasDrift = true
+			}
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Command: "status",
+			OK:      !hasDrift,
+			Data:    output.StatusResult{Entries: jsonEntries},
+		})
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stdout, "nothing tracked.")
+		return exitOK
+	}
+
+	// Count by kind for the summary line.
+	counts := make(map[commands.StatusKind]int)
+	for _, e := range entries {
+		counts[e.Kind]++
+	}
+	total := len(entries)
+	fmt.Fprintf(os.Stdout, "Status — %d package", total)
+	if total != 1 {
+		fmt.Fprint(os.Stdout, "s")
+	}
+	var parts []string
+	if n := counts[commands.StatusOK]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d ok", n))
+	}
+	if n := counts[commands.StatusDrift]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d drift", n))
+	}
+	if n := counts[commands.StatusMissing]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d missing", n))
+	}
+	if n := counts[commands.StatusExtra]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d extra", n))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(os.Stdout, " (%s)", strings.Join(parts, ", "))
+	}
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout)
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for _, e := range entries {
+		mgr := e.Manager
+		if mgr == "" {
+			mgr = "—"
+		}
+		switch e.Kind {
+		case commands.StatusOK:
+			v := e.InstalledVersion
+			if v == "" {
+				v = "*"
+			}
+			fmt.Fprintf(tw, "  ok\t%s\t%s\t%s\n", e.ID, mgr, v)
+		case commands.StatusDrift:
+			fmt.Fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
+				e.ID, mgr, e.SpecVersion, e.InstalledVersion)
+		case commands.StatusMissing:
+			note := "(in spec, not in lock — run 'gpm apply')"
+			fmt.Fprintf(tw, "  missing\t%s\t%s\t%s\n", e.ID, mgr, note)
+		case commands.StatusExtra:
+			note := "(in lock, not in spec — run 'gpm apply' or 'gpm disown')"
+			fmt.Fprintf(tw, "  extra\t%s\t%s\t%s\n", e.ID, mgr, note)
+		}
+	}
+	tw.Flush()
+
+	if counts[commands.StatusDrift] > 0 || counts[commands.StatusExtra] > 0 {
+		return exitLogic
+	}
 	return exitOK
 }
 
@@ -766,13 +1157,15 @@ Commands:
   disown <id> Stop tracking a package in gpm.json without uninstalling it
   list        List all packages installed by gpm                   (alias: ls)
   apply       Reconcile system state with gpm.json (install added, remove deleted)
+  scan        Discover all installed packages and bulk-adopt them into gpm.json
+  status      Show diff between gpm.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open gpm.json in $EDITOR
   version     Show gpm build version information
   help        Show this help text
 
 Flags common to all commands:
-  --file <path>   Path to gpm.json (default: ~/.config/gpm/gpm.json)
+  --file <path>   Path to gpm.json (default: $XDG_CONFIG_HOME/gpm/gpm.json or ~/.config/gpm/gpm.json, falling back to ./gpm.json)
 
 Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
@@ -781,11 +1174,30 @@ Add/Adopt-specific flags:
                                flatpak:org.mozilla.firefox,brew:firefox
 
 Apply-specific flags:
-  --dry-run   Print the reconcile plan without executing
-  --strict    Exit with an error if any package cannot be resolved
+  --dry-run            Print the reconcile plan without executing
+  --strict             Exit with an error if any package cannot be resolved
+  --yes                Skip the confirmation prompt (for CI and scripts)
+  --json               Emit machine-readable JSON to stdout
+  --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none)
+  --debug              Emit debug-level structured logs to stderr
+
+Status-specific flags:
+  --json    Emit machine-readable JSON to stdout
+  --debug   Emit debug-level structured logs to stderr
+
+Scan-specific flags:
+  --json    Emit machine-readable JSON to stdout
+  --debug   Emit debug-level structured logs to stderr
 
 Clean-specific flags:
   --dry-run   Print the clean commands without executing
+
+Exit codes:
+  0  success (status: all ok or missing only)
+  1  bad arguments or unknown command
+  2  filesystem or serialisation error
+  3  gpm.json fails schema validation
+  4  semantic error — also returned by 'gpm status' when drift or extra entries exist
 
 `)
 	fmt.Fprintf(os.Stderr, "Supported package managers:\n  %s\n", commands.KnownManagerList())
