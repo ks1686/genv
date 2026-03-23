@@ -212,7 +212,8 @@ func (r *runner) assertNotInSpec(t *testing.T, id string) {
 
 func (r *runner) assertInLock(t *testing.T, id, manager string) {
 	t.Helper()
-	for _, p := range r.lockPackages(t) {
+	pkgs := r.lockPackages(t)
+	for _, p := range pkgs {
 		if p["id"] == id {
 			if p["manager"] != manager {
 				t.Errorf("lock: %q manager=%q, want %q", id, p["manager"], manager)
@@ -220,7 +221,7 @@ func (r *runner) assertInLock(t *testing.T, id, manager string) {
 			return
 		}
 	}
-	t.Errorf("expected %q in genv.lock.json with manager=%q; current entries: %v", id, manager, r.lockPackages(t))
+	t.Errorf("expected %q in genv.lock.json with manager=%q; current entries: %v", id, manager, pkgs)
 }
 
 func (r *runner) assertNotInLock(t *testing.T, id string) {
