@@ -93,9 +93,9 @@ func defaultSpecPath() string {
 // fprintf/fPrintln/fprint are write helpers that discard the unactionable
 // return values of terminal I/O calls — write errors to stdout/stderr are
 // not recoverable in a CLI.
-func fprintf(w io.Writer, format string, a ...any)  { _, _ = fmt.Fprintf(w, format, a...) }
-func fPrintln(w io.Writer, a ...any)                { _, _ = fmt.Fprintln(w, a...) }
-func fprint(w io.Writer, a ...any)                  { _, _ = fmt.Fprint(w, a...) }
+func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+func fPrintln(w io.Writer, a ...any)               { _, _ = fmt.Fprintln(w, a...) }
+func fprint(w io.Writer, a ...any)                 { _, _ = fmt.Fprint(w, a...) }
 
 // confirm writes prompt to stdout and reads a y/Y response from stdin.
 // Returns true if the user confirmed.
