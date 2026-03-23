@@ -308,6 +308,14 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		}
 	})
 
+	t.Run("status_no_spec_fails", func(t *testing.T) {
+		r2 := newRunner(t, cfg.preferFlag)
+		_, _, code := r2.gpm("", "status")
+		if code == 0 {
+			t.Error("status with no gpm.json: expected non-zero exit, got 0")
+		}
+	})
+
 	// ── gpm add ───────────────────────────────────────────────────────────────
 
 	// build the add-command args (--prefer injected when configured)
@@ -324,9 +332,67 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		r.assertInSpec(t, cfg.testPkg)
 	})
 
+	// status on a spec with no lock entry should report "missing"
+	t.Run("status_package_in_spec_not_in_lock", func(t *testing.T) {
+		r2 := newRunner(t, cfg.preferFlag)
+		r2.writeSpec(t, cfg.testPkg)
+		// no lock written — package is in spec but not yet installed/tracked
+		stdout, _, code := r2.gpm("", "status")
+		if code != 0 {
+			t.Fatalf("gpm status: exit %d, want 0", code)
+		}
+		if !strings.Contains(stdout, "missing") {
+			t.Errorf("expected 'missing' in status output, got: %q", stdout)
+		}
+	})
+
+	t.Run("apply_dry_run_json_valid", func(t *testing.T) {
+		stdout, _, code := r.gpm("", "apply", "--dry-run", "--json")
+		if code != 0 {
+			t.Fatalf("apply --dry-run --json: exit %d, want 0", code)
+		}
+		var env struct {
+			Command string `json:"command"`
+			OK      bool   `json:"ok"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+			t.Fatalf("apply --dry-run --json: invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if env.Command != "apply" {
+			t.Errorf("command: got %q, want %q", env.Command, "apply")
+		}
+	})
+
+	t.Run("status_json_valid", func(t *testing.T) {
+		stdout, _, code := r.gpm("", "status", "--json")
+		if code != 0 {
+			t.Fatalf("gpm status --json: exit %d, want 0", code)
+		}
+		var env struct {
+			Command string `json:"command"`
+			OK      bool   `json:"ok"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+			t.Fatalf("status --json: invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if env.Command != "status" {
+			t.Errorf("command: got %q, want %q", env.Command, "status")
+		}
+	})
+
 	if cfg.canInstall {
 		t.Run("add_creates_lock_entry", func(t *testing.T) {
 			r.assertInLock(t, cfg.testPkg, cfg.adapterName)
+		})
+
+		t.Run("status_ok_after_install", func(t *testing.T) {
+			stdout, _, code := r.gpm("", "status")
+			if code != 0 {
+				t.Fatalf("gpm status: exit %d, want 0", code)
+			}
+			if !strings.Contains(stdout, "ok") {
+				t.Errorf("expected 'ok' in status output after install, got: %q", stdout)
+			}
 		})
 
 		// ── list / ls after install ────────────────────────────────────────────
@@ -411,6 +477,20 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			}
 			r.assertNotInSpec(t, cfg.testPkg)
 			r.assertNotInLock(t, cfg.testPkg)
+		})
+
+		// ── apply --yes: non-interactive mode ────────────────────────────────
+		// Verify --yes flag is accepted and suppresses the interactive prompt.
+		// Uses --dry-run to avoid actual installation side-effects.
+
+		t.Run("apply_yes_bypasses_prompt", func(t *testing.T) {
+			r.writeSpec(t, cfg.testPkg)
+			r.clearLock(t)
+			// No stdin provided; --yes must suppress the confirmation prompt.
+			stdout, _, code := r.gpm("", "apply", "--dry-run", "--yes")
+			if code != 0 {
+				t.Fatalf("apply --dry-run --yes: exit %d\nstdout: %s", code, stdout)
+			}
 		})
 
 		// ── apply: install path ───────────────────────────────────────────────
@@ -555,6 +635,39 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 			}
 		})
 	}
+
+	// ── gpm scan ──────────────────────────────────────────────────────────────
+	// scan bulk-adopts installed packages; use isolated runners to avoid
+	// polluting the shared runner's spec/lock with every system package.
+
+	t.Run("scan_exits_ok", func(t *testing.T) {
+		r2 := newRunner(t, cfg.preferFlag)
+		_, _, code := r2.gpm("", "scan")
+		if code != 0 {
+			t.Errorf("gpm scan: exit %d, want 0", code)
+		}
+	})
+
+	t.Run("scan_json_valid", func(t *testing.T) {
+		r2 := newRunner(t, cfg.preferFlag)
+		stdout, _, code := r2.gpm("", "scan", "--json")
+		if code != 0 {
+			t.Fatalf("gpm scan --json: exit %d, want 0", code)
+		}
+		var env struct {
+			Command string `json:"command"`
+			OK      bool   `json:"ok"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+			t.Fatalf("scan --json: invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if env.Command != "scan" {
+			t.Errorf("command: got %q, want %q", env.Command, "scan")
+		}
+		if !env.OK {
+			t.Errorf("ok: expected true")
+		}
+	})
 
 	// ── remove of an untracked package fails ──────────────────────────────────
 

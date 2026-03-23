@@ -93,6 +93,37 @@ func runAdapterSuite(t *testing.T, s adapterSuite) {
 			t.Errorf("Query(%q): expected installed=false", knownAbsent)
 		}
 	})
+
+	t.Run("ListInstalled_returns_slice", func(t *testing.T) {
+		pkgs, err := s.a.ListInstalled()
+		if err != nil {
+			t.Fatalf("ListInstalled(): unexpected error: %v", err)
+		}
+		// A stock system always has at least one package managed by its package manager.
+		if len(pkgs) == 0 {
+			t.Errorf("ListInstalled(): expected at least one package on a stock system")
+		}
+	})
+
+	if s.knownInstalled != "" {
+		t.Run("QueryVersion_installed_package", func(t *testing.T) {
+			ver, err := s.a.QueryVersion(s.knownInstalled)
+			if err != nil {
+				t.Fatalf("QueryVersion(%q): unexpected error: %v", s.knownInstalled, err)
+			}
+			if ver == "" {
+				t.Errorf("QueryVersion(%q): expected non-empty version string", s.knownInstalled)
+			}
+		})
+	}
+
+	t.Run("QueryVersion_absent_package_no_error", func(t *testing.T) {
+		// QueryVersion on an absent package must return ("", nil) — not an error.
+		_, err := s.a.QueryVersion(knownAbsent)
+		if err != nil {
+			t.Errorf("QueryVersion(%q): expected nil error for absent package, got: %v", knownAbsent, err)
+		}
+	})
 }
 
 // ---- per-adapter entry points (keep named so -run TestApt etc. work) --------
