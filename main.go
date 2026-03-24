@@ -1230,9 +1230,10 @@ func upgradeCmd(args []string) int {
 		return exitOK
 	}
 
-	// Build upgrade plan.
+	// Build upgrade plan, storing each adapter to avoid repeated ByName lookups.
 	type upgradeAction struct {
 		lp  genvfile.LockedPackage
+		mgr adapter.Adapter
 		cmd []string
 	}
 	var plan []upgradeAction
@@ -1242,7 +1243,7 @@ func upgradeCmd(args []string) int {
 			fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", lp.Manager, lp.ID)
 			continue
 		}
-		plan = append(plan, upgradeAction{lp: lp, cmd: mgr.PlanUpgrade(lp.PkgName)})
+		plan = append(plan, upgradeAction{lp: lp, mgr: mgr, cmd: mgr.PlanUpgrade(lp.PkgName)})
 	}
 
 	if len(plan) == 0 {
@@ -1264,6 +1265,12 @@ func upgradeCmd(args []string) int {
 		return exitOK
 	}
 
+	// Build an ID→index map so each version update is O(1), not O(n).
+	lockIndex := make(map[string]int, len(lf.Packages))
+	for i, lp := range lf.Packages {
+		lockIndex[lp.ID] = i
+	}
+
 	exitCode := exitOK
 	for _, a := range plan {
 		fprintf(os.Stdout, "\n==> %s\n", strings.Join(a.cmd, " "))
@@ -1277,15 +1284,9 @@ func upgradeCmd(args []string) int {
 			continue
 		}
 		// Update InstalledVersion in lock for successfully upgraded packages.
-		mgr := adapter.ByName(a.lp.Manager)
-		if mgr != nil {
-			if v, err := mgr.QueryVersion(a.lp.PkgName); err == nil && v != "" {
-				for i := range lf.Packages {
-					if lf.Packages[i].ID == a.lp.ID {
-						lf.Packages[i].InstalledVersion = v
-						break
-					}
-				}
+		if v, err := a.mgr.QueryVersion(a.lp.PkgName); err == nil && v != "" {
+			if idx, ok := lockIndex[a.lp.ID]; ok {
+				lf.Packages[idx].InstalledVersion = v
 			}
 		}
 	}
@@ -1324,13 +1325,11 @@ func initCmd(args []string) int {
 	fPrintln(os.Stdout)
 
 	f := genvfile.New()
-	scanner := bufio.NewScanner(os.Stdin)
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		fprint(os.Stdout, "  package id (or Enter to finish): ")
-		if !scanner.Scan() {
-			break
-		}
-		id := strings.TrimSpace(scanner.Text())
+		line, _ := reader.ReadString('\n')
+		id := strings.TrimSpace(line)
 		if id == "" {
 			break
 		}
