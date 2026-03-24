@@ -124,6 +124,84 @@ func confirm(prompt string) bool {
 	return answer == "y" || answer == "Y"
 }
 
+// addToSpec reads or creates the spec at file, records the package, and writes
+// it back. Prints "created <file>" when the file is brand-new. Returns an exit
+// code; exitOK means success.
+func addToSpec(file, id, version, prefer string, managers map[string]string) int {
+	f, isNew, err := genvfile.ReadOrNew(file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+	if err := commands.Add(f, id, version, prefer, managers); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrAlreadyTracked) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+	if err := genvfile.Write(file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", file)
+	}
+	return exitOK
+}
+
+// appendLockEntry reads the lock at lockPath, appends lp, and writes it back.
+// Returns an exit code; exitOK means success.
+func appendLockEntry(lockPath string, lp genvfile.LockedPackage) int {
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+	lf.Packages = append(lf.Packages, lp)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		return exitIO
+	}
+	return exitOK
+}
+
+// removeFromSpecAndReadLock reads the spec at file, removes id from it, writes
+// it back, then reads and returns the lock file. Returns the lock, the lock
+// path, and an exit code. exitOK means all steps succeeded.
+func removeFromSpecAndReadLock(file, id string) (*genvfile.LockFile, string, int) {
+	f, err := genvfile.Read(file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", file)
+			return nil, "", exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return nil, "", exitValidation
+		}
+		return nil, "", exitIO
+	}
+	if err := commands.Remove(f, id); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return nil, "", exitLogic
+	}
+	if err := genvfile.Write(file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return nil, "", exitIO
+	}
+	lockPath := genvfile.LockPathFrom(file)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return nil, "", exitIO
+	}
+	return lf, lockPath, exitOK
+}
+
 // addCmd implements `genv add <id> [flags]`.
 // Adds the package to genv.json and immediately installs it, then updates the lock.
 func addCmd(args []string) int {
@@ -157,29 +235,8 @@ func addCmd(args []string) int {
 	}
 
 	// 1. Update genv.json.
-	f, isNew, err := genvfile.ReadOrNew(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, commands.ErrAlreadyTracked) {
-			return exitLogic
-		}
-		return exitUsage
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
-	}
-	if isNew {
-		fprintf(os.Stdout, "created %s\n", *file)
+	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+		return exit
 	}
 
 	// 2. Resolve and install the package.
@@ -206,23 +263,11 @@ func addCmd(args []string) int {
 	}
 
 	// 3. Update lock file.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
+	return appendLockEntry(genvfile.LockPathFrom(*file), genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
 	})
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
-		return exitIO
-	}
-
-	return exitOK
 }
 
 // removeCmd implements `genv remove <id>`.
@@ -248,38 +293,13 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	// 1. Update genv.json.
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found\n", *file)
-			return exitLogic
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Remove(f, id); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitLogic
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	// 1. Update genv.json and read lock.
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
+	if exit != exitOK {
+		return exit
 	}
 
 	// 2. Find the package in the lock file to know which manager installed it.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-
 	var locked *genvfile.LockedPackage
 	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
@@ -396,46 +416,17 @@ func adoptCmd(args []string) int {
 	}
 
 	// 3. Update genv.json.
-	f, isNew, err := genvfile.ReadOrNew(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, commands.ErrAlreadyTracked) {
-			return exitLogic
-		}
-		return exitUsage
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
-	}
-	if isNew {
-		fprintf(os.Stdout, "created %s\n", *file)
+	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+		return exit
 	}
 
 	// 4. Update lock file.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
+	if exit := appendLockEntry(genvfile.LockPathFrom(*file), genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
-	})
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
-		return exitIO
+	}); exit != exitOK {
+		return exit
 	}
 
 	fprintf(os.Stdout, "adopted %s — now tracked via %s (already installed)\n", id, action.Manager)
@@ -466,38 +457,13 @@ func disownCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	// 1. Update genv.json.
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found\n", *file)
-			return exitLogic
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Remove(f, id); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitLogic
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	// 1. Update genv.json and read lock.
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
+	if exit != exitOK {
+		return exit
 	}
 
 	// 2. Remove from lock file without uninstalling.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-
 	wasTracked := false
 	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
