@@ -9,8 +9,15 @@ import (
 	"io"
 )
 
+// OutputSchemaVersion is the version of the JSON output envelope schema.
+// Consumers should check this field to detect incompatible schema changes.
+// The schema version follows the same major-version policy as genv itself:
+// breaking changes bump the major version; new optional fields are additive.
+const OutputSchemaVersion = "1"
+
 // Envelope is the top-level JSON wrapper emitted for every --json response.
 type Envelope struct {
+	Version string      `json:"version"`
 	Command string      `json:"command"`
 	OK      bool        `json:"ok"`
 	Data    interface{} `json:"data,omitempty"`

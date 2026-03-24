@@ -24,6 +24,10 @@ func (Flatpak) PlanUninstall(pkgName string) []string {
 	return []string{"flatpak", "uninstall", "-y", pkgName}
 }
 
+func (Flatpak) PlanUpgrade(pkgName string) []string {
+	return []string{"flatpak", "update", "-y", pkgName}
+}
+
 func (Flatpak) PlanClean() [][]string {
 	return [][]string{{"flatpak", "uninstall", "--unused", "-y"}}
 }

@@ -704,6 +704,295 @@ func TestReconcile_ExactVersionMatch_StaysUnchanged(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// PrintReconcilePlan — output and count verification
+// ---------------------------------------------------------------------------
+
+// TestPrintReconcilePlan_CountsAndOutput verifies that PrintReconcilePlan
+// correctly counts installs, removals, and unchanged packages and writes
+// expected markers to the output stream.
+func TestPrintReconcilePlan_CountsAndOutput(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "neovim"}, Manager: "brew", PkgName: "neovim", Cmd: []string{"brew", "install", "neovim"}},
+			{Pkg: schema.Package{ID: "mystery"}}, // unresolved
+		},
+		ToRemove: []Action{
+			{Pkg: schema.Package{ID: "htop"}, Manager: "brew", PkgName: "htop", UninstallCmd: []string{"brew", "uninstall", "htop"}},
+		},
+		Unchanged: []genvfile.LockedPackage{
+			{ID: "git", Manager: "brew"},
+		},
+	}
+	var sb strings.Builder
+	toInstall, toRemove, unresolved := PrintReconcilePlan(result, &sb)
+	if toInstall != 2 {
+		t.Errorf("toInstall: got %d, want 2", toInstall)
+	}
+	if toRemove != 1 {
+		t.Errorf("toRemove: got %d, want 1", toRemove)
+	}
+	if unresolved != 1 {
+		t.Errorf("unresolved: got %d, want 1", unresolved)
+	}
+	out := sb.String()
+	if !strings.Contains(out, "+") {
+		t.Error("expected '+' marker for installs")
+	}
+	if !strings.Contains(out, "-") {
+		t.Error("expected '-' marker for removals")
+	}
+	if !strings.Contains(out, "git") {
+		t.Error("expected unchanged package 'git' in output")
+	}
+	if !strings.Contains(out, "Hint:") {
+		t.Error("expected 'Hint:' for unresolved packages")
+	}
+}
+
+// TestPrintReconcilePlan_NothingToDo verifies that an empty reconcile result
+// produces a "0 packages" header and returns zero counts.
+func TestPrintReconcilePlan_NothingToDo(t *testing.T) {
+	result := ReconcileResult{}
+	var sb strings.Builder
+	toInstall, toRemove, unresolved := PrintReconcilePlan(result, &sb)
+	if toInstall != 0 || toRemove != 0 || unresolved != 0 {
+		t.Errorf("expected all zeros, got install=%d remove=%d unresolved=%d", toInstall, toRemove, unresolved)
+	}
+}
+
+// TestPrintReconcilePlan_AllResolved verifies no "unresolved" hint is emitted
+// when every package resolves.
+func TestPrintReconcilePlan_AllResolved(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "git"}, Manager: "brew", PkgName: "git", Cmd: []string{"brew", "install", "git"}},
+		},
+	}
+	var sb strings.Builder
+	_, _, unresolved := PrintReconcilePlan(result, &sb)
+	if unresolved != 0 {
+		t.Errorf("unresolved: got %d, want 0", unresolved)
+	}
+	if strings.Contains(sb.String(), "Hint:") {
+		t.Error("unexpected 'Hint:' when all packages resolve")
+	}
+}
+
+// TestPrintReconcilePlan_SingularHeader verifies the "1 package" (not "1 packages")
+// header is used when the total is exactly 1.
+func TestPrintReconcilePlan_SingularHeader(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "git"}, Manager: "brew", PkgName: "git", Cmd: []string{"brew", "install", "git"}},
+		},
+	}
+	var sb strings.Builder
+	PrintReconcilePlan(result, &sb)
+	out := sb.String()
+	if !strings.Contains(out, "1 package") {
+		t.Errorf("expected '1 package' (singular) in output:\n%s", out)
+	}
+	if strings.Contains(out, "1 packages") {
+		t.Errorf("unexpected '1 packages' (plural) in output:\n%s", out)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ExecuteApply — successful apply, failed removal, failed install
+// ---------------------------------------------------------------------------
+
+// TestExecuteApply_SuccessfulInstall verifies that a successful install command
+// populates Installed and produces no errors.
+func TestExecuteApply_SuccessfulInstall(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{
+				Pkg:     schema.Package{ID: "echo-pkg"},
+				Manager: "brew",
+				PkgName: "echo-pkg",
+				Cmd:     []string{"echo", "installing"},
+			},
+		},
+	}
+	var out, errOut bytes.Buffer
+	exec := ExecuteApply(context.Background(), result, nil, &out, &errOut)
+	if len(exec.Errors) != 0 {
+		t.Fatalf("ExecuteApply: unexpected errors: %v", exec.Errors)
+	}
+	if len(exec.Installed) != 1 {
+		t.Fatalf("Installed: got %d, want 1", len(exec.Installed))
+	}
+	if exec.Installed[0].ID != "echo-pkg" {
+		t.Errorf("Installed[0].ID: got %q, want \"echo-pkg\"", exec.Installed[0].ID)
+	}
+}
+
+// TestExecuteApply_FailedInstall verifies that a failed install command
+// results in an error and no Installed entry.
+func TestExecuteApply_FailedInstall(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{
+				Pkg:     schema.Package{ID: "fail-pkg"},
+				Manager: "brew",
+				PkgName: "fail-pkg",
+				Cmd:     []string{"false"},
+			},
+		},
+	}
+	var out, errOut bytes.Buffer
+	exec := ExecuteApply(context.Background(), result, nil, &out, &errOut)
+	if len(exec.Errors) == 0 {
+		t.Error("expected error for failing install command")
+	}
+	if len(exec.Installed) != 0 {
+		t.Errorf("Installed: got %d, want 0 (failed install must not appear in Installed)", len(exec.Installed))
+	}
+}
+
+// TestExecuteApply_SuccessfulRemoval verifies that a successful uninstall command
+// populates Uninstalled and produces no errors. We use "snap" as the manager
+// because its PlanClean returns nil (no cache-clean invocations that would fail
+// when snap is not installed on the test host).
+func TestExecuteApply_SuccessfulRemoval(t *testing.T) {
+	result := ReconcileResult{
+		ToRemove: []Action{
+			{
+				Pkg:          schema.Package{ID: "old-pkg"},
+				Manager:      "snap",
+				PkgName:      "old-pkg",
+				UninstallCmd: []string{"echo", "removing"},
+			},
+		},
+	}
+	var out, errOut bytes.Buffer
+	exec := ExecuteApply(context.Background(), result, nil, &out, &errOut)
+	if len(exec.Errors) != 0 {
+		t.Fatalf("ExecuteApply: unexpected errors: %v", exec.Errors)
+	}
+	if len(exec.Uninstalled) != 1 || exec.Uninstalled[0] != "old-pkg" {
+		t.Errorf("Uninstalled: got %v, want [\"old-pkg\"]", exec.Uninstalled)
+	}
+}
+
+// TestExecuteApply_FailedRemoval verifies that a failed removal produces an
+// error and the package is NOT in Uninstalled.
+func TestExecuteApply_FailedRemoval(t *testing.T) {
+	result := ReconcileResult{
+		ToRemove: []Action{
+			{
+				Pkg:          schema.Package{ID: "stuck-pkg"},
+				Manager:      "snap",
+				PkgName:      "stuck-pkg",
+				UninstallCmd: []string{"false"},
+			},
+		},
+	}
+	var out, errOut bytes.Buffer
+	exec := ExecuteApply(context.Background(), result, nil, &out, &errOut)
+	if len(exec.Errors) == 0 {
+		t.Error("expected error for failing removal")
+	}
+	if len(exec.Uninstalled) != 0 {
+		t.Errorf("Uninstalled: got %v, want empty (failed removal must not appear)", exec.Uninstalled)
+	}
+}
+
+// TestExecuteApply_SkipsUnresolvedInstall verifies that unresolved install
+// actions are silently skipped.
+func TestExecuteApply_SkipsUnresolvedInstall(t *testing.T) {
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "mystery"}, Manager: "", Cmd: nil}, // unresolved
+		},
+	}
+	var out, errOut bytes.Buffer
+	exec := ExecuteApply(context.Background(), result, nil, &out, &errOut)
+	if len(exec.Errors) != 0 {
+		t.Errorf("unexpected errors for unresolved install: %v", exec.Errors)
+	}
+	if len(exec.Installed) != 0 {
+		t.Errorf("Installed: got %d, want 0 (unresolved must be skipped)", len(exec.Installed))
+	}
+}
+
+// TestResolveOne verifies that ResolveOne resolves a single package correctly.
+func TestResolveOne(t *testing.T) {
+	pkg := schema.Package{ID: "git"}
+	action := ResolveOne(pkg, map[string]bool{"brew": true})
+	if !action.Resolved() {
+		t.Fatal("ResolveOne: expected resolved action")
+	}
+	if action.Manager != "brew" {
+		t.Errorf("Manager: got %q, want \"brew\"", action.Manager)
+	}
+	if action.PkgName != "git" {
+		t.Errorf("PkgName: got %q, want \"git\"", action.PkgName)
+	}
+}
+
+// TestResolveOne_Unresolved verifies that ResolveOne returns an unresolved
+// action when no manager is available.
+func TestResolveOne_Unresolved(t *testing.T) {
+	pkg := schema.Package{ID: "git"}
+	action := ResolveOne(pkg, map[string]bool{})
+	if action.Resolved() {
+		t.Error("ResolveOne: expected unresolved action with empty available map")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarks — cold-start budget enforcement
+// ---------------------------------------------------------------------------
+
+// BenchmarkDetect measures the cost of discovering available package managers.
+// This exercises PATH lookups for all registered adapters and must stay
+// well under the 200ms cold-start budget enforced in CI.
+func BenchmarkDetect(b *testing.B) {
+	for b.Loop() {
+		_ = Detect()
+	}
+}
+
+// BenchmarkResolve measures the cost of resolving a realistic set of packages
+// against a fixed available-manager map. This is pure computation (no I/O).
+func BenchmarkResolve(b *testing.B) {
+	f := &schema.GenvFile{
+		Packages: []schema.Package{
+			{ID: "git"},
+			{ID: "neovim", Prefer: "brew"},
+			{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox", "brew": "firefox"}},
+			{ID: "ripgrep"},
+			{ID: "tmux"},
+		},
+	}
+	available := map[string]bool{"brew": true, "apt": true, "flatpak": true}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = Plan(f, available)
+	}
+}
+
+// BenchmarkReconcile measures the cost of computing the delta between desired
+// and managed state — the core of `genv apply`.
+func BenchmarkReconcile(b *testing.B) {
+	desired := []schema.Package{
+		{ID: "git"},
+		{ID: "neovim"},
+		{ID: "ripgrep"},
+	}
+	managed := []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
+		{ID: "htop", Manager: "brew", PkgName: "htop"},
+	}
+	available := map[string]bool{"brew": true}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = Reconcile(desired, managed, available)
+	}
+}
+
 // TestReconcile_ExactVersionMismatch_MovesToInstall verifies that an exact
 // constraint with a different installed version is treated as drift.
 func TestReconcile_ExactVersionMismatch_MovesToInstall(t *testing.T) {

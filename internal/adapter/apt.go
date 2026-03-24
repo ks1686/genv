@@ -22,6 +22,10 @@ func (Apt) PlanUninstall(pkgName string) []string {
 	return []string{"sudo", "apt-get", "purge", "-y", pkgName}
 }
 
+func (Apt) PlanUpgrade(pkgName string) []string {
+	return []string{"sudo", "apt-get", "install", "--only-upgrade", "-y", pkgName}
+}
+
 func (Apt) PlanClean() [][]string {
 	return [][]string{
 		{"sudo", "apt-get", "autoremove", "-y"},

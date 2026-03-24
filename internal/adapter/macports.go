@@ -24,6 +24,10 @@ func (MacPorts) PlanUninstall(pkgName string) []string {
 	return []string{"sudo", "port", "uninstall", pkgName}
 }
 
+func (MacPorts) PlanUpgrade(pkgName string) []string {
+	return []string{"sudo", "port", "upgrade", pkgName}
+}
+
 func (MacPorts) PlanClean() [][]string {
 	return [][]string{{"sudo", "port", "clean", "--all", "installed"}}
 }

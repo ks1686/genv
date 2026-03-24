@@ -1,9 +1,11 @@
 package genvfile
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
@@ -260,6 +262,203 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 	}
 	if len(got.Packages) != 1 || got.Packages[0].ID != "git" {
 		t.Errorf("expected 1 package 'git' after overwrite, got: %+v", got.Packages)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// LockPathFrom — pure function
+// ---------------------------------------------------------------------------
+
+func TestLockPathFrom(t *testing.T) {
+	tests := []struct {
+		specPath string
+		want     string
+	}{
+		{"genv.json", "genv.lock.json"},
+		{"/home/user/.config/genv/genv.json", "/home/user/.config/genv/genv.lock.json"},
+		{"custom.json", "custom.lock.json"},
+		{"/tmp/env.json", "/tmp/env.lock.json"},
+	}
+	for _, tc := range tests {
+		got := LockPathFrom(tc.specPath)
+		if got != tc.want {
+			t.Errorf("LockPathFrom(%q) = %q, want %q", tc.specPath, got, tc.want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DefaultDir / DefaultSpecPath — XDG_CONFIG_HOME support
+// ---------------------------------------------------------------------------
+
+func TestDefaultDir_UsesXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	dir, err := DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultDir: %v", err)
+	}
+	if !strings.HasPrefix(dir, "/custom/config") {
+		t.Errorf("DefaultDir with XDG_CONFIG_HOME: got %q, expected prefix /custom/config", dir)
+	}
+}
+
+func TestDefaultDir_FallsBackToHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	dir, err := DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultDir: %v", err)
+	}
+	if dir == "" {
+		t.Error("DefaultDir: returned empty string")
+	}
+	if !strings.Contains(dir, "genv") {
+		t.Errorf("DefaultDir: expected 'genv' in path, got %q", dir)
+	}
+}
+
+func TestDefaultSpecPath_ContainsGenvJSON(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/xdg")
+	path, err := DefaultSpecPath()
+	if err != nil {
+		t.Fatalf("DefaultSpecPath: %v", err)
+	}
+	if !strings.HasSuffix(path, "genv.json") {
+		t.Errorf("DefaultSpecPath: expected path ending in genv.json, got %q", path)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ReadLock — missing file, existing file, malformed JSON
+// ---------------------------------------------------------------------------
+
+func TestReadLock_MissingFile_ReturnsEmpty(t *testing.T) {
+	lf, err := ReadLock("/nonexistent/path/genv.lock.json")
+	if err != nil {
+		t.Fatalf("ReadLock on missing file: expected nil error, got %v", err)
+	}
+	if lf == nil {
+		t.Fatal("ReadLock on missing file: expected non-nil LockFile")
+	}
+	if lf.SchemaVersion != schema.Version {
+		t.Errorf("SchemaVersion: got %q, want %q", lf.SchemaVersion, schema.Version)
+	}
+	if len(lf.Packages) != 0 {
+		t.Errorf("Packages: got %d entries, want 0", len(lf.Packages))
+	}
+}
+
+func TestReadLock_ValidFile_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+
+	original := &LockFile{
+		SchemaVersion: schema.Version,
+		Packages: []LockedPackage{
+			{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
+			{ID: "neovim", Manager: "apt", PkgName: "neovim"},
+		},
+	}
+	if err := WriteLock(path, original); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+
+	got, err := ReadLock(path)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	if len(got.Packages) != 2 {
+		t.Fatalf("len(Packages): got %d, want 2", len(got.Packages))
+	}
+	if got.Packages[0].ID != "git" {
+		t.Errorf("Packages[0].ID: got %q, want \"git\"", got.Packages[0].ID)
+	}
+	if got.Packages[0].InstalledVersion != "2.43.0" {
+		t.Errorf("InstalledVersion: got %q, want \"2.43.0\"", got.Packages[0].InstalledVersion)
+	}
+	if got.Packages[1].InstalledVersion != "" {
+		t.Errorf("InstalledVersion omitempty: got %q, want empty", got.Packages[1].InstalledVersion)
+	}
+}
+
+func TestReadLock_MalformedJSON_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(path, []byte(`{broken json`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	_, err := ReadLock(path)
+	if err == nil {
+		t.Fatal("ReadLock on malformed JSON: expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WriteLock — atomicity, parent dir creation, InstalledVersion omitempty
+// ---------------------------------------------------------------------------
+
+func TestWriteLock_IsAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	lf := &LockFile{SchemaVersion: schema.Version, Packages: []LockedPackage{}}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+	if _, err := os.Stat(path + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Error("WriteLock left .tmp file behind")
+	}
+}
+
+func TestWriteLock_CreatesParentDirs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "dir", "genv.lock.json")
+	lf := &LockFile{SchemaVersion: schema.Version, Packages: []LockedPackage{}}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock with nested dirs: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("lock file not created: %v", err)
+	}
+}
+
+func TestWriteLock_ProducesValidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	lf := &LockFile{
+		SchemaVersion: schema.Version,
+		Packages: []LockedPackage{
+			{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
+		},
+	}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("lock file is not valid JSON: %v\n%s", err, data)
+	}
+}
+
+func TestWriteLock_InstalledVersion_OmitEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	lf := &LockFile{
+		SchemaVersion: schema.Version,
+		Packages: []LockedPackage{
+			{ID: "git", Manager: "brew", PkgName: "git"}, // no InstalledVersion
+		},
+	}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "installedVersion") {
+		t.Errorf("installedVersion should be omitted when empty, got: %s", data)
 	}
 }
 
