@@ -1,6 +1,9 @@
 package version
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSatisfies(t *testing.T) {
 	tests := []struct {
@@ -33,4 +36,56 @@ func TestSatisfies(t *testing.T) {
 			t.Errorf("Satisfies(%q, %q) = %v, want %v", tc.constraint, tc.installed, got, tc.want)
 		}
 	}
+}
+
+// FuzzSatisfies checks semantic invariants that must hold for all inputs:
+//
+//  1. Empty or "*" constraint is always satisfied, regardless of installed.
+//  2. Empty installed never satisfies a non-trivial, non-empty constraint.
+//  3. Satisfies never panics.
+//  4. Prefix wildcard constraints (ending in ".*") are satisfied iff the
+//     installed string starts with the prefix (sans trailing "*").
+func FuzzSatisfies(f *testing.F) {
+	// Seed with known interesting inputs so the fuzzer has a head-start.
+	seeds := []struct{ c, i string }{
+		{"", "1.0.0"},
+		{"*", ""},
+		{"1.0.0", "1.0.0"},
+		{"1.0.0", "1.0.1"},
+		{"0.10.*", "0.10.5"},
+		{"0.10.*", "0.11.0"},
+		{"1.*", ""},
+		{"", ""},
+	}
+	for _, s := range seeds {
+		f.Add(s.c, s.i)
+	}
+
+	f.Fuzz(func(t *testing.T, constraint, installed string) {
+		// Must never panic.
+		got := Satisfies(constraint, installed)
+
+		// Invariant 1: empty or wildcard-only constraint is always satisfied.
+		if constraint == "" || constraint == "*" {
+			if !got {
+				t.Errorf("Satisfies(%q, %q) = false; empty/wildcard constraint must always be true", constraint, installed)
+			}
+		}
+
+		// Invariant 2: empty installed string never satisfies a non-trivial constraint.
+		if installed == "" && constraint != "" && constraint != "*" {
+			if got {
+				t.Errorf("Satisfies(%q, %q) = true; empty installed must not satisfy non-wildcard constraint", constraint, installed)
+			}
+		}
+
+		// Invariant 3: prefix wildcard consistency.
+		if strings.HasSuffix(constraint, ".*") {
+			prefix := strings.TrimSuffix(constraint, "*")
+			wantTrue := strings.HasPrefix(installed, prefix)
+			if got != wantTrue {
+				t.Errorf("Satisfies(%q, %q) = %v; prefix wildcard disagrees with strings.HasPrefix (want %v)", constraint, installed, got, wantTrue)
+			}
+		}
+	})
 }

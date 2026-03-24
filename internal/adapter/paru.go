@@ -24,6 +24,11 @@ func (Paru) PlanUninstall(pkgName string) []string {
 	return []string{"paru", "-Rns", "--noconfirm", pkgName}
 }
 
+// PlanUpgrade reuses PlanInstall: paru -S upgrades to the latest version.
+func (Paru) PlanUpgrade(pkgName string) []string {
+	return []string{"paru", "-S", "--noconfirm", pkgName}
+}
+
 func (Paru) PlanClean() [][]string {
 	return [][]string{{"paru", "-Sc", "--noconfirm"}}
 }

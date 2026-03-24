@@ -24,6 +24,11 @@ func (Yay) PlanUninstall(pkgName string) []string {
 	return []string{"yay", "-Rns", "--noconfirm", pkgName}
 }
 
+// PlanUpgrade reuses PlanInstall: yay -S upgrades to the latest version.
+func (Yay) PlanUpgrade(pkgName string) []string {
+	return []string{"yay", "-S", "--noconfirm", pkgName}
+}
+
 func (Yay) PlanClean() [][]string {
 	return [][]string{{"yay", "-Sc", "--noconfirm"}}
 }

@@ -22,6 +22,10 @@ func (Dnf) PlanUninstall(pkgName string) []string {
 	return []string{"sudo", "dnf", "remove", "-y", pkgName}
 }
 
+func (Dnf) PlanUpgrade(pkgName string) []string {
+	return []string{"sudo", "dnf", "upgrade", "-y", pkgName}
+}
+
 func (Dnf) PlanClean() [][]string {
 	return [][]string{
 		{"sudo", "dnf", "autoremove", "-y"},

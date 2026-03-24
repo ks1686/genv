@@ -20,6 +20,10 @@ func (brewBase) PlanUninstall(pkgName string) []string {
 	return []string{"brew", "uninstall", pkgName}
 }
 
+func (brewBase) PlanUpgrade(pkgName string) []string {
+	return []string{"brew", "upgrade", pkgName}
+}
+
 func (brewBase) PlanClean() [][]string {
 	return [][]string{{"brew", "cleanup"}}
 }

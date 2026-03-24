@@ -10,13 +10,38 @@ import (
 
 func TestWrite_ProducesValidJSON(t *testing.T) {
 	var buf bytes.Buffer
-	env := output.Envelope{Command: "apply", OK: true}
+	env := output.Envelope{Version: output.OutputSchemaVersion, Command: "apply", OK: true}
 	if err := output.Write(&buf, env); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	var got map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %q", err, buf.String())
+	}
+}
+
+func TestWrite_VersionFieldPresent(t *testing.T) {
+	var buf bytes.Buffer
+	env := output.Envelope{Version: output.OutputSchemaVersion, Command: "apply", OK: true}
+	if err := output.Write(&buf, env); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	v, ok := got["version"]
+	if !ok {
+		t.Fatal("version field missing from JSON output")
+	}
+	if v != output.OutputSchemaVersion {
+		t.Errorf("version: got %v, want %q", v, output.OutputSchemaVersion)
+	}
+}
+
+func TestOutputSchemaVersion_IsNonEmpty(t *testing.T) {
+	if output.OutputSchemaVersion == "" {
+		t.Error("OutputSchemaVersion must not be empty")
 	}
 }
 

@@ -33,6 +33,11 @@ type Adapter interface {
 	// PlanUninstall returns the command argv to uninstall pkgName via this manager.
 	PlanUninstall(pkgName string) []string
 
+	// PlanUpgrade returns the command argv to upgrade pkgName to the latest
+	// version satisfying the active constraints. For managers where the install
+	// command already upgrades (e.g. pacman -S), this may equal PlanInstall.
+	PlanUpgrade(pkgName string) []string
+
 	// PlanClean returns zero or more commands to purge cached data for this
 	// manager. Each inner slice is an independent command (argv). Returns nil
 	// when the manager has no meaningful cache-clean operation.
