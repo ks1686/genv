@@ -624,7 +624,7 @@ func applyCmd(args []string) int {
 		planData := buildPlanResult(result)
 		if *dryRun {
 			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.OutputSchemaVersion,
+				Version: output.SchemaVersion,
 				Command: "apply",
 				OK:      true,
 				Data:    planData,
@@ -639,7 +639,7 @@ func applyCmd(args []string) int {
 			installed[i] = lp.ID
 		}
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "apply",
 			OK:      len(errs) == 0,
 			Data: output.ApplyResult{
@@ -807,7 +807,7 @@ func scanCmd(args []string) int {
 	if len(available) == 0 {
 		if *jsonOut {
 			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.OutputSchemaVersion,
+				Version: output.SchemaVersion,
 				Command: "scan",
 				OK:      true,
 				Data:    output.ScanResult{Added: 0, Skipped: 0},
@@ -899,7 +899,7 @@ func scanCmd(args []string) int {
 
 	if *jsonOut {
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "scan",
 			OK:      true,
 			Data:    output.ScanResult{Added: added, Skipped: skipped},
@@ -983,7 +983,7 @@ func statusCmd(args []string) int {
 			}
 		}
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
 			Data:    output.StatusResult{Entries: jsonEntries},
