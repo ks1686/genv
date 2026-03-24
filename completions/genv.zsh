@@ -17,6 +17,10 @@ _genv() {
 		'status:Show diff between genv.json, the lock file, and recorded versions'
 		'clean:Clear the cache of all detected package managers'
 		"edit:Open genv.json in \$EDITOR"
+		'completion:Print shell completion script'
+		'validate:Validate genv.json against the schema'
+		'upgrade:Upgrade all tracked packages to their latest versions'
+		'init:Create a new genv.json interactively'
 		'version:Show genv build version information'
 		'help:Show this help text'
 	)
@@ -45,6 +49,7 @@ _genv() {
 				'--dry-run[Print the reconcile plan without executing]' \
 				'--strict[Exit with an error if any package cannot be resolved]' \
 				'--yes[Skip the confirmation prompt]' \
+				'--quiet[Suppress plan output]' \
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--timeout=[Per-subprocess timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]'
@@ -59,6 +64,16 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--dry-run[Print the clean commands without executing]'
+			;;
+		completion)
+			_values 'shell' bash zsh fish
+			;;
+		upgrade)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--dry-run[Print the upgrade commands without executing]' \
+				'--yes[Skip the confirmation prompt]' \
+				'--debug[Emit debug-level structured logs to stderr]'
 			;;
 		esac
 		;;
