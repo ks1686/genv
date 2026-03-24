@@ -138,6 +138,22 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 	return
 }
 
+// runSubcmd prints the command to stdout, spawns it as a subprocess wiring
+// stdin/stdout/stderr, logs timing via slog, and returns any execution error.
+// Shared by Execute and ExecuteApply to avoid repeating the logging boilerplate.
+func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	fprintf(stdout, "\n==> %s\n", strings.Join(args, " "))
+	slog.Debug("spawn", "cmd", strings.Join(args, " "))
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	slog.Debug("done", "cmd", args[0], "duration", time.Since(start), "err", err)
+	return err
+}
+
 // Execute runs each resolved install action sequentially, writing subprocess
 // output to stdout/stderr. stdin is forwarded to child processes so that
 // interactive password prompts (e.g. sudo) work correctly.
@@ -150,16 +166,7 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 		if !a.Resolved() {
 			continue
 		}
-		fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
-		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
-		start := time.Now()
-		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)
-		cmd.Stdin = stdin
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		err := cmd.Run()
-		slog.Debug("done", "cmd", a.Cmd[0], "duration", time.Since(start), "err", err)
-		if err != nil {
+		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
 			errs = append(errs, fmt.Errorf("package %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		}
 	}
@@ -323,16 +330,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 	cleanManagers := make(map[string]bool)
 
 	for _, a := range result.ToRemove {
-		fprintf(stdout, "\n==> %s\n", strings.Join(a.UninstallCmd, " "))
-		slog.Debug("spawn", "cmd", strings.Join(a.UninstallCmd, " "))
-		start := time.Now()
-		cmd := exec.CommandContext(ctx, a.UninstallCmd[0], a.UninstallCmd[1:]...)
-		cmd.Stdin = stdin
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		err := cmd.Run()
-		slog.Debug("done", "cmd", a.UninstallCmd[0], "duration", time.Since(start), "err", err)
-		if err != nil {
+		if err := runSubcmd(ctx, a.UninstallCmd, stdin, stdout, stderr); err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("remove %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
 			out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
@@ -346,16 +344,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 			continue
 		}
 		for _, cleanCmd := range mgr.PlanClean() {
-			fprintf(stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-			slog.Debug("spawn", "cmd", strings.Join(cleanCmd, " "))
-			start := time.Now()
-			cmd := exec.CommandContext(ctx, cleanCmd[0], cleanCmd[1:]...)
-			cmd.Stdin = stdin
-			cmd.Stdout = stdout
-			cmd.Stderr = stderr
-			err := cmd.Run()
-			slog.Debug("done", "cmd", cleanCmd[0], "duration", time.Since(start), "err", err)
-			if err != nil {
+			if err := runSubcmd(ctx, cleanCmd, stdin, stdout, stderr); err != nil {
 				out.Errors = append(out.Errors, fmt.Errorf("cache clean (via %s): %w", managerName, err))
 			}
 		}
@@ -365,16 +354,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 		if !a.Resolved() {
 			continue
 		}
-		fprintf(stdout, "\n==> %s\n", strings.Join(a.Cmd, " "))
-		slog.Debug("spawn", "cmd", strings.Join(a.Cmd, " "))
-		start := time.Now()
-		cmd := exec.CommandContext(ctx, a.Cmd[0], a.Cmd[1:]...)
-		cmd.Stdin = stdin
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		err := cmd.Run()
-		slog.Debug("done", "cmd", a.Cmd[0], "duration", time.Since(start), "err", err)
-		if err != nil {
+		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
 			lp := genvfile.LockedPackage{
