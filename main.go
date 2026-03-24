@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +21,15 @@ import (
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 )
+
+//go:embed completions/genv.bash
+var completionBash string
+
+//go:embed completions/genv.zsh
+var completionZsh string
+
+//go:embed completions/genv.fish
+var completionFish string
 
 // Structured exit codes.
 const (
@@ -67,6 +77,14 @@ func run(args []string) int {
 		return scanCmd(args[1:])
 	case "status":
 		return statusCmd(args[1:])
+	case "completion":
+		return completionCmd(args[1:])
+	case "validate":
+		return validateCmd(args[1:])
+	case "upgrade":
+		return upgradeCmd(args[1:])
+	case "init":
+		return initCmd(args[1:])
 	case "version", "--version":
 		printVersion()
 		return exitOK
@@ -556,6 +574,7 @@ func applyCmd(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
 	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
+	quiet := fs.Bool("quiet", false, "suppress plan output (useful in scripts)")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	timeout := fs.Duration("timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
@@ -605,6 +624,7 @@ func applyCmd(args []string) int {
 		planData := buildPlanResult(result)
 		if *dryRun {
 			return writeJSON(os.Stdout, output.Envelope{
+				Version: output.OutputSchemaVersion,
 				Command: "apply",
 				OK:      true,
 				Data:    planData,
@@ -619,6 +639,7 @@ func applyCmd(args []string) int {
 			installed[i] = lp.ID
 		}
 		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.OutputSchemaVersion,
 			Command: "apply",
 			OK:      len(errs) == 0,
 			Data: output.ApplyResult{
@@ -629,10 +650,16 @@ func applyCmd(args []string) int {
 		})
 	}
 
-	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, os.Stdout)
+	planOut := io.Writer(os.Stdout)
+	if *quiet {
+		planOut = io.Discard
+	}
+	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
 
 	if toInstall == 0 && toRemove == 0 {
-		fPrintln(os.Stdout, "already up to date.")
+		if !*quiet {
+			fPrintln(os.Stdout, "already up to date.")
+		}
 		return exitOK
 	}
 
@@ -780,6 +807,7 @@ func scanCmd(args []string) int {
 	if len(available) == 0 {
 		if *jsonOut {
 			return writeJSON(os.Stdout, output.Envelope{
+				Version: output.OutputSchemaVersion,
 				Command: "scan",
 				OK:      true,
 				Data:    output.ScanResult{Added: 0, Skipped: 0},
@@ -871,6 +899,7 @@ func scanCmd(args []string) int {
 
 	if *jsonOut {
 		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.OutputSchemaVersion,
 			Command: "scan",
 			OK:      true,
 			Data:    output.ScanResult{Added: added, Skipped: skipped},
@@ -954,6 +983,7 @@ func statusCmd(args []string) int {
 			}
 		}
 		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.OutputSchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
 			Data:    output.StatusResult{Entries: jsonEntries},
@@ -1103,6 +1133,234 @@ func editCmd(args []string) int {
 	return exitOK
 }
 
+// completionCmd implements `genv completion <shell>`.
+// Prints the shell completion script for bash, zsh, or fish to stdout.
+func completionCmd(args []string) int {
+	fs := flag.NewFlagSet("completion", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv completion <shell>")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "examples:")
+		fPrintln(os.Stderr, "  genv completion bash >> ~/.bashrc")
+		fPrintln(os.Stderr, "  genv completion zsh  > ~/.zsh/completions/_genv")
+		fPrintln(os.Stderr, "  genv completion fish > ~/.config/fish/completions/genv.fish")
+	}
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv completion: missing shell argument (bash, zsh, or fish)")
+		fs.Usage()
+		return exitUsage
+	}
+	switch fs.Arg(0) {
+	case "bash":
+		fprint(os.Stdout, completionBash)
+	case "zsh":
+		fprint(os.Stdout, completionZsh)
+	case "fish":
+		fprint(os.Stdout, completionFish)
+	default:
+		fprintf(os.Stderr, "genv completion: unknown shell %q — supported shells are: bash, zsh, fish\n", fs.Arg(0))
+		return exitUsage
+	}
+	return exitOK
+}
+
+// validateCmd implements `genv validate`.
+// Reads and validates genv.json, exiting 0 on success and 3 on any error.
+func validateCmd(args []string) int {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv validate [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	_, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv validate: %s not found — run 'genv init' to create one\n", *file)
+			return exitValidation
+		}
+		fprintf(os.Stderr, "genv validate: %v\n", err)
+		return exitValidation
+	}
+	fprintf(os.Stdout, "%s is valid.\n", *file)
+	return exitOK
+}
+
+// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--debug]`.
+// Upgrades all packages tracked in the lock file using their recorded manager.
+func upgradeCmd(args []string) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv upgrade [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	dryRun := fs.Bool("dry-run", false, "print the upgrade commands without executing")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *debug {
+		logging.Init(true)
+	}
+
+	lockPath := genvfile.LockPathFrom(*file)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv upgrade: reading lock: %v\n", err)
+		return exitIO
+	}
+	if len(lf.Packages) == 0 {
+		fPrintln(os.Stdout, "no packages tracked — run 'genv add' or 'genv scan' first.")
+		return exitOK
+	}
+
+	// Build upgrade plan.
+	type upgradeAction struct {
+		lp  genvfile.LockedPackage
+		cmd []string
+	}
+	var plan []upgradeAction
+	for _, lp := range lf.Packages {
+		mgr := adapter.ByName(lp.Manager)
+		if mgr == nil {
+			fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", lp.Manager, lp.ID)
+			continue
+		}
+		plan = append(plan, upgradeAction{lp: lp, cmd: mgr.PlanUpgrade(lp.PkgName)})
+	}
+
+	if len(plan) == 0 {
+		fPrintln(os.Stdout, "no upgradeable packages found.")
+		return exitOK
+	}
+
+	fPrintln(os.Stdout, "upgrade plan:")
+	for _, a := range plan {
+		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", a.lp.ID, a.lp.Manager, strings.Join(a.cmd, " "))
+	}
+
+	if *dryRun {
+		return exitOK
+	}
+
+	if !*yes && !confirm(fmt.Sprintf("\nUpgrade %d package(s)? [y/N] ", len(plan))) {
+		fPrintln(os.Stdout, "Aborted.")
+		return exitOK
+	}
+
+	exitCode := exitOK
+	for _, a := range plan {
+		fprintf(os.Stdout, "\n==> %s\n", strings.Join(a.cmd, " "))
+		cmd := exec.Command(a.cmd[0], a.cmd[1:]...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fprintf(os.Stderr, "genv upgrade: %s: %v\n", a.lp.ID, err)
+			exitCode = exitLogic
+			continue
+		}
+		// Update InstalledVersion in lock for successfully upgraded packages.
+		mgr := adapter.ByName(a.lp.Manager)
+		if mgr != nil {
+			if v, err := mgr.QueryVersion(a.lp.PkgName); err == nil && v != "" {
+				for i := range lf.Packages {
+					if lf.Packages[i].ID == a.lp.ID {
+						lf.Packages[i].InstalledVersion = v
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fprintf(os.Stderr, "genv upgrade: writing lock: %v\n", err)
+		return exitIO
+	}
+	return exitCode
+}
+
+// initCmd implements `genv init`.
+// Interactively creates a new genv.json by prompting the user for package IDs.
+func initCmd(args []string) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv init [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	// Refuse to overwrite an existing valid spec.
+	if _, err := genvfile.Read(*file); err == nil {
+		fprintf(os.Stderr, "genv init: %s already exists — edit it with 'genv edit' or add packages with 'genv add'\n", *file)
+		return exitLogic
+	}
+
+	fprintf(os.Stdout, "Creating %s\n\n", *file)
+	fPrintln(os.Stdout, "Enter package IDs to track, one per line. Leave blank and press Enter when done.")
+	fPrintln(os.Stdout, "(Example: git, vim, curl)")
+	fPrintln(os.Stdout)
+
+	f := genvfile.New()
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fprint(os.Stdout, "  package id (or Enter to finish): ")
+		if !scanner.Scan() {
+			break
+		}
+		id := strings.TrimSpace(scanner.Text())
+		if id == "" {
+			break
+		}
+		if err := commands.Add(f, id, "", "", nil); err != nil {
+			if errors.Is(err, commands.ErrAlreadyTracked) {
+				fprintf(os.Stdout, "  (skipping %q — already added)\n", id)
+				continue
+			}
+			fprintf(os.Stderr, "genv init: %v\n", err)
+			return exitLogic
+		}
+		fprintf(os.Stdout, "  added %s\n", id)
+	}
+
+	if len(f.Packages) == 0 {
+		fPrintln(os.Stdout, "\nNo packages entered. Run 'genv add <id>' to add packages later.")
+		// Still write an empty spec so the file exists.
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv init: %v\n", err)
+		return exitIO
+	}
+	fprintf(os.Stdout, "\ncreated %s with %d package(s).\n", *file, len(f.Packages))
+	if len(f.Packages) > 0 {
+		fPrintln(os.Stdout, "Run 'genv apply' to install them.")
+	}
+	return exitOK
+}
+
 // extractPositional separates the first non-flag argument (the package id)
 // from the flag arguments, so flags work in any position relative to the id.
 // Handles both "--flag value" and "--flag=value" forms.
@@ -1166,6 +1424,10 @@ Commands:
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
+  completion  Print the shell completion script (bash, zsh, or fish)
+  validate    Validate genv.json against the schema
+  upgrade     Upgrade all tracked packages to their latest versions
+  init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
 
@@ -1182,9 +1444,15 @@ Apply-specific flags:
   --dry-run            Print the reconcile plan without executing
   --strict             Exit with an error if any package cannot be resolved
   --yes                Skip the confirmation prompt (for CI and scripts)
+  --quiet              Suppress plan output (useful in scripts)
   --json               Emit machine-readable JSON to stdout
   --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none)
   --debug              Emit debug-level structured logs to stderr
+
+Upgrade-specific flags:
+  --dry-run   Print the upgrade commands without executing
+  --yes       Skip the confirmation prompt
+  --debug     Emit debug-level structured logs to stderr
 
 Status-specific flags:
   --json    Emit machine-readable JSON to stdout

@@ -160,20 +160,20 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Add `version` field to the `--json` output envelope so consumers can detect schema changes.
-- [ ] Define and document the formal deprecation policy (major version for breaking changes).
-- [ ] Achieve ≥80% unit test line coverage across all internal packages.
-- [ ] Add property-based / fuzz tests for version constraint logic and the resolver.
-- [ ] Add end-to-end smoke tests that run `genv apply` against real package managers in CI.
-- [ ] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI.
-- [ ] Security review: audit every adapter's shell invocations for injection vectors.
+- [x] Add `version` field to the `--json` output envelope so consumers can detect schema changes.
+- [x] Define and document the formal deprecation policy (major version for breaking changes).
+- [x] Achieve ≥80% unit test line coverage across all internal packages.
+- [x] Add property-based / fuzz tests for version constraint logic and the resolver.
+- [x] Add end-to-end smoke tests that run `genv apply` against real package managers in CI.
+- [x] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI.
+- [x] Security review: audit every adapter's shell invocations for injection vectors.
 
 Acceptance criteria:
 
-- [ ] `--json` output includes a `"version"` field and the schema is documented.
-- [ ] All internal packages reach ≥80% line coverage as reported by `go test -cover`.
-- [ ] CI enforces the cold-start budget via a benchmark gate.
-- [ ] No known shell-injection vectors in any adapter after the audit.
+- [x] `--json` output includes a `"version"` field and the schema is documented.
+- [x] All internal packages reach ≥80% line coverage as reported by `go test -cover`.
+- [x] CI enforces the cold-start budget via a benchmark gate.
+- [x] No known shell-injection vectors in any adapter after the audit.
 
 ## Milestone M7 - Developer and User Experience
 
@@ -187,19 +187,19 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Implement shell completion for bash, zsh, and fish (`genv completion <shell>`).
-- [ ] Implement `genv validate` — validate genv.json schema without installing anything.
-- [ ] Implement `genv upgrade` — re-resolve pinned version constraints and update the lock.
-- [ ] Implement `genv init` — interactive wizard to create a new genv.json from scratch.
-- [ ] Improve error messages: include a suggestion or next step for every user-facing error.
-- [ ] Add `--quiet` flag to suppress plan output (useful in scripts alongside `--yes`).
+- [x] Implement shell completion for bash, zsh, and fish (`genv completion <shell>`).
+- [x] Implement `genv validate` — validate genv.json schema without installing anything.
+- [x] Implement `genv upgrade` — re-resolve pinned version constraints and update the lock.
+- [x] Implement `genv init` — interactive wizard to create a new genv.json from scratch.
+- [x] Improve error messages: include a suggestion or next step for every user-facing error.
+- [x] Add `--quiet` flag to suppress plan output (useful in scripts alongside `--yes`).
 
 Acceptance criteria:
 
-- [ ] `genv completion bash | source /dev/stdin` enables tab completion for all subcommands and flags.
-- [ ] `genv validate` exits 0 on a valid spec and 3 on an invalid one, with a clear error message.
-- [ ] `genv upgrade` updates `installedVersion` in the lock after successfully upgrading.
-- [ ] Every error message references a corrective action or relevant flag.
+- [x] `genv completion bash | source /dev/stdin` enables tab completion for all subcommands and flags.
+- [x] `genv validate` exits 0 on a valid spec and 3 on an invalid one, with a clear error message.
+- [x] `genv upgrade` updates `installedVersion` in the lock after successfully upgrading.
+- [x] Every error message references a corrective action or relevant flag.
 
 ## Milestone M8 - Environment Variables and Shell Globals
 
@@ -274,7 +274,7 @@ These gates apply to every milestone.
 - [x] v0.1.0-beta.1 — first public prerelease; M1 complete, M2 partially validated
 - [x] v0.1.0 — first stable release; M1 and M2 complete and validated on Linux
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
-- [ ] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
+- [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [ ] v1.1.0+ — iterate on user feedback, add features, and expand platform support as needed
 - [ ] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
 - [ ] v3.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements

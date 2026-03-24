@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply scan status clean edit version help
+        if contains -- $i add remove rm adopt disown list ls apply scan status clean edit completion validate upgrade init version help
             return 1
         end
     end
@@ -30,6 +30,10 @@ complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover all instal
 complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between genv.json, the lock file, and recorded versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a clean -d 'Clear the cache of all detected package managers'
 complete -c genv -n __fish_genv_no_subcommand -f -a edit -d 'Open genv.json in $EDITOR'
+complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
+complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
+complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
+complete -c genv -n __fish_genv_no_subcommand -f -a init -d 'Create a new genv.json interactively'
 complete -c genv -n __fish_genv_no_subcommand -f -a version -d 'Show genv build version information'
 complete -c genv -n __fish_genv_no_subcommand -f -a help -d 'Show this help text'
 
@@ -46,6 +50,7 @@ complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command
 complete -c genv -n '__fish_genv_using_command apply' -l dry-run -d 'Print the reconcile plan without executing'
 complete -c genv -n '__fish_genv_using_command apply' -l strict -d 'Exit with an error if any package cannot be resolved'
 complete -c genv -n '__fish_genv_using_command apply' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command apply' -l quiet -d 'Suppress plan output'
 complete -c genv -n '__fish_genv_using_command apply' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command apply' -l timeout -d 'Per-subprocess timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
@@ -56,3 +61,11 @@ complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_comm
 
 # clean
 complete -c genv -n '__fish_genv_using_command clean' -l dry-run -d 'Print the clean commands without executing'
+
+# completion
+complete -c genv -n '__fish_genv_using_command completion' -f -a 'bash zsh fish' -d 'Shell type'
+
+# upgrade
+complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
+complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
