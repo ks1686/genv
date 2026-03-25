@@ -74,11 +74,11 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q", f.SchemaVersion, Version),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q or %q", f.SchemaVersion, Version, Version2),
 		})
 	}
 
@@ -130,7 +130,48 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 		}
 	}
 
+	// --- env block (v2 only) ---
+	if _, hasEnv := raw["env"]; hasEnv {
+		if f.SchemaVersion != Version2 {
+			errs = append(errs, ValidationError{
+				Position: positions["env"],
+				Field:    "env",
+				Message:  fmt.Sprintf("env block requires schemaVersion %q (current: %q); run 'genv env set' to upgrade", Version2, f.SchemaVersion),
+			})
+		}
+		for name, ev := range f.Env {
+			if !ValidEnvName(name) {
+				errs = append(errs, ValidationError{
+					Field:   "env." + name,
+					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
+				})
+			}
+			_ = ev // value is an arbitrary string; no further validation needed
+		}
+	}
+
 	return &f, errs, nil
+}
+
+// ValidEnvName reports whether name is a valid POSIX shell environment variable
+// name: starts with a letter or underscore, followed by letters, digits, or underscores.
+func ValidEnvName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+			// always valid
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return false // no leading digit
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // offsetToPosition converts a byte offset (as returned by json.Decoder.InputOffset)
