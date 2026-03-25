@@ -261,48 +261,116 @@ Acceptance criteria:
 
 ## Milestone M10 - Services Management
 
-Goal: Extend genv to manage simple services (e.g. background daemons) as part of the environment.
+Goal: Extend genv to manage simple user-space services (e.g. background daemons) as part of the reproducible environment, with first-class integration into existing service managers where available.
 
 Target outcomes:
 
 - Users can declare services in `genv.json` with start/stop commands and have genv manage their lifecycle.
 - Service state is tracked in the lock file and can be reconciled with the live system.
 - genv provides commands to start, stop, and check the status of declared services.
+- Where systemd (Linux) or launchd (macOS) is available, genv generates and installs the appropriate unit/plist files rather than managing raw processes.
 
 Checklist:
 
-- [ ] Extend `genv.json` schema to accept a `services` block with service
-- [ ] Implement `genv service add <name> --start <cmd> --stop <cmd>` and `genv service remove <name>`.
+- [ ] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
+- [ ] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
 - [ ] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
-- [ ] Implement apply logic: start services that are declared but not running, and stop services that are running but no longer declared.
+- [ ] Implement apply logic: start services that are declared but not running; stop services that are in the lock but no longer in the spec.
 - [ ] Track service state in `genv.lock.json` and implement drift detection in `genv status`.
+- [ ] Add optional systemd user-unit generation (`~/.config/systemd/user/genv-<name>.service`) on Linux when systemd is available.
+- [ ] Add optional launchd plist generation (`~/Library/LaunchAgents/genv.<name>.plist`) on macOS when launchd is available.
+- [ ] Implement safe command execution with explicit argv slices (no shell interpolation).
+- [ ] Define and document failure semantics: what happens when a service fails to start, how to handle dependencies, and how to view logs.
 - [ ] Add unit and integration tests for service lifecycle management.
-- [ ] Implement safe command execution with proper escaping to avoid injection vulnerabilities.
-- [ ] Add documentation and examples for service management in the README.
-- [ ] Consider integration with existing service managers (e.g. systemd) for more complex use cases.
-- [ ] Define clear semantics for service management (e.g. what happens if a service fails to start, how to handle dependencies between services, etc.) and document them.
+
+Acceptance criteria:
+
+- [ ] `genv apply` on a spec with a `services` block starts declared services and records their state in the lock file.
+- [ ] Removing a service from the spec and re-running `genv apply` stops and removes it cleanly.
+- [ ] `genv service status <name>` reports whether the service is running, and exits non-zero when it is not.
+- [ ] On systems with systemd available, genv generates a valid user unit and uses `systemctl --user` to manage it.
 
 ## Milestone M11 - Updates Daemon
 
-Goal: Implement an optional background process that can automatically update packages declared in `genv.json` according to a configurable schedule, so long it doesn't violate a pinned version constraint in the lock file.
+Goal: Implement an optional background process that automatically checks for package updates on a configurable schedule, respecting version constraints in the lock file.
 
 Target outcomes:
 
 - Users can enable an updates daemon that runs in the background and checks for package updates at a specified interval.
-- The daemon respects version constraints declared in `genv.json` and `genv.lock.json`, only updating packages that are out of date but still satisfy the constraints.
-- Users can configure the update behavior (e.g. auto-apply updates, send notifications, etc.) through `genv.json`
+- The daemon respects version constraints declared in `genv.json` and `genv.lock.json`, only flagging or applying updates that satisfy declared constraints.
+- Users can configure whether updates are auto-applied or only announced.
 
 Checklist:
 
-- [ ] Implement a background process that can be started with `genv updates start` and
-- [ ] stopped with `genv updates stop`.
-- [ ] Add configuration options to `genv.json` for the updates daemon, including:
-- [ ] `enabled: true/false` to enable or disable the daemon.
-- [ ] `interval: <duration>` to specify how often the daemon checks for updates (e.g. every 24 hours).
-- [ ] `autoApply: true/false` to determine whether the daemon should automatically apply updates or just notify the user.
-- [ ] Implement logic in the daemon to check for package updates according to the specified interval, while respecting version constraints in the spec and lock files.
-- [ ] Add logging and notification mechanisms to inform the user about available updates and applied updates.
-- [ ] Add unit and integration tests for the updates daemon, including tests for configuration
+- [ ] Implement `genv updates start` and `genv updates stop` to manage the daemon lifecycle (using the M10 service layer where possible).
+- [ ] Add an `updates` block to `genv.json` with `enabled`, `interval`, and `autoApply` fields.
+- [ ] Implement daemon logic: on each tick, call `genv upgrade --dry-run` per package, collect candidates, then either apply or log a notification.
+- [ ] Respect pinned version constraints in the lock file — never upgrade a package beyond its constraint.
+- [ ] Add structured logging to a genv-managed log file (`~/.config/genv/updates.log`) with rotation.
+- [ ] Implement desktop notification support (via `notify-send` on Linux, `osascript` on macOS) when updates are available but `autoApply` is false.
+- [ ] Add unit and integration tests for daemon configuration parsing and update-candidate selection.
+
+Acceptance criteria:
+
+- [ ] With `autoApply: true`, packages are upgraded automatically when a new version is available within the declared constraint.
+- [ ] With `autoApply: false`, a desktop notification is sent and the update is recorded in the log without being applied.
+- [ ] The daemon survives restarts gracefully and does not duplicate notifications.
+
+## Milestone M12 - Named Profiles
+
+Goal: Allow users to declare multiple named environment profiles in a single repository and switch between them, enabling distinct configurations for different contexts (e.g. work, personal, server, laptop).
+
+Target outcomes:
+
+- Users can maintain multiple named profiles (e.g. `work`, `home`, `server`) that each declare their own packages, env vars, and shell config.
+- Switching profiles is a single command and triggers a reconcile to add/remove the delta.
+- A `base` profile can define packages shared across all contexts, with named profiles inheriting and extending it.
+
+Checklist:
+
+- [ ] Define a profile schema: a `profiles/` directory of named `<profile>.json` files that extend a root `genv.json` base.
+- [ ] Implement `genv profile switch <name>` — compute the diff between the current active profile and the target, then apply it.
+- [ ] Implement `genv profile list` — list available profiles and mark the active one.
+- [ ] Implement `genv profile create <name>` — scaffold a new profile file from the current environment.
+- [ ] Track the active profile name in `genv.lock.json`.
+- [ ] Implement inheritance: packages, env vars, and shell aliases declared in the base are always included; profiles add on top.
+- [ ] Add `genv status` awareness: report the active profile and flag drift between the profile and the live system.
+- [ ] Add unit and integration tests for profile switching, inheritance, and lock tracking.
+
+Acceptance criteria:
+
+- [ ] `genv profile switch work` installs packages only in the `work` profile and removes packages exclusive to the previous profile.
+- [ ] `genv profile switch home` correctly reverts to the `home` profile state.
+- [ ] Base-profile packages are never removed during a profile switch.
+- [ ] `genv status` reports the active profile name alongside the drift summary.
+
+## Milestone M13 - Hooks and Lifecycle Scripts
+
+Goal: Allow users to declare shell hooks that run before or after specific genv lifecycle events, enabling custom bootstrapping, notifications, and integration with external tools.
+
+Target outcomes:
+
+- Users can declare `pre` and `post` hooks for events like `apply`, `add`, `remove`, and `upgrade`.
+- Hooks are declared in `genv.json` and run in a predictable, sandboxed way with access to event context (e.g. which packages were installed).
+- Hook failures are surfaced clearly without silently swallowing errors.
+
+Checklist:
+
+- [ ] Extend `genv.json` schema to accept a `hooks` block mapping event names to shell command strings.
+- [ ] Implement hook execution in the apply, add, remove, and upgrade command paths.
+- [ ] Pass event context to hooks via environment variables (e.g. `GENV_EVENT`, `GENV_INSTALLED`, `GENV_REMOVED`).
+- [ ] Define and enforce a timeout for hook execution; surface timeout errors clearly.
+- [ ] Implement `--no-hooks` flag on apply and related commands to skip hook execution.
+- [ ] Support both inline commands and script file references (`file: ~/.config/genv/hooks/post-apply.sh`).
+- [ ] Add unit tests for hook parsing, execution ordering, and error propagation.
+- [ ] Document hook security implications: hooks run as the current user with full shell access; warn in docs.
+
+Acceptance criteria:
+
+- [ ] A `post.apply` hook declared in `genv.json` runs after every successful `genv apply`, with `GENV_INSTALLED` set to the list of installed package IDs.
+- [ ] A failing hook exits the command with a non-zero code and prints the hook's stderr output.
+- [ ] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded.
+- [ ] Hook timeouts are enforced and reported clearly.
 
 ## Cross-Cutting Quality Gates
 
@@ -321,8 +389,10 @@ These gates apply to every milestone.
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
-- [ ] v3.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
-- [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip) and/or a plugin system for custom managers
+- [ ] v2.1.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
+- [ ] v2.2.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
+- [ ] v3.0.0 — M10 and M11 complete + first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
+- [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip, cargo) and/or a plugin system for custom adapters
 
 ## How to Contribute Against This Roadmap
 
