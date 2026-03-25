@@ -5,7 +5,7 @@
 set -euo pipefail
 
 VERSION="$1"
-PKGBASE="genv"
+PKGBASE="genv-bin"
 REPO="https://github.com/ks1686/genv"
 
 # ── Fetch checksums ────────────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ pkgdesc='Track, sync, and reproduce your software environment across Linux, macO
 arch=('x86_64' 'aarch64')
 url='https://github.com/ks1686/genv'
 license=('MIT')
+provides=('genv')
+conflicts=('genv')
 source_x86_64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_amd64.tar.gz")
 sha256sums_x86_64=('__SHA256_AMD64__')
 source_aarch64=("https://github.com/ks1686/genv/releases/download/v${pkgver}/genv_${pkgver}_linux_arm64.tar.gz")
@@ -69,6 +71,8 @@ sed -i \
   printf '\tarch = x86_64\n'
   printf '\tarch = aarch64\n'
   printf '\tlicense = MIT\n'
+  printf '\tprovides = genv\n'
+  printf '\tconflicts = genv\n'
   printf '\tsource_x86_64 = %s/releases/download/v%s/genv_%s_linux_amd64.tar.gz\n' \
     "${REPO}" "${VERSION}" "${VERSION}"
   printf '\tsha256sums_x86_64 = %s\n'   "${SHA256_AMD64}"

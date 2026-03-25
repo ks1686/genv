@@ -59,7 +59,7 @@ Highlights:
 - `genv disown` — stop tracking a package without uninstalling it
 - resolver and adapter support for `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `brew`, `macports`, and `linuxbrew`
 - Docker-based integration tests validating all Linux adapters in CI
-- Homebrew tap and AUR (`genv`) distribution
+- Homebrew tap and AUR (`genv-bin`) distribution
 
 Notes:
 
