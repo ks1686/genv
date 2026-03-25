@@ -20,6 +20,7 @@ import (
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/search"
 )
 
 //go:embed completions/genv.bash
@@ -85,6 +86,8 @@ func run(args []string) int {
 		return upgradeCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
+	case "__complete":
+		return completeInternalCmd(args[1:])
 	case "version", "--version":
 		printVersion()
 		return exitOK
@@ -122,6 +125,56 @@ func confirm(prompt string) bool {
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	answer = strings.TrimSpace(answer)
 	return answer == "y" || answer == "Y"
+}
+
+// isTerminal reports whether stdin is an interactive terminal.
+// Returns false when GENV_NO_INTERACTIVE is set (used to disable interactive
+// prompts in tests and CI pipelines without needing a --no-search flag).
+func isTerminal() bool {
+	if os.Getenv("GENV_NO_INTERACTIVE") != "" {
+		return false
+	}
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// pickString presents a numbered list of strings and returns the chosen item.
+// Returns ("", false) when the user cancels (0), input is invalid, or items is empty.
+func pickString(items []string) (string, bool) {
+	if len(items) == 0 {
+		return "", false
+	}
+	for i, item := range items {
+		fprintf(os.Stdout, "  [%d] %s\n", i+1, item)
+	}
+	fprintf(os.Stdout, "\nselect [1-%d] or 0 to cancel: ", len(items))
+	var choice int
+	if _, err := fmt.Fscan(os.Stdin, &choice); err != nil || choice <= 0 || choice > len(items) {
+		return "", false
+	}
+	return items[choice-1], true
+}
+
+// pickCandidate presents a numbered list of search candidates and returns the
+// one the user selects. Returns nil when the user cancels (0), input is
+// invalid, or candidates is empty.
+func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	fprintf(os.Stdout, "multiple packages match %q — select one to install:\n\n", id)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for i, c := range candidates {
+		fmt.Fprintf(tw, "  [%d]\t%s:\t%s\n", i+1, c.Manager, c.PkgName)
+	}
+	_ = tw.Flush()
+	fprintf(os.Stdout, "\nselect [1-%d] or 0 to cancel: ", len(candidates))
+	var choice int
+	if _, err := fmt.Fscan(os.Stdin, &choice); err != nil || choice <= 0 || choice > len(candidates) {
+		return nil
+	}
+	c := candidates[choice-1]
+	return &c
 }
 
 // addToSpec reads or creates the spec at file, records the package, and writes
@@ -217,6 +270,7 @@ func addCmd(args []string) int {
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
+	noSearch := fs.Bool("no-search", false, "skip interactive package search and use id as-is")
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -234,13 +288,39 @@ func addCmd(args []string) int {
 		return exitUsage
 	}
 
+	// Detect available managers once; used by both the search picker (step 0)
+	// and the resolver (step 2).
+	available := resolver.Detect()
+
+	// 0. When no explicit manager mapping is given and stdin is a terminal,
+	//    search available package managers and let the user pick a match.
+	//    This resolves ambiguous short names (e.g. "firefox" → flatpak:org.mozilla.firefox).
+	if !*noSearch && len(managers) == 0 && *prefer == "" && isTerminal() {
+		fPrintln(os.Stdout, "searching available package managers…")
+		candidates := search.All(id, available)
+		if len(candidates) == 0 {
+			fPrintln(os.Stdout, "no packages found matching that name; adding as-is")
+		} else {
+			choice := pickCandidate(id, candidates)
+			if choice == nil {
+				fPrintln(os.Stdout, "cancelled")
+				return exitOK
+			}
+			*prefer = choice.Manager
+			// Only record a manager override when the concrete name differs from id.
+			if choice.PkgName != id {
+				managers = map[string]string{choice.Manager: choice.PkgName}
+			}
+			fPrintln(os.Stdout)
+		}
+	}
+
 	// 1. Update genv.json.
 	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
 		return exit
 	}
 
 	// 2. Resolve and install the package.
-	available := resolver.Detect()
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
@@ -292,6 +372,43 @@ func removeCmd(args []string) int {
 		return exitUsage
 	}
 	id := fs.Arg(0)
+
+	// 0. When stdin is a terminal and id has no exact match in the spec,
+	//    fall back to substring matching so users can type short names
+	//    (e.g. "firefox" resolving to a tracked id like "org.mozilla.firefox").
+	if isTerminal() {
+		if f, err := genvfile.Read(*file); err == nil {
+			idLower := strings.ToLower(id)
+			exact := false
+			var matches []string
+			for _, p := range f.Packages {
+				if p.ID == id {
+					exact = true
+					break
+				}
+				if strings.Contains(strings.ToLower(p.ID), idLower) {
+					matches = append(matches, p.ID)
+				}
+			}
+			if !exact {
+				switch len(matches) {
+				case 0:
+					fprintf(os.Stderr, "genv: %q is not tracked\n", id)
+					return exitLogic
+				case 1:
+					id = matches[0]
+				default:
+					fprintf(os.Stdout, "multiple tracked packages match %q:\n\n", id)
+					chosen, ok := pickString(matches)
+					if !ok {
+						fPrintln(os.Stdout, "cancelled")
+						return exitOK
+					}
+					id = chosen
+				}
+			}
+		}
+	}
 
 	// 1. Update genv.json and read lock.
 	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
@@ -1130,6 +1247,43 @@ func completionCmd(args []string) int {
 		fprint(os.Stdout, completionFish)
 	default:
 		fprintf(os.Stderr, "genv completion: unknown shell %q — supported shells are: bash, zsh, fish\n", fs.Arg(0))
+		return exitUsage
+	}
+	return exitOK
+}
+
+// completeInternalCmd implements the hidden `genv __complete <topic>` command
+// used by shell completion scripts to fetch dynamic candidates at completion
+// time. It prints one candidate per line to stdout and exits 0.
+//
+// Topics:
+//   - packages [--file <path>]  — IDs from genv.json (for remove/disown/upgrade)
+//   - managers                  — available package manager names (for --prefer)
+func completeInternalCmd(args []string) int {
+	if len(args) == 0 {
+		return exitUsage
+	}
+	switch args[0] {
+	case "packages":
+		fs := flag.NewFlagSet("__complete packages", flag.ContinueOnError)
+		fs.SetOutput(io.Discard) // silence flag errors during completion
+		file := fs.String("file", defaultSpecPath(), "")
+		_ = fs.Parse(args[1:])
+		f, err := genvfile.Read(*file)
+		if err != nil {
+			return exitOK // silent: no spec yet is not an error during completion
+		}
+		for _, p := range f.Packages {
+			fPrintln(os.Stdout, p.ID)
+		}
+	case "managers":
+		available := resolver.Detect()
+		for _, a := range adapter.All {
+			if available[a.Name()] {
+				fPrintln(os.Stdout, a.Name())
+			}
+		}
+	default:
 		return exitUsage
 	}
 	return exitOK

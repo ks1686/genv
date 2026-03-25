@@ -33,6 +33,15 @@ func (Pacman) PlanClean() [][]string {
 
 func (Pacman) Query(pkgName string) (bool, error) { return runQuery("pacman", "-Qi", pkgName) }
 
+// Search returns package names from pacman repos whose name contains query.
+func (Pacman) Search(query string) ([]string, error) {
+	lines, err := runListOutput("pacman", "-Ss", query)
+	if err != nil || len(lines) == 0 {
+		return lines, err
+	}
+	return parsePacmanSearch(lines, query), nil
+}
+
 // ListInstalled returns explicitly-installed packages (not pulled-in deps).
 func (Pacman) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")

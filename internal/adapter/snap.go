@@ -33,6 +33,29 @@ func (Snap) PlanClean() [][]string { return nil }
 
 func (Snap) Query(pkgName string) (bool, error) { return runQuery("snap", "list", pkgName) }
 
+// Search returns snap package names containing query.
+// "snap find" output: header line then data lines of "name version publisher notes summary".
+func (Snap) Search(query string) ([]string, error) {
+	lines, err := runListOutput("snap", "find", query)
+	if err != nil || len(lines) == 0 {
+		return lines, err
+	}
+	q := strings.ToLower(query)
+	var names []string
+	for i, line := range lines {
+		if i == 0 {
+			continue // skip header
+		}
+		if fields := strings.Fields(line); len(fields) > 0 {
+			name := fields[0]
+			if strings.Contains(strings.ToLower(name), q) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names, nil
+}
+
 // ListInstalled parses "snap list" output, skipping the header line.
 func (Snap) ListInstalled() ([]string, error) {
 	lines, err := runListOutput("snap", "list")
