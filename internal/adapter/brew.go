@@ -28,6 +28,28 @@ func (brewBase) PlanClean() [][]string {
 	return [][]string{{"brew", "cleanup"}}
 }
 
+// Search returns brew formula/cask names containing query.
+// "brew search" output may include "==> Formulae" / "==> Casks" section headers
+// which are skipped. Package names that are not an exact case-insensitive match
+// of a section header are returned.
+func (brewBase) Search(query string) ([]string, error) {
+	lines, err := runListOutput("brew", "search", query)
+	if err != nil || len(lines) == 0 {
+		return lines, err
+	}
+	q := strings.ToLower(query)
+	var names []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "==>") {
+			continue
+		}
+		if strings.Contains(strings.ToLower(line), q) {
+			names = append(names, line)
+		}
+	}
+	return names, nil
+}
+
 // Brew is the adapter for Homebrew (macOS and Linux).
 type Brew struct{ brewBase }
 

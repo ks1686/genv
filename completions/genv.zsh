@@ -35,13 +35,50 @@ _genv() {
 		_describe -t commands 'genv command' commands
 		;;
 	args)
+		# Extract --file value from the current command line so __complete
+		# reads the right spec when a custom --file path was given.
+		local file_arg=""
+		local -i idx
+		for idx in {1..${#words[@]}}; do
+			if [[ "${words[idx]}" == "--file" && -n "${words[idx+1]}" ]]; then
+				file_arg="--file ${words[idx+1]}"
+				break
+			fi
+		done
+
 		case ${line[1]} in
+		remove | rm | disown)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'1: :->pkgid'
+			if [[ $state == pkgid ]]; then
+				local -a pkgs
+				# shellcheck disable=SC2086
+				pkgs=(${(f)"$(genv __complete packages ${file_arg} 2>/dev/null)"})
+				_describe -t packages 'tracked package' pkgs
+			fi
+			;;
 		add | adopt)
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--version=[Version constraint]:version:' \
-				'--prefer=[Preferred manager]:manager:' \
-				'--manager=[Manager-specific names]:manager:'
+				"--prefer=[Preferred manager]:manager:($(genv __complete managers 2>/dev/null))" \
+				'--manager=[Manager-specific names]:manager:' \
+				'--no-search[Skip interactive package search]'
+			;;
+		upgrade)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--dry-run[Print the upgrade commands without executing]' \
+				'--yes[Skip the confirmation prompt]' \
+				'--debug[Emit debug-level structured logs to stderr]' \
+				'1: :->pkgid'
+			if [[ $state == pkgid ]]; then
+				local -a pkgs
+				# shellcheck disable=SC2086
+				pkgs=(${(f)"$(genv __complete packages ${file_arg} 2>/dev/null)"})
+				_describe -t packages 'tracked package' pkgs
+			fi
 			;;
 		apply)
 			_arguments \
@@ -67,13 +104,6 @@ _genv() {
 			;;
 		completion)
 			_values 'shell' bash zsh fish
-			;;
-		upgrade)
-			_arguments \
-				'--file=[Path to genv.json]:path:_files' \
-				'--dry-run[Print the upgrade commands without executing]' \
-				'--yes[Skip the confirmation prompt]' \
-				'--debug[Emit debug-level structured logs to stderr]'
 			;;
 		esac
 		;;
