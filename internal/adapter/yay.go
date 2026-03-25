@@ -35,6 +35,15 @@ func (Yay) PlanClean() [][]string {
 
 func (Yay) Query(pkgName string) (bool, error) { return runQuery("yay", "-Qi", pkgName) }
 
+// Search returns package names from pacman/AUR repos whose name contains query.
+func (Yay) Search(query string) ([]string, error) {
+	lines, err := runListOutput("yay", "-Ss", query)
+	if err != nil || len(lines) == 0 {
+		return lines, err
+	}
+	return parsePacmanSearch(lines, query), nil
+}
+
 // ListInstalled delegates to pacman since yay manages the same pacman DB.
 func (Yay) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")

@@ -10,7 +10,7 @@ import (
 
 func TestWrite_ProducesValidJSON(t *testing.T) {
 	var buf bytes.Buffer
-	env := output.Envelope{Version: output.OutputSchemaVersion, Command: "apply", OK: true}
+	env := output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: true}
 	if err := output.Write(&buf, env); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 
 func TestWrite_VersionFieldPresent(t *testing.T) {
 	var buf bytes.Buffer
-	env := output.Envelope{Version: output.OutputSchemaVersion, Command: "apply", OK: true}
+	env := output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: true}
 	if err := output.Write(&buf, env); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -34,14 +34,8 @@ func TestWrite_VersionFieldPresent(t *testing.T) {
 	if !ok {
 		t.Fatal("version field missing from JSON output")
 	}
-	if v != output.OutputSchemaVersion {
-		t.Errorf("version: got %v, want %q", v, output.OutputSchemaVersion)
-	}
-}
-
-func TestOutputSchemaVersion_IsNonEmpty(t *testing.T) {
-	if output.OutputSchemaVersion == "" {
-		t.Error("OutputSchemaVersion must not be empty")
+	if v != output.SchemaVersion {
+		t.Errorf("version: got %v, want %q", v, output.SchemaVersion)
 	}
 }
 

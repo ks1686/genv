@@ -15,11 +15,14 @@ import (
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/commands"
+	genvenv "github.com/ks1686/genv/internal/env"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/search"
+	"github.com/ks1686/genv/internal/shellcfg"
 )
 
 //go:embed completions/genv.bash
@@ -85,6 +88,12 @@ func run(args []string) int {
 		return upgradeCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
+	case "env":
+		return envCmd(args[1:])
+	case "shell":
+		return shellCmd(args[1:])
+	case "__complete":
+		return completeInternalCmd(args[1:])
 	case "version", "--version":
 		printVersion()
 		return exitOK
@@ -124,6 +133,134 @@ func confirm(prompt string) bool {
 	return answer == "y" || answer == "Y"
 }
 
+// isTerminal reports whether stdin is an interactive terminal.
+// Returns false when GENV_NO_INTERACTIVE is set (used to disable interactive
+// prompts in tests and CI pipelines without needing a --no-search flag).
+func isTerminal() bool {
+	if os.Getenv("GENV_NO_INTERACTIVE") != "" {
+		return false
+	}
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// pickString presents a numbered list of strings and returns the chosen item.
+// Returns ("", false) when the user cancels (0), input is invalid, or items is empty.
+func pickString(items []string) (string, bool) {
+	if len(items) == 0 {
+		return "", false
+	}
+	for i, item := range items {
+		fprintf(os.Stdout, "  [%d] %s\n", i+1, item)
+	}
+	fprintf(os.Stdout, "\nselect [1-%d] or 0 to cancel: ", len(items))
+	var choice int
+	if _, err := fmt.Fscan(os.Stdin, &choice); err != nil || choice <= 0 || choice > len(items) {
+		return "", false
+	}
+	return items[choice-1], true
+}
+
+// pickCandidate presents a numbered list of search candidates and returns the
+// one the user selects. Returns nil when the user cancels (0), input is
+// invalid, or candidates is empty.
+func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	fprintf(os.Stdout, "multiple packages match %q — select one to install:\n\n", id)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for i, c := range candidates {
+		fmt.Fprintf(tw, "  [%d]\t%s:\t%s\n", i+1, c.Manager, c.PkgName)
+	}
+	_ = tw.Flush()
+	fprintf(os.Stdout, "\nselect [1-%d] or 0 to cancel: ", len(candidates))
+	var choice int
+	if _, err := fmt.Fscan(os.Stdin, &choice); err != nil || choice <= 0 || choice > len(candidates) {
+		return nil
+	}
+	c := candidates[choice-1]
+	return &c
+}
+
+// addToSpec reads or creates the spec at file, records the package, and writes
+// it back. Prints "created <file>" when the file is brand-new. Returns an exit
+// code; exitOK means success.
+func addToSpec(file, id, version, prefer string, managers map[string]string) int {
+	f, isNew, err := genvfile.ReadOrNew(file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+	if err := commands.Add(f, id, version, prefer, managers); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrAlreadyTracked) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+	if err := genvfile.Write(file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", file)
+	}
+	return exitOK
+}
+
+// appendLockEntry reads the lock at lockPath, appends lp, and writes it back.
+// Returns an exit code; exitOK means success.
+func appendLockEntry(lockPath string, lp genvfile.LockedPackage) int {
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+	lf.Packages = append(lf.Packages, lp)
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		return exitIO
+	}
+	return exitOK
+}
+
+// removeFromSpecAndReadLock reads the spec at file, removes id from it, writes
+// it back, then reads and returns the lock file. Returns the lock, the lock
+// path, and an exit code. exitOK means all steps succeeded.
+func removeFromSpecAndReadLock(file, id string) (*genvfile.LockFile, string, int) {
+	f, err := genvfile.Read(file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", file)
+			return nil, "", exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return nil, "", exitValidation
+		}
+		return nil, "", exitIO
+	}
+	if err := commands.Remove(f, id); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return nil, "", exitLogic
+	}
+	if err := genvfile.Write(file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return nil, "", exitIO
+	}
+	lockPath := genvfile.LockPathFrom(file)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return nil, "", exitIO
+	}
+	return lf, lockPath, exitOK
+}
+
 // addCmd implements `genv add <id> [flags]`.
 // Adds the package to genv.json and immediately installs it, then updates the lock.
 func addCmd(args []string) int {
@@ -139,6 +276,7 @@ func addCmd(args []string) int {
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
+	noSearch := fs.Bool("no-search", false, "skip interactive package search and use id as-is")
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -156,34 +294,39 @@ func addCmd(args []string) int {
 		return exitUsage
 	}
 
+	// Detect available managers once; used by both the search picker (step 0)
+	// and the resolver (step 2).
+	available := resolver.Detect()
+
+	// 0. When no explicit manager mapping is given and stdin is a terminal,
+	//    search available package managers and let the user pick a match.
+	//    This resolves ambiguous short names (e.g. "firefox" → flatpak:org.mozilla.firefox).
+	if !*noSearch && len(managers) == 0 && *prefer == "" && isTerminal() {
+		fPrintln(os.Stdout, "searching available package managers…")
+		candidates := search.All(id, available)
+		if len(candidates) == 0 {
+			fPrintln(os.Stdout, "no packages found matching that name; adding as-is")
+		} else {
+			choice := pickCandidate(id, candidates)
+			if choice == nil {
+				fPrintln(os.Stdout, "cancelled")
+				return exitOK
+			}
+			*prefer = choice.Manager
+			// Only record a manager override when the concrete name differs from id.
+			if choice.PkgName != id {
+				managers = map[string]string{choice.Manager: choice.PkgName}
+			}
+			fPrintln(os.Stdout)
+		}
+	}
+
 	// 1. Update genv.json.
-	f, isNew, err := genvfile.ReadOrNew(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, commands.ErrAlreadyTracked) {
-			return exitLogic
-		}
-		return exitUsage
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
-	}
-	if isNew {
-		fprintf(os.Stdout, "created %s\n", *file)
+	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+		return exit
 	}
 
 	// 2. Resolve and install the package.
-	available := resolver.Detect()
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
@@ -206,23 +349,11 @@ func addCmd(args []string) int {
 	}
 
 	// 3. Update lock file.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
+	return appendLockEntry(genvfile.LockPathFrom(*file), genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
 	})
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
-		return exitIO
-	}
-
-	return exitOK
 }
 
 // removeCmd implements `genv remove <id>`.
@@ -248,38 +379,50 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	// 1. Update genv.json.
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found\n", *file)
-			return exitLogic
+	// 0. When stdin is a terminal and id has no exact match in the spec,
+	//    fall back to substring matching so users can type short names
+	//    (e.g. "firefox" resolving to a tracked id like "org.mozilla.firefox").
+	if isTerminal() {
+		if f, err := genvfile.Read(*file); err == nil {
+			idLower := strings.ToLower(id)
+			exact := false
+			var matches []string
+			for _, p := range f.Packages {
+				if p.ID == id {
+					exact = true
+					break
+				}
+				if strings.Contains(strings.ToLower(p.ID), idLower) {
+					matches = append(matches, p.ID)
+				}
+			}
+			if !exact {
+				switch len(matches) {
+				case 0:
+					fprintf(os.Stderr, "genv: %q is not tracked\n", id)
+					return exitLogic
+				case 1:
+					id = matches[0]
+				default:
+					fprintf(os.Stdout, "multiple tracked packages match %q:\n\n", id)
+					chosen, ok := pickString(matches)
+					if !ok {
+						fPrintln(os.Stdout, "cancelled")
+						return exitOK
+					}
+					id = chosen
+				}
+			}
 		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
 	}
 
-	if err := commands.Remove(f, id); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitLogic
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	// 1. Update genv.json and read lock.
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
+	if exit != exitOK {
+		return exit
 	}
 
 	// 2. Find the package in the lock file to know which manager installed it.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-
 	var locked *genvfile.LockedPackage
 	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
@@ -396,46 +539,17 @@ func adoptCmd(args []string) int {
 	}
 
 	// 3. Update genv.json.
-	f, isNew, err := genvfile.ReadOrNew(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Add(f, id, *version, *prefer, managers); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, commands.ErrAlreadyTracked) {
-			return exitLogic
-		}
-		return exitUsage
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
-	}
-	if isNew {
-		fprintf(os.Stdout, "created %s\n", *file)
+	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+		return exit
 	}
 
 	// 4. Update lock file.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-	lf.Packages = append(lf.Packages, genvfile.LockedPackage{
+	if exit := appendLockEntry(genvfile.LockPathFrom(*file), genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
-	})
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
-		return exitIO
+	}); exit != exitOK {
+		return exit
 	}
 
 	fprintf(os.Stdout, "adopted %s — now tracked via %s (already installed)\n", id, action.Manager)
@@ -466,38 +580,13 @@ func disownCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	// 1. Update genv.json.
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found\n", *file)
-			return exitLogic
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
-	}
-
-	if err := commands.Remove(f, id); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitLogic
-	}
-
-	if err := genvfile.Write(*file, f); err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	// 1. Update genv.json and read lock.
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
+	if exit != exitOK {
+		return exit
 	}
 
 	// 2. Remove from lock file without uninstalling.
-	lockPath := genvfile.LockPathFrom(*file)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-
 	wasTracked := false
 	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
@@ -624,7 +713,7 @@ func applyCmd(args []string) int {
 		planData := buildPlanResult(result)
 		if *dryRun {
 			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.OutputSchemaVersion,
+				Version: output.SchemaVersion,
 				Command: "apply",
 				OK:      true,
 				Data:    planData,
@@ -633,18 +722,25 @@ func applyCmd(args []string) int {
 		// Execute with subprocess output routed to stderr so stdout stays clean.
 		execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
 		errs := errStrings(execResult.Errors)
+		// Apply env and shell (update lf in memory), then write lock once.
+		envApplied, envRemoved := applyEnvVars(f, lf, false)
+		shellApplied, shellRemoved := applyShellCfg(f, lf, false)
 		writeLockAfterApply(lockPath, lf, result, execResult)
 		installed := make([]string, len(execResult.Installed))
 		for i, lp := range execResult.Installed {
 			installed[i] = lp.ID
 		}
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "apply",
 			OK:      len(errs) == 0,
 			Data: output.ApplyResult{
-				Installed:   installed,
-				Uninstalled: execResult.Uninstalled,
+				Installed:    installed,
+				Uninstalled:  execResult.Uninstalled,
+				EnvApplied:   envApplied,
+				EnvRemoved:   envRemoved,
+				ShellApplied: shellApplied,
+				ShellRemoved: shellRemoved,
 			},
 			Errors: errs,
 		})
@@ -656,7 +752,21 @@ func applyCmd(args []string) int {
 	}
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
 
-	if toInstall == 0 && toRemove == 0 {
+	// Count env and shell changes needed (entries that are missing, modified, or extra).
+	var envChanges int
+	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
+		if e.Kind != genvenv.EnvStatusOK {
+			envChanges++
+		}
+	}
+	var shellChanges int
+	for _, e := range shellcfg.ShellStatus(f.Shell, lf.Shell) {
+		if e.Kind != shellcfg.ShellStatusOK {
+			shellChanges++
+		}
+	}
+
+	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 {
 		if !*quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
@@ -669,15 +779,32 @@ func applyCmd(args []string) int {
 	}
 
 	if *dryRun {
+		if envChanges > 0 && !*quiet {
+			fprintf(os.Stdout, "env: %d variable(s) to apply\n", envChanges)
+		}
+		if shellChanges > 0 && !*quiet {
+			fprintf(os.Stdout, "shell: %d config entries to apply\n", shellChanges)
+		}
 		return exitOK
 	}
 
-	if !*yes && !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
+	confirmMsg := fmt.Sprintf("This will install %d and remove %d package(s)", toInstall, toRemove)
+	if envChanges > 0 {
+		confirmMsg += fmt.Sprintf(", apply %d env variable(s)", envChanges)
+	}
+	if shellChanges > 0 {
+		confirmMsg += fmt.Sprintf(", apply %d shell config entry/entries", shellChanges)
+	}
+	confirmMsg += ". Continue? [y/N] "
+	if !*yes && !confirm(confirmMsg) {
 		fPrintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
+	// Apply env and shell (update lf in memory), then write lock once.
+	applyEnvVars(f, lf, !*quiet)
+	applyShellCfg(f, lf, !*quiet)
 	writeLockAfterApply(lockPath, lf, result, execResult)
 
 	if len(execResult.Errors) > 0 {
@@ -716,6 +843,63 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	}
 }
 
+// applyEnvVars writes the managed env fragment, updates lf.Env in memory, and
+// returns lists of applied and removed variable names. The caller is responsible
+// for persisting the lock file (avoiding a double-write when packages and env
+// vars are both applied in the same run).
+// If verbose is true, it prints progress lines to stdout.
+func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+	if len(f.Env) == 0 && len(lf.Env) == 0 {
+		return nil, nil
+	}
+
+	fragPath, err := genvenv.FragmentPath()
+	if err != nil {
+		fprintf(os.Stderr, "genv: cannot determine fragment path: %v\n", err)
+		return nil, nil
+	}
+
+	// Use EnvStatus to determine what changed, avoiding duplicated diff logic.
+	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
+		switch e.Kind {
+		case genvenv.EnvStatusMissing, genvenv.EnvStatusModified:
+			applied = append(applied, e.Name)
+		case genvenv.EnvStatusExtra:
+			removed = append(removed, e.Name)
+		}
+	}
+
+	if err := genvenv.ApplyEnv(fragPath, f.Env, genvenv.RcFiles()); err != nil {
+		fprintf(os.Stderr, "genv: writing env fragment: %v\n", err)
+		return applied, removed
+	}
+
+	if verbose {
+		for _, name := range applied {
+			fprintf(os.Stdout, "  env: set %s\n", name)
+		}
+		for _, name := range removed {
+			fprintf(os.Stdout, "  env: removed %s\n", name)
+		}
+		if len(applied) > 0 || len(removed) > 0 {
+			fprintf(os.Stdout, "env fragment written to %s\n", fragPath)
+		}
+	}
+
+	// Update lf.Env in memory; caller writes the lock once.
+	newEnv := make([]genvfile.LockedEnvVar, 0, len(f.Env))
+	for name, ev := range f.Env {
+		newEnv = append(newEnv, genvfile.LockedEnvVar{
+			Name:      name,
+			Value:     ev.Value,
+			Sensitive: ev.Sensitive,
+		})
+	}
+	lf.Env = newEnv
+
+	return applied, removed
+}
+
 // buildPlanResult converts a ReconcileResult into the stable JSON PlanResult type.
 func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 	toInstall := make([]output.PlanPackage, 0, len(result.ToInstall))
@@ -752,6 +936,68 @@ func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 	}
 }
 
+// toOutputShellEntries converts internal shell status entries to the stable
+// JSON output type. hasDrift is true when any entry is modified or extra.
+func toOutputShellEntries(entries []shellcfg.ShellStatusEntry) (out []output.ShellStatusEntry, hasDrift bool) {
+	out = make([]output.ShellStatusEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, output.ShellStatusEntry{
+			Kind:      string(e.Kind),
+			EntryType: e.EntryType,
+			Name:      e.Name,
+			SpecValue: e.SpecValue,
+			LockValue: e.LockValue,
+		})
+		if e.Kind == shellcfg.ShellStatusModified || e.Kind == shellcfg.ShellStatusExtra || e.Kind == shellcfg.ShellStatusMissing {
+			hasDrift = true
+		}
+	}
+	return out, hasDrift
+}
+
+// toOutputEnvEntries converts internal env status entries to the stable JSON
+// output type, redacting sensitive values. hasDrift is true when any entry
+// is modified or extra.
+func toOutputEnvEntries(entries []genvenv.EnvStatusEntry) (out []output.EnvStatusEntry, hasDrift bool) {
+	out = make([]output.EnvStatusEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, output.EnvStatusEntry{
+			Name:      e.Name,
+			Kind:      string(e.Kind),
+			SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
+			LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
+			Sensitive: e.Sensitive,
+		})
+		if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra || e.Kind == genvenv.EnvStatusMissing {
+			hasDrift = true
+		}
+	}
+	return out, hasDrift
+}
+
+// writeShellStatusTable renders a []ShellStatusEntry to w using tabwriter.
+// Returns true when any entry has drift (modified or extra).
+func writeShellStatusTable(w io.Writer, entries []shellcfg.ShellStatusEntry) (hasDrift bool) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, e := range entries {
+		switch e.Kind {
+		case shellcfg.ShellStatusOK:
+			fprintf(tw, "  ok\t%s\t%s\t%s\n", e.EntryType, e.Name, e.SpecValue)
+		case shellcfg.ShellStatusModified:
+			hasDrift = true
+			fprintf(tw, "  modified\t%s\t%s\t(run 'genv apply' to update)\n", e.EntryType, e.Name)
+		case shellcfg.ShellStatusMissing:
+			hasDrift = true
+			fprintf(tw, "  missing\t%s\t%s\t(in spec, not applied — run 'genv apply')\n", e.EntryType, e.Name)
+		case shellcfg.ShellStatusExtra:
+			hasDrift = true
+			fprintf(tw, "  extra\t%s\t%s\t(in lock, not in spec — run 'genv apply')\n", e.EntryType, e.Name)
+		}
+	}
+	_ = tw.Flush()
+	return hasDrift
+}
+
 // writeJSON serializes env to w and returns an exit code.
 func writeJSON(w *os.File, env output.Envelope) int {
 	if err := output.Write(w, env); err != nil {
@@ -774,6 +1020,504 @@ func errStrings(errs []error) []string {
 		s[i] = e.Error()
 	}
 	return s
+}
+
+// envCmd implements `genv env <subcommand>`.
+// Subcommands: set, unset, list.
+func envCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv env <set|unset|list> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "subcommands:")
+		fPrintln(os.Stderr, "  set <NAME> <value> [--sensitive]   Add or update a variable in the spec")
+		fPrintln(os.Stderr, "  unset <NAME>                        Remove a variable from the spec")
+		fPrintln(os.Stderr, "  list [--json]                       Show all declared variables")
+		return exitUsage
+	}
+	switch args[0] {
+	case "set":
+		return envSetCmd(args[1:])
+	case "unset":
+		return envUnsetCmd(args[1:])
+	case "list", "ls":
+		return envListCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv env: unknown subcommand %q\n\nRun 'genv env' for usage.\n", args[0])
+		return exitUsage
+	}
+}
+
+// envSetCmd implements `genv env set <NAME> <value> [--sensitive] [--file]`.
+func envSetCmd(args []string) int {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env set <NAME> <value> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	sensitive := fs.Bool("sensitive", false, "mark value as sensitive (redacted in output and logs)")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 2 {
+		fPrintln(os.Stderr, "genv env set: NAME and value are required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+	value := fs.Arg(1)
+
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.EnvSet(f, name, value, *sensitive); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	fprintf(os.Stdout, "set %s=%s\nRun 'genv apply' to export it to your shell.\n", name, commands.RedactValue(value, *sensitive))
+	return exitOK
+}
+
+// envUnsetCmd implements `genv env unset <NAME> [--file]`.
+func envUnsetCmd(args []string) int {
+	fs := flag.NewFlagSet("env unset", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env unset <NAME> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv env unset: NAME is required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.EnvUnset(f, name); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrEnvNotFound) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "unset %s\nRun 'genv apply' to remove it from your shell.\n", name)
+	return exitOK
+}
+
+// envListCmd implements `genv env list [--json] [--file]`.
+func envListCmd(args []string) int {
+	fs := flag.NewFlagSet("env list", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env list [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found — run 'genv env set' to create it\n", *file)
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	entries := genvenv.EnvStatus(f.Env, lf.Env)
+
+	if *jsonOut {
+		jsonEntries := make([]output.EnvStatusEntry, 0, len(entries))
+		for _, e := range entries {
+			jsonEntries = append(jsonEntries, output.EnvStatusEntry{
+				Name:      e.Name,
+				Kind:      string(e.Kind),
+				SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
+				LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
+				Sensitive: e.Sensitive,
+			})
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "env list",
+			OK:      true,
+			Data:    output.EnvStatusResult{Entries: jsonEntries},
+		})
+	}
+
+	commands.EnvList(f, os.Stdout)
+	return exitOK
+}
+
+// shellCmd implements `genv shell <subcommand>`.
+func shellCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv shell <alias|status|edit> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "subcommands:")
+		fPrintln(os.Stderr, "  alias set <name> <value> [--shell bash|zsh|fish]   Add or update an alias")
+		fPrintln(os.Stderr, "  alias unset <name>                                 Remove an alias")
+		fPrintln(os.Stderr, "  status [--json]                                    Show shell config drift")
+		fPrintln(os.Stderr, "  edit                                               Open genv.json in $EDITOR")
+		return exitUsage
+	}
+	switch args[0] {
+	case "alias":
+		return shellAliasCmd(args[1:])
+	case "status":
+		return shellStatusCmd(args[1:])
+	case "edit":
+		return shellEditCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv shell: unknown subcommand %q\n\nRun 'genv shell' for usage.\n", args[0])
+		return exitUsage
+	}
+}
+
+// shellAliasCmd dispatches `genv shell alias set|unset`.
+func shellAliasCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv shell alias <set|unset> [flags]")
+		return exitUsage
+	}
+	switch args[0] {
+	case "set":
+		return shellAliasSetCmd(args[1:])
+	case "unset":
+		return shellAliasUnsetCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv shell alias: unknown subcommand %q\n", args[0])
+		return exitUsage
+	}
+}
+
+// shellAliasSetCmd implements `genv shell alias set <name> <value> [--shell] [--file]`.
+func shellAliasSetCmd(args []string) int {
+	fs := flag.NewFlagSet("shell alias set", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell alias set <name> <value> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	shell := fs.String("shell", "", "target shell: "+schema.ValidShellTargetsMsg)
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 2 {
+		fPrintln(os.Stderr, "genv shell alias set: name and value are required")
+		fs.Usage()
+		return exitUsage
+	}
+	name, value := fs.Arg(0), fs.Arg(1)
+
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.ShellAliasSet(f, name, value, *shell); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	shellNote := ""
+	if *shell != "" {
+		shellNote = fmt.Sprintf(" (%s only)", *shell)
+	}
+	fprintf(os.Stdout, "set alias %s=%q%s\nRun 'genv apply' to apply it to your shell.\n", name, value, shellNote)
+	return exitOK
+}
+
+// shellAliasUnsetCmd implements `genv shell alias unset <name> [--file]`.
+func shellAliasUnsetCmd(args []string) int {
+	fs := flag.NewFlagSet("shell alias unset", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell alias unset <name> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv shell alias unset: name is required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.ShellAliasUnset(f, name); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrShellAliasNotFound) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "unset alias %s\nRun 'genv apply' to remove it from your shell.\n", name)
+	return exitOK
+}
+
+// shellStatusCmd implements `genv shell status [--json] [--file]`.
+func shellStatusCmd(args []string) int {
+	fs := flag.NewFlagSet("shell status", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell status [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found — run 'genv shell alias set' to create it\n", *file)
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	entries := shellcfg.ShellStatus(f.Shell, lf.Shell)
+
+	if *jsonOut {
+		jsonEntries, hasDrift := toOutputShellEntries(entries)
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "shell status",
+			OK:      !hasDrift,
+			Data:    output.ShellStatusResult{Entries: jsonEntries},
+		})
+	}
+
+	if len(entries) == 0 {
+		fPrintln(os.Stdout, "no shell config declared.")
+		return exitOK
+	}
+
+	if hasDrift := writeShellStatusTable(os.Stdout, entries); hasDrift {
+		return exitLogic
+	}
+	return exitOK
+}
+
+// shellEditCmd implements `genv shell edit [--file]`.
+// Opens genv.json in $EDITOR so the user can edit the shell block directly.
+// The generated shell fragment (~/.config/genv/shell.sh) is a derivative
+// artifact — all shell configuration belongs in genv.json.
+func shellEditCmd(args []string) int {
+	fs := flag.NewFlagSet("shell edit", flag.ContinueOnError)
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell edit [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Open genv.json in $EDITOR to edit the shell block.")
+		fPrintln(os.Stderr, "Run 'genv apply' after saving to apply changes.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	cmd := exec.Command(editor, *file)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fprintf(os.Stderr, "genv: editor exited with error: %v\n", err)
+		return exitLogic
+	}
+	return exitOK
+}
+
+// applyShellCfg writes the managed shell fragment, updates lf.Shell in memory,
+// and returns lists of applied and removed entry names. The caller writes the lock.
+// If verbose is true, it prints progress lines to stdout.
+func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+	if f.Shell == nil && lf.Shell == nil {
+		return nil, nil
+	}
+
+	fragPath, err := shellcfg.FragmentPath()
+	if err != nil {
+		fprintf(os.Stderr, "genv: cannot determine shell fragment path: %v\n", err)
+		return nil, nil
+	}
+
+	// Use ShellStatus to determine what changed, avoiding duplicated diff logic.
+	var hasFishEntries bool
+	for _, e := range shellcfg.ShellStatus(f.Shell, lf.Shell) {
+		label := e.EntryType + " '" + e.Name + "'"
+		switch e.Kind {
+		case shellcfg.ShellStatusMissing, shellcfg.ShellStatusModified:
+			applied = append(applied, label)
+		case shellcfg.ShellStatusExtra:
+			removed = append(removed, label)
+		}
+	}
+	// Fish detection is separate: ShellStatus entries don't carry the shell target.
+	if f.Shell != nil {
+		for _, a := range f.Shell.Aliases {
+			if a.Shell == "fish" {
+				hasFishEntries = true
+				break
+			}
+		}
+		if !hasFishEntries {
+			for _, fn := range f.Shell.Functions {
+				if fn.Shell == "fish" {
+					hasFishEntries = true
+					break
+				}
+			}
+		}
+	}
+
+	var cfg *schema.ShellConfig
+	if f.Shell != nil {
+		cfg = f.Shell
+	}
+	if err := shellcfg.ApplyShell(fragPath, cfg, genvenv.RcFiles()); err != nil {
+		fprintf(os.Stderr, "genv: writing shell fragment: %v\n", err)
+		return applied, removed
+	}
+
+	if verbose {
+		for _, name := range applied {
+			fprintf(os.Stdout, "  shell: set %s\n", name)
+		}
+		for _, name := range removed {
+			fprintf(os.Stdout, "  shell: removed %s\n", name)
+		}
+		if len(applied) > 0 || len(removed) > 0 {
+			fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
+		}
+	}
+	if hasFishEntries {
+		fprintf(os.Stdout, "note: fish-specific shell entries are not auto-applied.\n")
+		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", fragPath)
+	}
+
+	// Update lf.Shell in memory; caller writes the lock once.
+	lf.Shell = shellcfg.SpecToLock(f.Shell)
+
+	return applied, removed
 }
 
 // scanCmd implements `genv scan`.
@@ -807,7 +1551,7 @@ func scanCmd(args []string) int {
 	if len(available) == 0 {
 		if *jsonOut {
 			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.OutputSchemaVersion,
+				Version: output.SchemaVersion,
 				Command: "scan",
 				OK:      true,
 				Data:    output.ScanResult{Added: 0, Skipped: 0},
@@ -899,7 +1643,7 @@ func scanCmd(args []string) int {
 
 	if *jsonOut {
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "scan",
 			OK:      true,
 			Data:    output.ScanResult{Added: added, Skipped: skipped},
@@ -966,6 +1710,8 @@ func statusCmd(args []string) int {
 	}
 
 	entries := commands.Status(f, lf)
+	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
+	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -982,15 +1728,23 @@ func statusCmd(args []string) int {
 				hasDrift = true
 			}
 		}
+		jsonEnvEntries, envDrift := toOutputEnvEntries(envEntries)
+		if envDrift {
+			hasDrift = true
+		}
+		jsonShellEntries, shellDrift := toOutputShellEntries(shellEntries)
+		if shellDrift {
+			hasDrift = true
+		}
 		return writeJSON(os.Stdout, output.Envelope{
-			Version: output.OutputSchemaVersion,
+			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
-			Data:    output.StatusResult{Entries: jsonEntries},
+			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries},
 		})
 	}
 
-	if len(entries) == 0 {
+	if len(entries) == 0 && len(envEntries) == 0 && len(shellEntries) == 0 {
 		fPrintln(os.Stdout, "nothing tracked.")
 		return exitOK
 	}
@@ -1049,6 +1803,53 @@ func statusCmd(args []string) int {
 		}
 	}
 	_ = tw.Flush()
+
+	// Env variable status section.
+	if len(envEntries) > 0 {
+		fPrintln(os.Stdout)
+		fprintf(os.Stdout, "Env — %d variable", len(envEntries))
+		if len(envEntries) != 1 {
+			fprint(os.Stdout, "s")
+		}
+		fPrintln(os.Stdout)
+		fPrintln(os.Stdout)
+		tw2 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		var hasEnvDrift bool
+		for _, e := range envEntries {
+			switch e.Kind {
+			case genvenv.EnvStatusOK:
+				fprintf(tw2, "  ok\t%s\t%s\n", e.Name, commands.RedactValue(e.SpecValue, e.Sensitive))
+			case genvenv.EnvStatusModified:
+				hasEnvDrift = true
+				fprintf(tw2, "  modified\t%s\t(run 'genv apply' to update)\n", e.Name)
+			case genvenv.EnvStatusMissing:
+				fprintf(tw2, "  missing\t%s\t(in spec, not applied — run 'genv apply')\n", e.Name)
+			case genvenv.EnvStatusExtra:
+				hasEnvDrift = true
+				fprintf(tw2, "  extra\t%s\t(in lock, not in spec — run 'genv apply' or 'genv env unset')\n", e.Name)
+			}
+		}
+		_ = tw2.Flush()
+		if hasEnvDrift {
+			return exitLogic
+		}
+	}
+
+	// Shell config status section.
+	if len(shellEntries) > 0 {
+		fPrintln(os.Stdout)
+		fprintf(os.Stdout, "Shell — %d entr", len(shellEntries))
+		if len(shellEntries) == 1 {
+			fprint(os.Stdout, "y")
+		} else {
+			fprint(os.Stdout, "ies")
+		}
+		fPrintln(os.Stdout)
+		fPrintln(os.Stdout)
+		if writeShellStatusTable(os.Stdout, shellEntries) {
+			return exitLogic
+		}
+	}
 
 	if counts[commands.StatusDrift] > 0 || counts[commands.StatusExtra] > 0 {
 		return exitLogic
@@ -1164,6 +1965,43 @@ func completionCmd(args []string) int {
 		fprint(os.Stdout, completionFish)
 	default:
 		fprintf(os.Stderr, "genv completion: unknown shell %q — supported shells are: bash, zsh, fish\n", fs.Arg(0))
+		return exitUsage
+	}
+	return exitOK
+}
+
+// completeInternalCmd implements the hidden `genv __complete <topic>` command
+// used by shell completion scripts to fetch dynamic candidates at completion
+// time. It prints one candidate per line to stdout and exits 0.
+//
+// Topics:
+//   - packages [--file <path>]  — IDs from genv.json (for remove/disown/upgrade)
+//   - managers                  — available package manager names (for --prefer)
+func completeInternalCmd(args []string) int {
+	if len(args) == 0 {
+		return exitUsage
+	}
+	switch args[0] {
+	case "packages":
+		fs := flag.NewFlagSet("__complete packages", flag.ContinueOnError)
+		fs.SetOutput(io.Discard) // silence flag errors during completion
+		file := fs.String("file", defaultSpecPath(), "")
+		_ = fs.Parse(args[1:])
+		f, err := genvfile.Read(*file)
+		if err != nil {
+			return exitOK // silent: no spec yet is not an error during completion
+		}
+		for _, p := range f.Packages {
+			fPrintln(os.Stdout, p.ID)
+		}
+	case "managers":
+		available := resolver.Detect()
+		for _, a := range adapter.All {
+			if available[a.Name()] {
+				fPrintln(os.Stdout, a.Name())
+			}
+		}
+	default:
 		return exitUsage
 	}
 	return exitOK
@@ -1423,6 +2261,7 @@ Commands:
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
+  env         Manage shell environment variables (set, unset, list)
   completion  Print the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions

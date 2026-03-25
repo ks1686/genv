@@ -12,6 +12,13 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 )
 
+// TestMain disables interactive prompts (package search picker, remove fuzzy
+// match) for all unit tests so they run non-interactively.
+func TestMain(m *testing.M) {
+	os.Setenv("GENV_NO_INTERACTIVE", "1")
+	os.Exit(m.Run())
+}
+
 // writeLock writes a minimal lock file with the given packages so tests can
 // exercise commands that depend on prior installed state.
 func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {

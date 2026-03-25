@@ -143,7 +143,8 @@ func TestRead_ValidationError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.json")
 
-	bad := []byte(`{"schemaVersion":"2","packages":[]}`)
+	// "99" is not a valid schema version (both "1" and "2" are accepted).
+	bad := []byte(`{"schemaVersion":"99","packages":[]}`)
 	if err := os.WriteFile(path, bad, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
