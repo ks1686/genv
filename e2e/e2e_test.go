@@ -705,6 +705,30 @@ func TestE2EDnf(t *testing.T) {
 	})
 }
 
+// TestE2EZypper uses --prefer zypper because dnf may also be present on newer
+// openSUSE Tumbleweed images and appears earlier in adapter.All.
+func TestE2EZypper(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "zypper",
+		checkBin:    "zypper",
+		testPkg:     "tree",
+		preferFlag:  "zypper",
+		canInstall:  true,
+	})
+}
+
+// TestE2EApk uses nano as the test package; it is in Alpine's main repository
+// (tree is in community, which may not be enabled in the base Docker image).
+func TestE2EApk(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "apk",
+		checkBin:    "apk",
+		testPkg:     "nano",
+		preferFlag:  "apk",
+		canInstall:  true,
+	})
+}
+
 func TestE2EPacman(t *testing.T) {
 	runE2ESuite(t, suiteConfig{
 		adapterName: "pacman",
@@ -772,5 +796,18 @@ func TestE2EMacPorts(t *testing.T) {
 		checkBin:    "port",
 		testPkg:     "tree",
 		canInstall:  false,
+	})
+}
+
+// TestE2ENix uses "hello" as the test package — it is the canonical first nix
+// install and is available in every nixpkgs channel. Uses --prefer nix because
+// other managers may also be present on nix-enabled hosts.
+func TestE2ENix(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "nix",
+		checkBin:    "nix-env",
+		testPkg:     "hello",
+		preferFlag:  "nix",
+		canInstall:  true,
 	})
 }

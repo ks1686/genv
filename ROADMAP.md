@@ -272,6 +272,19 @@ Target outcomes:
 
 Checklist:
 
+- [x] Implement Linux adapter: `apk` (Alpine Linux).
+- [x] Implement Linux adapter: `zypper` (openSUSE / SLES).
+- [x] Implement Linux adapter: `nix` (NixOS and any Linux host with Nix installed).
+- [x] Implement Linux adapter: `xbps` (Void Linux).
+- [ ] Implement Linux adapter: `emerge` (Gentoo).
+- [ ] Implement Linux adapter: `eopkg` (Solus).
+- [x] Publish genv as `.deb`, `.rpm`, and `.apk` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and apk direct-install; zypper users covered by `.rpm`).
+- [x] Add `flake.nix` so Nix users can install via `nix profile install github:ks1686/genv` (vendorHash must be set on each release).
+- [ ] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
+- [ ] Publish genv to Flathub (Flatpak manifest + Flathub PR review).
+- [ ] Submit genv APKBUILD to Alpine Linux aports so `apk add genv` works without a direct download.
+- [ ] Submit genv Portfile to MacPorts ports tree.
+- [ ] Publish genv to Fedora COPR and/or a self-hosted apt repo for one-line install without downloading the artifact manually.
 - [ ] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
 - [ ] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
 - [ ] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
