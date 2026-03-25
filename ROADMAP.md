@@ -242,22 +242,67 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Extend `genv.json` schema (v2 or v3) to accept a `shell` block with `aliases`, `functions`, and `source` fields.
-- [ ] Implement `genv shell alias set <name> <value>` and `genv shell alias unset <name>`.
-- [ ] Implement apply logic: write aliases and functions to a managed fragment (e.g. `~/.config/genv/shell.sh`).
-- [ ] Implement safe rc injection: detect whether the managed fragment is already sourced in `~/.bashrc`, `~/.zshrc`, etc., and add the source line only once.
-- [ ] Implement `genv shell status` — diff between declared shell config and what is currently active.
-- [ ] Support per-shell targeting (bash-only alias vs. zsh-only alias vs. both).
-- [ ] Add `genv shell edit` — open the managed fragment in `$EDITOR` for manual overrides.
-- [ ] Track applied shell config in `genv.lock.json`.
-- [ ] Add unit and integration tests for fragment generation and rc injection.
+- [x] Extend `genv.json` schema (v2 or v3) to accept a `shell` block with `aliases`, `functions`, and `source` fields.
+- [x] Implement `genv shell alias set <name> <value>` and `genv shell alias unset <name>`.
+- [x] Implement apply logic: write aliases and functions to a managed fragment (e.g. `~/.config/genv/shell.sh`).
+- [x] Implement safe rc injection: detect whether the managed fragment is already sourced in `~/.bashrc`, `~/.zshrc`, etc., and add the source line only once.
+- [x] Implement `genv shell status` — diff between declared shell config and what is currently active.
+- [x] Support per-shell targeting (bash-only alias vs. zsh-only alias vs. both).
+- [x] Add `genv shell edit` — open `genv.json` in `$EDITOR` to edit the shell block directly.
+- [x] Track applied shell config in `genv.lock.json`.
+- [x] Add unit and integration tests for fragment generation and rc injection.
 
 Acceptance criteria:
 
-- [ ] `genv apply` on a spec with a `shell.aliases` block makes those aliases available in a new shell session.
-- [ ] Re-running apply after removing an alias cleanly removes it from the managed fragment.
-- [ ] The source line is injected exactly once into the user's rc file, even if `genv apply` is run multiple times.
-- [ ] `genv shell status` reports drift between the spec and the active shell session.
+- [x] `genv apply` on a spec with a `shell.aliases` block makes those aliases available in a new shell session.
+- [x] Re-running apply after removing an alias cleanly removes it from the managed fragment.
+- [x] The source line is injected exactly once into the user's rc file, even if `genv apply` is run multiple times.
+- [x] `genv shell status` reports drift between the spec and the active shell session.
+
+## Milestone M10 - Services Management
+
+Goal: Extend genv to manage simple services (e.g. background daemons) as part of the environment.
+
+Target outcomes:
+
+- Users can declare services in `genv.json` with start/stop commands and have genv manage their lifecycle.
+- Service state is tracked in the lock file and can be reconciled with the live system.
+- genv provides commands to start, stop, and check the status of declared services.
+
+Checklist:
+
+- [ ] Extend `genv.json` schema to accept a `services` block with service
+- [ ] Implement `genv service add <name> --start <cmd> --stop <cmd>` and `genv service remove <name>`.
+- [ ] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
+- [ ] Implement apply logic: start services that are declared but not running, and stop services that are running but no longer declared.
+- [ ] Track service state in `genv.lock.json` and implement drift detection in `genv status`.
+- [ ] Add unit and integration tests for service lifecycle management.
+- [ ] Implement safe command execution with proper escaping to avoid injection vulnerabilities.
+- [ ] Add documentation and examples for service management in the README.
+- [ ] Consider integration with existing service managers (e.g. systemd) for more complex use cases.
+- [ ] Define clear semantics for service management (e.g. what happens if a service fails to start, how to handle dependencies between services, etc.) and document them.
+
+## Milestone M11 - Updates Daemon
+
+Goal: Implement an optional background process that can automatically update packages declared in `genv.json` according to a configurable schedule, so long it doesn't violate a pinned version constraint in the lock file.
+
+Target outcomes:
+
+- Users can enable an updates daemon that runs in the background and checks for package updates at a specified interval.
+- The daemon respects version constraints declared in `genv.json` and `genv.lock.json`, only updating packages that are out of date but still satisfy the constraints.
+- Users can configure the update behavior (e.g. auto-apply updates, send notifications, etc.) through `genv.json`
+
+Checklist:
+
+- [ ] Implement a background process that can be started with `genv updates start` and
+- [ ] stopped with `genv updates stop`.
+- [ ] Add configuration options to `genv.json` for the updates daemon, including:
+- [ ] `enabled: true/false` to enable or disable the daemon.
+- [ ] `interval: <duration>` to specify how often the daemon checks for updates (e.g. every 24 hours).
+- [ ] `autoApply: true/false` to determine whether the daemon should automatically apply updates or just notify the user.
+- [ ] Implement logic in the daemon to check for package updates according to the specified interval, while respecting version constraints in the spec and lock files.
+- [ ] Add logging and notification mechanisms to inform the user about available updates and applied updates.
+- [ ] Add unit and integration tests for the updates daemon, including tests for configuration
 
 ## Cross-Cutting Quality Gates
 
@@ -275,8 +320,7 @@ These gates apply to every milestone.
 - [x] v0.1.0 — first stable release; M1 and M2 complete and validated on Linux
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
-- [ ] v1.1.0+ — iterate on user feedback, add features, and expand platform support as needed
-- [ ] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
+- [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
 - [ ] v3.0.0 — potential major release with first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
 - [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip) and/or a plugin system for custom managers
 

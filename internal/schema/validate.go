@@ -74,11 +74,11 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q or %q", f.SchemaVersion, Version, Version2),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3),
 		})
 	}
 
@@ -130,13 +130,13 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 		}
 	}
 
-	// --- env block (v2 only) ---
+	// --- env block (v2+ only) ---
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
-				Message:  fmt.Sprintf("env block requires schemaVersion %q (current: %q); run 'genv env set' to upgrade", Version2, f.SchemaVersion),
+				Message:  fmt.Sprintf("env block requires schemaVersion %q or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, f.SchemaVersion),
 			})
 		}
 		for name, ev := range f.Env {
@@ -146,7 +146,48 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
 				})
 			}
-			_ = ev // value is an arbitrary string; no further validation needed
+			_ = ev
+		}
+	}
+
+	// --- shell block (v3 only) ---
+	if _, hasShell := raw["shell"]; hasShell {
+		if f.SchemaVersion != Version3 {
+			errs = append(errs, ValidationError{
+				Position: positions["shell"],
+				Field:    "shell",
+				Message:  fmt.Sprintf("shell block requires schemaVersion %q (current: %q); run 'genv shell alias set' to upgrade", Version3, f.SchemaVersion),
+			})
+		}
+		if f.Shell != nil {
+			for name := range f.Shell.Aliases {
+				if name == "" {
+					errs = append(errs, ValidationError{
+						Field:   "shell.aliases",
+						Message: "alias name must not be empty",
+					})
+				}
+				if sh := f.Shell.Aliases[name].Shell; sh != "" && !KnownShellTargets[sh] {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
+						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
+					})
+				}
+			}
+			for name := range f.Shell.Functions {
+				if name == "" {
+					errs = append(errs, ValidationError{
+						Field:   "shell.functions",
+						Message: "function name must not be empty",
+					})
+				}
+				if sh := f.Shell.Functions[name].Shell; sh != "" && !KnownShellTargets[sh] {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.functions.%s.shell", name),
+						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
+					})
+				}
+			}
 		}
 	}
 

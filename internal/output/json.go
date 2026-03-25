@@ -50,8 +50,9 @@ type StatusEntry struct {
 
 // StatusResult is the Data payload for `genv status --json`.
 type StatusResult struct {
-	Entries    []StatusEntry    `json:"entries"`
-	EnvEntries []EnvStatusEntry `json:"envEntries,omitempty"`
+	Entries      []StatusEntry      `json:"entries"`
+	EnvEntries   []EnvStatusEntry   `json:"envEntries,omitempty"`
+	ShellEntries []ShellStatusEntry `json:"shellEntries,omitempty"`
 }
 
 // ScanResult is the Data payload for `genv scan --json`.
@@ -62,10 +63,12 @@ type ScanResult struct {
 
 // ApplyResult is the Data payload for `genv apply --json` (non-dry-run).
 type ApplyResult struct {
-	Installed   []string `json:"installed"`
-	Uninstalled []string `json:"uninstalled"`
-	EnvApplied  []string `json:"envApplied,omitempty"`
-	EnvRemoved  []string `json:"envRemoved,omitempty"`
+	Installed    []string `json:"installed"`
+	Uninstalled  []string `json:"uninstalled"`
+	EnvApplied   []string `json:"envApplied,omitempty"`
+	EnvRemoved   []string `json:"envRemoved,omitempty"`
+	ShellApplied []string `json:"shellApplied,omitempty"`
+	ShellRemoved []string `json:"shellRemoved,omitempty"`
 }
 
 // EnvStatusEntry is a single env variable entry in an EnvStatusResult.
@@ -81,6 +84,20 @@ type EnvStatusEntry struct {
 // section of `genv status --json`.
 type EnvStatusResult struct {
 	Entries []EnvStatusEntry `json:"entries"`
+}
+
+// ShellStatusEntry is a single shell config entry in a ShellStatusResult.
+type ShellStatusEntry struct {
+	Kind      string `json:"kind"`      // "ok" | "modified" | "missing" | "extra"
+	EntryType string `json:"entryType"` // "alias" | "function" | "source"
+	Name      string `json:"name"`
+	SpecValue string `json:"specValue,omitempty"`
+	LockValue string `json:"lockValue,omitempty"`
+}
+
+// ShellStatusResult is the Data payload for `genv shell status --json`.
+type ShellStatusResult struct {
+	Entries []ShellStatusEntry `json:"entries"`
 }
 
 // Write serializes env to w as a single JSON line followed by a newline.
