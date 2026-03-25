@@ -784,9 +784,9 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		mgr       string
 		wantCount int
 	}{
-		{"apt", 2},      // autoremove + clean
-		{"dnf", 2},      // autoremove + clean all
-		{"pacman", 2},   // find download-* step + pacman -Sc
+		{"apt", 2},    // autoremove + clean
+		{"dnf", 2},    // autoremove + clean all
+		{"pacman", 2}, // find download-* step + pacman -Sc
 		{"paru", 1},
 		{"yay", 1},
 		{"flatpak", 1},
