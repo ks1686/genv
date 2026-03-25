@@ -19,3 +19,12 @@ var knownManagerList = func() string {
 
 // KnownManagerList returns a sorted, comma-separated string of all known manager names.
 func KnownManagerList() string { return knownManagerList }
+
+// RedactValue returns value unchanged unless sensitive is true, in which case
+// it returns "[redacted]". Use for any user-facing output that may expose secrets.
+func RedactValue(value string, sensitive bool) string {
+	if sensitive && value != "" {
+		return "[redacted]"
+	}
+	return value
+}

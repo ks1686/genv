@@ -110,7 +110,8 @@ func TestParseAndValidate_MissingRequiredFields(t *testing.T) {
 }
 
 func TestParseAndValidate_WrongSchemaVersion(t *testing.T) {
-	input := "{\n  \"schemaVersion\": \"2\",\n  \"packages\": []\n}"
+	// Use "99" — both "1" and "2" are now accepted.
+	input := "{\n  \"schemaVersion\": \"99\",\n  \"packages\": []\n}"
 	_, errs, err := ParseAndValidate([]byte(input))
 	if err != nil {
 		t.Fatalf("unexpected fatal error: %v", err)
@@ -122,7 +123,7 @@ func TestParseAndValidate_WrongSchemaVersion(t *testing.T) {
 	if e.Field != "schemaVersion" {
 		t.Errorf("expected field %q, got %q", "schemaVersion", e.Field)
 	}
-	if !strings.Contains(e.Message, "2") {
+	if !strings.Contains(e.Message, "99") {
 		t.Errorf("expected message to mention the bad value, got: %q", e.Message)
 	}
 	if e.Line != 2 {
@@ -245,6 +246,69 @@ func TestOffsetToPosition(t *testing.T) {
 	p = offsetToPosition(data, 2)
 	if p.Line != 2 {
 		t.Errorf("offset 2: want line 2, got line %d", p.Line)
+	}
+}
+
+// ─── Env block (v2) tests ────────────────────────────────────────────────────
+
+func TestParseAndValidate_V2WithEnv(t *testing.T) {
+	input := `{"schemaVersion":"2","packages":[],"env":{"FOO":{"value":"bar"}}}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Errorf("unexpected validation errors: %v", errs)
+	}
+	if f.Env == nil || f.Env["FOO"].Value != "bar" {
+		t.Errorf("expected env FOO=bar, got %v", f.Env)
+	}
+}
+
+func TestParseAndValidate_EnvOnV1_RejectsIt(t *testing.T) {
+	// env block on schemaVersion "1" is a validation error.
+	input := `{"schemaVersion":"1","packages":[],"env":{"FOO":{"value":"bar"}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "env" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error on env field for v1 spec, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_InvalidEnvName(t *testing.T) {
+	input := `{"schemaVersion":"2","packages":[],"env":{"1bad":{"value":"x"}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Field, "1bad") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected invalid-name error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V2NoEnv(t *testing.T) {
+	// schemaVersion "2" with no env block is valid.
+	input := `{"schemaVersion":"2","packages":[]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Errorf("unexpected validation errors: %v", errs)
 	}
 }
 

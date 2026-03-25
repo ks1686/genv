@@ -213,22 +213,22 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Extend `genv.json` schema (v2) to accept an `env` block mapping variable names to values.
-- [ ] Implement `genv env set <NAME> <value>` — add or update a variable in the spec.
-- [ ] Implement `genv env unset <NAME>` — remove a variable from the spec.
-- [ ] Implement `genv env list` — show all declared variables and their current resolved values.
-- [ ] Implement apply logic: write variables to a managed shell profile fragment (e.g. `~/.config/genv/env.sh`) sourced by the user's shell rc.
-- [ ] Track applied variable state in `genv.lock.json` so drift is detectable.
-- [ ] Implement `genv status` drift detection for env variables (declared vs. actually exported).
-- [ ] Support secret redaction in `--json` output for variables marked `sensitive: true`.
-- [ ] Add unit and integration tests for env apply, update, and removal.
+- [x] Extend `genv.json` schema (v2) to accept an `env` block mapping variable names to values.
+- [x] Implement `genv env set <NAME> <value>` — add or update a variable in the spec.
+- [x] Implement `genv env unset <NAME>` — remove a variable from the spec.
+- [x] Implement `genv env list` — show all declared variables and their current resolved values.
+- [x] Implement apply logic: write variables to a managed shell profile fragment (e.g. `~/.config/genv/env.sh`) sourced by the user's shell rc.
+- [x] Track applied variable state in `genv.lock.json` so drift is detectable.
+- [x] Implement `genv status` drift detection for env variables (declared vs. actually exported).
+- [x] Support secret redaction in `--json` output for variables marked `sensitive: true`.
+- [x] Add unit and integration tests for env apply, update, and removal.
 
 Acceptance criteria:
 
-- [ ] `genv apply` on a spec with an `env` block exports the declared variables in a new shell session.
-- [ ] Removing a variable from the spec and re-running `genv apply` removes it from the managed fragment.
-- [ ] `genv status` surfaces variables that are in the spec but not currently exported, and vice versa.
-- [ ] Sensitive variables are redacted in `--json` output and log output.
+- [x] `genv apply` on a spec with an `env` block exports the declared variables in a new shell session.
+- [x] Removing a variable from the spec and re-running `genv apply` removes it from the managed fragment.
+- [x] `genv status` surfaces variables that are in the spec but not currently exported, and vice versa.
+- [x] Sensitive variables are redacted in `--json` output and log output.
 
 ## Milestone M9 - Shell Configuration Management
 

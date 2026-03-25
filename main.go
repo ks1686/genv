@@ -15,6 +15,7 @@ import (
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/commands"
+	genvenv "github.com/ks1686/genv/internal/env"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
@@ -86,6 +87,8 @@ func run(args []string) int {
 		return upgradeCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
+	case "env":
+		return envCmd(args[1:])
 	case "__complete":
 		return completeInternalCmd(args[1:])
 	case "version", "--version":
@@ -716,6 +719,8 @@ func applyCmd(args []string) int {
 		// Execute with subprocess output routed to stderr so stdout stays clean.
 		execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
 		errs := errStrings(execResult.Errors)
+		// Apply env vars (updates lf.Env in memory), then write lock once.
+		envApplied, envRemoved := applyEnvVars(f, lf, false)
 		writeLockAfterApply(lockPath, lf, result, execResult)
 		installed := make([]string, len(execResult.Installed))
 		for i, lp := range execResult.Installed {
@@ -728,6 +733,8 @@ func applyCmd(args []string) int {
 			Data: output.ApplyResult{
 				Installed:   installed,
 				Uninstalled: execResult.Uninstalled,
+				EnvApplied:  envApplied,
+				EnvRemoved:  envRemoved,
 			},
 			Errors: errs,
 		})
@@ -739,7 +746,16 @@ func applyCmd(args []string) int {
 	}
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
 
-	if toInstall == 0 && toRemove == 0 {
+	// Count env changes needed (vars that are missing, modified, or extra).
+	envStatusEntries := genvenv.EnvStatus(f.Env, lf.Env)
+	var envChanges int
+	for _, e := range envStatusEntries {
+		if e.Kind != genvenv.EnvStatusOK {
+			envChanges++
+		}
+	}
+
+	if toInstall == 0 && toRemove == 0 && envChanges == 0 {
 		if !*quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
@@ -752,15 +768,25 @@ func applyCmd(args []string) int {
 	}
 
 	if *dryRun {
+		if envChanges > 0 && !*quiet {
+			fprintf(os.Stdout, "env: %d variable(s) to apply\n", envChanges)
+		}
 		return exitOK
 	}
 
-	if !*yes && !confirm(fmt.Sprintf("This will install %d and remove %d package(s). Continue? [y/N] ", toInstall, toRemove)) {
+	confirmMsg := fmt.Sprintf("This will install %d and remove %d package(s)", toInstall, toRemove)
+	if envChanges > 0 {
+		confirmMsg += fmt.Sprintf(", and apply %d env variable(s)", envChanges)
+	}
+	confirmMsg += ". Continue? [y/N] "
+	if !*yes && !confirm(confirmMsg) {
 		fPrintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
+	// Apply env vars (updates lf.Env in memory), then write lock once.
+	applyEnvVars(f, lf, !*quiet)
 	writeLockAfterApply(lockPath, lf, result, execResult)
 
 	if len(execResult.Errors) > 0 {
@@ -797,6 +823,62 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 	}
+}
+
+// applyEnvVars writes the managed env fragment, updates lf.Env in memory, and
+// returns lists of applied and removed variable names. The caller is responsible
+// for persisting the lock file (avoiding a double-write when packages and env
+// vars are both applied in the same run).
+// If verbose is true, it prints progress lines to stdout.
+func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+	if len(f.Env) == 0 && len(lf.Env) == 0 {
+		return nil, nil
+	}
+
+	fragPath, err := genvenv.FragmentPath()
+	if err != nil {
+		fprintf(os.Stderr, "genv: cannot determine fragment path: %v\n", err)
+		return nil, nil
+	}
+
+	for name := range f.Env {
+		applied = append(applied, name)
+	}
+	for _, le := range lf.Env {
+		if _, inSpec := f.Env[le.Name]; !inSpec {
+			removed = append(removed, le.Name)
+		}
+	}
+
+	if err := genvenv.ApplyEnv(fragPath, f.Env, genvenv.RcFiles()); err != nil {
+		fprintf(os.Stderr, "genv: writing env fragment: %v\n", err)
+		return applied, removed
+	}
+
+	if verbose {
+		for _, name := range applied {
+			fprintf(os.Stdout, "  env: set %s\n", name)
+		}
+		for _, name := range removed {
+			fprintf(os.Stdout, "  env: removed %s\n", name)
+		}
+		if len(applied) > 0 || len(removed) > 0 {
+			fprintf(os.Stdout, "env fragment written to %s\n", fragPath)
+		}
+	}
+
+	// Update lf.Env in memory; caller writes the lock once.
+	newEnv := make([]genvfile.LockedEnvVar, 0, len(f.Env))
+	for name, ev := range f.Env {
+		newEnv = append(newEnv, genvfile.LockedEnvVar{
+			Name:      name,
+			Value:     ev.Value,
+			Sensitive: ev.Sensitive,
+		})
+	}
+	lf.Env = newEnv
+
+	return applied, removed
 }
 
 // buildPlanResult converts a ReconcileResult into the stable JSON PlanResult type.
@@ -857,6 +939,191 @@ func errStrings(errs []error) []string {
 		s[i] = e.Error()
 	}
 	return s
+}
+
+// envCmd implements `genv env <subcommand>`.
+// Subcommands: set, unset, list.
+func envCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv env <set|unset|list> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "subcommands:")
+		fPrintln(os.Stderr, "  set <NAME> <value> [--sensitive]   Add or update a variable in the spec")
+		fPrintln(os.Stderr, "  unset <NAME>                        Remove a variable from the spec")
+		fPrintln(os.Stderr, "  list [--json]                       Show all declared variables")
+		return exitUsage
+	}
+	switch args[0] {
+	case "set":
+		return envSetCmd(args[1:])
+	case "unset":
+		return envUnsetCmd(args[1:])
+	case "list", "ls":
+		return envListCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv env: unknown subcommand %q\n\nRun 'genv env' for usage.\n", args[0])
+		return exitUsage
+	}
+}
+
+// envSetCmd implements `genv env set <NAME> <value> [--sensitive] [--file]`.
+func envSetCmd(args []string) int {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env set <NAME> <value> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	sensitive := fs.Bool("sensitive", false, "mark value as sensitive (redacted in output and logs)")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 2 {
+		fPrintln(os.Stderr, "genv env set: NAME and value are required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+	value := fs.Arg(1)
+
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.EnvSet(f, name, value, *sensitive); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	fprintf(os.Stdout, "set %s=%s\nRun 'genv apply' to export it to your shell.\n", name, commands.RedactValue(value, *sensitive))
+	return exitOK
+}
+
+// envUnsetCmd implements `genv env unset <NAME> [--file]`.
+func envUnsetCmd(args []string) int {
+	fs := flag.NewFlagSet("env unset", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env unset <NAME> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv env unset: NAME is required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.EnvUnset(f, name); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrEnvNotFound) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "unset %s\nRun 'genv apply' to remove it from your shell.\n", name)
+	return exitOK
+}
+
+// envListCmd implements `genv env list [--json] [--file]`.
+func envListCmd(args []string) int {
+	fs := flag.NewFlagSet("env list", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv env list [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found — run 'genv env set' to create it\n", *file)
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	entries := genvenv.EnvStatus(f.Env, lf.Env)
+
+	if *jsonOut {
+		jsonEntries := make([]output.EnvStatusEntry, 0, len(entries))
+		for _, e := range entries {
+			jsonEntries = append(jsonEntries, output.EnvStatusEntry{
+				Name:      e.Name,
+				Kind:      string(e.Kind),
+				SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
+				LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
+				Sensitive: e.Sensitive,
+			})
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "env list",
+			OK:      true,
+			Data:    output.EnvStatusResult{Entries: jsonEntries},
+		})
+	}
+
+	commands.EnvList(f, os.Stdout)
+	return exitOK
 }
 
 // scanCmd implements `genv scan`.
@@ -1049,6 +1316,7 @@ func statusCmd(args []string) int {
 	}
 
 	entries := commands.Status(f, lf)
+	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -1065,15 +1333,28 @@ func statusCmd(args []string) int {
 				hasDrift = true
 			}
 		}
+		jsonEnvEntries := make([]output.EnvStatusEntry, 0, len(envEntries))
+		for _, e := range envEntries {
+			jsonEnvEntries = append(jsonEnvEntries, output.EnvStatusEntry{
+				Name:      e.Name,
+				Kind:      string(e.Kind),
+				SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
+				LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
+				Sensitive: e.Sensitive,
+			})
+			if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra {
+				hasDrift = true
+			}
+		}
 		return writeJSON(os.Stdout, output.Envelope{
 			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
-			Data:    output.StatusResult{Entries: jsonEntries},
+			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries},
 		})
 	}
 
-	if len(entries) == 0 {
+	if len(entries) == 0 && len(envEntries) == 0 {
 		fPrintln(os.Stdout, "nothing tracked.")
 		return exitOK
 	}
@@ -1132,6 +1413,37 @@ func statusCmd(args []string) int {
 		}
 	}
 	_ = tw.Flush()
+
+	// Env variable status section.
+	if len(envEntries) > 0 {
+		fPrintln(os.Stdout)
+		fprintf(os.Stdout, "Env — %d variable", len(envEntries))
+		if len(envEntries) != 1 {
+			fprint(os.Stdout, "s")
+		}
+		fPrintln(os.Stdout)
+		fPrintln(os.Stdout)
+		tw2 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		var hasEnvDrift bool
+		for _, e := range envEntries {
+			switch e.Kind {
+			case genvenv.EnvStatusOK:
+				fprintf(tw2, "  ok\t%s\t%s\n", e.Name, commands.RedactValue(e.SpecValue, e.Sensitive))
+			case genvenv.EnvStatusModified:
+				hasEnvDrift = true
+				fprintf(tw2, "  modified\t%s\t(run 'genv apply' to update)\n", e.Name)
+			case genvenv.EnvStatusMissing:
+				fprintf(tw2, "  missing\t%s\t(in spec, not applied — run 'genv apply')\n", e.Name)
+			case genvenv.EnvStatusExtra:
+				hasEnvDrift = true
+				fprintf(tw2, "  extra\t%s\t(in lock, not in spec — run 'genv apply' or 'genv env unset')\n", e.Name)
+			}
+		}
+		_ = tw2.Flush()
+		if hasEnvDrift {
+			return exitLogic
+		}
+	}
 
 	if counts[commands.StatusDrift] > 0 || counts[commands.StatusExtra] > 0 {
 		return exitLogic
@@ -1543,6 +1855,7 @@ Commands:
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
+  env         Manage shell environment variables (set, unset, list)
   completion  Print the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions

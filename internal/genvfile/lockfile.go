@@ -20,10 +20,20 @@ type LockedPackage struct {
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }
 
+// LockedEnvVar records how one environment variable was last applied by genv.
+// Sensitive is preserved so status/output can redact the value as needed.
+type LockedEnvVar struct {
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+	Sensitive bool   `json:"sensitive,omitempty"`
+}
+
 // LockFile is the on-disk representation of the applied state tracked by genv.
+// The Env field is added in M8 (schemaVersion "2") and is absent in v1 lock files.
 type LockFile struct {
 	SchemaVersion string          `json:"schemaVersion"`
 	Packages      []LockedPackage `json:"packages"`
+	Env           []LockedEnvVar  `json:"env,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),
