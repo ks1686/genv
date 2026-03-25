@@ -277,7 +277,7 @@ func ReadFragment(path string) (map[string]string, error) {
 }
 
 // shellQuote wraps v in single quotes, escaping any embedded single quotes
-// using the 'x'\''y' idiom so the result is safe to embed in a POSIX shell script.
+// using the 'x'\”y' idiom so the result is safe to embed in a POSIX shell script.
 func shellQuote(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
