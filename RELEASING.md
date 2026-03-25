@@ -52,15 +52,15 @@ brew tap ks1686/tap
 brew install genv
 ```
 
-### 3. AUR (`genv-bin`)
+### 3. AUR (`genv-bin` and `genv`)
 
-The CI script pushes a PKGBUILD to AUR via SSH. It updates an existing package — it does
-not create a new one. The first publish must be done manually.
+Two AUR packages are published on every stable release. Both use the same `AUR_KEY` secret.
 
-The package is named `genv-bin` because it installs a pre-compiled binary downloaded from
-the GitHub release. It declares `provides=('genv')` and `conflicts=('genv')` so it
-satisfies any dependency on `genv` and cannot be co-installed with a source-based `genv`
-package.
+- **`genv-bin`** — installs a pre-compiled binary downloaded from the GitHub release. Fast to install; no Go toolchain required.
+- **`genv`** — compiles from source using `go build`. Takes longer but lets users audit the build on their own machine.
+
+The two packages `conflict` with each other so users can only have one installed at a time.
+Each CI script updates an existing AUR package — it does not create a new one. The first publish of each must be done manually.
 
 **3a. Create an AUR account** at https://aur.archlinux.org/ if you don't have one.
 
@@ -117,6 +117,43 @@ git push
 > `checksums.txt` before pushing. AUR will flag the package as untrustworthy
 > if SKIP is left in place.
 
+**3c-2. Create the `genv` source package on AUR** (one-time manual step):
+
+```bash
+git clone ssh://aur@aur.archlinux.org/genv.git /tmp/genv-src-aur
+cd /tmp/genv-src-aur
+
+cat > PKGBUILD << 'EOF'
+# Maintainer: ks1686 <ks1686@users.noreply.github.com>
+pkgname=genv
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
+arch=('x86_64' 'aarch64')
+url="https://github.com/ks1686/genv"
+license=('MIT')
+makedepends=('go')
+conflicts=('genv-bin')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ks1686/genv/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "genv-${pkgver}"
+    go build -trimpath -ldflags "-s -w -X main.version=${pkgver}" -o genv .
+}
+
+package() {
+    cd "genv-${pkgver}"
+    install -Dm755 genv "${pkgdir}/usr/bin/genv"
+}
+EOF
+
+makepkg --printsrcinfo > .SRCINFO
+git add PKGBUILD .SRCINFO
+git commit -m "Initial release v0.2.0"
+git push
+```
+
 **3d. Add the AUR SSH private key as a repository secret:**
 
 In `ks1686/genv` → Settings → Secrets and variables → Actions, add a secret named
@@ -130,7 +167,8 @@ cat ~/.ssh/aur
 Users install after setup:
 
 ```bash
-paru -S genv-bin   # or: yay -S genv-bin
+paru -S genv-bin   # pre-compiled binary (fast)
+paru -S genv       # builds from source
 ```
 
 ---
@@ -164,7 +202,7 @@ paru -S genv-bin   # or: yay -S genv-bin
    - Generate `checksums.txt`
    - Publish a GitHub Release with all artifacts
    - Push the Homebrew formula to `ks1686/homebrew-tap`
-   - Push an updated PKGBUILD to AUR (`genv-bin`)
+   - Push updated PKGBUILDs to AUR (`genv-bin` pre-compiled and `genv` source)
 
 6. **Verify** by downloading one artifact and running:
 
@@ -183,8 +221,9 @@ paru -S genv-bin   # or: yay -S genv-bin
 8. **Verify AUR** (on any Arch machine):
 
    ```bash
-   paru -Sy genv-bin
-   genv version
+   paru -Sy genv-bin && genv version   # pre-compiled
+   # or
+   paru -Sy genv && genv version       # from source
    ```
 
 ---

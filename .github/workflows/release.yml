@@ -43,9 +43,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
-      - name: Publish to AUR
+      - name: Publish to AUR (genv-bin, pre-compiled binary)
         if: "!contains(github.ref_name, '-')"
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
           VERSION: ${{ github.ref_name }}
         run: bash .github/scripts/publish-aur.sh "${VERSION#v}"
+
+      - name: Publish to AUR (genv, builds from source)
+        if: "!contains(github.ref_name, '-')"
+        env:
+          AUR_KEY: ${{ secrets.AUR_KEY }}
+          VERSION: ${{ github.ref_name }}
+        run: bash .github/scripts/publish-aur-src.sh "${VERSION#v}"
