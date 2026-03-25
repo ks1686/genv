@@ -87,6 +87,7 @@ func (r *runner) rawExec(stdinData string, args ...string) (stdout, stderr strin
 	if stdinData != "" {
 		cmd.Stdin = strings.NewReader(stdinData)
 	}
+	cmd.Env = append(os.Environ(), "GENV_NO_INTERACTIVE=1")
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
