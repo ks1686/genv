@@ -28,7 +28,12 @@ func (Pacman) PlanUpgrade(pkgName string) []string {
 }
 
 func (Pacman) PlanClean() [][]string {
-	return [][]string{{"sudo", "pacman", "-Sc", "--noconfirm"}}
+	return [][]string{
+		// Remove stale download temp files left by interrupted pacman sessions.
+		// These cause "Error reading fd 7" noise in pacman -Sc output.
+		{"sudo", "find", "/var/cache/pacman/pkg", "-maxdepth", "1", "-name", "download-*", "-delete"},
+		{"sudo", "pacman", "-Sc", "--noconfirm"},
+	}
 }
 
 func (Pacman) Query(pkgName string) (bool, error) { return runQuery("pacman", "-Qi", pkgName) }
