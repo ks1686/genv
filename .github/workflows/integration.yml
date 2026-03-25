@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 # This file tests each adapter against a real package-manager binary.
 # It is separate from ci.yml (unit tests + vet + fmt) so the fast checks
 # are not blocked by slower distro jobs.

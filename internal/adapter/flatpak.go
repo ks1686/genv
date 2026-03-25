@@ -34,6 +34,12 @@ func (Flatpak) PlanClean() [][]string {
 
 func (Flatpak) Query(pkgName string) (bool, error) { return runQuery("flatpak", "info", pkgName) }
 
+// Search returns Flatpak application IDs whose names contain query.
+// Uses "flatpak search --columns=application" which outputs one app ID per line.
+func (Flatpak) Search(query string) ([]string, error) {
+	return runListOutput("flatpak", "search", "--columns=application", query)
+}
+
 // ListInstalled returns application IDs of installed Flatpak apps (not runtimes).
 func (Flatpak) ListInstalled() ([]string, error) {
 	return runListOutput("flatpak", "list", "--app", "--columns=application")

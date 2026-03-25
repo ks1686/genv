@@ -10,6 +10,18 @@ import (
 	"strings"
 )
 
+// Searchable is an optional extension of Adapter for managers that support
+// searching their package repositories by keyword. Not all managers expose
+// a useful search command, so this is a separate interface checked via
+// type assertion rather than a required method on Adapter.
+type Searchable interface {
+	// Search returns package names from this manager's repository that match
+	// query. Implementations should filter to names containing query
+	// (case-insensitive) where the underlying command doesn't already do so.
+	// Returns nil, nil when no results are found or the manager is unavailable.
+	Search(query string) ([]string, error)
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.
@@ -161,6 +173,27 @@ func runVersionOutput(cmd string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// parsePacmanSearch parses the output of pacman/paru/yay -Ss and returns
+// package names whose name contains query (case-insensitive).
+// Output alternates: "repo/name version ..." package lines and indented
+// description lines; only package lines are examined.
+func parsePacmanSearch(lines []string, query string) []string {
+	q := strings.ToLower(query)
+	var names []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		pkgField := strings.Fields(line)[0]
+		if _, name, ok := strings.Cut(pkgField, "/"); ok {
+			if strings.Contains(strings.ToLower(name), q) {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 // parseMgrQueryVersion extracts the version from "pkgname version" output,

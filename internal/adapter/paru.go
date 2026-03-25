@@ -35,6 +35,15 @@ func (Paru) PlanClean() [][]string {
 
 func (Paru) Query(pkgName string) (bool, error) { return runQuery("paru", "-Qi", pkgName) }
 
+// Search returns package names from pacman/AUR repos whose name contains query.
+func (Paru) Search(query string) ([]string, error) {
+	lines, err := runListOutput("paru", "-Ss", query)
+	if err != nil || len(lines) == 0 {
+		return lines, err
+	}
+	return parsePacmanSearch(lines, query), nil
+}
+
 // ListInstalled delegates to pacman since paru manages the same pacman DB.
 func (Paru) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")

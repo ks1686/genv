@@ -101,7 +101,7 @@ func TestAdd_PreservesOrder(t *testing.T) {
 }
 
 // TestAdd_NilManagers verifies that nil managers is accepted without error and
-// the resulting Package has a nil managers map (marshalled as omitempty/absent).
+// the resulting Package has a nil managers map (marshaled as omitempty/absent).
 func TestAdd_NilManagers(t *testing.T) {
 	f := newFile()
 	if err := Add(f, "git", "*", "", nil); err != nil {

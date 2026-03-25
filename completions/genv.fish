@@ -19,6 +19,28 @@ function __fish_genv_using_command
     return 1
 end
 
+# Helper: extract the value of --file from the current command line tokens,
+# then pass it through to __complete packages so it reads the right spec.
+function __fish_genv_file_arg
+    set -l tokens (commandline -opc)
+    for i in (seq 1 (count $tokens))
+        if test $tokens[$i] = --file
+            and test (math $i + 1) -le (count $tokens)
+            echo --file $tokens[(math $i + 1)]
+            return
+        end
+    end
+end
+
+# Dynamic completions from the binary.
+function __fish_genv_packages
+    genv __complete packages (__fish_genv_file_arg) 2>/dev/null
+end
+
+function __fish_genv_managers
+    genv __complete managers 2>/dev/null
+end
+
 # Commands
 complete -c genv -n __fish_genv_no_subcommand -f -a add -d 'Add a package to the spec and install it now'
 complete -c genv -n __fish_genv_no_subcommand -f -a 'remove rm' -d 'Remove a package from the spec and uninstall it now'
@@ -40,11 +62,23 @@ complete -c genv -n __fish_genv_no_subcommand -f -a help -d 'Show this help text
 # Common flags
 complete -c genv -l file -d 'Path to genv.json' -r
 
-# Command specific flags
+# remove / rm / disown — complete positional arg with tracked package IDs
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' \
+    -f -a '(__fish_genv_packages)' -d 'Tracked package'
+
 # add / adopt
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l version -d 'Version constraint' -x
-complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l prefer -d 'Preferred manager' -x
+complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' \
+    -l prefer -d 'Preferred manager' -x -a '(__fish_genv_managers)'
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l manager -d 'Manager-specific names' -x
+complete -c genv -n '__fish_genv_using_command add' -l no-search -d 'Skip interactive package search'
+
+# upgrade — complete positional arg with tracked package IDs
+complete -c genv -n '__fish_genv_using_command upgrade' \
+    -f -a '(__fish_genv_packages)' -d 'Tracked package'
+complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
+complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
 
 # apply
 complete -c genv -n '__fish_genv_using_command apply' -l dry-run -d 'Print the reconcile plan without executing'
@@ -64,8 +98,3 @@ complete -c genv -n '__fish_genv_using_command clean' -l dry-run -d 'Print the c
 
 # completion
 complete -c genv -n '__fish_genv_using_command completion' -f -a 'bash zsh fish' -d 'Shell type'
-
-# upgrade
-complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
-complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
-complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
