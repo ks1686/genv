@@ -28,12 +28,35 @@ type LockedEnvVar struct {
 	Sensitive bool   `json:"sensitive,omitempty"`
 }
 
+// LockedShellAlias records a single applied shell alias.
+type LockedShellAlias struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Shell string `json:"shell,omitempty"`
+}
+
+// LockedShellFunction records a single applied shell function.
+type LockedShellFunction struct {
+	Name  string `json:"name"`
+	Body  string `json:"body"`
+	Shell string `json:"shell,omitempty"`
+}
+
+// LockedShellConfig records the applied shell configuration block.
+type LockedShellConfig struct {
+	Aliases   []LockedShellAlias    `json:"aliases,omitempty"`
+	Functions []LockedShellFunction `json:"functions,omitempty"`
+	Source    []string              `json:"source,omitempty"`
+}
+
 // LockFile is the on-disk representation of the applied state tracked by genv.
 // The Env field is added in M8 (schemaVersion "2") and is absent in v1 lock files.
+// The Shell field is added in M9 (schemaVersion "3") and is absent in v1/v2 lock files.
 type LockFile struct {
-	SchemaVersion string          `json:"schemaVersion"`
-	Packages      []LockedPackage `json:"packages"`
-	Env           []LockedEnvVar  `json:"env,omitempty"`
+	SchemaVersion string             `json:"schemaVersion"`
+	Packages      []LockedPackage    `json:"packages"`
+	Env           []LockedEnvVar     `json:"env,omitempty"`
+	Shell         *LockedShellConfig `json:"shell,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),

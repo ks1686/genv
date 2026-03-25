@@ -22,6 +22,7 @@ import (
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/search"
+	"github.com/ks1686/genv/internal/shellcfg"
 )
 
 //go:embed completions/genv.bash
@@ -89,6 +90,8 @@ func run(args []string) int {
 		return initCmd(args[1:])
 	case "env":
 		return envCmd(args[1:])
+	case "shell":
+		return shellCmd(args[1:])
 	case "__complete":
 		return completeInternalCmd(args[1:])
 	case "version", "--version":
@@ -719,8 +722,9 @@ func applyCmd(args []string) int {
 		// Execute with subprocess output routed to stderr so stdout stays clean.
 		execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
 		errs := errStrings(execResult.Errors)
-		// Apply env vars (updates lf.Env in memory), then write lock once.
+		// Apply env and shell (update lf in memory), then write lock once.
 		envApplied, envRemoved := applyEnvVars(f, lf, false)
+		shellApplied, shellRemoved := applyShellCfg(f, lf, false)
 		writeLockAfterApply(lockPath, lf, result, execResult)
 		installed := make([]string, len(execResult.Installed))
 		for i, lp := range execResult.Installed {
@@ -731,10 +735,12 @@ func applyCmd(args []string) int {
 			Command: "apply",
 			OK:      len(errs) == 0,
 			Data: output.ApplyResult{
-				Installed:   installed,
-				Uninstalled: execResult.Uninstalled,
-				EnvApplied:  envApplied,
-				EnvRemoved:  envRemoved,
+				Installed:    installed,
+				Uninstalled:  execResult.Uninstalled,
+				EnvApplied:   envApplied,
+				EnvRemoved:   envRemoved,
+				ShellApplied: shellApplied,
+				ShellRemoved: shellRemoved,
 			},
 			Errors: errs,
 		})
@@ -746,16 +752,21 @@ func applyCmd(args []string) int {
 	}
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
 
-	// Count env changes needed (vars that are missing, modified, or extra).
-	envStatusEntries := genvenv.EnvStatus(f.Env, lf.Env)
+	// Count env and shell changes needed (entries that are missing, modified, or extra).
 	var envChanges int
-	for _, e := range envStatusEntries {
+	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
 		if e.Kind != genvenv.EnvStatusOK {
 			envChanges++
 		}
 	}
+	var shellChanges int
+	for _, e := range shellcfg.ShellStatus(f.Shell, lf.Shell) {
+		if e.Kind != shellcfg.ShellStatusOK {
+			shellChanges++
+		}
+	}
 
-	if toInstall == 0 && toRemove == 0 && envChanges == 0 {
+	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 {
 		if !*quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
@@ -771,12 +782,18 @@ func applyCmd(args []string) int {
 		if envChanges > 0 && !*quiet {
 			fprintf(os.Stdout, "env: %d variable(s) to apply\n", envChanges)
 		}
+		if shellChanges > 0 && !*quiet {
+			fprintf(os.Stdout, "shell: %d config entries to apply\n", shellChanges)
+		}
 		return exitOK
 	}
 
 	confirmMsg := fmt.Sprintf("This will install %d and remove %d package(s)", toInstall, toRemove)
 	if envChanges > 0 {
-		confirmMsg += fmt.Sprintf(", and apply %d env variable(s)", envChanges)
+		confirmMsg += fmt.Sprintf(", apply %d env variable(s)", envChanges)
+	}
+	if shellChanges > 0 {
+		confirmMsg += fmt.Sprintf(", apply %d shell config entry/entries", shellChanges)
 	}
 	confirmMsg += ". Continue? [y/N] "
 	if !*yes && !confirm(confirmMsg) {
@@ -785,8 +802,9 @@ func applyCmd(args []string) int {
 	}
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
-	// Apply env vars (updates lf.Env in memory), then write lock once.
+	// Apply env and shell (update lf in memory), then write lock once.
 	applyEnvVars(f, lf, !*quiet)
+	applyShellCfg(f, lf, !*quiet)
 	writeLockAfterApply(lockPath, lf, result, execResult)
 
 	if len(execResult.Errors) > 0 {
@@ -841,12 +859,13 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 		return nil, nil
 	}
 
-	for name := range f.Env {
-		applied = append(applied, name)
-	}
-	for _, le := range lf.Env {
-		if _, inSpec := f.Env[le.Name]; !inSpec {
-			removed = append(removed, le.Name)
+	// Use EnvStatus to determine what changed, avoiding duplicated diff logic.
+	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
+		switch e.Kind {
+		case genvenv.EnvStatusMissing, genvenv.EnvStatusModified:
+			applied = append(applied, e.Name)
+		case genvenv.EnvStatusExtra:
+			removed = append(removed, e.Name)
 		}
 	}
 
@@ -915,6 +934,68 @@ func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 		Unchanged:  unchanged,
 		Unresolved: unresolved,
 	}
+}
+
+// toOutputShellEntries converts internal shell status entries to the stable
+// JSON output type. hasDrift is true when any entry is modified or extra.
+func toOutputShellEntries(entries []shellcfg.ShellStatusEntry) (out []output.ShellStatusEntry, hasDrift bool) {
+	out = make([]output.ShellStatusEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, output.ShellStatusEntry{
+			Kind:      string(e.Kind),
+			EntryType: e.EntryType,
+			Name:      e.Name,
+			SpecValue: e.SpecValue,
+			LockValue: e.LockValue,
+		})
+		if e.Kind == shellcfg.ShellStatusModified || e.Kind == shellcfg.ShellStatusExtra || e.Kind == shellcfg.ShellStatusMissing {
+			hasDrift = true
+		}
+	}
+	return out, hasDrift
+}
+
+// toOutputEnvEntries converts internal env status entries to the stable JSON
+// output type, redacting sensitive values. hasDrift is true when any entry
+// is modified or extra.
+func toOutputEnvEntries(entries []genvenv.EnvStatusEntry) (out []output.EnvStatusEntry, hasDrift bool) {
+	out = make([]output.EnvStatusEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, output.EnvStatusEntry{
+			Name:      e.Name,
+			Kind:      string(e.Kind),
+			SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
+			LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
+			Sensitive: e.Sensitive,
+		})
+		if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra || e.Kind == genvenv.EnvStatusMissing {
+			hasDrift = true
+		}
+	}
+	return out, hasDrift
+}
+
+// writeShellStatusTable renders a []ShellStatusEntry to w using tabwriter.
+// Returns true when any entry has drift (modified or extra).
+func writeShellStatusTable(w io.Writer, entries []shellcfg.ShellStatusEntry) (hasDrift bool) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, e := range entries {
+		switch e.Kind {
+		case shellcfg.ShellStatusOK:
+			fprintf(tw, "  ok\t%s\t%s\t%s\n", e.EntryType, e.Name, e.SpecValue)
+		case shellcfg.ShellStatusModified:
+			hasDrift = true
+			fprintf(tw, "  modified\t%s\t%s\t(run 'genv apply' to update)\n", e.EntryType, e.Name)
+		case shellcfg.ShellStatusMissing:
+			hasDrift = true
+			fprintf(tw, "  missing\t%s\t%s\t(in spec, not applied — run 'genv apply')\n", e.EntryType, e.Name)
+		case shellcfg.ShellStatusExtra:
+			hasDrift = true
+			fprintf(tw, "  extra\t%s\t%s\t(in lock, not in spec — run 'genv apply')\n", e.EntryType, e.Name)
+		}
+	}
+	_ = tw.Flush()
+	return hasDrift
 }
 
 // writeJSON serializes env to w and returns an exit code.
@@ -1126,6 +1207,319 @@ func envListCmd(args []string) int {
 	return exitOK
 }
 
+// shellCmd implements `genv shell <subcommand>`.
+func shellCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv shell <alias|status|edit> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "subcommands:")
+		fPrintln(os.Stderr, "  alias set <name> <value> [--shell bash|zsh|fish]   Add or update an alias")
+		fPrintln(os.Stderr, "  alias unset <name>                                 Remove an alias")
+		fPrintln(os.Stderr, "  status [--json]                                    Show shell config drift")
+		fPrintln(os.Stderr, "  edit                                               Open genv.json in $EDITOR")
+		return exitUsage
+	}
+	switch args[0] {
+	case "alias":
+		return shellAliasCmd(args[1:])
+	case "status":
+		return shellStatusCmd(args[1:])
+	case "edit":
+		return shellEditCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv shell: unknown subcommand %q\n\nRun 'genv shell' for usage.\n", args[0])
+		return exitUsage
+	}
+}
+
+// shellAliasCmd dispatches `genv shell alias set|unset`.
+func shellAliasCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv shell alias <set|unset> [flags]")
+		return exitUsage
+	}
+	switch args[0] {
+	case "set":
+		return shellAliasSetCmd(args[1:])
+	case "unset":
+		return shellAliasUnsetCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv shell alias: unknown subcommand %q\n", args[0])
+		return exitUsage
+	}
+}
+
+// shellAliasSetCmd implements `genv shell alias set <name> <value> [--shell] [--file]`.
+func shellAliasSetCmd(args []string) int {
+	fs := flag.NewFlagSet("shell alias set", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell alias set <name> <value> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	shell := fs.String("shell", "", "target shell: "+schema.ValidShellTargetsMsg)
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 2 {
+		fPrintln(os.Stderr, "genv shell alias set: name and value are required")
+		fs.Usage()
+		return exitUsage
+	}
+	name, value := fs.Arg(0), fs.Arg(1)
+
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.ShellAliasSet(f, name, value, *shell); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	shellNote := ""
+	if *shell != "" {
+		shellNote = fmt.Sprintf(" (%s only)", *shell)
+	}
+	fprintf(os.Stdout, "set alias %s=%q%s\nRun 'genv apply' to apply it to your shell.\n", name, value, shellNote)
+	return exitOK
+}
+
+// shellAliasUnsetCmd implements `genv shell alias unset <name> [--file]`.
+func shellAliasUnsetCmd(args []string) int {
+	fs := flag.NewFlagSet("shell alias unset", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell alias unset <name> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv shell alias unset: name is required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.ShellAliasUnset(f, name); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrShellAliasNotFound) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "unset alias %s\nRun 'genv apply' to remove it from your shell.\n", name)
+	return exitOK
+}
+
+// shellStatusCmd implements `genv shell status [--json] [--file]`.
+func shellStatusCmd(args []string) int {
+	fs := flag.NewFlagSet("shell status", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell status [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found — run 'genv shell alias set' to create it\n", *file)
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	entries := shellcfg.ShellStatus(f.Shell, lf.Shell)
+
+	if *jsonOut {
+		jsonEntries, hasDrift := toOutputShellEntries(entries)
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "shell status",
+			OK:      !hasDrift,
+			Data:    output.ShellStatusResult{Entries: jsonEntries},
+		})
+	}
+
+	if len(entries) == 0 {
+		fPrintln(os.Stdout, "no shell config declared.")
+		return exitOK
+	}
+
+	if hasDrift := writeShellStatusTable(os.Stdout, entries); hasDrift {
+		return exitLogic
+	}
+	return exitOK
+}
+
+// shellEditCmd implements `genv shell edit [--file]`.
+// Opens genv.json in $EDITOR so the user can edit the shell block directly.
+// The generated shell fragment (~/.config/genv/shell.sh) is a derivative
+// artifact — all shell configuration belongs in genv.json.
+func shellEditCmd(args []string) int {
+	fs := flag.NewFlagSet("shell edit", flag.ContinueOnError)
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv shell edit [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Open genv.json in $EDITOR to edit the shell block.")
+		fPrintln(os.Stderr, "Run 'genv apply' after saving to apply changes.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	cmd := exec.Command(editor, *file)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fprintf(os.Stderr, "genv: editor exited with error: %v\n", err)
+		return exitLogic
+	}
+	return exitOK
+}
+
+// applyShellCfg writes the managed shell fragment, updates lf.Shell in memory,
+// and returns lists of applied and removed entry names. The caller writes the lock.
+// If verbose is true, it prints progress lines to stdout.
+func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+	if f.Shell == nil && lf.Shell == nil {
+		return nil, nil
+	}
+
+	fragPath, err := shellcfg.FragmentPath()
+	if err != nil {
+		fprintf(os.Stderr, "genv: cannot determine shell fragment path: %v\n", err)
+		return nil, nil
+	}
+
+	// Use ShellStatus to determine what changed, avoiding duplicated diff logic.
+	var hasFishEntries bool
+	for _, e := range shellcfg.ShellStatus(f.Shell, lf.Shell) {
+		label := e.EntryType + " '" + e.Name + "'"
+		switch e.Kind {
+		case shellcfg.ShellStatusMissing, shellcfg.ShellStatusModified:
+			applied = append(applied, label)
+		case shellcfg.ShellStatusExtra:
+			removed = append(removed, label)
+		}
+	}
+	// Fish detection is separate: ShellStatus entries don't carry the shell target.
+	if f.Shell != nil {
+		for _, a := range f.Shell.Aliases {
+			if a.Shell == "fish" {
+				hasFishEntries = true
+				break
+			}
+		}
+		if !hasFishEntries {
+			for _, fn := range f.Shell.Functions {
+				if fn.Shell == "fish" {
+					hasFishEntries = true
+					break
+				}
+			}
+		}
+	}
+
+	var cfg *schema.ShellConfig
+	if f.Shell != nil {
+		cfg = f.Shell
+	}
+	if err := shellcfg.ApplyShell(fragPath, cfg, genvenv.RcFiles()); err != nil {
+		fprintf(os.Stderr, "genv: writing shell fragment: %v\n", err)
+		return applied, removed
+	}
+
+	if verbose {
+		for _, name := range applied {
+			fprintf(os.Stdout, "  shell: set %s\n", name)
+		}
+		for _, name := range removed {
+			fprintf(os.Stdout, "  shell: removed %s\n", name)
+		}
+		if len(applied) > 0 || len(removed) > 0 {
+			fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
+		}
+	}
+	if hasFishEntries {
+		fprintf(os.Stdout, "note: fish-specific shell entries are not auto-applied.\n")
+		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", fragPath)
+	}
+
+	// Update lf.Shell in memory; caller writes the lock once.
+	lf.Shell = shellcfg.SpecToLock(f.Shell)
+
+	return applied, removed
+}
+
 // scanCmd implements `genv scan`.
 // Discovers all packages currently installed via available package managers and
 // bulk-adopts them into genv.json and the lock file. Packages already tracked
@@ -1317,6 +1711,7 @@ func statusCmd(args []string) int {
 
 	entries := commands.Status(f, lf)
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
+	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -1333,28 +1728,23 @@ func statusCmd(args []string) int {
 				hasDrift = true
 			}
 		}
-		jsonEnvEntries := make([]output.EnvStatusEntry, 0, len(envEntries))
-		for _, e := range envEntries {
-			jsonEnvEntries = append(jsonEnvEntries, output.EnvStatusEntry{
-				Name:      e.Name,
-				Kind:      string(e.Kind),
-				SpecValue: commands.RedactValue(e.SpecValue, e.Sensitive),
-				LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
-				Sensitive: e.Sensitive,
-			})
-			if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra {
-				hasDrift = true
-			}
+		jsonEnvEntries, envDrift := toOutputEnvEntries(envEntries)
+		if envDrift {
+			hasDrift = true
+		}
+		jsonShellEntries, shellDrift := toOutputShellEntries(shellEntries)
+		if shellDrift {
+			hasDrift = true
 		}
 		return writeJSON(os.Stdout, output.Envelope{
 			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
-			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries},
+			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries},
 		})
 	}
 
-	if len(entries) == 0 && len(envEntries) == 0 {
+	if len(entries) == 0 && len(envEntries) == 0 && len(shellEntries) == 0 {
 		fPrintln(os.Stdout, "nothing tracked.")
 		return exitOK
 	}
@@ -1441,6 +1831,22 @@ func statusCmd(args []string) int {
 		}
 		_ = tw2.Flush()
 		if hasEnvDrift {
+			return exitLogic
+		}
+	}
+
+	// Shell config status section.
+	if len(shellEntries) > 0 {
+		fPrintln(os.Stdout)
+		fprintf(os.Stdout, "Shell — %d entr", len(shellEntries))
+		if len(shellEntries) == 1 {
+			fprint(os.Stdout, "y")
+		} else {
+			fprint(os.Stdout, "ies")
+		}
+		fPrintln(os.Stdout)
+		fPrintln(os.Stdout)
+		if writeShellStatusTable(os.Stdout, shellEntries) {
 			return exitLogic
 		}
 	}
