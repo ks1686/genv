@@ -513,6 +513,17 @@ func installFakeBinary(t *testing.T, name, body string) {
 	t.Setenv("PATH", dir+":"+orig)
 }
 
+// assertContainsArg fails t if want is not present in args.
+func assertContainsArg(t *testing.T, args []string, want string) {
+	t.Helper()
+	for _, arg := range args {
+		if arg == want {
+			return
+		}
+	}
+	t.Errorf("expected %q in %v", want, args)
+}
+
 // TestSnap_ListInstalled_ParsesHeader verifies that the first ("header") line
 // from "snap list" output is skipped and package names are extracted correctly.
 func TestSnap_ListInstalled_ParsesHeader(t *testing.T) {
@@ -674,5 +685,571 @@ func TestKnownManagersMatchesRegistry(t *testing.T) {
 		if !schema.KnownManagers[name] {
 			t.Errorf("adapter %q is in adapter.All but missing from schema.KnownManagers", name)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PlanUpgrade — no tests existed before; every adapter must have valid upgrade
+// ---------------------------------------------------------------------------
+
+// TestPlanUpgrade_ExpectedBinaries verifies that each adapter uses the
+// expected leading binary for its upgrade command.
+func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
+	tests := []struct {
+		mgr     string
+		wantBin string
+	}{
+		{"apt", "sudo"},
+		{"dnf", "sudo"},
+		{"pacman", "sudo"},
+		{"paru", "paru"},
+		{"yay", "yay"},
+		{"flatpak", "flatpak"},
+		{"snap", "sudo"},
+		{"brew", "brew"},
+		{"macports", "sudo"},
+		{"linuxbrew", "brew"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			args := a.PlanUpgrade("pkg")
+			if args[0] != tc.wantBin {
+				t.Errorf("%s PlanUpgrade: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
+			}
+		})
+	}
+}
+
+// TestPlanUpgrade_PkgNamePresent verifies that the package name appears
+// somewhere in every adapter's PlanUpgrade command.
+func TestPlanUpgrade_PkgNamePresent(t *testing.T) {
+	const pkg = "neovim"
+	for _, a := range All {
+		t.Run(a.Name(), func(t *testing.T) {
+			assertContainsArg(t, a.PlanUpgrade(pkg), pkg)
+		})
+	}
+}
+
+// TestPlanUpgrade_ContainsUpgradeVerb verifies that each adapter uses the
+// correct upgrade-action token in its PlanUpgrade command.
+func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
+	tests := []struct {
+		mgr  string
+		verb string
+	}{
+		{"apt", "--only-upgrade"}, // apt-get install --only-upgrade
+		{"dnf", "upgrade"},
+		{"pacman", "-S"}, // pacman upgrade = reinstall latest via -S
+		{"paru", "-S"},
+		{"yay", "-S"},
+		{"flatpak", "update"},
+		{"snap", "refresh"},
+		{"brew", "upgrade"},
+		{"macports", "upgrade"},
+		{"linuxbrew", "upgrade"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			assertContainsArg(t, a.PlanUpgrade("testpkg"), tc.verb)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PlanClean — content and argument validation (previously only non-empty)
+// ---------------------------------------------------------------------------
+
+// TestPlanClean_Snap_ReturnsNil verifies that Snap.PlanClean returns nil
+// (snap has no standard cache-clean command).
+func TestPlanClean_Snap_ReturnsNil(t *testing.T) {
+	cmds := Snap{}.PlanClean()
+	if cmds != nil {
+		t.Errorf("Snap PlanClean: expected nil, got %v", cmds)
+	}
+}
+
+// TestPlanClean_CommandCount verifies the exact number of commands each
+// adapter returns from PlanClean.
+func TestPlanClean_CommandCount(t *testing.T) {
+	tests := []struct {
+		mgr       string
+		wantCount int
+	}{
+		{"apt", 2},      // autoremove + clean
+		{"dnf", 2},      // autoremove + clean all
+		{"pacman", 2},   // find download-* step + pacman -Sc
+		{"paru", 1},
+		{"yay", 1},
+		{"flatpak", 1},
+		{"snap", 0},
+		{"brew", 1},
+		{"macports", 1},
+		{"linuxbrew", 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			cmds := a.PlanClean()
+			if got := len(cmds); got != tc.wantCount {
+				t.Errorf("%s PlanClean: %d commands, want %d (cmds: %v)", tc.mgr, got, tc.wantCount, cmds)
+			}
+		})
+	}
+}
+
+// TestPlanClean_PerAdapterBinary verifies the leading binary of the last
+// (main) clean command for each adapter that returns commands.
+func TestPlanClean_PerAdapterBinary(t *testing.T) {
+	tests := []struct {
+		mgr     string
+		wantBin string
+	}{
+		{"apt", "sudo"},
+		{"dnf", "sudo"},
+		{"pacman", "sudo"},
+		{"paru", "paru"},
+		{"yay", "yay"},
+		{"flatpak", "flatpak"},
+		{"brew", "brew"},
+		{"macports", "sudo"},
+		{"linuxbrew", "brew"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			cmds := a.PlanClean()
+			if len(cmds) == 0 {
+				t.Fatalf("%s PlanClean: no commands returned", tc.mgr)
+			}
+			last := cmds[len(cmds)-1]
+			if last[0] != tc.wantBin {
+				t.Errorf("%s PlanClean last cmd[0] = %q, want %q", tc.mgr, last[0], tc.wantBin)
+			}
+		})
+	}
+}
+
+// TestPlanClean_Pacman_HasFindStepFirst verifies that the first command in
+// Pacman.PlanClean is a find-based cleanup, not pacman itself.
+// This is the regression guard for the stale-download-file fix: if someone
+// removes the find step, this test fails immediately.
+func TestPlanClean_Pacman_HasFindStepFirst(t *testing.T) {
+	cmds := Pacman{}.PlanClean()
+	if len(cmds) < 2 {
+		t.Fatalf("Pacman PlanClean: expected >= 2 commands, got %d", len(cmds))
+	}
+	first := cmds[0]
+	if len(first) < 2 {
+		t.Fatalf("Pacman PlanClean first cmd too short: %v", first)
+	}
+	if first[1] != "find" {
+		t.Errorf("Pacman PlanClean first cmd must be 'sudo find ...', got %v", first)
+	}
+}
+
+// TestPlanClean_Pacman_FindTargetsDownloadFiles verifies that the find command
+// targets /var/cache/pacman/pkg with the download-* pattern and -delete.
+// This is the specific test that would have caught the original bug before the fix.
+func TestPlanClean_Pacman_FindTargetsDownloadFiles(t *testing.T) {
+	cmds := Pacman{}.PlanClean()
+	if len(cmds) < 1 {
+		t.Fatal("Pacman PlanClean: no commands")
+	}
+	first := cmds[0]
+
+	assertContainsArg(t, first, "/var/cache/pacman/pkg")
+	assertContainsArg(t, first, "download-*")
+	assertContainsArg(t, first, "-delete")
+}
+
+// TestPlanClean_Pacman_SecondCommandIsPacmanSc verifies that the second command
+// is the actual pacman cache clean (sudo pacman -Sc --noconfirm).
+func TestPlanClean_Pacman_SecondCommandIsPacmanSc(t *testing.T) {
+	cmds := Pacman{}.PlanClean()
+	if len(cmds) < 2 {
+		t.Fatalf("Pacman PlanClean: expected >= 2 commands, got %d", len(cmds))
+	}
+	second := cmds[1]
+	assertContainsArg(t, second, "pacman")
+	assertContainsArg(t, second, "-Sc")
+}
+
+// ---------------------------------------------------------------------------
+// PlanInstall — verb and noninteractive flag validation
+// ---------------------------------------------------------------------------
+
+// TestPlanInstall_ContainsInstallVerb verifies that each adapter's PlanInstall
+// contains the expected install-action token.
+func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
+	tests := []struct {
+		mgr  string
+		verb string
+	}{
+		{"apt", "install"},
+		{"dnf", "install"},
+		{"pacman", "-S"},
+		{"paru", "-S"},
+		{"yay", "-S"},
+		{"flatpak", "install"},
+		{"snap", "install"},
+		{"brew", "install"},
+		{"macports", "install"},
+		{"linuxbrew", "install"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			assertContainsArg(t, a.PlanInstall("testpkg"), tc.verb)
+		})
+	}
+}
+
+// TestPlanInstall_ContainsNoninteractiveFlag verifies that adapters which
+// require a non-interactive flag include it in PlanInstall.
+func TestPlanInstall_ContainsNoninteractiveFlag(t *testing.T) {
+	tests := []struct {
+		mgr      string
+		wantFlag string
+	}{
+		{"apt", "-y"},
+		{"dnf", "-y"},
+		{"pacman", "--noconfirm"},
+		{"paru", "--noconfirm"},
+		{"yay", "--noconfirm"},
+		{"flatpak", "-y"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			assertContainsArg(t, a.PlanInstall("testpkg"), tc.wantFlag)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PlanUninstall — verb and noninteractive flag validation
+// ---------------------------------------------------------------------------
+
+// TestPlanUninstall_ContainsRemoveVerb verifies that each adapter's
+// PlanUninstall contains the expected remove-action token.
+func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
+	tests := []struct {
+		mgr  string
+		verb string
+	}{
+		{"apt", "purge"},
+		{"dnf", "remove"},
+		{"pacman", "-Rns"},
+		{"paru", "-Rns"},
+		{"yay", "-Rns"},
+		{"flatpak", "uninstall"},
+		{"snap", "remove"},
+		{"brew", "uninstall"},
+		{"macports", "uninstall"},
+		{"linuxbrew", "uninstall"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			assertContainsArg(t, a.PlanUninstall("testpkg"), tc.verb)
+		})
+	}
+}
+
+// TestPlanUninstall_ContainsNoninteractiveFlag verifies that adapters which
+// require a non-interactive flag include it in PlanUninstall.
+func TestPlanUninstall_ContainsNoninteractiveFlag(t *testing.T) {
+	tests := []struct {
+		mgr      string
+		wantFlag string
+	}{
+		{"apt", "-y"},
+		{"dnf", "-y"},
+		{"pacman", "--noconfirm"},
+		{"paru", "--noconfirm"},
+		{"yay", "--noconfirm"},
+		{"flatpak", "-y"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			assertContainsArg(t, a.PlanUninstall("testpkg"), tc.wantFlag)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parsePacmanSearch — pure function, previously untested
+// ---------------------------------------------------------------------------
+
+func TestParsePacmanSearch_BasicMatch(t *testing.T) {
+	lines := []string{
+		"extra/vim 9.0-1 [installed]",
+		"    Vi IMproved text editor",
+		"extra/vim-minimal 9.0-1",
+		"    Minimal vim installation",
+	}
+	got := parsePacmanSearch(lines, "vim")
+	want := []string{"vim", "vim-minimal"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("[%d]: got %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+func TestParsePacmanSearch_CaseInsensitive(t *testing.T) {
+	lines := []string{
+		"extra/VIM 9.0-1",
+		"    Vi IMproved",
+	}
+	got := parsePacmanSearch(lines, "vim")
+	if len(got) != 1 || got[0] != "VIM" {
+		t.Errorf("case insensitive: got %v, want [VIM]", got)
+	}
+}
+
+func TestParsePacmanSearch_SkipsDescriptionLines(t *testing.T) {
+	// Indented lines (descriptions) must never be returned even if they
+	// contain the query string.
+	lines := []string{
+		"    vim is a great editor with vim-like bindings",
+		"\tvim-mode description line",
+	}
+	got := parsePacmanSearch(lines, "vim")
+	if len(got) != 0 {
+		t.Errorf("description lines must be skipped, got %v", got)
+	}
+}
+
+func TestParsePacmanSearch_NoMatch(t *testing.T) {
+	lines := []string{
+		"extra/htop 3.2.0-1",
+		"    Process viewer",
+	}
+	got := parsePacmanSearch(lines, "vim")
+	if len(got) != 0 {
+		t.Errorf("expected 0 matches, got %v", got)
+	}
+}
+
+func TestParsePacmanSearch_NoSlashInPackageLine(t *testing.T) {
+	// Package lines without "repo/name" format must be skipped.
+	lines := []string{
+		"vim 9.0-1",
+	}
+	got := parsePacmanSearch(lines, "vim")
+	if len(got) != 0 {
+		t.Errorf("line without repo/ prefix must be skipped, got %v", got)
+	}
+}
+
+func TestParsePacmanSearch_EmptyInput(t *testing.T) {
+	got := parsePacmanSearch(nil, "vim")
+	if len(got) != 0 {
+		t.Errorf("nil input: expected empty result, got %v", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Search output parsers — fake binaries via PATH injection
+// ---------------------------------------------------------------------------
+
+// TestAptSearch_ParsesNameOnly verifies that Apt.Search extracts the package
+// name from "name - description" lines and filters out non-matching names.
+func TestAptSearch_ParsesNameOnly(t *testing.T) {
+	installFakeBinary(t, "apt-cache",
+		`if [ "$1" = "search" ]; then
+  echo "vim-nox - Vi IMproved - enhanced vim with scripting"
+  echo "vim-gtk3 - Vi IMproved - enhanced vim with GTK3 GUI"
+  echo "emacs - GNU Emacs editor (no X11 support)"
+fi`)
+	names, err := Apt{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Apt.Search: %v", err)
+	}
+	// "emacs" does not contain "vim" → must be filtered
+	for _, n := range names {
+		if n == "emacs" {
+			t.Errorf("Apt.Search: 'emacs' should be filtered out (does not match query 'vim')")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 matching names, got %d: %v", len(names), names)
+	}
+	if names[0] != "vim-nox" || names[1] != "vim-gtk3" {
+		t.Errorf("expected [vim-nox vim-gtk3], got %v", names)
+	}
+}
+
+// TestDnfSearch_ParsesNameAndStripsArch verifies that Dnf.Search extracts
+// package names from "name.arch : description" lines, strips the arch suffix,
+// skips section headers and metadata lines, and deduplicates.
+func TestDnfSearch_ParsesNameAndStripsArch(t *testing.T) {
+	installFakeBinary(t, "dnf",
+		`if [ "$1" = "search" ]; then
+  echo "=== Name Exactly Matched: vim ==="
+  echo "vim.x86_64 : Vi IMproved - a text editor"
+  echo "vim-enhanced.x86_64 : The Enhanced version of the Vi text editor"
+  echo "Last metadata expiration check: 0:05:00 ago on Thu"
+fi`)
+	names, err := Dnf{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Dnf.Search: %v", err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
+	}
+	if names[0] != "vim" || names[1] != "vim-enhanced" {
+		t.Errorf("expected [vim vim-enhanced], got %v", names)
+	}
+}
+
+// TestDnfSearch_DeduplicatesMultiArch verifies that the same package name
+// appearing under multiple arch suffixes is returned only once.
+func TestDnfSearch_DeduplicatesMultiArch(t *testing.T) {
+	installFakeBinary(t, "dnf",
+		`if [ "$1" = "search" ]; then
+  echo "vim.x86_64 : Vi IMproved"
+  echo "vim.i686 : Vi IMproved (32-bit)"
+fi`)
+	names, err := Dnf{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Dnf.Search: %v", err)
+	}
+	if len(names) != 1 {
+		t.Errorf("multi-arch dedup: expected 1 result, got %d: %v", len(names), names)
+	}
+}
+
+// TestBrewSearch_FiltersArrowHeaders verifies that brew's "==> Formulae" and
+// "==> Casks" section headers are never returned in results.
+func TestBrewSearch_FiltersArrowHeaders(t *testing.T) {
+	installFakeBinary(t, "brew",
+		`if [ "$1" = "search" ]; then
+  echo "==> Formulae"
+  echo "neovim"
+  echo "vim"
+  echo "==> Casks"
+  echo "macvim"
+fi`)
+	names, err := Brew{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Brew.Search: %v", err)
+	}
+	for _, n := range names {
+		if n == "==> Formulae" || n == "==> Casks" {
+			t.Errorf("section header %q must not appear in results", n)
+		}
+	}
+	wantSet := map[string]bool{"neovim": true, "vim": true, "macvim": true}
+	for _, n := range names {
+		if !wantSet[n] {
+			t.Errorf("unexpected name %q in results %v", n, names)
+		}
+	}
+	if len(names) != 3 {
+		t.Errorf("expected 3 results, got %d: %v", len(names), names)
+	}
+}
+
+// TestSnapSearch_SkipsHeaderLine verifies that Snap.Search skips the first
+// (header) line of "snap find" output and returns only package names.
+func TestSnapSearch_SkipsHeaderLine(t *testing.T) {
+	installFakeBinary(t, "snap",
+		`if [ "$1" = "find" ]; then
+  echo "Name  Version  Publisher  Notes  Summary"
+  echo "vim  9.0  canonical  -  Vi IMproved editor"
+  echo "vim-enhanced  9.0  canonical  -  Enhanced vim"
+fi`)
+	names, err := Snap{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Snap.Search: %v", err)
+	}
+	for _, n := range names {
+		if n == "Name" {
+			t.Error("Snap.Search: header 'Name' column must not appear in results")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 results (header skipped), got %d: %v", len(names), names)
+	}
+	if names[0] != "vim" || names[1] != "vim-enhanced" {
+		t.Errorf("expected [vim vim-enhanced], got %v", names)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runListOutput / runVersionOutput — missing-binary and whitespace edge cases
+// ---------------------------------------------------------------------------
+
+// TestRunListOutput_MissingBinary verifies that runListOutput returns an error
+// (not nil, nil) when the binary does not exist.
+func TestRunListOutput_MissingBinary(t *testing.T) {
+	lines, err := runListOutput("__genv_nonexistent_binary__")
+	if err == nil {
+		t.Error("runListOutput with missing binary: expected error, got nil")
+	}
+	if lines != nil {
+		t.Errorf("runListOutput with missing binary: expected nil lines, got %v", lines)
+	}
+}
+
+// TestRunListOutput_WhitespaceOnlyLinesSkipped verifies that lines containing
+// only whitespace are excluded from the returned slice.
+func TestRunListOutput_WhitespaceOnlyLinesSkipped(t *testing.T) {
+	lines, err := runListOutput("printf", "foo\n   \nbar\n\n")
+	if err != nil {
+		t.Fatalf("runListOutput: %v", err)
+	}
+	for _, line := range lines {
+		if line == "" {
+			t.Errorf("empty line appeared in results")
+		}
+	}
+	if len(lines) != 2 {
+		t.Errorf("expected 2 non-blank lines, got %d: %v", len(lines), lines)
+	}
+}
+
+// TestRunVersionOutput_MissingBinary verifies that runVersionOutput returns
+// ("", error) when the binary does not exist, not ("", nil).
+func TestRunVersionOutput_MissingBinary(t *testing.T) {
+	v, err := runVersionOutput("__genv_nonexistent_binary__")
+	if err == nil {
+		t.Error("runVersionOutput with missing binary: expected error, got nil")
+	}
+	if v != "" {
+		t.Errorf("runVersionOutput with missing binary: expected empty string, got %q", v)
 	}
 }
