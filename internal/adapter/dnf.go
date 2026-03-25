@@ -35,7 +35,7 @@ func (Dnf) PlanClean() [][]string {
 	}
 }
 
-func (Dnf) Query(pkgName string) (bool, error) { return runQuery("rpm", "-q", pkgName) }
+func (Dnf) Query(pkgName string) (bool, error) { return rpmQuery(pkgName) }
 
 // Search returns package names from dnf repos whose name contains query.
 // "dnf search" output mixes metadata lines, section headers (===), and
@@ -72,10 +72,5 @@ func (Dnf) Search(query string) ([]string, error) {
 	return names, nil
 }
 
-func (Dnf) ListInstalled() ([]string, error) {
-	return runListOutput("rpm", "-qa", "--qf", "%{NAME}\\n")
-}
-
-func (Dnf) QueryVersion(pkgName string) (string, error) {
-	return runVersionOutput("rpm", "-q", "--qf", "%{VERSION}", pkgName)
-}
+func (Dnf) ListInstalled() ([]string, error)              { return rpmListInstalled() }
+func (Dnf) QueryVersion(pkgName string) (string, error)   { return rpmQueryVersion(pkgName) }

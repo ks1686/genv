@@ -25,6 +25,8 @@ const ValidShellTargetsMsg = `"bash", "zsh", "fish", or omit for all`
 var KnownManagers = map[string]bool{
 	"apt":       true,
 	"dnf":       true,
+	"zypper":    true,
+	"apk":       true,
 	"pacman":    true,
 	"paru":      true,
 	"yay":       true,
@@ -33,6 +35,8 @@ var KnownManagers = map[string]bool{
 	"brew":      true,
 	"macports":  true,
 	"linuxbrew": true,
+	"nix":       true,
+	"xbps":      true,
 }
 
 // GenvFile is the top-level structure of a genv.json file.
