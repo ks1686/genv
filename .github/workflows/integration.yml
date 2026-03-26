@@ -413,7 +413,8 @@ jobs:
             sh -c '
               set -eu
 
-              echo "==> Updating package index"
+              echo "==> Self-updating xbps and package index"
+              xbps-install -Su xbps
               xbps-install -S
 
               echo "==> Installing build dependencies"
