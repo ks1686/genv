@@ -20,7 +20,7 @@ func isWSL() bool {
 	wslOnce.Do(func() {
 		data, err := os.ReadFile("/proc/version")
 		if err == nil {
-			wslMemo = strings.Contains(strings.ToLower(string(data)), "microsoft")
+			wslMemo = containsFold(string(data), "microsoft")
 		}
 	})
 	return wslMemo

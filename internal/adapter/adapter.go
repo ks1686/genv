@@ -180,7 +180,6 @@ func runVersionOutput(cmd string, args ...string) (string, error) {
 // Output alternates: "repo/name version ..." package lines and indented
 // description lines; only package lines are examined.
 func parsePacmanSearch(lines []string, query string) []string {
-	q := strings.ToLower(query)
 	var names []string
 	for _, line := range lines {
 		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
@@ -188,7 +187,7 @@ func parsePacmanSearch(lines []string, query string) []string {
 		}
 		pkgField := strings.Fields(line)[0]
 		if _, name, ok := strings.Cut(pkgField, "/"); ok {
-			if strings.Contains(strings.ToLower(name), q) {
+			if containsFold(name, query) {
 				names = append(names, name)
 			}
 		}
