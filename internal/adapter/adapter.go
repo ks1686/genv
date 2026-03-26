@@ -89,7 +89,6 @@ var All = []Adapter{
 	Nix{},
 	Xbps{},
 	Emerge{},
-	Eopkg{},
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.
