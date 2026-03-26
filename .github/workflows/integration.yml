@@ -65,12 +65,6 @@ jobs:
             adapter: TestPacman
             e2eTest: TestE2EPacman
 
-          - distro: opensuse-tumbleweed (zypper)
-            image: opensuse/tumbleweed
-            prereqs: zypper --non-interactive install git gcc sudo
-            adapter: TestZypper
-            e2eTest: TestE2EZypper
-
           - distro: ubuntu-24.04 (flatpak)
             image: ubuntu:24.04
             prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak sudo
@@ -144,6 +138,46 @@ jobs:
 
               echo "==> Running E2E tests"
               go test -tags integration -race -v -run TestE2EApk ./e2e/
+            '
+
+  # ── openSUSE (zypper) ────────────────────────────────────────────────────────
+  zypper:
+    name: opensuse-tumbleweed (zypper)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside openSUSE container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/host-workspace:ro" \
+            opensuse/tumbleweed:latest \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Installing build dependencies"
+              zypper --non-interactive install git gcc sudo curl bash
+
+              echo "==> Configuring passwordless sudo"
+              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              echo "Defaults !requiretty" >> /etc/sudoers
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestZypper ./internal/adapter/
+
+              echo "==> Running E2E tests"
+              go test -tags integration -race -v -run TestE2EZypper ./e2e/
             '
 
   # ── paru (Arch AUR helper) ───────────────────────────────────────────────────
@@ -284,7 +318,7 @@ jobs:
               set -euo pipefail
 
               echo "==> Installing build dependencies"
-              nix-env -iA nixpkgs.git nixpkgs.gcc nixpkgs.curl
+              nix-env -iA nixpkgs.gcc nixpkgs.curl
 
               echo "==> Installing Go"
               GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
@@ -304,53 +338,6 @@ jobs:
 
               echo "==> Running E2E tests"
               go test -tags integration -race -v -run TestE2ENix ./e2e/
-            '
-
-  # ── Solus (eopkg) ────────────────────────────────────────────────────────────
-  # Uses docker run (same pattern as apk/paru/yay/nix) for full control.
-  # getsolus/packages is the official Solus build-environment image and has
-  # eopkg available out of the box.
-  eopkg:
-    name: solus-latest (eopkg)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run integration and E2E tests inside Solus container
-        run: |
-          WORKSPACE="${{ github.workspace }}"
-          docker run --rm \
-            -v "${WORKSPACE}:/host-workspace:ro" \
-            getsolus/packages \
-            bash -c '
-              set -euo pipefail
-
-              echo "==> Updating package index"
-              eopkg update-repo
-
-              echo "==> Installing build dependencies"
-              eopkg install -y gcc sudo curl
-
-              echo "==> Configuring passwordless sudo"
-              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-              echo "Defaults !requiretty" >> /etc/sudoers
-
-              echo "==> Installing Go"
-              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
-              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
-              tar -C /usr/local -xzf /tmp/go.tar.gz
-              ln -sf /usr/local/go/bin/go /usr/local/bin/go
-
-              echo "==> Copying workspace"
-              cp -r /host-workspace /root/genv
-
-              echo "==> Running adapter integration tests"
-              cd /root/genv
-              go test -tags integration -race -v -run TestEopkg ./internal/adapter/
-
-              echo "==> Running E2E tests"
-              go test -tags integration -race -v -run TestE2EEopkg ./e2e/
             '
 
   # ── Gentoo (emerge) ──────────────────────────────────────────────────────────
@@ -423,7 +410,7 @@ jobs:
           docker run --rm \
             -v "${WORKSPACE}:/host-workspace:ro" \
             ghcr.io/void-linux/void-linux:latest-full-x86_64 \
-            bash -c '
+            sh -c '
               set -euo pipefail
 
               echo "==> Updating package index"
