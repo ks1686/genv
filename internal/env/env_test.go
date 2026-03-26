@@ -229,3 +229,112 @@ func TestEnvStatus_Modified(t *testing.T) {
 		t.Errorf("expected 1 modified entry, got %v", entries)
 	}
 }
+
+// ─── ApplyEnv ───────────────────────────────────────────────────────────────
+
+func TestApplyEnv_Basic(t *testing.T) {
+	dir := t.TempDir()
+	frag := filepath.Join(dir, "env.sh")
+	rc1 := filepath.Join(dir, ".bashrc")
+	rc2 := filepath.Join(dir, ".zshrc")
+
+	vars := map[string]schema.EnvVar{
+		"FOO": {Value: "bar"},
+	}
+
+	if err := ApplyEnv(frag, vars, []string{rc1, rc2}); err != nil {
+		t.Fatalf("ApplyEnv: %v", err)
+	}
+
+	// Verify fragment
+	got, err := ReadFragment(frag)
+	if err != nil {
+		t.Fatalf("ReadFragment: %v", err)
+	}
+	if got["FOO"] != "bar" {
+		t.Errorf("got %q, want %q", got["FOO"], "bar")
+	}
+
+	// Verify rc injection
+	for _, rc := range []string{rc1, rc2} {
+		data, err := os.ReadFile(rc)
+		if err != nil {
+			t.Fatalf("reading %s: %v", rc, err)
+		}
+		if !strings.Contains(string(data), frag) {
+			t.Errorf("expected fragment path in %s", rc)
+		}
+	}
+}
+
+func TestApplyEnv_EmptyVars(t *testing.T) {
+	dir := t.TempDir()
+	frag := filepath.Join(dir, "env.sh")
+	rc := filepath.Join(dir, ".bashrc")
+
+	// Pre-create fragment
+	if err := WriteFragment(frag, map[string]schema.EnvVar{"X": {Value: "1"}}); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+
+	if err := ApplyEnv(frag, nil, []string{rc}); err != nil {
+		t.Fatalf("ApplyEnv: %v", err)
+	}
+
+	// Fragment should be removed
+	if _, err := os.Stat(frag); !os.IsNotExist(err) {
+		t.Error("expected fragment to be removed")
+	}
+
+	// RC file should not be created/modified
+	if _, err := os.Stat(rc); !os.IsNotExist(err) {
+		t.Error("expected rc file to not be created")
+	}
+}
+
+func TestApplyEnv_WriteError(t *testing.T) {
+	dir := t.TempDir()
+	// Create a directory where the fragment should be, causing a write error
+	frag := filepath.Join(dir, "env.sh")
+	if err := os.MkdirAll(frag, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	vars := map[string]schema.EnvVar{
+		"FOO": {Value: "bar"},
+	}
+
+	err := ApplyEnv(frag, vars, nil)
+	if err == nil {
+		t.Error("expected error from WriteFragment, got nil")
+	}
+}
+
+func TestApplyEnv_InjectErrorNonFatal(t *testing.T) {
+	dir := t.TempDir()
+	frag := filepath.Join(dir, "env.sh")
+	rc := filepath.Join(dir, ".bashrc")
+
+	// Create a directory where the rc file should be, causing an inject error
+	if err := os.MkdirAll(rc, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	vars := map[string]schema.EnvVar{
+		"FOO": {Value: "bar"},
+	}
+
+	// Should not return an error despite inject failure
+	if err := ApplyEnv(frag, vars, []string{rc}); err != nil {
+		t.Fatalf("ApplyEnv: %v", err)
+	}
+
+	// Check fragment was still written
+	got, err := ReadFragment(frag)
+	if err != nil {
+		t.Fatalf("ReadFragment: %v", err)
+	}
+	if got["FOO"] != "bar" {
+		t.Errorf("got %q, want %q", got["FOO"], "bar")
+	}
+}
