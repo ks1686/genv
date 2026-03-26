@@ -301,3 +301,142 @@ func TestSpecToLock_Roundtrip(t *testing.T) {
 		t.Errorf("source roundtrip failed: %+v", lsc.Source)
 	}
 }
+
+// ─── ApplyShell ───────────────────────────────────────────────────────────────
+
+func TestApplyShell_Success(t *testing.T) {
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "shell.sh")
+	rc1 := filepath.Join(dir, ".bashrc")
+	rc2 := filepath.Join(dir, ".zshrc")
+
+	cfg := &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{
+			"ll": {Value: "ls -la"},
+		},
+	}
+
+	err := ApplyShell(fragPath, cfg, []string{rc1, rc2})
+	if err != nil {
+		t.Fatalf("ApplyShell returned error: %v", err)
+	}
+
+	// Verify fragment was written
+	data, err := os.ReadFile(fragPath)
+	if err != nil {
+		t.Fatalf("ReadFile(fragPath): %v", err)
+	}
+	if !strings.Contains(string(data), "alias ll='ls -la'") {
+		t.Errorf("fragment does not contain alias ll: %s", string(data))
+	}
+
+	// Verify rc files have the source injected
+	for _, rc := range []string{rc1, rc2} {
+		data, err := os.ReadFile(rc)
+		if err != nil {
+			t.Errorf("ReadFile(%s): %v", rc, err)
+			continue
+		}
+		if !strings.Contains(string(data), ". "+fragPath) {
+			t.Errorf("rc file %s does not contain injected source line", rc)
+		}
+	}
+}
+
+func TestApplyShell_NilOrEmptyConfig(t *testing.T) {
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "shell.sh")
+	rc := filepath.Join(dir, ".bashrc")
+
+	// Pre-create a fragment to verify it gets removed
+	initialCfg := &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{"a": {Value: "b"}},
+	}
+	if err := WriteFragment(fragPath, initialCfg); err != nil {
+		t.Fatalf("WriteFragment failed: %v", err)
+	}
+
+	// Apply with nil
+	err := ApplyShell(fragPath, nil, []string{rc})
+	if err != nil {
+		t.Fatalf("ApplyShell(nil) returned error: %v", err)
+	}
+
+	// Fragment should be removed
+	if _, err := os.Stat(fragPath); !os.IsNotExist(err) {
+		t.Errorf("expected fragment to be removed, but it exists: %v", err)
+	}
+
+	// Rc file should not be created
+	if _, err := os.Stat(rc); !os.IsNotExist(err) {
+		t.Errorf("expected rc file not to be created, but it exists: %v", err)
+	}
+
+	// Apply with empty config
+	emptyCfg := &schema.ShellConfig{}
+	err = ApplyShell(fragPath, emptyCfg, []string{rc})
+	if err != nil {
+		t.Fatalf("ApplyShell(empty) returned error: %v", err)
+	}
+
+	if _, err := os.Stat(fragPath); !os.IsNotExist(err) {
+		t.Errorf("expected fragment to be removed, but it exists: %v", err)
+	}
+}
+
+func TestApplyShell_WriteFragmentError(t *testing.T) {
+	dir := t.TempDir()
+	// Use the directory itself as the fragment path, which will cause WriteFragment to fail
+	// because it will try to write to a temporary file in the same location, or rename.
+	// Actually, WriteFragment uses filepath.Dir(path). Let's make the parent directory a file.
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.WriteFile(parentDir, []byte("file"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	fragPath := filepath.Join(parentDir, "shell.sh")
+
+	cfg := &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{
+			"ll": {Value: "ls -la"},
+		},
+	}
+
+	err := ApplyShell(fragPath, cfg, []string{})
+	if err == nil {
+		t.Error("expected ApplyShell to return error when WriteFragment fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "creating directory") && !strings.Contains(err.Error(), "writing") && !strings.Contains(err.Error(), "saving") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestApplyShell_InjectWarning(t *testing.T) {
+	dir := t.TempDir()
+	fragPath := filepath.Join(dir, "shell.sh")
+
+	// Create an invalid rc path (e.g. parent is a file)
+	parentDir := filepath.Join(dir, "parent")
+	if err := os.WriteFile(parentDir, []byte("file"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	rcInvalid := filepath.Join(parentDir, ".bashrc")
+
+	cfg := &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{
+			"ll": {Value: "ls -la"},
+		},
+	}
+
+	// InjectSourceLine should fail on rcInvalid, but ApplyShell should ignore the error
+	// and write to stderr. We can't easily capture stderr in tests without redirecting os.Stderr,
+	// but we can at least ensure it doesn't return an error.
+	err := ApplyShell(fragPath, cfg, []string{rcInvalid})
+	if err != nil {
+		t.Fatalf("ApplyShell should ignore InjectSourceLine errors, but returned: %v", err)
+	}
+
+	// Verify fragment was still written
+	if _, err := os.Stat(fragPath); os.IsNotExist(err) {
+		t.Errorf("expected fragment to be written, but it does not exist")
+	}
+}
