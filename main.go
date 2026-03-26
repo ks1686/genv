@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/commands"
@@ -650,6 +651,17 @@ func listCmd(args []string) int {
 // applyCmd implements `genv apply [--dry-run] [--strict] [--yes] [--json] [--timeout] [--debug]`.
 // Reconciles the system against genv.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
+type applyOptions struct {
+	File    string
+	DryRun  bool
+	Strict  bool
+	Yes     bool
+	Quiet   bool
+	JSONOut bool
+	Timeout time.Duration
+	Debug   bool
+}
+
 func applyCmd(args []string) int {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -659,33 +671,39 @@ func applyCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 
-	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	dryRun := fs.Bool("dry-run", false, "print the reconcile plan without executing")
-	strict := fs.Bool("strict", false, "exit with an error if any package cannot be resolved")
-	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
-	quiet := fs.Bool("quiet", false, "suppress plan output (useful in scripts)")
-	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
-	timeout := fs.Duration("timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
-	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
+	opts := applyOptions{}
+	fs.StringVar(&opts.File, "file", defaultSpecPath(), "path to genv.json")
+	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
+	fs.BoolVar(&opts.Strict, "strict", false, "exit with an error if any package cannot be resolved")
+	fs.BoolVar(&opts.Yes, "yes", false, "skip the confirmation prompt (for CI and scripts)")
+	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress plan output (useful in scripts)")
+	fs.BoolVar(&opts.JSONOut, "json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	fs.DurationVar(&opts.Timeout, "timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
+	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	if *debug {
+
+	return runApply(opts)
+}
+
+func runApply(opts applyOptions) int {
+	if opts.Debug {
 		logging.Init(true)
 	}
 
 	ctx := context.Background()
-	if *timeout > 0 {
+	if opts.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
 		defer cancel()
 	}
 
-	f, err := genvfile.Read(*file)
+	f, err := genvfile.Read(opts.File)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
+			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", opts.File)
 			return exitIO
 		}
 		fprintf(os.Stderr, "genv: %v\n", err)
@@ -698,7 +716,7 @@ func applyCmd(args []string) int {
 		return exitIO
 	}
 
-	lockPath := genvfile.LockPathFrom(*file)
+	lockPath := genvfile.LockPathFrom(opts.File)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -708,51 +726,58 @@ func applyCmd(args []string) int {
 	available := resolver.Detect()
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
 
-	if *jsonOut {
-		// Build plan data directly from the reconcile result.
-		planData := buildPlanResult(result)
-		if *dryRun {
-			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.SchemaVersion,
-				Command: "apply",
-				OK:      true,
-				Data:    planData,
-			})
-		}
-		// Execute with subprocess output routed to stderr so stdout stays clean.
-		execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
-		errs := errStrings(execResult.Errors)
-		// Apply env and shell (update lf in memory), then write lock once.
-		envApplied, envRemoved := applyEnvVars(f, lf, false)
-		shellApplied, shellRemoved := applyShellCfg(f, lf, false)
-		writeLockAfterApply(lockPath, lf, result, execResult)
-		installed := make([]string, len(execResult.Installed))
-		for i, lp := range execResult.Installed {
-			installed[i] = lp.ID
-		}
+	if opts.JSONOut {
+		return runApplyJSON(ctx, opts, lockPath, f, lf, result)
+	}
+	return runApplyText(ctx, opts, lockPath, f, lf, result)
+}
+
+func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
+	planData := buildPlanResult(result)
+	if opts.DryRun {
 		return writeJSON(os.Stdout, output.Envelope{
 			Version: output.SchemaVersion,
 			Command: "apply",
-			OK:      len(errs) == 0,
-			Data: output.ApplyResult{
-				Installed:    installed,
-				Uninstalled:  execResult.Uninstalled,
-				EnvApplied:   envApplied,
-				EnvRemoved:   envRemoved,
-				ShellApplied: shellApplied,
-				ShellRemoved: shellRemoved,
-			},
-			Errors: errs,
+			OK:      true,
+			Data:    planData,
 		})
 	}
 
+	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
+	errs := errStrings(execResult.Errors)
+
+	envApplied, envRemoved := applyEnvVars(f, lf, false)
+	shellApplied, shellRemoved := applyShellCfg(f, lf, false)
+	writeLockAfterApply(lockPath, lf, result, execResult)
+
+	installed := make([]string, len(execResult.Installed))
+	for i, lp := range execResult.Installed {
+		installed[i] = lp.ID
+	}
+
+	return writeJSON(os.Stdout, output.Envelope{
+		Version: output.SchemaVersion,
+		Command: "apply",
+		OK:      len(errs) == 0,
+		Data: output.ApplyResult{
+			Installed:    installed,
+			Uninstalled:  execResult.Uninstalled,
+			EnvApplied:   envApplied,
+			EnvRemoved:   envRemoved,
+			ShellApplied: shellApplied,
+			ShellRemoved: shellRemoved,
+		},
+		Errors: errs,
+	})
+}
+
+func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
 	planOut := io.Writer(os.Stdout)
-	if *quiet {
+	if opts.Quiet {
 		planOut = io.Discard
 	}
 	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
 
-	// Count env and shell changes needed (entries that are missing, modified, or extra).
 	var envChanges int
 	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
 		if e.Kind != genvenv.EnvStatusOK {
@@ -767,22 +792,22 @@ func applyCmd(args []string) int {
 	}
 
 	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 {
-		if !*quiet {
+		if !opts.Quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
 		return exitOK
 	}
 
-	if unresolvedCount > 0 && *strict {
+	if unresolvedCount > 0 && opts.Strict {
 		fprintf(os.Stderr, "genv apply: %d package(s) unresolved; aborting (--strict)\n", unresolvedCount)
 		return exitLogic
 	}
 
-	if *dryRun {
-		if envChanges > 0 && !*quiet {
+	if opts.DryRun {
+		if envChanges > 0 && !opts.Quiet {
 			fprintf(os.Stdout, "env: %d variable(s) to apply\n", envChanges)
 		}
-		if shellChanges > 0 && !*quiet {
+		if shellChanges > 0 && !opts.Quiet {
 			fprintf(os.Stdout, "shell: %d config entries to apply\n", shellChanges)
 		}
 		return exitOK
@@ -796,15 +821,16 @@ func applyCmd(args []string) int {
 		confirmMsg += fmt.Sprintf(", apply %d shell config entry/entries", shellChanges)
 	}
 	confirmMsg += ". Continue? [y/N] "
-	if !*yes && !confirm(confirmMsg) {
+
+	if !opts.Yes && !confirm(confirmMsg) {
 		fPrintln(os.Stdout, "Aborted.")
 		return exitOK
 	}
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
-	// Apply env and shell (update lf in memory), then write lock once.
-	applyEnvVars(f, lf, !*quiet)
-	applyShellCfg(f, lf, !*quiet)
+
+	applyEnvVars(f, lf, !opts.Quiet)
+	applyShellCfg(f, lf, !opts.Quiet)
 	writeLockAfterApply(lockPath, lf, result, execResult)
 
 	if len(execResult.Errors) > 0 {
