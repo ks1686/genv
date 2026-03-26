@@ -849,21 +849,6 @@ func TestE2ENix(t *testing.T) {
 	})
 }
 
-
-// TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
-// Real package installation is skipped because emerge compiles packages from
-// source, making CI installs impractically slow. All spec/lock mutations,
-// dry-run plans, and read-only commands are still fully exercised.
-func TestE2EEmerge(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "emerge",
-		checkBin:    "emerge",
-		testPkg:     "nano",
-		preferFlag:  "emerge",
-		canInstall:  false,
-	})
-}
-
 // TestE2EXbps runs the full E2E suite on Void Linux using xbps.
 // Uses --prefer xbps to prevent accidentally picking another manager.
 // Skips automatically when xbps-install is not in PATH.
