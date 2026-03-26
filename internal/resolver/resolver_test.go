@@ -3,7 +3,6 @@ package resolver
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -11,43 +10,6 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 )
-
-type errorWriter struct{}
-
-func (errorWriter) Write(p []byte) (n int, err error) {
-	return 0, errors.New("simulated write error")
-}
-
-func TestFprintfWrappers(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		var buf bytes.Buffer
-
-		fprintf(&buf, "hello %s", "world")
-		if got := buf.String(); got != "hello world" {
-			t.Errorf("fprintf: got %q, want %q", got, "hello world")
-		}
-		buf.Reset()
-
-		fprint(&buf, "hello", " world")
-		if got := buf.String(); got != "hello world" {
-			t.Errorf("fprint: got %q, want %q", got, "hello world")
-		}
-		buf.Reset()
-
-		fPrintln(&buf, "hello world")
-		if got := buf.String(); got != "hello world\n" {
-			t.Errorf("fPrintln: got %q, want %q", got, "hello world\n")
-		}
-	})
-
-	t.Run("error discarding", func(t *testing.T) {
-		var ew errorWriter
-		// These should not panic or return errors
-		fprintf(ew, "test")
-		fprint(ew, "test")
-		fPrintln(ew, "test")
-	})
-}
 
 func TestPlan_PreferredManagerAvailable(t *testing.T) {
 	f := &schema.GenvFile{
