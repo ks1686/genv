@@ -301,3 +301,47 @@ func TestSpecToLock_Roundtrip(t *testing.T) {
 		t.Errorf("source roundtrip failed: %+v", lsc.Source)
 	}
 }
+
+// ─── FragmentPath ────────────────────────────────────────────────────────────
+
+func TestFragmentPath(t *testing.T) {
+	t.Run("XDG_CONFIG_HOME set", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "/custom/xdg")
+		path, err := FragmentPath()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join("/custom/xdg", "genv", "shell.sh")
+		if path != want {
+			t.Errorf("expected %q, got %q", want, path)
+		}
+	})
+
+	t.Run("Fallback to HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "/custom/home")
+
+		path, err := FragmentPath()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join("/custom/home", ".config", "genv", "shell.sh")
+		if path != want {
+			t.Errorf("expected %q, got %q", want, path)
+		}
+	})
+
+	t.Run("Error Condition", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "") // Without HOME, os.UserHomeDir fails on unix
+		t.Setenv("USERPROFILE", "") // For Windows compatibility in test logic
+
+		path, err := FragmentPath()
+		if err == nil {
+			t.Fatal("expected error when HOME is not set, got nil")
+		}
+		if path != "" {
+			t.Errorf("expected empty path on error, got %q", path)
+		}
+	})
+}
