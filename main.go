@@ -379,11 +379,15 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
+	return runRemove(*file, id)
+}
+
+func runRemove(file, id string) int {
 	// 0. When stdin is a terminal and id has no exact match in the spec,
 	//    fall back to substring matching so users can type short names
 	//    (e.g. "firefox" resolving to a tracked id like "org.mozilla.firefox").
 	if isTerminal() {
-		if f, err := genvfile.Read(*file); err == nil {
+		if f, err := genvfile.Read(file); err == nil {
 			idLower := strings.ToLower(id)
 			exact := false
 			var matches []string
@@ -417,7 +421,7 @@ func removeCmd(args []string) int {
 	}
 
 	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id)
+	lf, lockPath, exit := removeFromSpecAndReadLock(file, id)
 	if exit != exitOK {
 		return exit
 	}
