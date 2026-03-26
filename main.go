@@ -2527,20 +2527,20 @@ func serviceRemoveCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 
-	if err := fs.Parse(args); err != nil {
+	name, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
-	if fs.NArg() < 1 {
+	if name == "" {
 		fPrintln(os.Stderr, "genv service remove: name is required")
 		fs.Usage()
 		return exitUsage
 	}
-	name := fs.Arg(0)
 
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			fprintf(os.Stderr, "genv: %v\n", err)
 			return exitLogic
 		}
 		fprintf(os.Stderr, "genv: %v\n", err)
@@ -2603,14 +2603,15 @@ func serviceListCmd(args []string) int {
 func serviceStartCmd(args []string) int {
 	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	if err := fs.Parse(args); err != nil {
+
+	name, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
-	if fs.NArg() < 1 {
+	if name == "" {
 		fPrintln(os.Stderr, "genv service start: name is required")
 		return exitUsage
 	}
-	name := fs.Arg(0)
 
 	f, err := genvfile.Read(*file)
 	if err != nil {
@@ -2648,14 +2649,15 @@ func serviceStartCmd(args []string) int {
 func serviceStopCmd(args []string) int {
 	fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	if err := fs.Parse(args); err != nil {
+
+	name, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
-	if fs.NArg() < 1 {
+	if name == "" {
 		fPrintln(os.Stderr, "genv service stop: name is required")
 		return exitUsage
 	}
-	name := fs.Arg(0)
 
 	f, err := genvfile.Read(*file)
 	if err != nil {
@@ -2689,14 +2691,15 @@ func serviceStopCmd(args []string) int {
 func serviceStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	if err := fs.Parse(args); err != nil {
+
+	name, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
-	if fs.NArg() < 1 {
+	if name == "" {
 		fPrintln(os.Stderr, "genv service status: name is required")
 		return exitUsage
 	}
-	name := fs.Arg(0)
 
 	f, err := genvfile.Read(*file)
 	if err != nil {
