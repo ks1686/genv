@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -48,6 +49,14 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+var safeEditors = map[string]bool{
+	"vi":    true,
+	"vim":   true,
+	"nano":  true,
+	"emacs": true,
+	"code":  true,
+}
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -1435,12 +1444,17 @@ func shellEditCmd(args []string) int {
 		editor = "vi"
 	}
 
-	cmd := exec.Command(editor, *file)
+	cmd, err := buildEditorCmd(editor, *file)
+	if err != nil {
+		fprintf(os.Stderr, "genv shell edit: %v\n", err)
+		return exitLogic
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fprintf(os.Stderr, "genv: editor exited with error: %v\n", err)
+		fprintf(os.Stderr, "genv shell edit: editor exited with error: %v\n", err)
 		return exitLogic
 	}
 	return exitOK
@@ -1906,6 +1920,24 @@ func cleanCmd(args []string) int {
 	return exitCode
 }
 
+// buildEditorCmd parses the editor string, validates the executable against a
+// whitelist of safe editors, and returns an exec.Cmd ready to run.
+func buildEditorCmd(editor, file string) (*exec.Cmd, error) {
+	fields := strings.Fields(editor)
+	if len(fields) == 0 {
+		return exec.Command("vi", file), nil
+	}
+
+	bin := fields[0]
+	base := filepath.Base(bin)
+	if !safeEditors[base] {
+		return nil, fmt.Errorf("editor %q is not allowed; must be one of: vi, vim, nano, emacs, code", bin)
+	}
+
+	args := append(fields[1:], file)
+	return exec.Command(bin, args...), nil
+}
+
 // editCmd implements `genv edit`.
 // Opens genv.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
@@ -1923,7 +1955,12 @@ func editCmd(args []string) int {
 		editor = "vi"
 	}
 
-	cmd := exec.Command(editor, *file)
+	cmd, err := buildEditorCmd(editor, *file)
+	if err != nil {
+		fprintf(os.Stderr, "genv edit: %v\n", err)
+		return exitLogic
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
