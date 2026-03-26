@@ -88,5 +88,3 @@ func (Xbps) QueryVersion(pkgName string) (string, error) {
 	}
 	return lines[0], nil
 }
-
-

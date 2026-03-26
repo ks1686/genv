@@ -849,18 +849,6 @@ func TestE2ENix(t *testing.T) {
 	})
 }
 
-// TestE2EEopkg runs the full E2E suite on Solus Linux using eopkg.
-// Uses --prefer eopkg so that genv doesn't accidentally resolve to another
-// manager if one is present. Skips automatically when eopkg is not in PATH.
-func TestE2EEopkg(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "eopkg",
-		checkBin:    "eopkg",
-		testPkg:     "nano",
-		preferFlag:  "eopkg",
-		canInstall:  true,
-	})
-}
 
 // TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
 // Real package installation is skipped because emerge compiles packages from

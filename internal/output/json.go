@@ -52,9 +52,9 @@ type StatusEntry struct {
 
 // StatusResult is the Data payload for `genv status --json`.
 type StatusResult struct {
-	Entries        []StatusEntry         `json:"entries"`
-	EnvEntries     []EnvStatusEntry      `json:"envEntries,omitempty"`
-	ShellEntries   []ShellStatusEntry    `json:"shellEntries,omitempty"`
+	Entries        []StatusEntry        `json:"entries"`
+	EnvEntries     []EnvStatusEntry     `json:"envEntries,omitempty"`
+	ShellEntries   []ShellStatusEntry   `json:"shellEntries,omitempty"`
 	ServiceEntries []ServiceStatusEntry `json:"serviceEntries,omitempty"`
 }
 
