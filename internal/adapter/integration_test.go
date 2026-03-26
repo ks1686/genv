@@ -298,16 +298,6 @@ func TestMacPorts(t *testing.T) {
 	})
 }
 
-func TestEopkg(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Eopkg{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"eopkg": "nano"},
-		explicitWant:   "nano",
-		knownInstalled: "bash",
-	})
-}
-
 // TestEmerge uses "bash" as the known-installed probe: it is always present
 // in a Gentoo stage3 base system. qlist -I lists it as "app-shells/bash-*"
 // which the adapter normalises to "bash".

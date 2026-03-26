@@ -277,7 +277,6 @@ Checklist:
 - [x] Implement Linux adapter: `nix` (NixOS and any Linux host with Nix installed).
 - [x] Implement Linux adapter: `xbps` (Void Linux).
 - [x] Implement Linux adapter: `emerge` (Gentoo).
-- [x] Implement Linux adapter: `eopkg` (Solus).
 - [x] Publish genv as `.deb`, `.rpm`, and `.apk` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and apk direct-install; zypper users covered by `.rpm`).
 - [x] Add `flake.nix` so Nix users can install via `nix profile install github:ks1686/genv` (vendorHash must be set on each release).
 - [ ] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).

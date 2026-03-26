@@ -41,7 +41,6 @@ var KnownManagers = map[string]bool{
 	"nix":       true,
 	"xbps":      true,
 	"emerge":    true,
-	"eopkg":     true,
 }
 
 // GenvFile is the top-level structure of a genv.json file.
