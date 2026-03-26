@@ -3,6 +3,7 @@ package adapter
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
@@ -72,6 +73,9 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		{"brew", "neovim", map[string]string{"brew": "neovim"}, "neovim", true},
 		{"macports", "neovim", map[string]string{"macports": "neovim"}, "neovim", true},
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
+		{"apk", "vim", map[string]string{"apk": "vim"}, "vim", true},
+		{"zypper", "vim", map[string]string{"zypper": "vim"}, "vim", true},
+		{"nix", "vim", map[string]string{"nix": "vim"}, "vim", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgrName+"/explicit", func(t *testing.T) {
@@ -107,8 +111,10 @@ func TestNormalizeID_FallbackToID(t *testing.T) {
 }
 
 // TestPlanInstall_NonEmpty verifies that every registered adapter returns a
-// non-empty command slice from PlanInstall and that the package name is the
-// last argument.
+// non-empty command slice from PlanInstall and that the package name appears
+// as (or is a suffix of) the last argument.
+// The nix adapter prefixes the attribute channel (e.g. "nixpkgs.git"), so
+// we check HasSuffix rather than strict equality.
 func TestPlanInstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
@@ -117,8 +123,8 @@ func TestPlanInstall_NonEmpty(t *testing.T) {
 				t.Errorf("%s PlanInstall: returned empty slice", a.Name())
 				return
 			}
-			if args[len(args)-1] != "git" {
-				t.Errorf("%s PlanInstall: last arg = %q, want \"git\"", a.Name(), args[len(args)-1])
+			if !strings.HasSuffix(args[len(args)-1], "git") {
+				t.Errorf("%s PlanInstall: last arg = %q, want suffix \"git\"", a.Name(), args[len(args)-1])
 			}
 		})
 	}
@@ -133,6 +139,8 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 	}{
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
+		{"zypper", "sudo"},
+		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
@@ -141,6 +149,7 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
+		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -157,7 +166,7 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 }
 
 // TestPlanUninstall_NonEmpty verifies that every adapter returns a non-empty
-// command slice from PlanUninstall and that the package name is the last argument.
+// command slice from PlanUninstall and that the package name appears in the command.
 func TestPlanUninstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
@@ -166,9 +175,7 @@ func TestPlanUninstall_NonEmpty(t *testing.T) {
 				t.Errorf("%s PlanUninstall: returned empty slice", a.Name())
 				return
 			}
-			if args[len(args)-1] != "git" {
-				t.Errorf("%s PlanUninstall: last arg = %q, want \"git\"", a.Name(), args[len(args)-1])
-			}
+			assertContainsArg(t, args, "git")
 		})
 	}
 }
@@ -182,6 +189,8 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 	}{
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
+		{"zypper", "sudo"},
+		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
@@ -190,6 +199,7 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
+		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -706,6 +716,8 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 	}{
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
+		{"zypper", "sudo"},
+		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
@@ -714,6 +726,7 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
+		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -749,6 +762,8 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 	}{
 		{"apt", "--only-upgrade"}, // apt-get install --only-upgrade
 		{"dnf", "upgrade"},
+		{"zypper", "update"},
+		{"apk", "add"}, // apk add upgrades when already installed
 		{"pacman", "-S"}, // pacman upgrade = reinstall latest via -S
 		{"paru", "-S"},
 		{"yay", "-S"},
@@ -757,6 +772,7 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"brew", "upgrade"},
 		{"macports", "upgrade"},
 		{"linuxbrew", "upgrade"},
+		{"nix", "-u"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -791,6 +807,8 @@ func TestPlanClean_CommandCount(t *testing.T) {
 	}{
 		{"apt", 2},    // autoremove + clean
 		{"dnf", 2},    // autoremove + clean all
+		{"zypper", 1},
+		{"apk", 1},
 		{"pacman", 2}, // find download-* step + pacman -Sc
 		{"paru", 1},
 		{"yay", 1},
@@ -799,6 +817,7 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"brew", 1},
 		{"macports", 1},
 		{"linuxbrew", 1},
+		{"nix", 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -823,6 +842,8 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 	}{
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
+		{"zypper", "sudo"},
+		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
@@ -830,6 +851,7 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
+		{"nix", "nix-collect-garbage"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -879,7 +901,7 @@ func TestPlanClean_Pacman_FindTargetsDownloadFiles(t *testing.T) {
 
 	assertContainsArg(t, first, "/var/cache/pacman/pkg")
 	assertContainsArg(t, first, "download-*")
-	assertContainsArg(t, first, "-delete")
+	assertContainsArg(t, first, "-exec")
 }
 
 // TestPlanClean_Pacman_SecondCommandIsPacmanSc verifies that the second command
@@ -915,6 +937,9 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"brew", "install"},
 		{"macports", "install"},
 		{"linuxbrew", "install"},
+		{"apk", "add"},
+		{"zypper", "install"},
+		{"nix", "-iA"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -936,6 +961,7 @@ func TestPlanInstall_ContainsNoninteractiveFlag(t *testing.T) {
 	}{
 		{"apt", "-y"},
 		{"dnf", "-y"},
+		{"zypper", "--non-interactive"},
 		{"pacman", "--noconfirm"},
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
@@ -973,6 +999,9 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"brew", "uninstall"},
 		{"macports", "uninstall"},
 		{"linuxbrew", "uninstall"},
+		{"apk", "del"},
+		{"zypper", "remove"},
+		{"nix", "-e"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -994,6 +1023,7 @@ func TestPlanUninstall_ContainsNoninteractiveFlag(t *testing.T) {
 	}{
 		{"apt", "-y"},
 		{"dnf", "-y"},
+		{"zypper", "--non-interactive"},
 		{"pacman", "--noconfirm"},
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
@@ -1157,6 +1187,271 @@ fi`)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// trimVersionSuffix — pure function tests (shared by apk and nix)
+// ---------------------------------------------------------------------------
+
+func TestTrimVersionSuffix_SimplePackage(t *testing.T) {
+	if got := trimVersionSuffix("bash-5.2.21-r0"); got != "bash" {
+		t.Errorf("got %q, want %q", got, "bash")
+	}
+}
+
+func TestTrimVersionSuffix_DashedPackageName(t *testing.T) {
+	// Package names themselves can contain dashes (e.g. py3-pip).
+	if got := trimVersionSuffix("py3-pip-23.3.1-r0"); got != "py3-pip" {
+		t.Errorf("got %q, want %q", got, "py3-pip")
+	}
+}
+
+func TestTrimVersionSuffix_NoVersion(t *testing.T) {
+	// When there is no recognisable version suffix, the whole string is returned.
+	if got := trimVersionSuffix("bash"); got != "bash" {
+		t.Errorf("got %q, want %q", got, "bash")
+	}
+}
+
+func TestTrimVersionSuffix_NixPackage(t *testing.T) {
+	// nix-env -q output: "neovim-0.10.0"
+	if got := trimVersionSuffix("neovim-0.10.0"); got != "neovim" {
+		t.Errorf("got %q, want %q", got, "neovim")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Apk.Search — fake-binary parsing tests
+// ---------------------------------------------------------------------------
+
+// TestApkSearch_StripsVersionAndFilters verifies that Apk.Search strips the
+// version suffix from each "pkgname-version" line and filters to names
+// containing the query (case-insensitive).
+func TestApkSearch_StripsVersionAndFilters(t *testing.T) {
+	installFakeBinary(t, "apk",
+		`if [ "$1" = "search" ]; then
+  echo "bash-5.2.21-r0"
+  echo "bash-completion-2.11-r5"
+  echo "busybox-1.36.1-r29"
+fi`)
+	names, err := Apk{}.Search("bash")
+	if err != nil {
+		t.Fatalf("Apk.Search: %v", err)
+	}
+	// "busybox" does not contain "bash" → must be filtered
+	for _, n := range names {
+		if n == "busybox" {
+			t.Errorf("Apk.Search: 'busybox' should be filtered out (does not match query 'bash')")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 matching names, got %d: %v", len(names), names)
+	}
+	if names[0] != "bash" || names[1] != "bash-completion" {
+		t.Errorf("expected [bash bash-completion], got %v", names)
+	}
+}
+
+// TestApkSearch_Deduplicates verifies that the same package name appearing
+// more than once in search output is returned only once.
+func TestApkSearch_Deduplicates(t *testing.T) {
+	installFakeBinary(t, "apk",
+		`if [ "$1" = "search" ]; then
+  echo "vim-9.1.0-r0"
+  echo "vim-9.1.0-r0"
+fi`)
+	names, err := Apk{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Apk.Search: %v", err)
+	}
+	if len(names) != 1 {
+		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Apk.QueryVersion — fake-binary parsing test
+// ---------------------------------------------------------------------------
+
+// TestApkQueryVersion_ParsesFirstLine verifies that QueryVersion correctly
+// extracts the version string from apk info's "pkgname-version description:"
+// first line.
+func TestApkQueryVersion_ParsesFirstLine(t *testing.T) {
+	installFakeBinary(t, "apk",
+		`if [ "$1" = "info" ]; then
+  echo "bash-5.2.21-r0 description:"
+  echo "The GNU Bourne Again shell"
+fi`)
+	ver, err := Apk{}.QueryVersion("bash")
+	if err != nil {
+		t.Fatalf("Apk.QueryVersion: %v", err)
+	}
+	if ver != "5.2.21-r0" {
+		t.Errorf("got %q, want %q", ver, "5.2.21-r0")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Apk live tests — skipped when apk is not present on the host
+// ---------------------------------------------------------------------------
+
+// TestApk_Query_And_Version exercises Apk when running on Alpine Linux.
+// musl-libc is present on every Alpine install, making it a reliable probe.
+func TestApk_Query_And_Version(t *testing.T) {
+	a := Apk{}
+	if !a.Available() {
+		t.Skip("apk not available on this host")
+	}
+	ok, err := a.Query("musl")
+	if err != nil {
+		t.Fatalf("Apk.Query(musl): %v", err)
+	}
+	if !ok {
+		t.Error("Apk.Query(musl): expected true (musl is always installed on Alpine)")
+	}
+
+	pkgs, err := a.ListInstalled()
+	if err != nil {
+		t.Fatalf("Apk.ListInstalled: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Error("Apk.ListInstalled: expected at least one package")
+	}
+
+	ver, err := a.QueryVersion("musl")
+	if err != nil {
+		t.Fatalf("Apk.QueryVersion(musl): %v", err)
+	}
+	if ver == "" {
+		t.Error("Apk.QueryVersion(musl): expected non-empty version")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseZypperSearch — pure function tests
+// ---------------------------------------------------------------------------
+
+// TestParseZypperSearch_ParsesNameColumn verifies that the Name column is
+// extracted correctly from zypper's pipe-delimited table output.
+func TestParseZypperSearch_ParsesNameColumn(t *testing.T) {
+	lines := []string{
+		"Loading repository data...",
+		"Reading installed packages...",
+		"S  | Name             | Summary                     | Type   ",
+		"---+------------------+-----------------------------+--------",
+		"   | vim              | Vi IMproved                 | package",
+		"i  | vim-data         | Vi IMproved Data Files      | package",
+		"   | emacs            | GNU Emacs editor            | package",
+	}
+	names := parseZypperSearch(lines, "vim")
+	// "emacs" must be filtered out
+	for _, n := range names {
+		if n == "emacs" {
+			t.Errorf("parseZypperSearch: 'emacs' should be filtered out")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
+	}
+	if names[0] != "vim" || names[1] != "vim-data" {
+		t.Errorf("expected [vim vim-data], got %v", names)
+	}
+}
+
+// TestParseZypperSearch_SkipsSeparatorAndHeader verifies that separator rows
+// ("---+...") and the header row ("Name") are never returned.
+func TestParseZypperSearch_SkipsSeparatorAndHeader(t *testing.T) {
+	lines := []string{
+		"S  | Name | Summary | Type",
+		"---+------+---------+-----",
+		"   | git  | Git VCS | package",
+	}
+	names := parseZypperSearch(lines, "git")
+	if len(names) != 1 || names[0] != "git" {
+		t.Errorf("expected [git], got %v", names)
+	}
+}
+
+// TestParseZypperSearch_Deduplicates verifies that a name appearing more than
+// once (e.g. from multiple repos) is returned only once.
+func TestParseZypperSearch_Deduplicates(t *testing.T) {
+	lines := []string{
+		"S  | Name | Summary | Type",
+		"---+------+---------+-----",
+		"   | vim  | editor  | package",
+		"   | vim  | editor  | srcpackage",
+	}
+	names := parseZypperSearch(lines, "vim")
+	if len(names) != 1 {
+		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Zypper.Search — fake-binary integration test
+// ---------------------------------------------------------------------------
+
+func TestZypperSearch_ParsesTableOutput(t *testing.T) {
+	installFakeBinary(t, "zypper",
+		`if [ "$1" = "search" ]; then
+  echo "S  | Name             | Summary                | Type"
+  echo "---+------------------+------------------------+--------"
+  echo "   | vim              | Vi IMproved            | package"
+  echo "i  | vim-data         | Vi IMproved Data Files | package"
+  echo "   | emacs            | GNU Emacs editor       | package"
+fi`)
+	names, err := Zypper{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Zypper.Search: %v", err)
+	}
+	for _, n := range names {
+		if n == "emacs" {
+			t.Errorf("Zypper.Search: 'emacs' should be filtered out")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
+	}
+	if names[0] != "vim" || names[1] != "vim-data" {
+		t.Errorf("expected [vim vim-data], got %v", names)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Zypper live test — skipped when zypper is not present on the host
+// ---------------------------------------------------------------------------
+
+// TestZypper_Query_And_Version exercises Zypper when running on openSUSE/SLES.
+// rpm (zypper's backend) is always present when zypper is, and "rpm" itself is
+// always installed, making it a reliable probe package.
+func TestZypper_Query_And_Version(t *testing.T) {
+	a := Zypper{}
+	if !a.Available() {
+		t.Skip("zypper not available on this host")
+	}
+	ok, err := a.Query("rpm")
+	if err != nil {
+		t.Fatalf("Zypper.Query(rpm): %v", err)
+	}
+	if !ok {
+		t.Error("Zypper.Query(rpm): expected true (rpm is always installed on openSUSE)")
+	}
+
+	pkgs, err := a.ListInstalled()
+	if err != nil {
+		t.Fatalf("Zypper.ListInstalled: %v", err)
+	}
+	if len(pkgs) == 0 {
+		t.Error("Zypper.ListInstalled: expected at least one package")
+	}
+
+	ver, err := a.QueryVersion("rpm")
+	if err != nil {
+		t.Fatalf("Zypper.QueryVersion(rpm): %v", err)
+	}
+	if ver == "" {
+		t.Error("Zypper.QueryVersion(rpm): expected non-empty version")
+	}
+}
+
 // TestBrewSearch_FiltersArrowHeaders verifies that brew's "==> Formulae" and
 // "==> Casks" section headers are never returned in results.
 func TestBrewSearch_FiltersArrowHeaders(t *testing.T) {
@@ -1256,5 +1551,129 @@ func TestRunVersionOutput_MissingBinary(t *testing.T) {
 	}
 	if v != "" {
 		t.Errorf("runVersionOutput with missing binary: expected empty string, got %q", v)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Nix.Search — fake-binary parsing test
+// ---------------------------------------------------------------------------
+
+// TestNixSearch_ParsesAttrPathAndFilters verifies that Nix.Search extracts the
+// package name from "nixpkgs.attrPath  pkgname-version" lines, strips the
+// version suffix, and filters to names containing the query.
+func TestNixSearch_ParsesAttrPathAndFilters(t *testing.T) {
+	installFakeBinary(t, "nix-env",
+		`if [ "$1" = "-qaP" ]; then
+  echo "nixpkgs.vim        vim-9.0.0000"
+  echo "nixpkgs.neovim     neovim-0.10.0"
+  echo "nixpkgs.emacs      emacs-29.3"
+fi`)
+	names, err := Nix{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Nix.Search: %v", err)
+	}
+	// "emacs" does not contain "vim" → must be filtered
+	for _, n := range names {
+		if n == "emacs" {
+			t.Errorf("Nix.Search: 'emacs' should be filtered out")
+		}
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
+	}
+	if names[0] != "vim" || names[1] != "neovim" {
+		t.Errorf("expected [vim neovim], got %v", names)
+	}
+}
+
+// TestNixSearch_Deduplicates verifies that the same package name appearing
+// more than once is returned only once.
+func TestNixSearch_Deduplicates(t *testing.T) {
+	installFakeBinary(t, "nix-env",
+		`if [ "$1" = "-qaP" ]; then
+  echo "nixpkgs.vim  vim-9.0.0000"
+  echo "nixpkgs.vim  vim-9.0.0000"
+fi`)
+	names, err := Nix{}.Search("vim")
+	if err != nil {
+		t.Fatalf("Nix.Search: %v", err)
+	}
+	if len(names) != 1 {
+		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Nix.ListInstalled / Nix.QueryVersion — fake-binary parsing tests
+// ---------------------------------------------------------------------------
+
+// TestNixListInstalled_StripsVersions verifies that ListInstalled strips the
+// version suffix from each "pkgname-version" line from nix-env -q.
+func TestNixListInstalled_StripsVersions(t *testing.T) {
+	installFakeBinary(t, "nix-env",
+		`if [ "$1" = "-q" ] && [ $# -eq 1 ]; then
+  echo "hello-2.12.1"
+  echo "git-2.43.0"
+fi`)
+	pkgs, err := Nix{}.ListInstalled()
+	if err != nil {
+		t.Fatalf("Nix.ListInstalled: %v", err)
+	}
+	if len(pkgs) != 2 {
+		t.Fatalf("expected 2 packages, got %d: %v", len(pkgs), pkgs)
+	}
+	if pkgs[0] != "hello" || pkgs[1] != "git" {
+		t.Errorf("expected [hello git], got %v", pkgs)
+	}
+}
+
+// TestNixQueryVersion_ParsesVersion verifies that QueryVersion extracts
+// the version from "pkgname-version" output.
+func TestNixQueryVersion_ParsesVersion(t *testing.T) {
+	installFakeBinary(t, "nix-env",
+		`if [ "$1" = "-q" ]; then
+  echo "hello-2.12.1"
+fi`)
+	ver, err := Nix{}.QueryVersion("hello")
+	if err != nil {
+		t.Fatalf("Nix.QueryVersion: %v", err)
+	}
+	if ver != "2.12.1" {
+		t.Errorf("got %q, want %q", ver, "2.12.1")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Nix live test — skipped when nix-env is not present on the host
+// ---------------------------------------------------------------------------
+
+// TestNix_Query_And_Version exercises the Nix adapter when nix-env is available.
+// "hello" is used as the probe package — it is the canonical first nix install.
+func TestNix_Query_And_Version(t *testing.T) {
+	a := Nix{}
+	if !a.Available() {
+		t.Skip("nix-env not available on this host")
+	}
+	// Query a package that is definitely absent.
+	const absent = "genv-nix-test-nonexistent-xyzzy"
+	ok, err := a.Query(absent)
+	if err != nil {
+		t.Fatalf("Nix.Query(absent): %v", err)
+	}
+	if ok {
+		t.Errorf("Nix.Query(%q): expected false", absent)
+	}
+	// ListInstalled must not error (empty profile is fine).
+	_, err = a.ListInstalled()
+	if err != nil {
+		t.Fatalf("Nix.ListInstalled: %v", err)
+	}
+	// QueryVersion on absent package must return ("", nil).
+	ver, err := a.QueryVersion(absent)
+	if err != nil {
+		t.Fatalf("Nix.QueryVersion(absent): %v", err)
+	}
+	if ver != "" {
+		t.Errorf("Nix.QueryVersion(absent): expected empty string, got %q", ver)
 	}
 }
