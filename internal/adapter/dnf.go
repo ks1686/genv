@@ -71,5 +71,5 @@ func (Dnf) Search(query string) ([]string, error) {
 	return names, nil
 }
 
-func (Dnf) ListInstalled() ([]string, error)              { return rpmListInstalled() }
-func (Dnf) QueryVersion(pkgName string) (string, error)   { return rpmQueryVersion(pkgName) }
+func (Dnf) ListInstalled() ([]string, error)            { return rpmListInstalled() }
+func (Dnf) QueryVersion(pkgName string) (string, error) { return rpmQueryVersion(pkgName) }

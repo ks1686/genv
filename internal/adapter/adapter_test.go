@@ -763,7 +763,7 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"apt", "--only-upgrade"}, // apt-get install --only-upgrade
 		{"dnf", "upgrade"},
 		{"zypper", "update"},
-		{"apk", "add"}, // apk add upgrades when already installed
+		{"apk", "add"},   // apk add upgrades when already installed
 		{"pacman", "-S"}, // pacman upgrade = reinstall latest via -S
 		{"paru", "-S"},
 		{"yay", "-S"},
@@ -805,8 +805,8 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		mgr       string
 		wantCount int
 	}{
-		{"apt", 2},    // autoremove + clean
-		{"dnf", 2},    // autoremove + clean all
+		{"apt", 2}, // autoremove + clean
+		{"dnf", 2}, // autoremove + clean all
 		{"zypper", 1},
 		{"apk", 1},
 		{"pacman", 2}, // find download-* step + pacman -Sc

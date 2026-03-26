@@ -348,4 +348,3 @@ func assertInstallCmd(t *testing.T, cmd []string, wantBin, wantPkg string) {
 		t.Errorf("cmd[last] = %q, want suffix %q", cmd[len(cmd)-1], wantPkg)
 	}
 }
-
