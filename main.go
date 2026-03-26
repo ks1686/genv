@@ -22,6 +22,7 @@ import (
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/search"
+	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/shellcfg"
 )
 
@@ -92,6 +93,8 @@ func run(args []string) int {
 		return envCmd(args[1:])
 	case "shell":
 		return shellCmd(args[1:])
+	case "service":
+		return serviceCmd(args[1:])
 	case "__complete":
 		return completeInternalCmd(args[1:])
 	case "version", "--version":
@@ -710,7 +713,7 @@ func applyCmd(args []string) int {
 
 	if *jsonOut {
 		// Build plan data directly from the reconcile result.
-		planData := buildPlanResult(result)
+		planData := buildPlanResult(f, lf, result)
 		if *dryRun {
 			return writeJSON(os.Stdout, output.Envelope{
 				Version: output.SchemaVersion,
@@ -765,8 +768,14 @@ func applyCmd(args []string) int {
 			shellChanges++
 		}
 	}
+	var serviceChanges int
+	for _, e := range service.ServiceStatus(f.Services, lf.Services) {
+		if e.Kind != service.ServiceStatusOK {
+			serviceChanges++
+		}
+	}
 
-	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 {
+	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 && serviceChanges == 0 {
 		if !*quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
@@ -785,6 +794,9 @@ func applyCmd(args []string) int {
 		if shellChanges > 0 && !*quiet {
 			fprintf(os.Stdout, "shell: %d config entries to apply\n", shellChanges)
 		}
+		if serviceChanges > 0 && !*quiet {
+			fprintf(os.Stdout, "service: %d service(s) to reconcile\n", serviceChanges)
+		}
 		return exitOK
 	}
 
@@ -795,6 +807,9 @@ func applyCmd(args []string) int {
 	if shellChanges > 0 {
 		confirmMsg += fmt.Sprintf(", apply %d shell config entry/entries", shellChanges)
 	}
+	if serviceChanges > 0 {
+		confirmMsg += fmt.Sprintf(", reconcile %d service(s)", serviceChanges)
+	}
 	confirmMsg += ". Continue? [y/N] "
 	if !*yes && !confirm(confirmMsg) {
 		fPrintln(os.Stdout, "Aborted.")
@@ -802,13 +817,17 @@ func applyCmd(args []string) int {
 	}
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
-	// Apply env and shell (update lf in memory), then write lock once.
+	// Apply env, shell and services (update lf in memory), then write lock once.
 	applyEnvVars(f, lf, !*quiet)
 	applyShellCfg(f, lf, !*quiet)
+	_, _, svcErrs := applyServices(ctx, f, lf, !*quiet)
 	writeLockAfterApply(lockPath, lf, result, execResult)
 
-	if len(execResult.Errors) > 0 {
+	if len(execResult.Errors) > 0 || len(svcErrs) > 0 {
 		for _, e := range execResult.Errors {
+			fprintf(os.Stderr, "genv apply: %v\n", e)
+		}
+		for _, e := range svcErrs {
 			fprintf(os.Stderr, "genv apply: %v\n", e)
 		}
 		return exitLogic
@@ -901,7 +920,7 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 }
 
 // buildPlanResult converts a ReconcileResult into the stable JSON PlanResult type.
-func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
+func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) output.PlanResult {
 	toInstall := make([]output.PlanPackage, 0, len(result.ToInstall))
 	var unresolved int
 	for _, a := range result.ToInstall {
@@ -928,11 +947,24 @@ func buildPlanResult(result resolver.ReconcileResult) output.PlanResult {
 	for _, lp := range result.Unchanged {
 		unchanged = append(unchanged, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
 	}
+
+	var toStart, toStop []string
+	for _, e := range service.ServiceStatus(f.Services, lf.Services) {
+		switch e.Kind {
+		case service.ServiceStatusMissing, service.ServiceStatusModified:
+			toStart = append(toStart, e.Name)
+		case service.ServiceStatusExtra:
+			toStop = append(toStop, e.Name)
+		}
+	}
+
 	return output.PlanResult{
-		ToInstall:  toInstall,
-		ToRemove:   toRemove,
-		Unchanged:  unchanged,
-		Unresolved: unresolved,
+		ToInstall:       toInstall,
+		ToRemove:        toRemove,
+		Unchanged:       unchanged,
+		Unresolved:      unresolved,
+		ServicesToStart: toStart,
+		ServicesToStop:  toStop,
 	}
 }
 
@@ -1712,6 +1744,7 @@ func statusCmd(args []string) int {
 	entries := commands.Status(f, lf)
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
+	serviceEntries := service.ServiceStatus(f.Services, lf.Services)
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -1736,15 +1769,26 @@ func statusCmd(args []string) int {
 		if shellDrift {
 			hasDrift = true
 		}
+		jsonServiceEntries := make([]output.ServiceStatusEntry, 0, len(serviceEntries))
+		for _, e := range serviceEntries {
+			jsonServiceEntries = append(jsonServiceEntries, output.ServiceStatusEntry{
+				Name:    e.Name,
+				Kind:    string(e.Kind),
+				Running: e.Running,
+			})
+			if e.Kind != service.ServiceStatusOK {
+				hasDrift = true
+			}
+		}
 		return writeJSON(os.Stdout, output.Envelope{
 			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
-			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries},
+			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries, ServiceEntries: jsonServiceEntries},
 		})
 	}
 
-	if len(entries) == 0 && len(envEntries) == 0 && len(shellEntries) == 0 {
+	if len(entries) == 0 && len(envEntries) == 0 && len(shellEntries) == 0 && len(serviceEntries) == 0 {
 		fPrintln(os.Stdout, "nothing tracked.")
 		return exitOK
 	}
@@ -1851,10 +1895,61 @@ func statusCmd(args []string) int {
 		}
 	}
 
+	// Service status section.
+	if len(serviceEntries) > 0 {
+		fPrintln(os.Stdout)
+		fprintf(os.Stdout, "Services — %d service", len(serviceEntries))
+		if len(serviceEntries) != 1 {
+			fprint(os.Stdout, "s")
+		}
+		fPrintln(os.Stdout)
+		fPrintln(os.Stdout)
+		tw3 := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		var hasServiceDrift bool
+		for _, e := range serviceEntries {
+			runningStr := "stopped"
+			if e.Running {
+				runningStr = "running"
+			}
+			switch e.Kind {
+			case service.ServiceStatusOK:
+				fprintf(tw3, "  ok\t%s\t%s\n", e.Name, runningStr)
+			case service.ServiceStatusModified:
+				hasServiceDrift = true
+				fprintf(tw3, "  modified\t%s\t(run 'genv apply' to update config)\n", e.Name)
+			case service.ServiceStatusMissing:
+				fprintf(tw3, "  missing\t%s\t(in spec, not applied — run 'genv apply')\n", e.Name)
+			case service.ServiceStatusExtra:
+				hasServiceDrift = true
+				fprintf(tw3, "  extra\t%s\t(in lock, not in spec — run 'genv apply' or 'genv service remove')\n", e.Name)
+			}
+		}
+		_ = tw3.Flush()
+		if hasServiceDrift {
+			return exitLogic
+		}
+	}
+
 	if counts[commands.StatusDrift] > 0 || counts[commands.StatusExtra] > 0 {
 		return exitLogic
 	}
 	return exitOK
+}
+
+// applyServices reconciles services, updates lf.Services in memory, and
+// returns lists of applied and removed service names. The caller writes the lock.
+// If verbose is true, it prints progress lines to stdout.
+func applyServices(ctx context.Context, f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, errs []error) {
+	if len(f.Services) == 0 && len(lf.Services) == 0 {
+		return nil, nil, nil
+	}
+
+	applied, removed, errs = service.ApplyServices(ctx, f.Services, lf.Services, verbose)
+
+	// Update lf.Services in memory; caller writes the lock once.
+	lf.Services = service.SpecToLock(f.Services)
+
+	return applied, removed, errs
 }
 
 // cleanCmd implements `genv clean`.
@@ -2318,4 +2413,313 @@ func printVersion() {
 	fprintf(os.Stdout, "genv %s\n", version)
 	fprintf(os.Stdout, "commit: %s\n", commit)
 	fprintf(os.Stdout, "built:  %s\n", date)
+}
+
+// serviceCmd implements `genv service <subcommand>`.
+func serviceCmd(args []string) int {
+	if len(args) == 0 {
+		fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|status> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "subcommands:")
+		fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service")
+		fPrintln(os.Stderr, "  remove <name>                                                              Remove a service from the spec")
+		fPrintln(os.Stderr, "  list                                                                        Show all declared services")
+		fPrintln(os.Stderr, "  start <name>                                                               Start a service")
+		fPrintln(os.Stderr, "  stop <name>                                                                Stop a service")
+		fPrintln(os.Stderr, "  status <name>                                                              Show service running status")
+		return exitUsage
+	}
+	switch args[0] {
+	case "add":
+		return serviceAddCmd(args[1:])
+	case "remove", "rm":
+		return serviceRemoveCmd(args[1:])
+	case "list", "ls":
+		return serviceListCmd(args[1:])
+	case "start":
+		return serviceStartCmd(args[1:])
+	case "stop":
+		return serviceStopCmd(args[1:])
+	case "status":
+		return serviceStatusCmd(args[1:])
+	default:
+		fprintf(os.Stderr, "genv service: unknown subcommand %q\n\nRun 'genv service' for usage.\n", args[0])
+		return exitUsage
+	}
+}
+
+// serviceAddCmd implements `genv service add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]`.
+func serviceAddCmd(args []string) int {
+	fs := flag.NewFlagSet("service add", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv service add <name> --start <cmd> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	start := fs.String("start", "", "command to start the service")
+	stop := fs.String("stop", "", "command to stop the service")
+	restart := fs.String("restart", "", "command to restart the service")
+	status := fs.String("status", "", "command to check service status")
+
+	name, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return exitUsage
+	}
+	if name == "" {
+		fPrintln(os.Stderr, "genv service add: missing service name")
+		fs.Usage()
+		return exitUsage
+	}
+	if *start == "" {
+		fPrintln(os.Stderr, "genv service add: --start command is required")
+		fs.Usage()
+		return exitUsage
+	}
+
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	startCmd := strings.Fields(*start)
+	var stopCmd, restartCmd, statusCmd []string
+	if *stop != "" {
+		stopCmd = strings.Fields(*stop)
+	}
+	if *restart != "" {
+		restartCmd = strings.Fields(*restart)
+	}
+	if *status != "" {
+		statusCmd = strings.Fields(*status)
+	}
+
+	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+	if isNew {
+		fprintf(os.Stdout, "created %s\n", *file)
+	}
+
+	fprintf(os.Stdout, "added service %q\nRun 'genv apply' to reconcile services.\n", name)
+	return exitOK
+}
+
+// serviceRemoveCmd implements `genv service remove <name>`.
+func serviceRemoveCmd(args []string) int {
+	fs := flag.NewFlagSet("service remove", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv service remove <name> [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv service remove: name is required")
+		fs.Usage()
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	if err := commands.ServiceRemove(f, name); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, commands.ErrServiceNotFound) {
+			return exitLogic
+		}
+		return exitUsage
+	}
+
+	if err := genvfile.Write(*file, f); err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "removed service %q\nRun 'genv apply' to stop removed services.\n", name)
+	return exitOK
+}
+
+// serviceListCmd implements `genv service list`.
+func serviceListCmd(args []string) int {
+	fs := flag.NewFlagSet("service list", flag.ContinueOnError)
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv service list [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "flags:")
+		fs.PrintDefaults()
+	}
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found — run 'genv service add' to create one\n", *file)
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
+	commands.ServiceList(f, os.Stdout)
+	return exitOK
+}
+
+// serviceStartCmd implements `genv service start <name>`.
+func serviceStartCmd(args []string) int {
+	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv service start: name is required")
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	// Debug: print what services we found
+	if os.Getenv("GENV_DEBUG") != "" {
+		fprintf(os.Stderr, "DEBUG: Looking for service %q in spec\n", name)
+		fprintf(os.Stderr, "DEBUG: Services in spec: %v\n", f.Services)
+	}
+
+	svc, ok := f.Services[name]
+	if !ok {
+		fprintf(os.Stderr, "genv: service %q not found in spec\n", name)
+		return exitLogic
+	}
+
+	fprintf(os.Stdout, "Starting service %q: %s\n", name, strings.Join(svc.Start, " "))
+	cmd := exec.Command(svc.Start[0], svc.Start[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fprintf(os.Stderr, "genv: failed to start service %q: %v\n", name, err)
+		if service.IsSystemdAvailable() {
+			fprintf(os.Stderr, "Tip: to view logs run: %s\n", service.SystemdLogsHint(name))
+		}
+		return exitLogic
+	}
+	return exitOK
+}
+
+// serviceStopCmd implements `genv service stop <name>`.
+func serviceStopCmd(args []string) int {
+	fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv service stop: name is required")
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	svc, ok := f.Services[name]
+	if !ok {
+		fprintf(os.Stderr, "genv: service %q not found in spec\n", name)
+		return exitLogic
+	}
+
+	if len(svc.Stop) == 0 {
+		fprintf(os.Stderr, "genv: no stop command defined for service %q\n", name)
+		return exitLogic
+	}
+
+	fprintf(os.Stdout, "Stopping service %q: %s\n", name, strings.Join(svc.Stop, " "))
+	cmd := exec.Command(svc.Stop[0], svc.Stop[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fprintf(os.Stderr, "genv: failed to stop service %q: %v\n", name, err)
+		return exitLogic
+	}
+	return exitOK
+}
+
+// serviceStatusCmd implements `genv service status <name>`.
+func serviceStatusCmd(args []string) int {
+	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
+	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() < 1 {
+		fPrintln(os.Stderr, "genv service status: name is required")
+		return exitUsage
+	}
+	name := fs.Arg(0)
+
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		return exitIO
+	}
+
+	svc, ok := f.Services[name]
+	if !ok {
+		fprintf(os.Stderr, "genv: service %q not found in spec\n", name)
+		return exitLogic
+	}
+
+	if len(svc.Status) == 0 {
+		fprintf(os.Stderr, "genv: no status command defined for service %q\n", name)
+		return exitLogic
+	}
+
+	cmd := exec.Command(svc.Status[0], svc.Status[1:]...)
+	if err := cmd.Run(); err != nil {
+		fprintf(os.Stdout, "service %q is NOT running\n", name)
+		return exitLogic
+	}
+	fprintf(os.Stdout, "service %q is running\n", name)
+	return exitOK
 }

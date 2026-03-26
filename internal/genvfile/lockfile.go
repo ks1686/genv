@@ -49,14 +49,25 @@ type LockedShellConfig struct {
 	Source    []string              `json:"source,omitempty"`
 }
 
+// LockedService records how one service was last applied by genv.
+type LockedService struct {
+	Name    string   `json:"name"`
+	Start   []string `json:"start"`
+	Stop    []string `json:"stop,omitempty"`
+	Restart []string `json:"restart,omitempty"`
+	Status  []string `json:"status,omitempty"`
+}
+
 // LockFile is the on-disk representation of the applied state tracked by genv.
 // The Env field is added in M8 (schemaVersion "2") and is absent in v1 lock files.
 // The Shell field is added in M9 (schemaVersion "3") and is absent in v1/v2 lock files.
+// The Services field is added in M10 (schemaVersion "4") and is absent in v1/v2/v3 lock files.
 type LockFile struct {
 	SchemaVersion string             `json:"schemaVersion"`
 	Packages      []LockedPackage    `json:"packages"`
 	Env           []LockedEnvVar     `json:"env,omitempty"`
 	Shell         *LockedShellConfig `json:"shell,omitempty"`
+	Services      []LockedService    `json:"services,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),

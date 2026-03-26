@@ -10,6 +10,9 @@ const Version2 = "2"
 // Version3 is the accepted value for genv.json v3 (packages + env + shell block).
 const Version3 = "3"
 
+// Version4 is the accepted value for genv.json v4 (packages + env + shell + services block).
+const Version4 = "4"
+
 // KnownShellTargets is the set of valid per-shell targeting values for alias
 // and function entries. An empty string means "all supported shells".
 var KnownShellTargets = map[string]bool{
@@ -45,11 +48,21 @@ var KnownManagers = map[string]bool{
 // v1: schemaVersion "1", packages only.
 // v2: schemaVersion "2", packages + optional env block.
 // v3: schemaVersion "3", packages + optional env + optional shell block.
+// v4: schemaVersion "4", packages + optional env + optional shell + optional services block.
 type GenvFile struct {
-	SchemaVersion string            `json:"schemaVersion"`
-	Packages      []Package         `json:"packages"`
-	Env           map[string]EnvVar `json:"env,omitempty"`
-	Shell         *ShellConfig      `json:"shell,omitempty"`
+	SchemaVersion string             `json:"schemaVersion"`
+	Packages      []Package          `json:"packages"`
+	Env           map[string]EnvVar  `json:"env,omitempty"`
+	Shell         *ShellConfig       `json:"shell,omitempty"`
+	Services      map[string]Service `json:"services,omitempty"`
+}
+
+// Service is a single user-space service declaration.
+type Service struct {
+	Start   []string `json:"start"`
+	Stop    []string `json:"stop,omitempty"`
+	Restart []string `json:"restart,omitempty"`
+	Status  []string `json:"status,omitempty"`
 }
 
 // ShellConfig is the shell configuration block in genv.json.

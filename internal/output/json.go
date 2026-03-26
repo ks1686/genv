@@ -33,10 +33,12 @@ type PlanPackage struct {
 
 // PlanResult is the Data payload for `genv apply [--dry-run] --json`.
 type PlanResult struct {
-	ToInstall  []PlanPackage `json:"toInstall"`
-	ToRemove   []PlanPackage `json:"toRemove"`
-	Unchanged  []PlanPackage `json:"unchanged"`
-	Unresolved int           `json:"unresolved"`
+	ToInstall       []PlanPackage `json:"toInstall"`
+	ToRemove        []PlanPackage `json:"toRemove"`
+	Unchanged       []PlanPackage `json:"unchanged"`
+	Unresolved      int           `json:"unresolved"`
+	ServicesToStart []string      `json:"servicesToStart,omitempty"`
+	ServicesToStop  []string      `json:"servicesToStop,omitempty"`
 }
 
 // StatusEntry is a single package entry in a StatusResult.
@@ -50,9 +52,10 @@ type StatusEntry struct {
 
 // StatusResult is the Data payload for `genv status --json`.
 type StatusResult struct {
-	Entries      []StatusEntry      `json:"entries"`
-	EnvEntries   []EnvStatusEntry   `json:"envEntries,omitempty"`
-	ShellEntries []ShellStatusEntry `json:"shellEntries,omitempty"`
+	Entries        []StatusEntry         `json:"entries"`
+	EnvEntries     []EnvStatusEntry      `json:"envEntries,omitempty"`
+	ShellEntries   []ShellStatusEntry    `json:"shellEntries,omitempty"`
+	ServiceEntries []ServiceStatusEntry `json:"serviceEntries,omitempty"`
 }
 
 // ScanResult is the Data payload for `genv scan --json`.
@@ -63,12 +66,14 @@ type ScanResult struct {
 
 // ApplyResult is the Data payload for `genv apply --json` (non-dry-run).
 type ApplyResult struct {
-	Installed    []string `json:"installed"`
-	Uninstalled  []string `json:"uninstalled"`
-	EnvApplied   []string `json:"envApplied,omitempty"`
-	EnvRemoved   []string `json:"envRemoved,omitempty"`
-	ShellApplied []string `json:"shellApplied,omitempty"`
-	ShellRemoved []string `json:"shellRemoved,omitempty"`
+	Installed       []string `json:"installed"`
+	Uninstalled     []string `json:"uninstalled"`
+	EnvApplied      []string `json:"envApplied,omitempty"`
+	EnvRemoved      []string `json:"envRemoved,omitempty"`
+	ShellApplied    []string `json:"shellApplied,omitempty"`
+	ShellRemoved    []string `json:"shellRemoved,omitempty"`
+	ServicesApplied []string `json:"servicesApplied,omitempty"`
+	ServicesRemoved []string `json:"servicesRemoved,omitempty"`
 }
 
 // EnvStatusEntry is a single env variable entry in an EnvStatusResult.
@@ -98,6 +103,19 @@ type ShellStatusEntry struct {
 // ShellStatusResult is the Data payload for `genv shell status --json`.
 type ShellStatusResult struct {
 	Entries []ShellStatusEntry `json:"entries"`
+}
+
+// ServiceStatusEntry is a single service entry in a ServiceStatusResult.
+type ServiceStatusEntry struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"` // "ok" | "modified" | "missing" | "extra"
+	Running bool   `json:"running"`
+}
+
+// ServiceStatusResult is the Data payload for `genv service status --json`
+// and the service section of `genv status --json`.
+type ServiceStatusResult struct {
+	Entries []ServiceStatusEntry `json:"entries"`
 }
 
 // Write serializes env to w as a single JSON line followed by a newline.

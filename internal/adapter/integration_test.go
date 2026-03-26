@@ -298,6 +298,39 @@ func TestMacPorts(t *testing.T) {
 	})
 }
 
+func TestEopkg(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Eopkg{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"eopkg": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
+// TestEmerge uses "bash" as the known-installed probe: it is always present
+// in a Gentoo stage3 base system. qlist -I lists it as "app-shells/bash-*"
+// which the adapter normalises to "bash".
+func TestEmerge(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Emerge{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"emerge": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
+func TestXbps(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Xbps{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"xbps": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
 // ---- shared assertion helpers -----------------------------------------------
 
 // assertInstallCmd checks that cmd starts with wantBin and that the last
