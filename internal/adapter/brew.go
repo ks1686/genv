@@ -37,13 +37,12 @@ func (brewBase) Search(query string) ([]string, error) {
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
-	q := strings.ToLower(query)
 	var names []string
 	for _, line := range lines {
 		if strings.HasPrefix(line, "==>") {
 			continue
 		}
-		if strings.Contains(strings.ToLower(line), q) {
+		if containsFold(line, query) {
 			names = append(names, line)
 		}
 	}

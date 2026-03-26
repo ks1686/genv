@@ -45,12 +45,11 @@ func (Apt) Search(query string) ([]string, error) {
 		return lines, err
 	}
 	// Each line: "pkgname - short description"
-	q := strings.ToLower(query)
 	var names []string
 	for _, line := range lines {
 		name, _, _ := strings.Cut(line, " - ")
 		name = strings.TrimSpace(name)
-		if name != "" && strings.Contains(strings.ToLower(name), q) {
+		if name != "" && containsFold(name, query) {
 			names = append(names, name)
 		}
 	}
