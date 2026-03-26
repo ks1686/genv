@@ -517,3 +517,34 @@ func TestLocateFields_NestedManagers(t *testing.T) {
 		t.Errorf("expected position for %q to be tracked; got keys: %v", key, pos)
 	}
 }
+
+func TestValidEnvName(t *testing.T) {
+	tests := []struct {
+		name     string
+		envName  string
+		expected bool
+	}{
+		{"empty string", "", false},
+		{"single letter upper", "A", true},
+		{"single letter lower", "a", true},
+		{"single underscore", "_", true},
+		{"letter and digit", "A1", true},
+		{"lower and digit", "a1", true},
+		{"underscore and digit", "_1", true},
+		{"starts with digit", "1A", false},
+		{"contains hyphen", "A-1", false},
+		{"contains equals", "A=1", false},
+		{"contains exclamation", "A!1", false},
+		{"contains space", "A 1", false},
+		{"standard name", "MY_VAR_123", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ValidEnvName(tc.envName)
+			if result != tc.expected {
+				t.Errorf("ValidEnvName(%q) = %v; want %v", tc.envName, result, tc.expected)
+			}
+		})
+	}
+}
