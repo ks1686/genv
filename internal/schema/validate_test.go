@@ -541,7 +541,7 @@ func TestParseAndValidate_MultipleDuplicates(t *testing.T) {
 // TestParseAndValidate_MultipleUnknownManagers verifies that each unknown
 // manager key in the managers map produces its own validation error.
 func TestParseAndValidate_MultipleUnknownManagers(t *testing.T) {
-	input := `{"schemaVersion":"1","packages":[{"id":"git","managers":{"yum":"git","zypper":"git"}}]}`
+	input := `{"schemaVersion":"1","packages":[{"id":"git","managers":{"yum":"git","choco":"git"}}]}`
 	_, errs, err := ParseAndValidate([]byte(input))
 	if err != nil {
 		t.Fatalf("unexpected fatal error: %v", err)
