@@ -40,7 +40,6 @@ func (Snap) Search(query string) ([]string, error) {
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
-	q := strings.ToLower(query)
 	var names []string
 	for i, line := range lines {
 		if i == 0 {
@@ -48,7 +47,7 @@ func (Snap) Search(query string) ([]string, error) {
 		}
 		if fields := strings.Fields(line); len(fields) > 0 {
 			name := fields[0]
-			if strings.Contains(strings.ToLower(name), q) {
+			if containsFold(name, query) {
 				names = append(names, name)
 			}
 		}

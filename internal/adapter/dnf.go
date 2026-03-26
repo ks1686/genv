@@ -46,7 +46,6 @@ func (Dnf) Search(query string) ([]string, error) {
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
-	q := strings.ToLower(query)
 	var names []string
 	seen := make(map[string]bool)
 	for _, line := range lines {
@@ -64,7 +63,7 @@ func (Dnf) Search(query string) ([]string, error) {
 		if dot := strings.LastIndex(pkgPart, "."); dot > 0 {
 			pkgPart = pkgPart[:dot]
 		}
-		if pkgPart != "" && strings.Contains(strings.ToLower(pkgPart), q) && !seen[pkgPart] {
+		if pkgPart != "" && containsFold(pkgPart, query) && !seen[pkgPart] {
 			seen[pkgPart] = true
 			names = append(names, pkgPart)
 		}
