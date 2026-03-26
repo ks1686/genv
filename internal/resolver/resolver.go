@@ -350,6 +350,16 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 		}
 	}
 
+	adapters := make(map[string]adapter.Adapter)
+	getAdapter := func(name string) adapter.Adapter {
+		if mgr, ok := adapters[name]; ok {
+			return mgr
+		}
+		mgr := adapter.ByName(name)
+		adapters[name] = mgr
+		return mgr
+	}
+
 	for _, a := range result.ToInstall {
 		if !a.Resolved() {
 			continue
@@ -363,7 +373,7 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 				PkgName: a.PkgName,
 			}
 			// Best-effort version capture; ignore errors (non-critical).
-			if mgr := adapter.ByName(a.Manager); mgr != nil {
+			if mgr := getAdapter(a.Manager); mgr != nil {
 				if v, err := mgr.QueryVersion(a.PkgName); err == nil {
 					lp.InstalledVersion = v
 				}
