@@ -393,6 +393,18 @@ func TestReadLock_MalformedJSON_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestReadLock_PermissionError(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := ReadLock(dir)
+	if err == nil {
+		t.Fatal("expected error for unreadable lock file")
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Error("expected a non-ErrNotExist error for permission-denied read")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // WriteLock — atomicity, parent dir creation, InstalledVersion omitempty
 // ---------------------------------------------------------------------------
