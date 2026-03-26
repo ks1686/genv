@@ -88,3 +88,9 @@ func TestSanitizePathForWSL_NoWindowsPaths(t *testing.T) {
 		t.Errorf("sanitizePathForWSL with no Windows paths modified the PATH: got %q, want %q", got, input)
 	}
 }
+
+func BenchmarkIsWSL(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		isWSL()
+	}
+}
