@@ -300,6 +300,63 @@ func TestParseAndValidate_InvalidEnvName(t *testing.T) {
 	}
 }
 
+func TestValidEnvName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		// Empty is invalid
+		{"empty", "", false},
+
+		// Valid leading characters (letters, underscore)
+		{"leading upper", "A", true},
+		{"leading lower", "a", true},
+		{"leading underscore", "_", true},
+		{"upper word", "FOO", true},
+		{"lower word", "foo", true},
+		{"mixed word", "fOo", true},
+		{"underscore word", "_foo", true},
+
+		// Valid subsequent characters (letters, numbers, underscores)
+		{"trailing number", "A1", true},
+		{"trailing numbers", "A123", true},
+		{"number in middle", "A1B", true},
+		{"trailing underscore", "A_", true},
+		{"multiple underscores", "A_B_C", true},
+		{"mixed letters numbers underscores", "a_1_B", true},
+
+		// Invalid leading digit
+		{"leading digit single", "1", false},
+		{"leading digit multiple", "123", false},
+		{"leading digit mixed", "1a", false},
+		{"leading digit underscore", "1_", false},
+
+		// Invalid other characters
+		{"space", "A B", false},
+		{"hyphen", "A-B", false},
+		{"dot", "A.B", false},
+		{"equals", "A=B", false},
+		{"slash", "A/B", false},
+		{"newline", "A\nB", false},
+		{"tab", "A\tB", false},
+		{"quotes", "\"A\"", false},
+		{"dollar", "$A", false},
+		{"percent", "A%", false},
+		{"unicode", "AüB", false},
+		{"emoji", "A😀", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ValidEnvName(tc.input)
+			if got != tc.want {
+				t.Errorf("ValidEnvName(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseAndValidate_V2NoEnv(t *testing.T) {
 	// schemaVersion "2" with no env block is valid.
 	input := `{"schemaVersion":"2","packages":[]}`
