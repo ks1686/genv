@@ -157,7 +157,7 @@ jobs:
               set -euo pipefail
 
               echo "==> Installing build dependencies"
-              zypper --non-interactive install git gcc sudo curl bash
+              zypper --non-interactive install git gcc sudo curl bash gawk
 
               echo "==> Configuring passwordless sudo"
               echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
@@ -315,10 +315,10 @@ jobs:
             -v "${{ github.workspace }}:/host-workspace:ro" \
             nixos/nix \
             sh -c '
-              set -euo pipefail
+              set -eu
 
               echo "==> Installing build dependencies"
-              nix-env -iA nixpkgs.gcc nixpkgs.curl
+              nix-env -iA nixpkgs.gcc nixpkgs.gawk nixpkgs.curl
 
               echo "==> Installing Go"
               GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
@@ -411,13 +411,13 @@ jobs:
             -v "${WORKSPACE}:/host-workspace:ro" \
             ghcr.io/void-linux/void-linux:latest-full-x86_64 \
             sh -c '
-              set -euo pipefail
+              set -eu
 
               echo "==> Updating package index"
               xbps-install -S
 
               echo "==> Installing build dependencies"
-              xbps-install -Sy gcc sudo curl
+              xbps-install -Sy gcc sudo curl gawk
 
               echo "==> Configuring passwordless sudo"
               echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
