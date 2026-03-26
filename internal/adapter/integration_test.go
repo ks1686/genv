@@ -151,6 +151,26 @@ func TestDnf(t *testing.T) {
 	})
 }
 
+func TestZypper(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Zypper{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"zypper": "vim"},
+		explicitWant:   "vim",
+		knownInstalled: "bash",
+	})
+}
+
+func TestApk(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Apk{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"apk": "vim"},
+		explicitWant:   "vim",
+		knownInstalled: "musl", // always present — it is Alpine's C library
+	})
+}
+
 func TestPacman(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
 		a:              adapter.Pacman{},
@@ -256,6 +276,18 @@ func TestLinuxbrew(t *testing.T) {
 	})
 }
 
+// TestNix uses "hello" as the knownInstalled probe: it is the canonical first
+// nix package and is pre-installed in the nixos/nix Docker image.
+func TestNix(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Nix{},
+		wantBin:        "nix-env",
+		explicitMap:    map[string]string{"nix": "hello"},
+		explicitWant:   "hello",
+		knownInstalled: "hello",
+	})
+}
+
 func TestMacPorts(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
 		a:            adapter.MacPorts{},
@@ -266,9 +298,44 @@ func TestMacPorts(t *testing.T) {
 	})
 }
 
+func TestEopkg(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Eopkg{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"eopkg": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
+// TestEmerge uses "bash" as the known-installed probe: it is always present
+// in a Gentoo stage3 base system. qlist -I lists it as "app-shells/bash-*"
+// which the adapter normalises to "bash".
+func TestEmerge(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Emerge{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"emerge": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
+func TestXbps(t *testing.T) {
+	runAdapterSuite(t, adapterSuite{
+		a:              adapter.Xbps{},
+		wantBin:        "sudo",
+		explicitMap:    map[string]string{"xbps": "nano"},
+		explicitWant:   "nano",
+		knownInstalled: "bash",
+	})
+}
+
 // ---- shared assertion helpers -----------------------------------------------
 
-// assertInstallCmd checks that cmd starts with wantBin and ends with wantPkg.
+// assertInstallCmd checks that cmd starts with wantBin and that the last
+// argument ends with wantPkg. Using HasSuffix accommodates adapters like nix
+// that prefix the attribute channel (e.g. "nixpkgs.testpkg").
 func assertInstallCmd(t *testing.T, cmd []string, wantBin, wantPkg string) {
 	t.Helper()
 	if len(cmd) == 0 {
@@ -277,18 +344,8 @@ func assertInstallCmd(t *testing.T, cmd []string, wantBin, wantPkg string) {
 	if cmd[0] != wantBin {
 		t.Errorf("cmd[0] = %q, want %q", cmd[0], wantBin)
 	}
-	if cmd[len(cmd)-1] != wantPkg {
-		t.Errorf("cmd[last] = %q, want %q", cmd[len(cmd)-1], wantPkg)
+	if !strings.HasSuffix(cmd[len(cmd)-1], wantPkg) {
+		t.Errorf("cmd[last] = %q, want suffix %q", cmd[len(cmd)-1], wantPkg)
 	}
 }
 
-// assertContains checks that at least one element of cmd equals s.
-func assertContains(t *testing.T, cmd []string, s string) {
-	t.Helper()
-	for _, arg := range cmd {
-		if arg == s {
-			return
-		}
-	}
-	t.Errorf("expected %q in command %v", s, strings.Join(cmd, " "))
-}

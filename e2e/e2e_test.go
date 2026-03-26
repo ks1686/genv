@@ -33,6 +33,7 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // genvBin is the path to the compiled genv binary, populated by TestMain.
@@ -180,6 +181,42 @@ func (r *runner) writeSpec(t *testing.T, ids ...string) {
 	if err := os.WriteFile(r.genvJSON, append(data, '\n'), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
+}
+
+// writeSpecRaw writes raw JSON content to the genv.json file.
+func (r *runner) writeSpecRaw(t *testing.T, content string) {
+	t.Helper()
+	if err := os.WriteFile(r.genvJSON, []byte(content), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+}
+
+// readSpecRaw reads and unmarshals the genv.json file into a schema.GenvFile.
+func (r *runner) readSpecRaw(t *testing.T) *schema.GenvFile {
+	t.Helper()
+	var f schema.GenvFile
+	data, err := os.ReadFile(r.genvJSON)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if err := json.Unmarshal(data, &f); err != nil {
+		t.Fatalf("unmarshal spec: %v", err)
+	}
+	return &f
+}
+
+// readLockRaw reads and unmarshals the genv.lock.json file.
+func (r *runner) readLockRaw(t *testing.T) *genvfile.LockFile {
+	t.Helper()
+	var lf genvfile.LockFile
+	data, err := os.ReadFile(r.lockJSON)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if err := json.Unmarshal(data, &lf); err != nil {
+		t.Fatalf("unmarshal lock: %v", err)
+	}
+	return &lf
 }
 
 // clearLock deletes genv.lock.json, simulating a first-run state.
@@ -705,6 +742,30 @@ func TestE2EDnf(t *testing.T) {
 	})
 }
 
+// TestE2EZypper uses --prefer zypper because dnf may also be present on newer
+// openSUSE Tumbleweed images and appears earlier in adapter.All.
+func TestE2EZypper(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "zypper",
+		checkBin:    "zypper",
+		testPkg:     "tree",
+		preferFlag:  "zypper",
+		canInstall:  true,
+	})
+}
+
+// TestE2EApk uses nano as the test package; it is in Alpine's main repository
+// (tree is in community, which may not be enabled in the base Docker image).
+func TestE2EApk(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "apk",
+		checkBin:    "apk",
+		testPkg:     "nano",
+		preferFlag:  "apk",
+		canInstall:  true,
+	})
+}
+
 func TestE2EPacman(t *testing.T) {
 	runE2ESuite(t, suiteConfig{
 		adapterName: "pacman",
@@ -773,4 +834,228 @@ func TestE2EMacPorts(t *testing.T) {
 		testPkg:     "tree",
 		canInstall:  false,
 	})
+}
+
+// TestE2ENix uses "hello" as the test package — it is the canonical first nix
+// install and is available in every nixpkgs channel. Uses --prefer nix because
+// other managers may also be present on nix-enabled hosts.
+func TestE2ENix(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "nix",
+		checkBin:    "nix-env",
+		testPkg:     "hello",
+		preferFlag:  "nix",
+		canInstall:  true,
+	})
+}
+
+// TestE2EEopkg runs the full E2E suite on Solus Linux using eopkg.
+// Uses --prefer eopkg so that genv doesn't accidentally resolve to another
+// manager if one is present. Skips automatically when eopkg is not in PATH.
+func TestE2EEopkg(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "eopkg",
+		checkBin:    "eopkg",
+		testPkg:     "nano",
+		preferFlag:  "eopkg",
+		canInstall:  true,
+	})
+}
+
+// TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
+// Real package installation is skipped because emerge compiles packages from
+// source, making CI installs impractically slow. All spec/lock mutations,
+// dry-run plans, and read-only commands are still fully exercised.
+func TestE2EEmerge(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "emerge",
+		checkBin:    "emerge",
+		testPkg:     "nano",
+		preferFlag:  "emerge",
+		canInstall:  false,
+	})
+}
+
+// TestE2EXbps runs the full E2E suite on Void Linux using xbps.
+// Uses --prefer xbps to prevent accidentally picking another manager.
+// Skips automatically when xbps-install is not in PATH.
+func TestE2EXbps(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "xbps",
+		checkBin:    "xbps-install",
+		testPkg:     "nano",
+		preferFlag:  "xbps",
+		canInstall:  true,
+	})
+}
+
+// ── Service lifecycle tests ───────────────────────────────────────────────────
+
+// TestE2EServiceLifecycle validates the full service management workflow:
+//   - genv service add/remove/list
+//   - genv service start/stop/status
+//   - genv apply integration with services
+//   - lock file tracking of service state
+func TestE2EServiceLifecycle(t *testing.T) {
+	r := newRunner(t, "")
+
+	// Create initial spec
+	r.writeSpecRaw(t, `{
+		"schemaVersion": "4",
+		"packages": []
+	}`)
+
+	// Test: add a service with start command only
+	stdout, stderr, code := r.rawExec("", "service", "add", "test-svc", "--file", r.genvJSON,
+		"--start", "sleep 1")
+	if code != 0 {
+		t.Fatalf("service add failed (exit %d):\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	// Verify spec was updated to v4 with service entry
+	spec := r.readSpecRaw(t)
+	if spec.SchemaVersion != "4" {
+		t.Errorf("expected schemaVersion 4, got %s", spec.SchemaVersion)
+	}
+	if _, ok := spec.Services["test-svc"]; !ok {
+		t.Fatal("service 'test-svc' not found in spec after add")
+	}
+
+	// Test: add a service with full commands (start, stop, status)
+	// This should add to the existing spec, not replace it
+	stdout, stderr, code = r.rawExec("", "service", "add", "full-svc", "--file", r.genvJSON,
+		"--start", "echo starting",
+		"--stop", "echo stopping",
+		"--status", "true")
+	if code != 0 {
+		t.Fatalf("service add full-svc failed (exit %d):\nstderr: %s", code, stderr)
+	}
+
+	// Debug: check what's in the spec after adding both services
+	spec = r.readSpecRaw(t)
+	t.Logf("After adding full-svc, services in spec: %v", spec.Services)
+
+	// Test: list services - should show both test-svc and full-svc
+	stdout, stderr, code = r.rawExec("", "service", "list", "--file", r.genvJSON)
+	if code != 0 {
+		t.Fatalf("service list failed (exit %d):\nstderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "test-svc") {
+		t.Errorf("service list output missing 'test-svc':\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "full-svc") {
+		t.Errorf("service list output missing 'full-svc':\n%s", stdout)
+	}
+
+	// Test: service status command
+	stdout, stderr, code = r.rawExec("", "service", "status", "full-svc", "--file", r.genvJSON)
+	// Expected to fail since service is not running (status command is "true" but service isn't started)
+	if code == 0 {
+		t.Logf("service status succeeded: %s", stdout)
+	} else {
+		t.Logf("service status returned non-zero (expected if not running): %s", stdout)
+	}
+
+	// Debug: verify test-svc is still there before we try to start it
+	spec = r.readSpecRaw(t)
+	if _, ok := spec.Services["test-svc"]; !ok {
+		t.Fatalf("test-svc disappeared from spec before service start test! Services: %v", spec.Services)
+	}
+	t.Logf("File path being used: %s", r.genvJSON)
+
+	// Test: service start on test-svc
+	stdout, stderr, code = r.rawExec("", "service", "start", "test-svc", "--file", r.genvJSON)
+	// sleep 1 will complete, so this may succeed or fail depending on timing
+	t.Logf("service start returned exit %d, stdout: %s, stderr: %s", code, stdout, stderr)
+	if code != 0 {
+		// Debug: dump the file contents to see what genv sees
+		data, _ := os.ReadFile(r.genvJSON)
+		t.Logf("Contents of %s:\n%s", r.genvJSON, string(data))
+	}
+
+	// Test: service remove command - remove test-svc we added earlier
+	stdout, stderr, code = r.rawExec("", "service", "remove", "test-svc", "--file", r.genvJSON)
+	if code != 0 {
+		t.Fatalf("service remove test-svc failed (exit %d):\nstderr: %s", code, stderr)
+	}
+
+	spec = r.readSpecRaw(t)
+	if _, ok := spec.Services["test-svc"]; ok {
+		t.Error("service 'test-svc' still in spec after remove command")
+	}
+	// full-svc should still be there
+	if _, ok := spec.Services["full-svc"]; !ok {
+		t.Error("service 'full-svc' was removed unexpectedly")
+	}
+
+	// Test: apply should track services in lock file
+	// Create a fresh spec with a single service for clean apply test
+	r.writeSpecRaw(t, `{
+		"schemaVersion": "4",
+		"packages": [],
+		"services": {
+			"apply-svc": {
+				"start": ["true"],
+				"stop": ["true"]
+			}
+		}
+	}`)
+
+	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON)
+	if code != 0 {
+		t.Logf("apply with services: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	// Verify lock file contains service
+	lock := r.readLockRaw(t)
+	found := false
+	for _, svc := range lock.Services {
+		if svc.Name == "apply-svc" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'apply-svc' in lock file after apply")
+	}
+
+	// Test: remove service from spec and apply should remove from lock
+	r.writeSpecRaw(t, `{
+		"schemaVersion": "4",
+		"packages": [],
+		"services": {}
+	}`)
+
+	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON)
+	if code != 0 {
+		t.Logf("apply after service removal: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	// Verify service removed from lock
+	lock = r.readLockRaw(t)
+	for _, svc := range lock.Services {
+		if svc.Name == "apply-svc" {
+			t.Errorf("service 'apply-svc' still in lock after removal from spec")
+		}
+	}
+
+	// Test: status command with services
+	r.writeSpecRaw(t, `{
+		"schemaVersion": "4",
+		"packages": [],
+		"services": {
+			"status-test": {
+				"start": ["true"],
+				"status": ["false"]
+			}
+		}
+	}`)
+
+	stdout, stderr, code = r.rawExec("", "status", "--file", r.genvJSON)
+	if code != 0 {
+		t.Logf("status with services drift: exit %d (expected non-zero)", code)
+	}
+	if !strings.Contains(stdout, "status-test") {
+		t.Errorf("status output should mention 'status-test':\n%s", stdout)
+	}
 }

@@ -272,23 +272,36 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
-- [ ] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
-- [ ] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
-- [ ] Implement apply logic: start services that are declared but not running; stop services that are in the lock but no longer in the spec.
-- [ ] Track service state in `genv.lock.json` and implement drift detection in `genv status`.
-- [ ] Add optional systemd user-unit generation (`~/.config/systemd/user/genv-<name>.service`) on Linux when systemd is available.
-- [ ] Add optional launchd plist generation (`~/Library/LaunchAgents/genv.<name>.plist`) on macOS when launchd is available.
-- [ ] Implement safe command execution with explicit argv slices (no shell interpolation).
-- [ ] Define and document failure semantics: what happens when a service fails to start, how to handle dependencies, and how to view logs.
-- [ ] Add unit and integration tests for service lifecycle management.
+- [x] Implement Linux adapter: `apk` (Alpine Linux).
+- [x] Implement Linux adapter: `zypper` (openSUSE / SLES).
+- [x] Implement Linux adapter: `nix` (NixOS and any Linux host with Nix installed).
+- [x] Implement Linux adapter: `xbps` (Void Linux).
+- [x] Implement Linux adapter: `emerge` (Gentoo).
+- [x] Implement Linux adapter: `eopkg` (Solus).
+- [x] Publish genv as `.deb`, `.rpm`, and `.apk` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and apk direct-install; zypper users covered by `.rpm`).
+- [x] Add `flake.nix` so Nix users can install via `nix profile install github:ks1686/genv` (vendorHash must be set on each release).
+- [ ] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
+- [ ] Publish genv to Flathub (Flatpak manifest + Flathub PR review).
+- [ ] Submit genv APKBUILD to Alpine Linux aports so `apk add genv` works without a direct download.
+- [ ] Submit genv Portfile to MacPorts ports tree.
+- [ ] Publish genv to Fedora COPR and/or a self-hosted apt repo for one-line install without downloading the artifact manually.
+- [x] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
+- [x] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
+- [x] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
+- [x] Implement apply logic: start services that are declared but not running; stop services that are in the lock but no longer in the spec.
+- [x] Track service state in `genv.lock.json` and implement drift detection in `genv status`.
+- [x] Add optional systemd user-unit generation (`~/.config/systemd/user/genv-<name>.service`) on Linux when systemd is available.
+- [x] Add optional launchd plist generation (`~/Library/LaunchAgents/genv.<name>.plist`) on macOS when launchd is available.
+- [x] Implement safe command execution with explicit argv slices (no shell interpolation).
+- [x] Define and document failure semantics: what happens when a service fails to start, how to handle dependencies, and how to view logs.
+- [x] Add unit and integration tests for service lifecycle management.
 
 Acceptance criteria:
 
-- [ ] `genv apply` on a spec with a `services` block starts declared services and records their state in the lock file.
-- [ ] Removing a service from the spec and re-running `genv apply` stops and removes it cleanly.
-- [ ] `genv service status <name>` reports whether the service is running, and exits non-zero when it is not.
-- [ ] On systems with systemd available, genv generates a valid user unit and uses `systemctl --user` to manage it.
+- [x] `genv apply` on a spec with a `services` block starts declared services and records their state in the lock file.
+- [x] Removing a service from the spec and re-running `genv apply` stops and removes it cleanly.
+- [x] `genv service status <name>` reports whether the service is running, and exits non-zero when it is not.
+- [x] On systems with systemd available, genv generates a valid user unit and uses `systemctl --user` to manage it.
 
 ## Milestone M11 - Updates Daemon
 

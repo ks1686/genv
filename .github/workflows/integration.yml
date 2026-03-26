@@ -22,6 +22,11 @@ permissions:
 #                 Test manually on a real Ubuntu host with snapd running.
 #   linuxbrew   — Same time/caching constraint as brew on Linux runners.
 #   macports    — Not pre-installed on GitHub's macOS runners; tested manually.
+#
+# Partially limited adapters:
+#   emerge      — E2E tests run with canInstall:false because emerge compiles
+#                 from source; real installs are too slow for CI (~10 min/pkg).
+#                 Adapter-shape tests (Available/Query/PlanInstall) run fully.
 
 jobs:
   # ── Adapters that work as root inside a container ───────────────────────────
@@ -60,6 +65,12 @@ jobs:
             adapter: TestPacman
             e2eTest: TestE2EPacman
 
+          - distro: opensuse-tumbleweed (zypper)
+            image: opensuse/tumbleweed
+            prereqs: zypper --non-interactive install git gcc sudo
+            adapter: TestZypper
+            e2eTest: TestE2EZypper
+
           - distro: ubuntu-24.04 (flatpak)
             image: ubuntu:24.04
             prereqs: apt-get update -qq && apt-get install -y -qq git gcc flatpak sudo
@@ -91,6 +102,49 @@ jobs:
 
       - name: E2E test — ${{ matrix.e2eTest }}
         run: go test -tags integration -race -v -run ${{ matrix.e2eTest }} ./e2e/
+
+  # ── Alpine (apk) ─────────────────────────────────────────────────────────────
+  # Alpine uses musl libc. GitHub Actions' injected Node.js binary is glibc-
+  # compiled, so the container: directive approach is unreliable on Alpine.
+  # Using docker run (same pattern as paru/yay) sidesteps the issue entirely.
+  apk:
+    name: alpine-latest (apk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside Alpine container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/host-workspace:ro" \
+            alpine:latest \
+            sh -c '
+              set -euo pipefail
+
+              echo "==> Installing build dependencies"
+              apk add --no-cache git gcc sudo bash curl musl-dev
+
+              echo "==> Configuring passwordless sudo"
+              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              echo "Defaults !requiretty" >> /etc/sudoers
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestApk ./internal/adapter/
+
+              echo "==> Running E2E tests"
+              go test -tags integration -race -v -run TestE2EApk ./e2e/
+            '
 
   # ── paru (Arch AUR helper) ───────────────────────────────────────────────────
   # paru refuses ALL operations when run as root, including read-only -Qi
@@ -208,6 +262,195 @@ jobs:
                 cd /home/builder/genv
                 go test -tags integration -race -v -run TestE2EYay ./e2e/
               "
+            '
+
+  # ── Nix ──────────────────────────────────────────────────────────────────────
+  # nixos/nix is a glibc-based image, so the container: approach would work,
+  # but nix requires /nix to exist and the daemon running. Using docker run
+  # with --privileged lets nix start its daemon inside the container.
+  nix:
+    name: nixos-nix (nix)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside nixos/nix container
+        run: |
+          docker run --rm --privileged \
+            -v "${{ github.workspace }}:/host-workspace:ro" \
+            nixos/nix \
+            sh -c '
+              set -euo pipefail
+
+              echo "==> Installing build dependencies"
+              nix-env -iA nixpkgs.git nixpkgs.gcc nixpkgs.curl
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Installing hello (probe package for integration tests)"
+              nix-env -iA nixpkgs.hello
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestNix ./internal/adapter/
+
+              echo "==> Running E2E tests"
+              go test -tags integration -race -v -run TestE2ENix ./e2e/
+            '
+
+  # ── Solus (eopkg) ────────────────────────────────────────────────────────────
+  # Uses docker run (same pattern as apk/paru/yay/nix) for full control.
+  # getsolus/packages is the official Solus build-environment image and has
+  # eopkg available out of the box.
+  eopkg:
+    name: solus-latest (eopkg)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside Solus container
+        run: |
+          WORKSPACE="${{ github.workspace }}"
+          docker run --rm \
+            -v "${WORKSPACE}:/host-workspace:ro" \
+            getsolus/packages \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Updating package index"
+              eopkg update-repo
+
+              echo "==> Installing build dependencies"
+              eopkg install -y gcc sudo curl
+
+              echo "==> Configuring passwordless sudo"
+              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              echo "Defaults !requiretty" >> /etc/sudoers
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestEopkg ./internal/adapter/
+
+              echo "==> Running E2E tests"
+              go test -tags integration -race -v -run TestE2EEopkg ./e2e/
+            '
+
+  # ── Gentoo (emerge) ──────────────────────────────────────────────────────────
+  # emerge compiles packages from source, so E2E tests run with canInstall:
+  # false (spec/lock mutations and dry-run only — no real installs).
+  # The adapter integration tests verify Available()/Query()/PlanInstall shape
+  # against the real emerge binary that ships in the stage3 image.
+  # emerge-webrsync fetches a portage snapshot (~60 MB) rather than doing a
+  # full rsync, which is significantly faster.
+  # portage-utils (qlist) and sudo are compiled from source; curl is used to
+  # download Go. The job is expected to take ~10 min due to source builds.
+  emerge:
+    name: gentoo-stage3 (emerge)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside Gentoo container
+        timeout-minutes: 30
+        run: |
+          WORKSPACE="${{ github.workspace }}"
+          docker run --rm \
+            -v "${WORKSPACE}:/host-workspace:ro" \
+            gentoo/stage3 \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Syncing portage snapshot"
+              emerge-webrsync -q
+
+              echo "==> Installing build dependencies (source; gcc already in stage3)"
+              emerge --jobs=$(nproc) --ask=n -q net-misc/curl app-portage/portage-utils app-admin/sudo
+
+              echo "==> Configuring passwordless sudo"
+              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              echo "Defaults !requiretty" >> /etc/sudoers
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestEmerge ./internal/adapter/
+
+              echo "==> Running E2E tests (no-install mode)"
+              go test -tags integration -race -v -run TestE2EEmerge ./e2e/
+            '
+
+  # ── Void Linux (xbps) ────────────────────────────────────────────────────────
+  # The official glibc "full" image from ghcr.io/void-linux/void-linux is used;
+  # it is glibc-based so the container: directive would work, but docker run is
+  # used for consistency with the other non-standard-distro jobs.
+  xbps:
+    name: void-linux (xbps)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run integration and E2E tests inside Void Linux container
+        run: |
+          WORKSPACE="${{ github.workspace }}"
+          docker run --rm \
+            -v "${WORKSPACE}:/host-workspace:ro" \
+            ghcr.io/void-linux/void-linux:latest-full-x86_64 \
+            bash -c '
+              set -euo pipefail
+
+              echo "==> Updating package index"
+              xbps-install -S
+
+              echo "==> Installing build dependencies"
+              xbps-install -Sy gcc sudo curl
+
+              echo "==> Configuring passwordless sudo"
+              echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              echo "Defaults !requiretty" >> /etc/sudoers
+
+              echo "==> Installing Go"
+              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
+              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              tar -C /usr/local -xzf /tmp/go.tar.gz
+              ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+              echo "==> Copying workspace"
+              cp -r /host-workspace /root/genv
+
+              echo "==> Running adapter integration tests"
+              cd /root/genv
+              go test -tags integration -race -v -run TestXbps ./internal/adapter/
+
+              echo "==> Running E2E tests"
+              go test -tags integration -race -v -run TestE2EXbps ./e2e/
             '
 
   # ── macOS (brew) ─────────────────────────────────────────────────────────────
