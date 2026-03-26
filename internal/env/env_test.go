@@ -229,3 +229,58 @@ func TestEnvStatus_Modified(t *testing.T) {
 		t.Errorf("expected 1 modified entry, got %v", entries)
 	}
 }
+
+// ─── RcFiles ─────────────────────────────────────────────────────────────────
+
+func TestRcFiles(t *testing.T) {
+	mockHome := t.TempDir()
+	t.Setenv("HOME", mockHome)
+	t.Setenv("USERPROFILE", mockHome)
+
+	cases := []struct {
+		name  string
+		shell string
+		want  []string
+	}{
+		{
+			name:  "zsh",
+			shell: "/bin/zsh",
+			want:  []string{filepath.Join(mockHome, ".zshrc")},
+		},
+		{
+			name:  "fish",
+			shell: "/usr/bin/fish",
+			want:  []string{filepath.Join(mockHome, ".bashrc")},
+		},
+		{
+			name:  "bash",
+			shell: "/bin/bash",
+			want:  []string{filepath.Join(mockHome, ".bashrc")},
+		},
+		{
+			name:  "empty",
+			shell: "",
+			want:  []string{filepath.Join(mockHome, ".bashrc")},
+		},
+		{
+			name:  "unrecognized",
+			shell: "/bin/tcsh",
+			want:  []string{filepath.Join(mockHome, ".bashrc")},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SHELL", tc.shell)
+			got := RcFiles()
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("got[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
