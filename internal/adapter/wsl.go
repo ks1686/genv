@@ -4,6 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+)
+
+var (
+	wslOnce sync.Once
+	wslMemo bool
 )
 
 // isWSL reports whether the current process is running inside a WSL (Windows
@@ -11,11 +17,13 @@ import (
 // "microsoft" string that the WSL kernel injects into that file.
 // Returns false on any non-Linux host or when the file cannot be read.
 func isWSL() bool {
-	data, err := os.ReadFile("/proc/version")
-	if err != nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(string(data)), "microsoft")
+	wslOnce.Do(func() {
+		data, err := os.ReadFile("/proc/version")
+		if err == nil {
+			wslMemo = strings.Contains(strings.ToLower(string(data)), "microsoft")
+		}
+	})
+	return wslMemo
 }
 
 // sanitizePathForWSL removes Windows-host path entries from a PATH string.
