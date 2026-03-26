@@ -1150,3 +1150,51 @@ func TestExtractPositional(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildEditorCmd(t *testing.T) {
+	tests := []struct {
+		editor   string
+		file     string
+		wantErr  bool
+		wantPath string // only check base name if not empty
+		wantArgs []string
+	}{
+		{"vi", "test.json", false, "vi", []string{"vi", "test.json"}},
+		{"code --wait", "test.json", false, "code", []string{"code", "--wait", "test.json"}},
+		{"/usr/bin/vim -R", "test.json", false, "vim", []string{"/usr/bin/vim", "-R", "test.json"}},
+		{"rm -rf", "test.json", true, "", nil},
+		{"", "test.json", false, "vi", []string{"vi", "test.json"}},
+		{"   ", "test.json", false, "vi", []string{"vi", "test.json"}},
+		{"code", "test.json", false, "code", []string{"code", "test.json"}},
+		{"/usr/bin/nano", "test.json", false, "nano", []string{"/usr/bin/nano", "test.json"}},
+		{"emacs -nw", "test.json", false, "emacs", []string{"emacs", "-nw", "test.json"}},
+		{"/bin/sh -c 'rm -rf /'", "test.json", true, "", nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.editor, func(t *testing.T) {
+			cmd, err := buildEditorCmd(tc.editor, tc.file)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("buildEditorCmd(%q, %q): expected error, got nil", tc.editor, tc.file)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("buildEditorCmd(%q, %q): unexpected error: %v", tc.editor, tc.file, err)
+			}
+			if filepath.Base(cmd.Path) != tc.wantPath {
+				t.Errorf("buildEditorCmd path: got %q, want base %q", cmd.Path, tc.wantPath)
+			}
+			if len(cmd.Args) != len(tc.wantArgs) {
+				t.Errorf("buildEditorCmd args length: got %d, want %d (args: %v, want: %v)", len(cmd.Args), len(tc.wantArgs), cmd.Args, tc.wantArgs)
+			} else {
+				for i := range cmd.Args {
+					if cmd.Args[i] != tc.wantArgs[i] {
+						t.Errorf("buildEditorCmd args[%d]: got %q, want %q", i, cmd.Args[i], tc.wantArgs[i])
+					}
+				}
+			}
+		})
+	}
+}

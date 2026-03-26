@@ -24,26 +24,31 @@ func TestAllAdapterNames(t *testing.T) {
 	}
 }
 
-// TestByName_KnownManagers verifies that every adapter in All is reachable by name.
-func TestByName_KnownManagers(t *testing.T) {
+// TestByName verifies that ByName correctly resolves valid adapter names
+// and returns nil for unregistered or invalid names.
+func TestByName(t *testing.T) {
+	// Test valid names from the All registry
 	for _, a := range All {
-		got := ByName(a.Name())
-		if got == nil {
-			t.Errorf("ByName(%q): returned nil, want non-nil", a.Name())
-		}
-		if got != nil && got.Name() != a.Name() {
-			t.Errorf("ByName(%q): returned adapter with name %q", a.Name(), got.Name())
-		}
+		t.Run("valid_"+a.Name(), func(t *testing.T) {
+			got := ByName(a.Name())
+			if got == nil {
+				t.Fatalf("ByName(%q) returned nil, want non-nil", a.Name())
+			}
+			if got.Name() != a.Name() {
+				t.Errorf("ByName(%q) returned adapter with name %q", a.Name(), got.Name())
+			}
+		})
 	}
-}
 
-// TestByName_UnknownManager verifies ByName returns nil for unregistered names.
-func TestByName_UnknownManager(t *testing.T) {
-	if got := ByName("yum"); got != nil {
-		t.Errorf("ByName(\"yum\"): expected nil, got %v", got)
-	}
-	if got := ByName(""); got != nil {
-		t.Errorf("ByName(\"\"): expected nil, got %v", got)
+	// Test invalid names
+	invalidNames := []string{"yum", "chocolatey", "npm", "pip", ""}
+	for _, name := range invalidNames {
+		t.Run("invalid_"+name, func(t *testing.T) {
+			got := ByName(name)
+			if got != nil {
+				t.Errorf("ByName(%q) expected nil, got %v", name, got)
+			}
+		})
 	}
 }
 

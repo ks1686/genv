@@ -1,0 +1,7 @@
+goos: linux
+goarch: amd64
+pkg: github.com/ks1686/genv/internal/adapter
+cpu: Intel(R) Xeon(R) Processor @ 2.30GHz
+BenchmarkIsWSL-4   	   69784	     17008 ns/op	    2120 B/op	       8 allocs/op
+PASS
+ok  	github.com/ks1686/genv/internal/adapter	8.934s

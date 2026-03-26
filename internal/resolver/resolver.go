@@ -173,6 +173,63 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 	return errs
 }
 
+// ---- Upgrade (genv upgrade) --------------------------------------------------
+
+// UpgradeAction is the resolved upgrade action for a single package.
+type UpgradeAction struct {
+	LP  genvfile.LockedPackage
+	Mgr adapter.Adapter
+	Cmd []string
+}
+
+// SkippedPackage records a package that was skipped during upgrade planning
+// because its recorded package manager adapter is no longer registered.
+type SkippedPackage struct {
+	ID      string
+	Manager string
+}
+
+// PlanUpgrade builds an upgrade plan for all packages tracked in the lock file.
+// It returns a list of actions and a list of packages that were skipped because
+// their recorded package manager adapter is no longer registered.
+func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipped []SkippedPackage) {
+	for _, lp := range packages {
+		mgr := adapter.ByName(lp.Manager)
+		if mgr == nil {
+			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager})
+			continue
+		}
+		plan = append(plan, UpgradeAction{LP: lp, Mgr: mgr, Cmd: mgr.PlanUpgrade(lp.PkgName)})
+	}
+	return plan, skipped
+}
+
+// UpgradeExecution records the outcome of ExecuteUpgrade so the caller can update
+// the lock file with new versions.
+type UpgradeExecution struct {
+	Upgraded []genvfile.LockedPackage
+	Errors   []error
+}
+
+// ExecuteUpgrade runs each resolved upgrade action sequentially, updating the
+// InstalledVersion on success. Returns an UpgradeExecution holding the updated
+// packages and any errors encountered.
+func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, stdout, stderr io.Writer) UpgradeExecution {
+	var out UpgradeExecution
+	for _, a := range plan {
+		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
+			out.Errors = append(out.Errors, fmt.Errorf("upgrade %q: %w", a.LP.ID, err))
+			continue
+		}
+		// Update InstalledVersion in lock for successfully upgraded packages.
+		if v, err := a.Mgr.QueryVersion(a.LP.PkgName); err == nil && v != "" {
+			a.LP.InstalledVersion = v
+		}
+		out.Upgraded = append(out.Upgraded, a.LP)
+	}
+	return out
+}
+
 // ---- Reconcile (genv apply) --------------------------------------------------
 
 // versionDrifted reports whether the InstalledVersion recorded for lp fails the

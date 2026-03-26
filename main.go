@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -48,6 +49,14 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+var safeEditors = map[string]bool{
+	"vi":    true,
+	"vim":   true,
+	"nano":  true,
+	"emacs": true,
+	"code":  true,
+}
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -1435,12 +1444,17 @@ func shellEditCmd(args []string) int {
 		editor = "vi"
 	}
 
-	cmd := exec.Command(editor, *file)
+	cmd, err := buildEditorCmd(editor, *file)
+	if err != nil {
+		fprintf(os.Stderr, "genv shell edit: %v\n", err)
+		return exitLogic
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fprintf(os.Stderr, "genv: editor exited with error: %v\n", err)
+		fprintf(os.Stderr, "genv shell edit: editor exited with error: %v\n", err)
 		return exitLogic
 	}
 	return exitOK
@@ -1906,6 +1920,24 @@ func cleanCmd(args []string) int {
 	return exitCode
 }
 
+// buildEditorCmd parses the editor string, validates the executable against a
+// whitelist of safe editors, and returns an exec.Cmd ready to run.
+func buildEditorCmd(editor, file string) (*exec.Cmd, error) {
+	fields := strings.Fields(editor)
+	if len(fields) == 0 {
+		return exec.Command("vi", file), nil
+	}
+
+	bin := fields[0]
+	base := filepath.Base(bin)
+	if !safeEditors[base] {
+		return nil, fmt.Errorf("editor %q is not allowed; must be one of: vi, vim, nano, emacs, code", bin)
+	}
+
+	args := append(fields[1:], file)
+	return exec.Command(bin, args...), nil
+}
+
 // editCmd implements `genv edit`.
 // Opens genv.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
@@ -1923,7 +1955,12 @@ func editCmd(args []string) int {
 		editor = "vi"
 	}
 
-	cmd := exec.Command(editor, *file)
+	cmd, err := buildEditorCmd(editor, *file)
+	if err != nil {
+		fprintf(os.Stderr, "genv edit: %v\n", err)
+		return exitLogic
+	}
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -2068,20 +2105,9 @@ func upgradeCmd(args []string) int {
 		return exitOK
 	}
 
-	// Build upgrade plan, storing each adapter to avoid repeated ByName lookups.
-	type upgradeAction struct {
-		lp  genvfile.LockedPackage
-		mgr adapter.Adapter
-		cmd []string
-	}
-	var plan []upgradeAction
-	for _, lp := range lf.Packages {
-		mgr := adapter.ByName(lp.Manager)
-		if mgr == nil {
-			fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", lp.Manager, lp.ID)
-			continue
-		}
-		plan = append(plan, upgradeAction{lp: lp, mgr: mgr, cmd: mgr.PlanUpgrade(lp.PkgName)})
+	plan, skipped := resolver.PlanUpgrade(lf.Packages)
+	for _, s := range skipped {
+		fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", s.Manager, s.ID)
 	}
 
 	if len(plan) == 0 {
@@ -2091,7 +2117,7 @@ func upgradeCmd(args []string) int {
 
 	fPrintln(os.Stdout, "upgrade plan:")
 	for _, a := range plan {
-		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", a.lp.ID, a.lp.Manager, strings.Join(a.cmd, " "))
+		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", a.LP.ID, a.LP.Manager, strings.Join(a.Cmd, " "))
 	}
 
 	if *dryRun {
@@ -2103,29 +2129,24 @@ func upgradeCmd(args []string) int {
 		return exitOK
 	}
 
+	execResult := resolver.ExecuteUpgrade(context.Background(), plan, os.Stdin, os.Stdout, os.Stderr)
+
+	exitCode := exitOK
+	if len(execResult.Errors) > 0 {
+		for _, err := range execResult.Errors {
+			fprintf(os.Stderr, "genv upgrade: %v\n", err)
+		}
+		exitCode = exitLogic
+	}
+
 	// Build an ID→index map so each version update is O(1), not O(n).
 	lockIndex := make(map[string]int, len(lf.Packages))
 	for i, lp := range lf.Packages {
 		lockIndex[lp.ID] = i
 	}
-
-	exitCode := exitOK
-	for _, a := range plan {
-		fprintf(os.Stdout, "\n==> %s\n", strings.Join(a.cmd, " "))
-		cmd := exec.Command(a.cmd[0], a.cmd[1:]...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fprintf(os.Stderr, "genv upgrade: %s: %v\n", a.lp.ID, err)
-			exitCode = exitLogic
-			continue
-		}
-		// Update InstalledVersion in lock for successfully upgraded packages.
-		if v, err := a.mgr.QueryVersion(a.lp.PkgName); err == nil && v != "" {
-			if idx, ok := lockIndex[a.lp.ID]; ok {
-				lf.Packages[idx].InstalledVersion = v
-			}
+	for _, upgraded := range execResult.Upgraded {
+		if idx, ok := lockIndex[upgraded.ID]; ok {
+			lf.Packages[idx].InstalledVersion = upgraded.InstalledVersion
 		}
 	}
 
