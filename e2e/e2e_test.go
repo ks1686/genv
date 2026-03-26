@@ -849,7 +849,6 @@ func TestE2ENix(t *testing.T) {
 	})
 }
 
-
 // TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
 // Real package installation is skipped because emerge compiles packages from
 // source, making CI installs impractically slow. All spec/lock mutations,
