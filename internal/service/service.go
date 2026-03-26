@@ -219,8 +219,11 @@ func IsSystemdAvailable() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
-	_, err := exec.LookPath("systemctl")
-	return err == nil
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false
+	}
+	// Ensure systemd is actually running for the user
+	return exec.Command("systemctl", "--user", "show-environment").Run() == nil
 }
 
 // IsLaunchdAvailable reports whether launchctl is available on the path.
