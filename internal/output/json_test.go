@@ -3,6 +3,7 @@ package output_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/ks1686/genv/internal/output"
@@ -183,5 +184,33 @@ func TestWrite_EndsWithNewline(t *testing.T) {
 	b := buf.Bytes()
 	if len(b) == 0 || b[len(b)-1] != '\n' {
 		t.Errorf("Write should end with newline, got: %q", string(b))
+	}
+}
+
+type errorWriter struct{}
+
+func (e errorWriter) Write(p []byte) (n int, err error) {
+	return 0, errors.New("write error")
+}
+
+func TestWrite_WriterError(t *testing.T) {
+	err := output.Write(errorWriter{}, output.Envelope{Command: "test", OK: true})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "write error" {
+		t.Errorf("expected write error, got %v", err)
+	}
+}
+
+func TestWrite_MarshalError(t *testing.T) {
+	// Channels cannot be marshaled to JSON.
+	err := output.Write(&bytes.Buffer{}, output.Envelope{
+		Command: "test",
+		OK:      true,
+		Data:    make(chan int),
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
