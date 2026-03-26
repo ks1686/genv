@@ -29,6 +29,49 @@ func TestSingleQuote(t *testing.T) {
 	}
 }
 
+// ─── FragmentPath ────────────────────────────────────────────────────────────
+
+func TestFragmentPath(t *testing.T) {
+	t.Run("XDG_CONFIG_HOME set", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "/custom/xdg")
+		got, err := FragmentPath()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join("/custom/xdg", "genv", "shell.sh")
+		if got != want {
+			t.Errorf("FragmentPath() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Fallback to HOME", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		homeDir := "/custom/home"
+		t.Setenv("HOME", homeDir)
+		t.Setenv("USERPROFILE", homeDir)
+
+		got, err := FragmentPath()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := filepath.Join(homeDir, ".config", "genv", "shell.sh")
+		if got != want {
+			t.Errorf("FragmentPath() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Error no home dir", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+		t.Setenv("USERPROFILE", "")
+
+		_, err := FragmentPath()
+		if err == nil {
+			t.Error("expected error when HOME is not set, got nil")
+		}
+	})
+}
+
 // ─── WriteFragment ────────────────────────────────────────────────────────────
 
 func TestWriteFragment_Aliases(t *testing.T) {
