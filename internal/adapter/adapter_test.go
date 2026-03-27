@@ -1535,4 +1535,3 @@ func TestRunVersionOutput_MissingBinary(t *testing.T) {
 		t.Errorf("runVersionOutput with missing binary: expected empty string, got %q", v)
 	}
 }
-
