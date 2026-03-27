@@ -276,7 +276,6 @@ func TestLinuxbrew(t *testing.T) {
 	})
 }
 
-
 func TestMacPorts(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
 		a:            adapter.MacPorts{},
