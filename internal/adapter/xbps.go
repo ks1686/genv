@@ -17,11 +17,11 @@ func (Xbps) NormalizeID(id string, managers map[string]string) (string, bool) {
 }
 
 func (Xbps) PlanInstall(pkgName string) []string {
-	return []string{"sudo", "xbps-install", "-S", pkgName}
+	return []string{"sudo", "xbps-install", "-Sy", pkgName}
 }
 
 func (Xbps) PlanUninstall(pkgName string) []string {
-	return []string{"sudo", "xbps-remove", "-R", pkgName}
+	return []string{"sudo", "xbps-remove", "-Ry", pkgName}
 }
 
 func (Xbps) PlanUpgrade(pkgName string) []string {
