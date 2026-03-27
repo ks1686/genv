@@ -1177,7 +1177,7 @@ fi`)
 }
 
 // ---------------------------------------------------------------------------
-// trimVersionSuffix — pure function tests (shared by apk and nix)
+// trimVersionSuffix — pure function tests (used by apk)
 // ---------------------------------------------------------------------------
 
 func TestTrimVersionSuffix_SimplePackage(t *testing.T) {
