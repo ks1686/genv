@@ -21,7 +21,7 @@ genv apply --dry-run --json        # machine-readable plan output
 
 `genv` is a thin layer on top of your existing package managers. It tracks what you want installed in a single `genv.json` file, then figures out how to install each package on whatever machine you're on.
 
-It works like NixOS's declarative model: **you edit the spec file, and `genv apply` makes reality match it** — installing packages that were added and uninstalling ones that were removed. A `genv.lock.json` file records what genv last applied, so it only acts on the delta.
+It follows a declarative model: **you edit the spec file, and `genv apply` makes reality match it** — installing packages that were added and uninstalling ones that were removed. A `genv.lock.json` file records what genv last applied, so it only acts on the delta.
 
 Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
@@ -29,11 +29,11 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
 ## Supported platforms and package managers
 
-| Platform | Managers                                                               |
-| -------- | ---------------------------------------------------------------------- |
-| Linux    | `apt`, `dnf`, `pacman`, `paru`, `yay`, `linuxbrew`, `flatpak`, `snap`  |
-| macOS    | `brew` (formulae + casks), `macports`                                  |
-| Windows  | WSL2 (targets the Linux userland inside WSL2)                          |
+| Platform | Managers                                                                                                 |
+| -------- | -------------------------------------------------------------------------------------------------------- |
+| Linux    | `apt`, `dnf`, `zypper`, `apk`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge` |
+| macOS    | `brew` (formulae + casks), `macports`                                                                    |
+| Windows  | WSL2 (targets the Linux userland inside WSL2)                                                            |
 
 `genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 
@@ -52,6 +52,19 @@ brew install genv
 
 ```bash
 paru -S genv      # or: yay -S genv
+```
+
+### Linux - Fedora (COPR)
+
+```bash
+sudo dnf copr enable ks1686/genv
+sudo dnf install genv
+```
+
+### Linux - Alpine
+
+```bash
+sudo apk add genv
 ```
 
 ### Linux — other distros
@@ -136,10 +149,10 @@ Your `genv.json` lives at `~/.config/genv/genv.json` by default (respects `$XDG_
 
 `genv` maintains two files side by side:
 
-| File | Default location | Purpose |
-| ---- | ---------------- | ------- |
-| `genv.json` | `~/.config/genv/genv.json` | **Desired state** — what you want installed. Edit via `genv add`/`genv remove`/`genv edit`/`genv scan`. |
-| `genv.lock.json` | `~/.config/genv/genv.lock.json` | **Applied state** — what genv last installed, via which manager. Auto-managed; do not edit by hand. |
+| File             | Default location                | Purpose                                                                                                 |
+| ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `genv.json`      | `~/.config/genv/genv.json`      | **Desired state** — what you want installed. Edit via `genv add`/`genv remove`/`genv edit`/`genv scan`. |
+| `genv.lock.json` | `~/.config/genv/genv.lock.json` | **Applied state** — what genv last installed, via which manager. Auto-managed; do not edit by hand.     |
 
 When you run `genv apply`:
 
@@ -163,7 +176,7 @@ When you run `genv apply`:
 
 ```json
 {
-  "schemaVersion": "1",
+  "schemaVersion": "4",
   "packages": [
     {
       "id": "git"
@@ -177,11 +190,29 @@ When you run `genv apply`:
       "id": "firefox",
       "managers": {
         "flatpak": "org.mozilla.firefox",
-        "brew":    "firefox",
-        "snap":    "firefox"
+        "brew": "firefox",
+        "snap": "firefox"
       }
     }
-  ]
+  ],
+  "env": {
+    "EDITOR": {
+      "value": "nvim"
+    }
+  },
+  "shell": {
+    "aliases": {
+      "ll": {
+        "value": "ls -lah"
+      }
+    }
+  },
+  "services": {
+    "syncthing": {
+      "start": ["syncthing", "serve"],
+      "stop": ["pkill", "-f", "syncthing"]
+    }
+  }
 }
 ```
 
@@ -191,25 +222,35 @@ When you run `genv apply`:
 - `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
 - `prefer` — optional hint for which manager to use first
 - `managers` — optional map of manager-specific package identifiers (for packages with different names across managers)
+- `env` — optional map of global shell environment variables managed by genv
+- `shell` — optional shell config block for aliases/functions/source snippets
+- `services` — optional service block for declarative user-space service lifecycle management
 
 ---
 
 ## CLI reference
 
-| Command | Description |
-| ------- | ----------- |
-| `genv add <id> [flags]` | Add package to spec and install it now |
-| `genv remove <id>` | Remove package from spec and uninstall it now (alias: `rm`) |
-| `genv adopt <id> [flags]` | Track an already-installed package without reinstalling |
-| `genv disown <id>` | Stop tracking a package without uninstalling it |
-| `genv scan [flags]` | Bulk-adopt all installed packages into genv.json |
-| `genv status [flags]` | Show drift between genv.json and the lock file |
-| `genv list` | List packages currently tracked by genv (from lock file) (alias: `ls`) |
-| `genv apply [flags]` | Reconcile system state with genv.json |
-| `genv clean [--dry-run]` | Clear the cache of all detected package managers |
-| `genv edit` | Open genv.json in `$EDITOR` |
-| `genv version` | Show build version, commit, and date |
-| `genv help` | Show help text |
+| Command                                           | Description                                                            |
+| ------------------------------------------------- | ---------------------------------------------------------------------- |
+| `genv add <id> [flags]`                           | Add package to spec and install it now                                 |
+| `genv remove <id>`                                | Remove package from spec and uninstall it now (alias: `rm`)            |
+| `genv adopt <id> [flags]`                         | Track an already-installed package without reinstalling                |
+| `genv disown <id>`                                | Stop tracking a package without uninstalling it                        |
+| `genv scan [flags]`                               | Bulk-adopt all installed packages into genv.json                       |
+| `genv status [flags]`                             | Show drift between genv.json and the lock file                         |
+| `genv list`                                       | List packages currently tracked by genv (from lock file) (alias: `ls`) |
+| `genv apply [flags]`                              | Reconcile system state with genv.json                                  |
+| `genv validate [flags]`                           | Validate genv.json without changing the system                         |
+| `genv upgrade [flags]`                            | Upgrade tracked packages and refresh lock versions                     |
+| `genv init [flags]`                               | Interactive wizard to create a new genv.json                           |
+| `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
+| `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
+| `genv service <add\|remove\|start\|stop\|status>` | Manage declared user-space services                                    |
+| `genv completion <bash\|zsh\|fish>`               | Print shell completion script                                          |
+| `genv clean [--dry-run]`                          | Clear the cache of all detected package managers                       |
+| `genv edit`                                       | Open genv.json in `$EDITOR`                                            |
+| `genv version`                                    | Show build version, commit, and date                                   |
+| `genv help`                                       | Show help text                                                         |
 
 ### `genv add` / `genv adopt` flags
 
@@ -263,7 +304,7 @@ genv apply --yes --json 2>/dev/null
 
 The envelope format:
 
-```
+```json
 {
   "command": "apply",
   "ok": true,
@@ -291,13 +332,13 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 
 ## Exit codes
 
-| Code | Meaning |
-| ---- | ------- |
-| 0 | Success |
-| 1 | Bad arguments or unknown command |
-| 2 | Filesystem or serialization error |
-| 3 | `genv.json` fails schema validation |
-| 4 | Semantic error — also returned by `genv status` when drift or extra entries exist |
+| Code | Meaning                                                                           |
+| ---- | --------------------------------------------------------------------------------- |
+| 0    | Success                                                                           |
+| 1    | Bad arguments or unknown command                                                  |
+| 2    | Filesystem or serialization error                                                 |
+| 3    | `genv.json` fails schema validation                                               |
+| 4    | Semantic error — also returned by `genv status` when drift or extra entries exist |
 
 ---
 
@@ -305,15 +346,21 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 
 Implementation milestones and detailed checklists are tracked in [ROADMAP.md](ROADMAP.md).
 
-Current focus (v1.0.0):
+Current focus (v2.x):
 
 - [x] M1: Core CLI and `genv.json` spec validation
 - [x] M2: Resolver + adapter layer, declarative apply, adopt/disown, cache clean
 - [x] M3: `genv scan`, lock file version pinning, `genv status`
 - [x] M4: `--json`, `--yes`, `--timeout`, `--debug`, signed releases
 - [x] M5: macOS and WSL2 validation and automated testing
-- [ ] M6: API stability, test coverage, performance benchmarks, security audit
-- [ ] M7: Shell completions, `genv validate`, `genv upgrade`, `genv init`, improved errors
+- [x] M6: API stability, test coverage, performance benchmarks, security audit
+- [x] M7: Shell completions, `genv validate`, `genv upgrade`, `genv init`, improved errors
+- [x] M8: global environment variable management (`genv env`)
+- [x] M9: shell configuration management (`genv shell`)
+- [x] M10: services management (`genv service`) + expanded packaging channels
+- [ ] M11: updates daemon
+- [ ] M12: named profiles
+- [ ] M13: hooks and lifecycle scripts
 
 ## Releasing
 

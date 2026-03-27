@@ -274,16 +274,13 @@ Checklist:
 
 - [x] Implement Linux adapter: `apk` (Alpine Linux).
 - [x] Implement Linux adapter: `zypper` (openSUSE / SLES).
-- [x] Implement Linux adapter: `nix` (NixOS and any Linux host with Nix installed).
 - [x] Implement Linux adapter: `xbps` (Void Linux).
 - [x] Implement Linux adapter: `emerge` (Gentoo).
 - [x] Publish genv as `.deb`, `.rpm`, and `.apk` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and apk direct-install; zypper users covered by `.rpm`).
-- [x] Add `flake.nix` so Nix users can install via `nix profile install github:ks1686/genv` (vendorHash must be set on each release).
 - [x] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
-- [x] Publish genv to Flathub (Flatpak manifest + Flathub PR review).
 - [x] Submit genv APKBUILD to Alpine Linux aports so `apk add genv` works without a direct download.
 - [x] Submit genv Portfile to MacPorts ports tree.
-- [ ] Publish genv to Fedora COPR and/or a self-hosted apt repo for one-line install without downloading the artifact manually.
+- [x] Publish genv to Fedora COPR for one-line install (`dnf copr enable ks1686/genv && dnf install genv`).
 - [x] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
 - [x] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
 - [x] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
@@ -401,14 +398,15 @@ These gates apply to every milestone.
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
-- [ ] v2.1.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
-- [ ] v2.2.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
-- [ ] v3.0.0 — M10 and M11 complete + first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
+- [x] v2.1.0 — M10 complete; services management, new adapters (apk/zypper/xbps/emerge), Snap/Alpine/MacPorts/COPR packaging
+- [ ] v2.2.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
+- [ ] v2.3.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
+- [ ] v3.0.0 — M11 complete + first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
 - [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip, cargo) and/or a plugin system for custom adapters
 
 ## How to Contribute Against This Roadmap
 
 1. Pick one unchecked item.
-2. Open an issue with milestone tag (`M6` or `M7`).
+2. Open an issue with the relevant milestone tag (`M11`, `M12`, or `M13`).
 3. Link tests and sample output in the PR.
 4. Update checklist state when merged.

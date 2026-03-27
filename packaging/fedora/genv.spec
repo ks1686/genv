@@ -1,5 +1,5 @@
 Name:           genv
-Version:        2.0.1
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        Track, sync, and reproduce your software environment
 
@@ -35,5 +35,9 @@ install -Dpm 0644 completions/genv.fish %{buildroot}%{_datadir}/fish/vendor_comp
 %{_datadir}/fish/vendor_completions.d/genv.fish
 
 %changelog
+* Fri Mar 27 2026 ks1686 <ks1686@users.noreply.github.com> - 2.1.0-1
+- Update to v2.1.0 (M10: services management, new adapters: apk/zypper/xbps/emerge)
+- Assisted-by: Claude Sonnet 4.6
+
 * Fri Mar 27 2026 ks1686 <ks1686@users.noreply.github.com> - 2.0.1-1
 - Initial package

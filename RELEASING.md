@@ -1,19 +1,25 @@
 # Releasing genv
 
 This repository publishes GitHub releases, a Homebrew formula, and an AUR package
-automatically when an annotated tag is pushed. GoReleaser handles all three.
+automatically when an annotated tag is pushed. GoReleaser handles GitHub releases,
+Homebrew, AUR, and the Snap Store automatically. Alpine aports, MacPorts, and Fedora
+COPR require manual PR/spec updates after the GitHub release artifacts are published.
 
 ---
 
 ## Versioning
 
 | Tag | Meaning |
-| --- | ------- |
+| --- | --- |
 | `v0.1.0-beta.1` | First public prerelease (shipped) |
 | `v0.1.0` | First stable release — M1 and M2 complete on Linux |
 | `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
-| `v0.3.0` | M6 complete (API stability, test coverage, performance benchmarks, security audit) |
-| `v0.4.0` | M7 complete (shell completions, genv validate/upgrade/init, improved errors) |
+| `v1.0.0` | M6 and M7 complete (stable API/quality bar + UX command set) |
+| `v2.0.0` | M8 and M9 complete (env and shell configuration management) |
+| `v2.1.0` | M10 complete (services management, new adapters: apk/zypper/xbps/emerge, expanded packaging/distribution) |
+| `v2.2.0` | M13 complete (hooks and lifecycle scripts) |
+| `v2.3.0` | M12 complete (named profiles) |
+| `v3.0.0` | M11 complete + first-party Windows support (Chocolatey, Scoop) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
@@ -62,7 +68,7 @@ Two AUR packages are published on every stable release. Both use the same `AUR_K
 The two packages `conflict` with each other so users can only have one installed at a time.
 Each CI script updates an existing AUR package — it does not create a new one. The first publish of each must be done manually.
 
-**3a. Create an AUR account** at https://aur.archlinux.org/ if you don't have one.
+**3a. Create an AUR account** at <https://aur.archlinux.org/> if you don't have one.
 
 **3b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
 
@@ -71,7 +77,7 @@ ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
 # Leave passphrase empty — the CI script needs a passphrase-free key.
 ```
 
-Add the public key to your AUR account: https://aur.archlinux.org/account/ → SSH keys.
+Add the public key to your AUR account: <https://aur.archlinux.org/account/> → SSH keys.
 
 **3c. Create the `genv-bin` package on AUR** (one-time manual step):
 
@@ -226,6 +232,26 @@ paru -S genv       # builds from source
    paru -Sy genv && genv version       # from source
    ```
 
+9. **Update manual packaging channels** (after GitHub release artifacts are published):
+
+   **Alpine aports (GitLab PR):**
+   - Bump `pkgver` in `packaging/alpine/APKBUILD` to the new version.
+   - Compute the sha512 of the new source tarball: `sha512sum genv-<ver>.tar.gz`.
+   - Update `sha512sums` in the APKBUILD and submit/update the aports MR.
+
+   **MacPorts (GitHub PR):**
+   - Bump the version in `packaging/macports/Portfile`.
+   - Run `port checksum` against the new tarball to get rmd160/sha256/size values.
+   - Update the `checksums` stanza and submit/update the macports-ports PR.
+
+   **Fedora COPR:**
+   - Bump `Version` and add a `%changelog` entry in `packaging/fedora/genv.spec`.
+   - **Fedora policy (Oct 2025):** if Claude or another AI tool assisted in writing the spec,
+     include `Assisted-by: Claude Sonnet 4.6` in the commit message or COPR PR description.
+   - Trigger a COPR build from the new tag or push the updated spec.
+
+   **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
+
 ---
 
 ## Release note framing
@@ -256,13 +282,10 @@ Artifacts land in `./dist/`. Nothing is published.
 
 ## Future distribution channels
 
-These are not yet set up but are candidates for later milestones:
+Candidates for v3.0.0 (Windows support milestone):
 
 | Channel | Complexity | Notes |
-| ------- | ---------- | ----- |
-| Snap Store | Medium | Needs `snapcraft.yaml` + `SNAPCRAFT_STORE_CREDENTIALS` secret |
-| Flathub | High | Requires a PR to `flathub/flathub`; not fully automatable |
-| apt PPA | High | Needs a Launchpad account and `.deb` packaging |
-| dnf COPR | High | Needs a Fedora account and `.spec` file |
-| Scoop | Low | GoReleaser supports it natively; relevant once M5 (Windows) is targeted |
-| winget | Low | GoReleaser supports it natively; relevant for M5 |
+| --- | --- | --- |
+| Scoop | Low | GoReleaser supports it natively; relevant for v3.0.0 Windows support |
+| winget | Low | GoReleaser supports it natively; relevant for v3.0.0 Windows support |
+| apt PPA | High | Needs a Launchpad account; `.deb` artifacts already ship via GitHub Releases |
