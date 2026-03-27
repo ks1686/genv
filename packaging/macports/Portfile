@@ -18,7 +18,7 @@ homepage            https://github.com/ks1686/genv
 categories          sysutils
 installs_libs       no
 license             MIT
-maintainers         {github.com/ks1686 @ks1686} openmaintainer
+maintainers         {github.com:ks1686 @ks1686} openmaintainer
 
 checksums           rmd160  eca8fccf99acda94c813c24dece201bf1a6c4820 \
                     sha256  f6ae037e39c409a4818cb18d4c02c0061a477fbde72875450a577e3b62179bcb \
