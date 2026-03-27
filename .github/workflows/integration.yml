@@ -323,6 +323,7 @@ jobs:
               echo "==> Installing Go"
               GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
               curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+              mkdir -p /usr/local
               tar -C /usr/local -xzf /tmp/go.tar.gz
               ln -sf /usr/local/go/bin/go /usr/local/bin/go
 
@@ -414,7 +415,7 @@ jobs:
               set -eu
 
               echo "==> Self-updating xbps and package index"
-              xbps-install -Su xbps
+              xbps-install -Syu xbps
               xbps-install -S
 
               echo "==> Installing build dependencies"
