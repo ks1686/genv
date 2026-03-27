@@ -46,7 +46,7 @@ func (Nix) PlanClean() [][]string {
 // pkgName- (e.g. "^git-" matches "git-2.43.0" but also "git-lfs-3.4.0");
 // callers must confirm the exact name via trimVersionSuffix.
 func nixEnvQuery(pkgName string) ([]string, error) {
-	return runListOutput("nix-env", "-q", "^"+pkgName+"-")
+	return runListOutput("nix-env", "-q", "--installed", "^"+pkgName+"-")
 }
 
 // Query reports whether pkgName is installed in the user's nix profile.
