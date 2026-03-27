@@ -1,0 +1,28 @@
+name: genv
+base: core22
+version: '{{.Version}}' # set by goreleaser
+summary: Track, sync, and reproduce your software environment across Linux, macOS, and WSL2.
+description: |
+  genv is a command-line tool to track, sync, and reproduce your software
+  environment across Linux, macOS, and WSL2. It helps you manage packages,
+  environment variables, and shell configuration declaratively.
+grade: stable
+confinement: strict
+
+apps:
+  genv:
+    command: bin/genv
+    plugs:
+      - home
+      - network
+
+parts:
+  genv:
+    plugin: go
+    source: .
+    go-importpath: github.com/ks1686/genv
+    build-environment:
+      - CGO_ENABLED=0
+    override-build: |
+      go build -v -o $SNAPCRAFT_PART_INSTALL/bin/genv -ldflags="-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+      snapcraftctl set-version-full "{{.Version}}-{{.FullCommit}}"
