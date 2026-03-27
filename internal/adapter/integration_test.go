@@ -284,7 +284,7 @@ func TestNix(t *testing.T) {
 		wantBin:        "nix-env",
 		explicitMap:    map[string]string{"nix": "hello"},
 		explicitWant:   "hello",
-		knownInstalled: "hello",
+		knownInstalled: "curl", // curl is explicitly installed as a build dep in CI
 	})
 }
 
