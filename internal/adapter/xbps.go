@@ -81,10 +81,20 @@ func (Xbps) ListInstalled() ([]string, error) {
 }
 
 func (Xbps) QueryVersion(pkgName string) (string, error) {
-	// Example output for `xbps-query -p version <pkg>` is just the version string.
-	lines, err := runListOutput("xbps-query", "-p", "version", pkgName)
+	// Use pkgver (e.g. "curl-8.1.2_1") which is stable across xbps versions.
+	// The -p version property was unreliable after xbps self-updates.
+	lines, err := runListOutput("xbps-query", "-p", "pkgver", pkgName)
 	if err != nil || len(lines) == 0 {
 		return "", err
 	}
-	return lines[0], nil
+	// Strip "pkgname-" prefix, leaving "version_revision".
+	pkgver := lines[0]
+	if idx := strings.LastIndex(pkgver, "-"); idx >= 0 {
+		pkgver = pkgver[idx+1:]
+	}
+	// Strip "_revision" suffix.
+	if idx := strings.Index(pkgver, "_"); idx >= 0 {
+		pkgver = pkgver[:idx]
+	}
+	return pkgver, nil
 }

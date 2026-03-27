@@ -326,6 +326,7 @@ jobs:
               mkdir -p /usr/local/bin
               tar -C /usr/local -xzf /tmp/go.tar.gz
               ln -sf /usr/local/go/bin/go /usr/local/bin/go
+              export PATH="/usr/local/bin:$PATH"
 
               echo "==> Installing hello (probe package for integration tests)"
               nix-env -iA nixpkgs.hello
