@@ -317,7 +317,7 @@ func TestXbps(t *testing.T) {
 		wantBin:        "sudo",
 		explicitMap:    map[string]string{"xbps": "nano"},
 		explicitWant:   "nano",
-		knownInstalled: "bash",
+		knownInstalled: "curl",
 	})
 }
 
