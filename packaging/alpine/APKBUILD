@@ -1,7 +1,7 @@
 # Contributor: ks1686 <ks1686@users.noreply.github.com>
 # Maintainer: ks1686 <ks1686@users.noreply.github.com>
 pkgname=genv
-pkgver=2.0.1
+pkgver=2.1.0
 pkgrel=0
 pkgdesc="Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
 url="https://github.com/ks1686/genv"
@@ -29,5 +29,5 @@ package() {
 }
 
 sha512sums="
-3e8623984382de794272ed09b9105aed05db71093d6da7ea31eb03706b1ebb1a3ef0cc4bd46e707337d59fab6d829d67d2b31d068c684d0de7152f8b0d622562  genv-2.0.1.tar.gz
+SKIP  genv-2.1.0.tar.gz
 "

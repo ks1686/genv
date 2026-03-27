@@ -1,4 +1,4 @@
-// Package schema defines the genv.json v1/v2 data model and validation logic.
+// Package schema defines the genv.json v1-v4 data model and validation logic.
 package schema
 
 // Version is the accepted value for genv.json v1 (packages only).
