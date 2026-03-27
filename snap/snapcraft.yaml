@@ -1,7 +1,7 @@
 name: genv
 base: core22
 version: '{{.Version}}' # set by goreleaser
-summary: Track, sync, and reproduce your software environment across Linux, macOS, and WSL2.
+summary: Declarative package and environment manager for Linux, macOS, and WSL2.
 description: |
   genv is a command-line tool to track, sync, and reproduce your software
   environment across Linux, macOS, and WSL2. It helps you manage packages,
