@@ -30,6 +30,9 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
       - name: Run unit test suite
         run: go test ./...
 
@@ -42,6 +45,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
       - name: Publish to AUR (genv-bin, pre-compiled binary)
         if: "!contains(github.ref_name, '-')"
