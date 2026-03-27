@@ -86,7 +86,6 @@ var All = []Adapter{
 	Flatpak{},
 	Snap{},
 	Linuxbrew{},
-	Nix{},
 	Xbps{},
 	Emerge{},
 }
@@ -220,8 +219,8 @@ func parseMgrQueryVersion(out string) string {
 }
 
 // trimVersionSuffix strips the version suffix from a "pkgname-version" string
-// as produced by apk info, apk search, and nix-env -q. APK and Nix versions
-// always begin with a digit, so the last "-<digit>" occurrence marks the
+// as produced by apk info and apk search. APK versions always begin with a
+// digit, so the last "-<digit>" occurrence marks the
 // boundary between name and version (e.g. "py3-pip-23.3.1-r0" → "py3-pip").
 func trimVersionSuffix(nameVer string) string {
 	for i := len(nameVer) - 1; i > 0; i-- {

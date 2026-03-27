@@ -836,18 +836,6 @@ func TestE2EMacPorts(t *testing.T) {
 	})
 }
 
-// TestE2ENix uses "hello" as the test package — it is the canonical first nix
-// install and is available in every nixpkgs channel. Uses --prefer nix because
-// other managers may also be present on nix-enabled hosts.
-func TestE2ENix(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "nix",
-		checkBin:    "nix-env",
-		testPkg:     "hello",
-		preferFlag:  "nix",
-		canInstall:  true,
-	})
-}
 
 // TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
 // Real package installation is skipped because emerge compiles packages from
