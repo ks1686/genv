@@ -75,7 +75,6 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
 		{"apk", "vim", map[string]string{"apk": "vim"}, "vim", true},
 		{"zypper", "vim", map[string]string{"zypper": "vim"}, "vim", true},
-		{"nix", "vim", map[string]string{"nix": "vim"}, "vim", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgrName+"/explicit", func(t *testing.T) {
@@ -113,8 +112,6 @@ func TestNormalizeID_FallbackToID(t *testing.T) {
 // TestPlanInstall_NonEmpty verifies that every registered adapter returns a
 // non-empty command slice from PlanInstall and that the package name appears
 // as (or is a suffix of) the last argument.
-// The nix adapter prefixes the attribute channel (e.g. "nixpkgs.git"), so
-// we check HasSuffix rather than strict equality.
 func TestPlanInstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
@@ -149,7 +146,6 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
-		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -199,7 +195,6 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
-		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -726,7 +721,6 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
-		{"nix", "nix-env"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -772,7 +766,6 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"brew", "upgrade"},
 		{"macports", "upgrade"},
 		{"linuxbrew", "upgrade"},
-		{"nix", "-u"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -817,7 +810,6 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"brew", 1},
 		{"macports", 1},
 		{"linuxbrew", 1},
-		{"nix", 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -851,7 +843,6 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"brew", "brew"},
 		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
-		{"nix", "nix-collect-garbage"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -939,7 +930,6 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"linuxbrew", "install"},
 		{"apk", "add"},
 		{"zypper", "install"},
-		{"nix", "-iA"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -1001,7 +991,6 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"linuxbrew", "uninstall"},
 		{"apk", "del"},
 		{"zypper", "remove"},
-		{"nix", "-e"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -1208,13 +1197,6 @@ func TestTrimVersionSuffix_NoVersion(t *testing.T) {
 	// When there is no recognisable version suffix, the whole string is returned.
 	if got := trimVersionSuffix("bash"); got != "bash" {
 		t.Errorf("got %q, want %q", got, "bash")
-	}
-}
-
-func TestTrimVersionSuffix_NixPackage(t *testing.T) {
-	// nix-env -q output: "neovim-0.10.0"
-	if got := trimVersionSuffix("neovim-0.10.0"); got != "neovim" {
-		t.Errorf("got %q, want %q", got, "neovim")
 	}
 }
 
@@ -1554,126 +1536,3 @@ func TestRunVersionOutput_MissingBinary(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Nix.Search — fake-binary parsing test
-// ---------------------------------------------------------------------------
-
-// TestNixSearch_ParsesAttrPathAndFilters verifies that Nix.Search extracts the
-// package name from "nixpkgs.attrPath  pkgname-version" lines, strips the
-// version suffix, and filters to names containing the query.
-func TestNixSearch_ParsesAttrPathAndFilters(t *testing.T) {
-	installFakeBinary(t, "nix-env",
-		`if [ "$1" = "-qaP" ]; then
-  echo "nixpkgs.vim        vim-9.0.0000"
-  echo "nixpkgs.neovim     neovim-0.10.0"
-  echo "nixpkgs.emacs      emacs-29.3"
-fi`)
-	names, err := Nix{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Nix.Search: %v", err)
-	}
-	// "emacs" does not contain "vim" → must be filtered
-	for _, n := range names {
-		if n == "emacs" {
-			t.Errorf("Nix.Search: 'emacs' should be filtered out")
-		}
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
-	}
-	if names[0] != "vim" || names[1] != "neovim" {
-		t.Errorf("expected [vim neovim], got %v", names)
-	}
-}
-
-// TestNixSearch_Deduplicates verifies that the same package name appearing
-// more than once is returned only once.
-func TestNixSearch_Deduplicates(t *testing.T) {
-	installFakeBinary(t, "nix-env",
-		`if [ "$1" = "-qaP" ]; then
-  echo "nixpkgs.vim  vim-9.0.0000"
-  echo "nixpkgs.vim  vim-9.0.0000"
-fi`)
-	names, err := Nix{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Nix.Search: %v", err)
-	}
-	if len(names) != 1 {
-		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Nix.ListInstalled / Nix.QueryVersion — fake-binary parsing tests
-// ---------------------------------------------------------------------------
-
-// TestNixListInstalled_StripsVersions verifies that ListInstalled strips the
-// version suffix from each "pkgname-version" line from nix-env -q.
-func TestNixListInstalled_StripsVersions(t *testing.T) {
-	installFakeBinary(t, "nix-env",
-		`if [ "$1" = "-q" ] && [ $# -eq 1 ]; then
-  echo "hello-2.12.1"
-  echo "git-2.43.0"
-fi`)
-	pkgs, err := Nix{}.ListInstalled()
-	if err != nil {
-		t.Fatalf("Nix.ListInstalled: %v", err)
-	}
-	if len(pkgs) != 2 {
-		t.Fatalf("expected 2 packages, got %d: %v", len(pkgs), pkgs)
-	}
-	if pkgs[0] != "hello" || pkgs[1] != "git" {
-		t.Errorf("expected [hello git], got %v", pkgs)
-	}
-}
-
-// TestNixQueryVersion_ParsesVersion verifies that QueryVersion extracts
-// the version from "pkgname-version" output.
-func TestNixQueryVersion_ParsesVersion(t *testing.T) {
-	installFakeBinary(t, "nix-env",
-		`if [ "$1" = "-q" ]; then
-  echo "hello-2.12.1"
-fi`)
-	ver, err := Nix{}.QueryVersion("hello")
-	if err != nil {
-		t.Fatalf("Nix.QueryVersion: %v", err)
-	}
-	if ver != "2.12.1" {
-		t.Errorf("got %q, want %q", ver, "2.12.1")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Nix live test — skipped when nix-env is not present on the host
-// ---------------------------------------------------------------------------
-
-// TestNix_Query_And_Version exercises the Nix adapter when nix-env is available.
-// "hello" is used as the probe package — it is the canonical first nix install.
-func TestNix_Query_And_Version(t *testing.T) {
-	a := Nix{}
-	if !a.Available() {
-		t.Skip("nix-env not available on this host")
-	}
-	// Query a package that is definitely absent.
-	const absent = "genv-nix-test-nonexistent-xyzzy"
-	ok, err := a.Query(absent)
-	if err != nil {
-		t.Fatalf("Nix.Query(absent): %v", err)
-	}
-	if ok {
-		t.Errorf("Nix.Query(%q): expected false", absent)
-	}
-	// ListInstalled must not error (empty profile is fine).
-	_, err = a.ListInstalled()
-	if err != nil {
-		t.Fatalf("Nix.ListInstalled: %v", err)
-	}
-	// QueryVersion on absent package must return ("", nil).
-	ver, err := a.QueryVersion(absent)
-	if err != nil {
-		t.Fatalf("Nix.QueryVersion(absent): %v", err)
-	}
-	if ver != "" {
-		t.Errorf("Nix.QueryVersion(absent): expected empty string, got %q", ver)
-	}
-}

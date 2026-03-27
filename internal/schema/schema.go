@@ -38,7 +38,6 @@ var KnownManagers = map[string]bool{
 	"brew":      true,
 	"macports":  true,
 	"linuxbrew": true,
-	"nix":       true,
 	"xbps":      true,
 	"emerge":    true,
 }

@@ -298,50 +298,6 @@ jobs:
               "
             '
 
-  # ── Nix ──────────────────────────────────────────────────────────────────────
-  # nixos/nix is a glibc-based image, so the container: approach would work,
-  # but nix requires /nix to exist and the daemon running. Using docker run
-  # with --privileged lets nix start its daemon inside the container.
-  nix:
-    name: nixos-nix (nix)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run integration and E2E tests inside nixos/nix container
-        run: |
-          docker run --rm --privileged \
-            -v "${{ github.workspace }}:/host-workspace:ro" \
-            nixos/nix \
-            sh -c '
-              set -eu
-
-              echo "==> Installing build dependencies"
-              nix-env -iA nixpkgs.gcc nixpkgs.gawk nixpkgs.curl
-
-              echo "==> Installing Go"
-              GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
-              curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz
-              mkdir -p /usr/local/bin
-              tar -C /usr/local -xzf /tmp/go.tar.gz
-              ln -sf /usr/local/go/bin/go /usr/local/bin/go
-              export PATH="/usr/local/bin:$PATH"
-
-              echo "==> Installing hello (probe package for integration tests)"
-              nix-env -iA nixpkgs.hello
-
-              echo "==> Copying workspace"
-              cp -r /host-workspace /root/genv
-
-              echo "==> Running adapter integration tests"
-              cd /root/genv
-              go test -tags integration -race -v -run TestNix ./internal/adapter/
-
-              echo "==> Running E2E tests"
-              go test -tags integration -race -v -run TestE2ENix ./e2e/
-            '
-
   # ── Gentoo (emerge) ──────────────────────────────────────────────────────────
   # emerge compiles packages from source, so E2E tests run with canInstall:
   # false (spec/lock mutations and dry-run only — no real installs).
