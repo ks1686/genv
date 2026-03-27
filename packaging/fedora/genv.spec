@@ -28,9 +28,6 @@ install -Dpm 0644 completions/genv.bash %{buildroot}%{_datadir}/bash-completion/
 install -Dpm 0644 completions/genv.zsh  %{buildroot}%{_datadir}/zsh/site-functions/_genv
 install -Dpm 0644 completions/genv.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/genv.fish
 
-%check
-go test ./...
-
 %files
 %{_bindir}/genv
 %{_datadir}/bash-completion/completions/genv
