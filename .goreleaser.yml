@@ -98,6 +98,23 @@ homebrew_casks:
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
 
+# ── Snap Store ────────────────────────────────────────────────────────────────
+# Publishes a snap to the Snap Store on every non-prerelease tag.
+# Requires secret: SNAPCRAFT_STORE_CREDENTIALS
+#
+# Install after setup:
+#   snap install genv
+snapcrafts:
+  - name: genv
+    summary: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
+    description: "genv is a command-line tool to track, sync, and reproduce your software environment across Linux, macOS, and WSL2. It helps you manage packages, environment variables, and shell configuration declaratively."
+    license: MIT
+    grade: stable
+    confinement: strict
+    # Set this to true to publish to the Snap Store.
+    publish: true
+
+
 
 changelog:
   sort: asc
