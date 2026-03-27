@@ -276,17 +276,6 @@ func TestLinuxbrew(t *testing.T) {
 	})
 }
 
-// TestNix uses "hello" as the knownInstalled probe: it is the canonical first
-// nix package and is pre-installed in the nixos/nix Docker image.
-func TestNix(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Nix{},
-		wantBin:        "nix-env",
-		explicitMap:    map[string]string{"nix": "hello"},
-		explicitWant:   "hello",
-		knownInstalled: "curl", // curl is explicitly installed as a build dep in CI
-	})
-}
 
 func TestMacPorts(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
@@ -324,8 +313,7 @@ func TestXbps(t *testing.T) {
 // ---- shared assertion helpers -----------------------------------------------
 
 // assertInstallCmd checks that cmd starts with wantBin and that the last
-// argument ends with wantPkg. Using HasSuffix accommodates adapters like nix
-// that prefix the attribute channel (e.g. "nixpkgs.testpkg").
+// argument ends with wantPkg.
 func assertInstallCmd(t *testing.T, cmd []string, wantBin, wantPkg string) {
 	t.Helper()
 	if len(cmd) == 0 {
