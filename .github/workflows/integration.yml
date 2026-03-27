@@ -331,6 +331,13 @@ jobs:
               echo "==> Installing hello (probe package for integration tests)"
               nix-env -iA nixpkgs.hello
 
+              echo "==> Nix profile debug"
+              nix-env -q || true
+              echo "--- nix-env -q --installed curl ---"
+              nix-env -q --installed curl || true
+              echo "--- nix-env -q --installed '^curl-' ---"
+              nix-env -q --installed "^curl-" || true
+
               echo "==> Copying workspace"
               cp -r /host-workspace /root/genv
 
