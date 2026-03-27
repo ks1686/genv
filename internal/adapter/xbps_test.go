@@ -44,19 +44,19 @@ fi`)
 	}
 }
 
-// TestXbps_QueryVersion_ParsesVersion verifies that xbps-query -p version
-// output is parsed correctly.
+// TestXbps_QueryVersion_ParsesVersion verifies that xbps-query -p pkgver
+// output is parsed correctly (strips pkgname prefix and _revision suffix).
 func TestXbps_QueryVersion_ParsesVersion(t *testing.T) {
 	installFakeBinary(t, "xbps-query",
-		`if [ "$1" = "-p" ] && [ "$2" = "version" ]; then
-  echo "2.10.32_2"
+		`if [ "$1" = "-p" ] && [ "$2" = "pkgver" ]; then
+  echo "gimp-2.10.32_2"
 fi`)
 	ver, err := Xbps{}.QueryVersion("gimp")
 	if err != nil {
 		t.Fatalf("Xbps.QueryVersion: %v", err)
 	}
-	if ver != "2.10.32_2" {
-		t.Errorf("version: got %q, want %q", ver, "2.10.32_2")
+	if ver != "2.10.32" {
+		t.Errorf("version: got %q, want %q", ver, "2.10.32")
 	}
 }
 
