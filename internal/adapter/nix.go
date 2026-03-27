@@ -40,13 +40,24 @@ func (Nix) PlanClean() [][]string {
 	}
 }
 
-// nixEnvQuery returns lines from "nix-env -q ^pkgName-", used by both Query
-// and QueryVersion to avoid duplicating the subprocess invocation.
-// The anchored regex restricts output to packages whose name starts with
-// pkgName- (e.g. "^git-" matches "git-2.43.0" but also "git-lfs-3.4.0");
-// callers must confirm the exact name via trimVersionSuffix.
+// nixEnvQuery returns installed "pkgname-version" lines that start with
+// pkgName+ "-". It fetches all installed packages via "nix-env -q" (no
+// pattern) and filters in Go: passing a regex pattern to nix-env -q causes
+// some nix versions to query nixpkgs channels instead of the profile, which
+// fails when no channel is configured.
 func nixEnvQuery(pkgName string) ([]string, error) {
-	return runListOutput("nix-env", "-q", "--installed", "^"+pkgName+"-")
+	all, err := runListOutput("nix-env", "-q")
+	if err != nil || len(all) == 0 {
+		return all, err
+	}
+	prefix := pkgName + "-"
+	var matches []string
+	for _, line := range all {
+		if strings.HasPrefix(line, prefix) {
+			matches = append(matches, line)
+		}
+	}
+	return matches, nil
 }
 
 // Query reports whether pkgName is installed in the user's nix profile.
