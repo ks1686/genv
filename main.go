@@ -60,6 +60,14 @@ var safeEditors = map[string]bool{
 	"code":  true,
 }
 
+var safeFlags = map[string]bool{
+	"--wait": true,
+	"-w":     true,
+	"-R":     true,
+	"-nw":    true,
+	"-n":     true,
+}
+
 func main() {
 	os.Exit(run(os.Args[1:]))
 }
@@ -2058,6 +2066,12 @@ func buildEditorCmd(editor, file string) (*exec.Cmd, error) {
 	base := filepath.Base(bin)
 	if !safeEditors[base] {
 		return nil, fmt.Errorf("editor %q is not allowed; must be one of: vi, vim, nano, emacs, code", bin)
+	}
+
+	for _, arg := range fields[1:] {
+		if !safeFlags[arg] {
+			return nil, fmt.Errorf("editor flag %q is not allowed; only safe flags are permitted", arg)
+		}
 	}
 
 	args := append(fields[1:], file)
