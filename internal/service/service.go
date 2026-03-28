@@ -15,10 +15,10 @@ import (
 )
 
 // systemdUnitName returns the systemd unit name for a genv-managed service.
-func systemdUnitName(name string) string { return "genv-" + name + ".service" }
+func systemdUnitName(name string) string { return "genv-" + filepath.Base(name) + ".service" }
 
 // launchdPlistName returns the launchd plist filename for a genv-managed service.
-func launchdPlistName(name string) string { return "genv." + name + ".plist" }
+func launchdPlistName(name string) string { return "genv." + filepath.Base(name) + ".plist" }
 
 // SystemdLogsHint returns the journalctl command users should run to view logs for name.
 func SystemdLogsHint(name string) string {
