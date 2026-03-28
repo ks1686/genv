@@ -16,6 +16,8 @@ import (
 
 // systemdUnitName returns the systemd unit name for a genv-managed service.
 func systemdUnitName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, "\\", "-")
 	return "genv-" + name + ".service"
@@ -23,6 +25,8 @@ func systemdUnitName(name string) string {
 
 // launchdPlistName returns the launchd plist filename for a genv-managed service.
 func launchdPlistName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, "\\", "-")
 	return "genv." + name + ".plist"
