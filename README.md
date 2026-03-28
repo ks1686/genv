@@ -31,7 +31,7 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
 | Platform | Managers                                                                                            |
 | -------- | --------------------------------------------------------------------------------------------------- |
-| Linux    | `apt`, `dnf`, `zypper`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge` |
+| Linux    | `paru`, `yay` (AUR), `snap`, `linuxbrew`                                                            |
 | macOS    | `brew` (formulae + casks)                                                                           |
 | Windows  | WSL2 (targets the Linux userland inside WSL2)                                                       |
 

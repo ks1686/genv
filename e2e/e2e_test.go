@@ -724,47 +724,7 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 
 // ── per-adapter entry points ──────────────────────────────────────────────────
 
-func TestE2EApt(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "apt",
-		checkBin:    "apt-get",
-		testPkg:     "tree",
-		canInstall:  true,
-	})
-}
-
-func TestE2EDnf(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "dnf",
-		checkBin:    "dnf",
-		testPkg:     "tree",
-		canInstall:  true,
-	})
-}
-
-// TestE2EZypper uses --prefer zypper because dnf may also be present on newer
-// openSUSE Tumbleweed images and appears earlier in adapter.All.
-func TestE2EZypper(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "zypper",
-		checkBin:    "zypper",
-		testPkg:     "tree",
-		preferFlag:  "zypper",
-		canInstall:  true,
-	})
-}
-
-func TestE2EPacman(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "pacman",
-		checkBin:    "pacman",
-		testPkg:     "tree",
-		canInstall:  true,
-	})
-}
-
-// TestE2EParu uses --prefer paru because pacman is also available on Arch and
-// appears earlier in adapter.All — without prefer, the resolver picks pacman.
+// TestE2EParu uses --prefer paru to ensure the resolver picks paru.
 func TestE2EParu(t *testing.T) {
 	runE2ESuite(t, suiteConfig{
 		adapterName: "paru",
@@ -775,7 +735,7 @@ func TestE2EParu(t *testing.T) {
 	})
 }
 
-// TestE2EYay uses --prefer yay for the same reason as TestE2EParu.
+// TestE2EYay uses --prefer yay to ensure the resolver picks yay.
 func TestE2EYay(t *testing.T) {
 	runE2ESuite(t, suiteConfig{
 		adapterName: "yay",
@@ -783,19 +743,6 @@ func TestE2EYay(t *testing.T) {
 		testPkg:     "tree",
 		preferFlag:  "yay",
 		canInstall:  true,
-	})
-}
-
-// TestE2EFlatpak tests all non-install commands. Real flatpak installs require
-// a configured remote (e.g. Flathub) which is not set up in the CI containers.
-// genv add still exits 0 even when the install fails (non-fatal by design), so
-// spec/lock mutations and all read-only commands are still fully exercised.
-func TestE2EFlatpak(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "flatpak",
-		checkBin:    "flatpak",
-		testPkg:     "com.example.TestApp",
-		canInstall:  false,
 	})
 }
 
@@ -808,33 +755,6 @@ func TestE2EBrew(t *testing.T) {
 		checkBin:    "brew",
 		testPkg:     "tree",
 		preferFlag:  "brew",
-		canInstall:  true,
-	})
-}
-
-// TestE2EEmerge tests all non-install commands for the emerge (Gentoo) adapter.
-// Real package installation is skipped because emerge compiles packages from
-// source, making CI installs impractically slow. All spec/lock mutations,
-// dry-run plans, and read-only commands are still fully exercised.
-func TestE2EEmerge(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "emerge",
-		checkBin:    "emerge",
-		testPkg:     "nano",
-		preferFlag:  "emerge",
-		canInstall:  false,
-	})
-}
-
-// TestE2EXbps runs the full E2E suite on Void Linux using xbps.
-// Uses --prefer xbps to prevent accidentally picking another manager.
-// Skips automatically when xbps-install is not in PATH.
-func TestE2EXbps(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "xbps",
-		checkBin:    "xbps-install",
-		testPkg:     "nano",
-		preferFlag:  "xbps",
 		canInstall:  true,
 	})
 }

@@ -4,10 +4,22 @@ version: '{{.Version}}' # set by goreleaser
 summary: Declarative package and environment manager for Linux, macOS, and WSL2.
 description: |
   genv is a command-line tool to track, sync, and reproduce your software
-  environment across Linux, macOS, and WSL2. It helps you manage packages,
-  environment variables, and shell configuration declaratively.
+  environment across Linux, macOS, and WSL2. Manage packages, environment
+  variables, and shell configuration declaratively using a single genv.json
+  file — then replay the exact same environment on any machine with one command.
+
+  Supported package managers: brew (macOS/Linux), paru, yay (Arch AUR), snap.
+
+  Source code: https://github.com/ks1686/genv
+  Bug reports: https://github.com/ks1686/genv/issues
+
 grade: stable
 confinement: strict
+
+website: https://github.com/ks1686/genv
+source-code: https://github.com/ks1686/genv
+issues: https://github.com/ks1686/genv/issues
+license: MIT
 
 apps:
   genv:

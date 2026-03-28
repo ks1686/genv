@@ -26,18 +26,11 @@ const ValidShellTargetsMsg = `"bash", "zsh", "fish", or omit for all`
 
 // KnownManagers is the set of package-manager IDs recognized in schema v1.
 var KnownManagers = map[string]bool{
-	"apt":       true,
-	"dnf":       true,
-	"zypper":    true,
-	"pacman":    true,
 	"paru":      true,
 	"yay":       true,
-	"flatpak":   true,
 	"snap":      true,
 	"brew":      true,
 	"linuxbrew": true,
-	"xbps":      true,
-	"emerge":    true,
 }
 
 // GenvFile is the top-level structure of a genv.json file.

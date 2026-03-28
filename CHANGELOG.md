@@ -8,6 +8,45 @@ Targets Milestone M13: hooks and lifecycle scripts. Users will be able to declar
 
 ---
 
+## v2.1.2 - 2026-03-28
+
+Narrowed supported package managers to only those with self-service deployment pipelines (no external approval required).
+
+### Supported package managers
+
+genv now targets exclusively:
+
+- **`brew`** — Homebrew formulae and casks (macOS and Linux)
+- **`linuxbrew`** — Homebrew on Linux (non-macOS path)
+- **`paru`** — AUR helper (Arch Linux)
+- **`yay`** — AUR helper (Arch Linux)
+- **`snap`** — Snap Store (Ubuntu and other Linux distributions with snapd)
+- **Raw binary** — pre-built binaries via GitHub Releases (`go install github.com/ks1686/genv@latest`)
+
+### Removed adapters
+
+Removed `apt`, `dnf`, `zypper`, `pacman`, `flatpak`, `xbps`, and `emerge` adapters, along with all associated tests, CI jobs, schema entries, and documentation. These managers require submission to and approval by external package repositories.
+
+### Removed packaging channels
+
+- `.deb` packages (required submission to apt repositories)
+- `.rpm` packages (required submission to dnf/rpm repositories)
+
+### Bug fix
+
+- `genv scan` now validates the spec file before checking for available package managers, ensuring invalid files always return an error rather than silently succeeding.
+
+---
+
+## v2.1.1 - 2026-03-27
+
+### Distribution channels
+
+- Snap package now published to Snap Store (`snap install genv`); channel restricted to `stable` to match credential scope.
+- Alpine APKBUILD and Fedora COPR packaging removed (require external maintainer approval).
+
+---
+
 ## v2.1.0 - 2026-03-27
 
 Milestone M10 is complete. genv now supports virtually every mainstream Linux package manager and adds full user-space service lifecycle management.

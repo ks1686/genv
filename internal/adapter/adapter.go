@@ -75,17 +75,10 @@ type Adapter interface {
 // specified in genv.json the first available adapter wins.
 var All = []Adapter{
 	Brew{},
-	Apt{},
-	Dnf{},
-	Zypper{},
-	Pacman{},
 	Paru{},
 	Yay{},
-	Flatpak{},
 	Snap{},
 	Linuxbrew{},
-	Xbps{},
-	Emerge{},
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.
@@ -197,16 +190,6 @@ func parsePacmanSearch(lines []string, query string) []string {
 	return names
 }
 
-// rpmQuery, rpmListInstalled, and rpmQueryVersion are shared helpers for
-// adapters whose package database is backed by RPM (Dnf, Zypper).
-func rpmQuery(pkgName string) (bool, error) { return runQuery("rpm", "-q", pkgName) }
-func rpmListInstalled() ([]string, error) {
-	return runListOutput("rpm", "-qa", "--qf", "%{NAME}\\n")
-}
-func rpmQueryVersion(pkgName string) (string, error) {
-	return runVersionOutput("rpm", "-q", "--qf", "%{VERSION}", pkgName)
-}
-
 // parseMgrQueryVersion extracts the version from "pkgname version" output,
 // as produced by pacman-style query commands (pacman -Q, paru -Q, yay -Q).
 func parseMgrQueryVersion(out string) string {
@@ -216,14 +199,3 @@ func parseMgrQueryVersion(out string) string {
 	return ""
 }
 
-// trimVersionSuffix strips the version suffix from a "pkgname-version" string.
-// Versions always begin with a digit, so the last "-<digit>" occurrence marks
-// the boundary between name and version (e.g. "py3-pip-23.3.1-r0" → "py3-pip").
-func trimVersionSuffix(nameVer string) string {
-	for i := len(nameVer) - 1; i > 0; i-- {
-		if nameVer[i-1] == '-' && nameVer[i] >= '0' && nameVer[i] <= '9' {
-			return nameVer[:i-1]
-		}
-	}
-	return nameVer
-}

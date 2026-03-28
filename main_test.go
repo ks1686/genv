@@ -120,7 +120,7 @@ func TestAddCmd_WithManagerFlag(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.json")
 
-	code := run([]string{"add", "--file", path, "--manager", "flatpak:org.mozilla.firefox,brew:firefox", "firefox"})
+	code := run([]string{"add", "--file", path, "--manager", "snap:hello,brew:hello", "hello"})
 	if code != exitOK {
 		t.Fatalf("expected exitOK, got %d", code)
 	}
@@ -130,8 +130,8 @@ func TestAddCmd_WithManagerFlag(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	s := string(content)
-	if !strings.Contains(s, "org.mozilla.firefox") {
-		t.Errorf("flatpak name not in file: %s", s)
+	if !strings.Contains(s, `"snap"`) {
+		t.Errorf("snap manager not in file: %s", s)
 	}
 }
 
@@ -472,8 +472,8 @@ func TestDisownCmd_Basic(t *testing.T) {
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
-		{ID: "neovim", Manager: "apt", PkgName: "neovim"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
 	})
 
 	code := run([]string{"disown", "--file", path, "git"})
@@ -610,7 +610,7 @@ func TestListCmd_ShowsLockedPackages(t *testing.T) {
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
 	})
 
@@ -720,8 +720,8 @@ func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 	run([]string{"add", "--file", path, "git"})
 	run([]string{"add", "--file", path, "neovim"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
-		{ID: "htop", Manager: "apt", PkgName: "htop"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "htop", Manager: "brew", PkgName: "htop"},
 	})
 
 	code := run([]string{"apply", "--file", path, "--dry-run"})
@@ -737,7 +737,7 @@ func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 
 	// Desired == applied → "already up to date", no prompt, exitOK.
@@ -905,7 +905,7 @@ func TestStatusCmd_AllOK(t *testing.T) {
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 
 	code := run([]string{"status", "--file", path})
@@ -936,7 +936,7 @@ func TestStatusCmd_ExtraEntry(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 	code := run([]string{"status", "--file", path})
 	if code != exitLogic {
@@ -952,7 +952,7 @@ func TestStatusCmd_DriftEntry(t *testing.T) {
 	run([]string{"add", "--file", path, "--version", "2.0.*", "git"})
 	// Lock records version 1.x — does not satisfy "2.0.*" → drift.
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git", InstalledVersion: "1.9.0"},
+		{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "1.9.0"},
 	})
 	code := run([]string{"status", "--file", path})
 	if code != exitLogic {
@@ -988,7 +988,7 @@ func TestStatusCmd_JsonOutput(t *testing.T) {
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 
 	var code int
@@ -1038,7 +1038,7 @@ func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 
 	// --yes with an up-to-date state exits OK immediately (no prompt, no work).
@@ -1106,7 +1106,7 @@ func TestApplyCmd_AlreadyUpToDate_JsonOutput(t *testing.T) {
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "git", Manager: "apt", PkgName: "git"},
+		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
 
 	var code int

@@ -33,8 +33,8 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 			{
 				ID: "firefox",
 				Managers: map[string]string{
-					"flatpak": "org.mozilla.firefox",
-					"brew":    "firefox",
+					"snap": "firefox",
+					"brew": "firefox",
 				},
 			},
 		},
@@ -356,7 +356,7 @@ func TestReadLock_ValidFile_RoundTrip(t *testing.T) {
 		SchemaVersion: schema.Version,
 		Packages: []LockedPackage{
 			{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
-			{ID: "neovim", Manager: "apt", PkgName: "neovim"},
+			{ID: "neovim", Manager: "paru", PkgName: "neovim"},
 		},
 	}
 	if err := WriteLock(path, original); err != nil {
@@ -499,9 +499,9 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 			{
 				ID:      "firefox",
 				Version: "1.0",
-				Prefer:  "flatpak",
+				Prefer:  "snap",
 				Managers: map[string]string{
-					"flatpak": "org.mozilla.firefox",
+					"snap": "firefox",
 					"brew":    "firefox",
 				},
 			},
@@ -516,7 +516,7 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if got.Packages[0].Managers["flatpak"] != "org.mozilla.firefox" {
+	if got.Packages[0].Managers["snap"] != "firefox" {
 		t.Errorf("managers roundtrip: got %v", got.Packages[0].Managers)
 	}
 }

@@ -30,16 +30,16 @@ func TestAdd_Basic(t *testing.T) {
 
 func TestAdd_WithPreferAndManagers(t *testing.T) {
 	f := newFile()
-	managers := map[string]string{"flatpak": "org.mozilla.firefox", "brew": "firefox"}
-	if err := Add(f, "firefox", "*", "flatpak", managers); err != nil {
+	managers := map[string]string{"snap": "hello", "brew": "hello"}
+	if err := Add(f, "hello", "*", "snap", managers); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	p := f.Packages[0]
-	if p.Prefer != "flatpak" {
-		t.Errorf("Prefer = %q, want flatpak", p.Prefer)
+	if p.Prefer != "snap" {
+		t.Errorf("Prefer = %q, want snap", p.Prefer)
 	}
-	if p.Managers["flatpak"] != "org.mozilla.firefox" {
-		t.Errorf("managers[flatpak] = %q", p.Managers["flatpak"])
+	if p.Managers["snap"] != "hello" {
+		t.Errorf("managers[snap] = %q", p.Managers["snap"])
 	}
 }
 
@@ -144,7 +144,7 @@ func TestAdd_MultipleDistinctPackages(t *testing.T) {
 // TestAdd_AllKnownManagers verifies that every manager in schema.KnownManagers
 // is accepted as a valid --prefer value.
 func TestAdd_AllKnownManagers(t *testing.T) {
-	knownManagers := []string{"apt", "dnf", "pacman", "paru", "yay", "flatpak", "snap", "brew", "linuxbrew"}
+	knownManagers := []string{"paru", "yay", "snap", "brew", "linuxbrew"}
 	for _, mgr := range knownManagers {
 		t.Run(mgr, func(t *testing.T) {
 			f := newFile()
