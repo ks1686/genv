@@ -520,3 +520,20 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 		t.Errorf("managers roundtrip: got %v", got.Packages[0].Managers)
 	}
 }
+
+func TestDefaultDir_HomeDirError(t *testing.T) {
+	// First ensure XDG_CONFIG_HOME is unset
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+
+	_, err := DefaultDir()
+	if err == nil {
+		t.Error("DefaultDir: expected error when home directory cannot be determined, got nil")
+	} else if !strings.Contains(err.Error(), "cannot determine home directory") {
+		t.Errorf("DefaultDir: expected error to mention 'cannot determine home directory', got %v", err)
+	}
+}
