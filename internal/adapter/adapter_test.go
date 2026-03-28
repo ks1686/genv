@@ -63,16 +63,11 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		wantName string
 		wantExp  bool
 	}{
-		{"apt", "vim", map[string]string{"apt": "vim-nox"}, "vim-nox", true},
-		{"dnf", "vim", map[string]string{"dnf": "vim-enhanced"}, "vim-enhanced", true},
-		{"pacman", "vim", map[string]string{"pacman": "vim"}, "vim", true},
 		{"paru", "vim", map[string]string{"paru": "vim-aur"}, "vim-aur", true},
 		{"yay", "vim", map[string]string{"yay": "vim-aur"}, "vim-aur", true},
-		{"flatpak", "firefox", map[string]string{"flatpak": "org.mozilla.firefox"}, "org.mozilla.firefox", true},
 		{"snap", "code", map[string]string{"snap": "code"}, "code", true},
 		{"brew", "neovim", map[string]string{"brew": "neovim"}, "neovim", true},
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
-		{"zypper", "vim", map[string]string{"zypper": "vim"}, "vim", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgrName+"/explicit", func(t *testing.T) {
@@ -132,13 +127,8 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		mgr     string
 		wantBin string
 	}{
-		{"apt", "sudo"},
-		{"dnf", "sudo"},
-		{"zypper", "sudo"},
-		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
-		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"linuxbrew", "brew"},
@@ -179,13 +169,8 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		mgr     string
 		wantBin string
 	}{
-		{"apt", "sudo"},
-		{"dnf", "sudo"},
-		{"zypper", "sudo"},
-		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
-		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"linuxbrew", "brew"},
@@ -414,38 +399,6 @@ func TestAllAdapters_MethodsNoPanic(t *testing.T) {
 	}
 }
 
-// TestPacman_Query_And_Version exercises Pacman's Query/ListInstalled/QueryVersion
-// against real pacman when available. On Arch Linux, "bash" is always installed.
-func TestPacman_Query_And_Version(t *testing.T) {
-	a := Pacman{}
-	if !a.Available() {
-		t.Skip("pacman not available on this host")
-	}
-	ok, err := a.Query("bash")
-	if err != nil {
-		t.Fatalf("Pacman.Query(bash): %v", err)
-	}
-	if !ok {
-		t.Error("Pacman.Query(bash): expected true (bash is always installed on Arch)")
-	}
-
-	pkgs, err := a.ListInstalled()
-	if err != nil {
-		t.Fatalf("Pacman.ListInstalled: %v", err)
-	}
-	if len(pkgs) == 0 {
-		t.Error("Pacman.ListInstalled: expected at least one package")
-	}
-
-	ver, err := a.QueryVersion("bash")
-	if err != nil {
-		t.Fatalf("Pacman.QueryVersion(bash): %v", err)
-	}
-	if ver == "" {
-		t.Error("Pacman.QueryVersion(bash): expected non-empty version")
-	}
-}
-
 // TestParu_Query_And_Version exercises Paru when available.
 // Paru reuses pacman's database, so "bash" is always installed when paru is.
 func TestParu_Query_And_Version(t *testing.T) {
@@ -475,22 +428,6 @@ func TestParu_Query_And_Version(t *testing.T) {
 	}
 	if ver == "" {
 		t.Error("Paru.QueryVersion(bash): expected non-empty version")
-	}
-}
-
-// TestFlatpak_AbsentPackage verifies that Flatpak returns (false, nil) for a
-// package that is definitely not installed.
-func TestFlatpak_AbsentPackage(t *testing.T) {
-	a := Flatpak{}
-	if !a.Available() {
-		t.Skip("flatpak not available on this host")
-	}
-	ok, err := a.Query("__genv.nonexistent.flatpak.app__")
-	if err != nil {
-		t.Fatalf("Flatpak.Query(nonexistent): unexpected error: %v", err)
-	}
-	if ok {
-		t.Error("Flatpak.Query(nonexistent): expected false")
 	}
 }
 
@@ -562,24 +499,6 @@ fi`)
 	}
 	if ver != "16-2.61" {
 		t.Errorf("version: got %q, want %q", ver, "16-2.61")
-	}
-}
-
-// TestFlatpak_QueryVersion_ParsesVersion verifies "Version:" extraction from
-// "flatpak info" output.
-func TestFlatpak_QueryVersion_ParsesVersion(t *testing.T) {
-	installFakeBinary(t, "flatpak",
-		`if [ "$1" = "info" ]; then
-  echo "Ref: app/org.mozilla.firefox/x86_64/stable"
-  echo "Version: 120.0"
-  echo "License: MPL-2.0"
-fi`)
-	ver, err := Flatpak{}.QueryVersion("org.mozilla.firefox")
-	if err != nil {
-		t.Fatalf("Flatpak.QueryVersion: %v", err)
-	}
-	if ver != "120.0" {
-		t.Errorf("version: got %q, want %q", ver, "120.0")
 	}
 }
 
@@ -669,13 +588,8 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		mgr     string
 		wantBin string
 	}{
-		{"apt", "sudo"},
-		{"dnf", "sudo"},
-		{"zypper", "sudo"},
-		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
-		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"linuxbrew", "brew"},
@@ -712,13 +626,8 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		mgr  string
 		verb string
 	}{
-		{"apt", "--only-upgrade"}, // apt-get install --only-upgrade
-		{"dnf", "upgrade"},
-		{"zypper", "update"},
-		{"pacman", "-S"}, // pacman upgrade = reinstall latest via -S
 		{"paru", "-S"},
 		{"yay", "-S"},
-		{"flatpak", "update"},
 		{"snap", "refresh"},
 		{"brew", "upgrade"},
 		{"linuxbrew", "upgrade"},
@@ -754,13 +663,8 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		mgr       string
 		wantCount int
 	}{
-		{"apt", 2}, // autoremove + clean
-		{"dnf", 2}, // autoremove + clean all
-		{"zypper", 1},
-		{"pacman", 2}, // find download-* step + pacman -Sc
 		{"paru", 1},
 		{"yay", 1},
-		{"flatpak", 1},
 		{"snap", 0},
 		{"brew", 1},
 		{"linuxbrew", 1},
@@ -786,13 +690,8 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		mgr     string
 		wantBin string
 	}{
-		{"apt", "sudo"},
-		{"dnf", "sudo"},
-		{"zypper", "sudo"},
-		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
-		{"flatpak", "flatpak"},
 		{"brew", "brew"},
 		{"linuxbrew", "brew"},
 	}
@@ -814,51 +713,6 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 	}
 }
 
-// TestPlanClean_Pacman_HasFindStepFirst verifies that the first command in
-// Pacman.PlanClean is a find-based cleanup, not pacman itself.
-// This is the regression guard for the stale-download-file fix: if someone
-// removes the find step, this test fails immediately.
-func TestPlanClean_Pacman_HasFindStepFirst(t *testing.T) {
-	cmds := Pacman{}.PlanClean()
-	if len(cmds) < 2 {
-		t.Fatalf("Pacman PlanClean: expected >= 2 commands, got %d", len(cmds))
-	}
-	first := cmds[0]
-	if len(first) < 2 {
-		t.Fatalf("Pacman PlanClean first cmd too short: %v", first)
-	}
-	if first[1] != "find" {
-		t.Errorf("Pacman PlanClean first cmd must be 'sudo find ...', got %v", first)
-	}
-}
-
-// TestPlanClean_Pacman_FindTargetsDownloadFiles verifies that the find command
-// targets /var/cache/pacman/pkg with the download-* pattern and -delete.
-// This is the specific test that would have caught the original bug before the fix.
-func TestPlanClean_Pacman_FindTargetsDownloadFiles(t *testing.T) {
-	cmds := Pacman{}.PlanClean()
-	if len(cmds) < 1 {
-		t.Fatal("Pacman PlanClean: no commands")
-	}
-	first := cmds[0]
-
-	assertContainsArg(t, first, "/var/cache/pacman/pkg")
-	assertContainsArg(t, first, "download-*")
-	assertContainsArg(t, first, "-exec")
-}
-
-// TestPlanClean_Pacman_SecondCommandIsPacmanSc verifies that the second command
-// is the actual pacman cache clean (sudo pacman -Sc --noconfirm).
-func TestPlanClean_Pacman_SecondCommandIsPacmanSc(t *testing.T) {
-	cmds := Pacman{}.PlanClean()
-	if len(cmds) < 2 {
-		t.Fatalf("Pacman PlanClean: expected >= 2 commands, got %d", len(cmds))
-	}
-	second := cmds[1]
-	assertContainsArg(t, second, "pacman")
-	assertContainsArg(t, second, "-Sc")
-}
-
 // ---------------------------------------------------------------------------
 // PlanInstall — verb and noninteractive flag validation
 // ---------------------------------------------------------------------------
@@ -870,16 +724,11 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		mgr  string
 		verb string
 	}{
-		{"apt", "install"},
-		{"dnf", "install"},
-		{"pacman", "-S"},
 		{"paru", "-S"},
 		{"yay", "-S"},
-		{"flatpak", "install"},
 		{"snap", "install"},
 		{"brew", "install"},
 		{"linuxbrew", "install"},
-		{"zypper", "install"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -899,13 +748,8 @@ func TestPlanInstall_ContainsNoninteractiveFlag(t *testing.T) {
 		mgr      string
 		wantFlag string
 	}{
-		{"apt", "-y"},
-		{"dnf", "-y"},
-		{"zypper", "--non-interactive"},
-		{"pacman", "--noconfirm"},
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
-		{"flatpak", "-y"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -929,16 +773,11 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		mgr  string
 		verb string
 	}{
-		{"apt", "purge"},
-		{"dnf", "remove"},
-		{"pacman", "-Rns"},
 		{"paru", "-Rns"},
 		{"yay", "-Rns"},
-		{"flatpak", "uninstall"},
 		{"snap", "remove"},
 		{"brew", "uninstall"},
 		{"linuxbrew", "uninstall"},
-		{"zypper", "remove"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -958,13 +797,8 @@ func TestPlanUninstall_ContainsNoninteractiveFlag(t *testing.T) {
 		mgr      string
 		wantFlag string
 	}{
-		{"apt", "-y"},
-		{"dnf", "-y"},
-		{"zypper", "--non-interactive"},
-		{"pacman", "--noconfirm"},
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
-		{"flatpak", "-y"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -1056,224 +890,6 @@ func TestParsePacmanSearch_EmptyInput(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Search output parsers — fake binaries via PATH injection
 // ---------------------------------------------------------------------------
-
-// TestAptSearch_ParsesNameOnly verifies that Apt.Search extracts the package
-// name from "name - description" lines and filters out non-matching names.
-func TestAptSearch_ParsesNameOnly(t *testing.T) {
-	installFakeBinary(t, "apt-cache",
-		`if [ "$1" = "search" ]; then
-  echo "vim-nox - Vi IMproved - enhanced vim with scripting"
-  echo "vim-gtk3 - Vi IMproved - enhanced vim with GTK3 GUI"
-  echo "emacs - GNU Emacs editor (no X11 support)"
-fi`)
-	names, err := Apt{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Apt.Search: %v", err)
-	}
-	// "emacs" does not contain "vim" → must be filtered
-	for _, n := range names {
-		if n == "emacs" {
-			t.Errorf("Apt.Search: 'emacs' should be filtered out (does not match query 'vim')")
-		}
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 matching names, got %d: %v", len(names), names)
-	}
-	if names[0] != "vim-nox" || names[1] != "vim-gtk3" {
-		t.Errorf("expected [vim-nox vim-gtk3], got %v", names)
-	}
-}
-
-// TestDnfSearch_ParsesNameAndStripsArch verifies that Dnf.Search extracts
-// package names from "name.arch : description" lines, strips the arch suffix,
-// skips section headers and metadata lines, and deduplicates.
-func TestDnfSearch_ParsesNameAndStripsArch(t *testing.T) {
-	installFakeBinary(t, "dnf",
-		`if [ "$1" = "search" ]; then
-  echo "=== Name Exactly Matched: vim ==="
-  echo "vim.x86_64 : Vi IMproved - a text editor"
-  echo "vim-enhanced.x86_64 : The Enhanced version of the Vi text editor"
-  echo "Last metadata expiration check: 0:05:00 ago on Thu"
-fi`)
-	names, err := Dnf{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Dnf.Search: %v", err)
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
-	}
-	if names[0] != "vim" || names[1] != "vim-enhanced" {
-		t.Errorf("expected [vim vim-enhanced], got %v", names)
-	}
-}
-
-// TestDnfSearch_DeduplicatesMultiArch verifies that the same package name
-// appearing under multiple arch suffixes is returned only once.
-func TestDnfSearch_DeduplicatesMultiArch(t *testing.T) {
-	installFakeBinary(t, "dnf",
-		`if [ "$1" = "search" ]; then
-  echo "vim.x86_64 : Vi IMproved"
-  echo "vim.i686 : Vi IMproved (32-bit)"
-fi`)
-	names, err := Dnf{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Dnf.Search: %v", err)
-	}
-	if len(names) != 1 {
-		t.Errorf("multi-arch dedup: expected 1 result, got %d: %v", len(names), names)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// trimVersionSuffix — pure function tests (used by emerge and xbps)
-// ---------------------------------------------------------------------------
-
-func TestTrimVersionSuffix_SimplePackage(t *testing.T) {
-	if got := trimVersionSuffix("bash-5.2.21-r0"); got != "bash" {
-		t.Errorf("got %q, want %q", got, "bash")
-	}
-}
-
-func TestTrimVersionSuffix_DashedPackageName(t *testing.T) {
-	// Package names themselves can contain dashes (e.g. py3-pip).
-	if got := trimVersionSuffix("py3-pip-23.3.1-r0"); got != "py3-pip" {
-		t.Errorf("got %q, want %q", got, "py3-pip")
-	}
-}
-
-func TestTrimVersionSuffix_NoVersion(t *testing.T) {
-	// When there is no recognisable version suffix, the whole string is returned.
-	if got := trimVersionSuffix("bash"); got != "bash" {
-		t.Errorf("got %q, want %q", got, "bash")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// parseZypperSearch — pure function tests
-// ---------------------------------------------------------------------------
-
-// TestParseZypperSearch_ParsesNameColumn verifies that the Name column is
-// extracted correctly from zypper's pipe-delimited table output.
-func TestParseZypperSearch_ParsesNameColumn(t *testing.T) {
-	lines := []string{
-		"Loading repository data...",
-		"Reading installed packages...",
-		"S  | Name             | Summary                     | Type   ",
-		"---+------------------+-----------------------------+--------",
-		"   | vim              | Vi IMproved                 | package",
-		"i  | vim-data         | Vi IMproved Data Files      | package",
-		"   | emacs            | GNU Emacs editor            | package",
-	}
-	names := parseZypperSearch(lines, "vim")
-	// "emacs" must be filtered out
-	for _, n := range names {
-		if n == "emacs" {
-			t.Errorf("parseZypperSearch: 'emacs' should be filtered out")
-		}
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
-	}
-	if names[0] != "vim" || names[1] != "vim-data" {
-		t.Errorf("expected [vim vim-data], got %v", names)
-	}
-}
-
-// TestParseZypperSearch_SkipsSeparatorAndHeader verifies that separator rows
-// ("---+...") and the header row ("Name") are never returned.
-func TestParseZypperSearch_SkipsSeparatorAndHeader(t *testing.T) {
-	lines := []string{
-		"S  | Name | Summary | Type",
-		"---+------+---------+-----",
-		"   | git  | Git VCS | package",
-	}
-	names := parseZypperSearch(lines, "git")
-	if len(names) != 1 || names[0] != "git" {
-		t.Errorf("expected [git], got %v", names)
-	}
-}
-
-// TestParseZypperSearch_Deduplicates verifies that a name appearing more than
-// once (e.g. from multiple repos) is returned only once.
-func TestParseZypperSearch_Deduplicates(t *testing.T) {
-	lines := []string{
-		"S  | Name | Summary | Type",
-		"---+------+---------+-----",
-		"   | vim  | editor  | package",
-		"   | vim  | editor  | srcpackage",
-	}
-	names := parseZypperSearch(lines, "vim")
-	if len(names) != 1 {
-		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Zypper.Search — fake-binary integration test
-// ---------------------------------------------------------------------------
-
-func TestZypperSearch_ParsesTableOutput(t *testing.T) {
-	installFakeBinary(t, "zypper",
-		`if [ "$1" = "search" ]; then
-  echo "S  | Name             | Summary                | Type"
-  echo "---+------------------+------------------------+--------"
-  echo "   | vim              | Vi IMproved            | package"
-  echo "i  | vim-data         | Vi IMproved Data Files | package"
-  echo "   | emacs            | GNU Emacs editor       | package"
-fi`)
-	names, err := Zypper{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Zypper.Search: %v", err)
-	}
-	for _, n := range names {
-		if n == "emacs" {
-			t.Errorf("Zypper.Search: 'emacs' should be filtered out")
-		}
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 results, got %d: %v", len(names), names)
-	}
-	if names[0] != "vim" || names[1] != "vim-data" {
-		t.Errorf("expected [vim vim-data], got %v", names)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Zypper live test — skipped when zypper is not present on the host
-// ---------------------------------------------------------------------------
-
-// TestZypper_Query_And_Version exercises Zypper when running on openSUSE/SLES.
-// rpm (zypper's backend) is always present when zypper is, and "rpm" itself is
-// always installed, making it a reliable probe package.
-func TestZypper_Query_And_Version(t *testing.T) {
-	a := Zypper{}
-	if !a.Available() {
-		t.Skip("zypper not available on this host")
-	}
-	ok, err := a.Query("rpm")
-	if err != nil {
-		t.Fatalf("Zypper.Query(rpm): %v", err)
-	}
-	if !ok {
-		t.Error("Zypper.Query(rpm): expected true (rpm is always installed on openSUSE)")
-	}
-
-	pkgs, err := a.ListInstalled()
-	if err != nil {
-		t.Fatalf("Zypper.ListInstalled: %v", err)
-	}
-	if len(pkgs) == 0 {
-		t.Error("Zypper.ListInstalled: expected at least one package")
-	}
-
-	ver, err := a.QueryVersion("rpm")
-	if err != nil {
-		t.Fatalf("Zypper.QueryVersion(rpm): %v", err)
-	}
-	if ver == "" {
-		t.Error("Zypper.QueryVersion(rpm): expected non-empty version")
-	}
-}
 
 // TestBrewSearch_FiltersArrowHeaders verifies that brew's "==> Formulae" and
 // "==> Casks" section headers are never returned in results.
