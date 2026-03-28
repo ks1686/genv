@@ -71,9 +71,7 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		{"flatpak", "firefox", map[string]string{"flatpak": "org.mozilla.firefox"}, "org.mozilla.firefox", true},
 		{"snap", "code", map[string]string{"snap": "code"}, "code", true},
 		{"brew", "neovim", map[string]string{"brew": "neovim"}, "neovim", true},
-		{"macports", "neovim", map[string]string{"macports": "neovim"}, "neovim", true},
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
-		{"apk", "vim", map[string]string{"apk": "vim"}, "vim", true},
 		{"zypper", "vim", map[string]string{"zypper": "vim"}, "vim", true},
 	}
 	for _, tc := range tests {
@@ -137,14 +135,12 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
 		{"zypper", "sudo"},
-		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
-		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
 	}
 	for _, tc := range tests {
@@ -186,14 +182,12 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
 		{"zypper", "sudo"},
-		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
-		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
 	}
 	for _, tc := range tests {
@@ -589,40 +583,6 @@ fi`)
 	}
 }
 
-// TestMacPorts_ListInstalled_ParsesAtSuffix verifies "@version" stripping.
-func TestMacPorts_ListInstalled_ParsesAtSuffix(t *testing.T) {
-	installFakeBinary(t, "port",
-		`if [ "$1" = "echo" ] && [ "$2" = "installed" ]; then
-  echo "vim @9.0.0607_2+huge (active)"
-  echo "git @2.43.0_0 (active)"
-fi`)
-	pkgs, err := MacPorts{}.ListInstalled()
-	if err != nil {
-		t.Fatalf("MacPorts.ListInstalled: %v", err)
-	}
-	if len(pkgs) != 2 {
-		t.Fatalf("expected 2 packages, got %d: %v", len(pkgs), pkgs)
-	}
-	if pkgs[0] != "vim" || pkgs[1] != "git" {
-		t.Errorf("expected [vim git], got %v", pkgs)
-	}
-}
-
-// TestMacPorts_QueryVersion_ParsesVersion verifies "@version (active)" parsing.
-func TestMacPorts_QueryVersion_ParsesVersion(t *testing.T) {
-	installFakeBinary(t, "port",
-		`if [ "$1" = "installed" ]; then
-  echo "  vim @9.0.0607_2+huge (active)"
-fi`)
-	ver, err := MacPorts{}.QueryVersion("vim")
-	if err != nil {
-		t.Fatalf("MacPorts.QueryVersion: %v", err)
-	}
-	if ver != "9.0.0607_2" {
-		t.Errorf("version: got %q, want %q", ver, "9.0.0607_2")
-	}
-}
-
 // TestBrewQueryVersion_ParsesOutput verifies "pkgname version" splitting in
 // brewQueryVersion (called by both Brew and Linuxbrew QueryVersion).
 func TestBrewQueryVersion_ParsesOutput(t *testing.T) {
@@ -712,14 +672,12 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
 		{"zypper", "sudo"},
-		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"flatpak", "flatpak"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
-		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
 	}
 	for _, tc := range tests {
@@ -757,14 +715,12 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"apt", "--only-upgrade"}, // apt-get install --only-upgrade
 		{"dnf", "upgrade"},
 		{"zypper", "update"},
-		{"apk", "add"},   // apk add upgrades when already installed
 		{"pacman", "-S"}, // pacman upgrade = reinstall latest via -S
 		{"paru", "-S"},
 		{"yay", "-S"},
 		{"flatpak", "update"},
 		{"snap", "refresh"},
 		{"brew", "upgrade"},
-		{"macports", "upgrade"},
 		{"linuxbrew", "upgrade"},
 	}
 	for _, tc := range tests {
@@ -801,14 +757,12 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"apt", 2}, // autoremove + clean
 		{"dnf", 2}, // autoremove + clean all
 		{"zypper", 1},
-		{"apk", 1},
 		{"pacman", 2}, // find download-* step + pacman -Sc
 		{"paru", 1},
 		{"yay", 1},
 		{"flatpak", 1},
 		{"snap", 0},
 		{"brew", 1},
-		{"macports", 1},
 		{"linuxbrew", 1},
 	}
 	for _, tc := range tests {
@@ -835,13 +789,11 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"apt", "sudo"},
 		{"dnf", "sudo"},
 		{"zypper", "sudo"},
-		{"apk", "sudo"},
 		{"pacman", "sudo"},
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"flatpak", "flatpak"},
 		{"brew", "brew"},
-		{"macports", "sudo"},
 		{"linuxbrew", "brew"},
 	}
 	for _, tc := range tests {
@@ -926,9 +878,7 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"flatpak", "install"},
 		{"snap", "install"},
 		{"brew", "install"},
-		{"macports", "install"},
 		{"linuxbrew", "install"},
-		{"apk", "add"},
 		{"zypper", "install"},
 	}
 	for _, tc := range tests {
@@ -987,9 +937,7 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"flatpak", "uninstall"},
 		{"snap", "remove"},
 		{"brew", "uninstall"},
-		{"macports", "uninstall"},
 		{"linuxbrew", "uninstall"},
-		{"apk", "del"},
 		{"zypper", "remove"},
 	}
 	for _, tc := range tests {
@@ -1197,113 +1145,6 @@ func TestTrimVersionSuffix_NoVersion(t *testing.T) {
 	// When there is no recognisable version suffix, the whole string is returned.
 	if got := trimVersionSuffix("bash"); got != "bash" {
 		t.Errorf("got %q, want %q", got, "bash")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Apk.Search — fake-binary parsing tests
-// ---------------------------------------------------------------------------
-
-// TestApkSearch_StripsVersionAndFilters verifies that Apk.Search strips the
-// version suffix from each "pkgname-version" line and filters to names
-// containing the query (case-insensitive).
-func TestApkSearch_StripsVersionAndFilters(t *testing.T) {
-	installFakeBinary(t, "apk",
-		`if [ "$1" = "search" ]; then
-  echo "bash-5.2.21-r0"
-  echo "bash-completion-2.11-r5"
-  echo "busybox-1.36.1-r29"
-fi`)
-	names, err := Apk{}.Search("bash")
-	if err != nil {
-		t.Fatalf("Apk.Search: %v", err)
-	}
-	// "busybox" does not contain "bash" → must be filtered
-	for _, n := range names {
-		if n == "busybox" {
-			t.Errorf("Apk.Search: 'busybox' should be filtered out (does not match query 'bash')")
-		}
-	}
-	if len(names) != 2 {
-		t.Fatalf("expected 2 matching names, got %d: %v", len(names), names)
-	}
-	if names[0] != "bash" || names[1] != "bash-completion" {
-		t.Errorf("expected [bash bash-completion], got %v", names)
-	}
-}
-
-// TestApkSearch_Deduplicates verifies that the same package name appearing
-// more than once in search output is returned only once.
-func TestApkSearch_Deduplicates(t *testing.T) {
-	installFakeBinary(t, "apk",
-		`if [ "$1" = "search" ]; then
-  echo "vim-9.1.0-r0"
-  echo "vim-9.1.0-r0"
-fi`)
-	names, err := Apk{}.Search("vim")
-	if err != nil {
-		t.Fatalf("Apk.Search: %v", err)
-	}
-	if len(names) != 1 {
-		t.Errorf("dedup: expected 1 result, got %d: %v", len(names), names)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Apk.QueryVersion — fake-binary parsing test
-// ---------------------------------------------------------------------------
-
-// TestApkQueryVersion_ParsesFirstLine verifies that QueryVersion correctly
-// extracts the version string from apk info's "pkgname-version description:"
-// first line.
-func TestApkQueryVersion_ParsesFirstLine(t *testing.T) {
-	installFakeBinary(t, "apk",
-		`if [ "$1" = "info" ]; then
-  echo "bash-5.2.21-r0 description:"
-  echo "The GNU Bourne Again shell"
-fi`)
-	ver, err := Apk{}.QueryVersion("bash")
-	if err != nil {
-		t.Fatalf("Apk.QueryVersion: %v", err)
-	}
-	if ver != "5.2.21-r0" {
-		t.Errorf("got %q, want %q", ver, "5.2.21-r0")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Apk live tests — skipped when apk is not present on the host
-// ---------------------------------------------------------------------------
-
-// TestApk_Query_And_Version exercises Apk when running on Alpine Linux.
-// musl-libc is present on every Alpine install, making it a reliable probe.
-func TestApk_Query_And_Version(t *testing.T) {
-	a := Apk{}
-	if !a.Available() {
-		t.Skip("apk not available on this host")
-	}
-	ok, err := a.Query("musl")
-	if err != nil {
-		t.Fatalf("Apk.Query(musl): %v", err)
-	}
-	if !ok {
-		t.Error("Apk.Query(musl): expected true (musl is always installed on Alpine)")
-	}
-
-	pkgs, err := a.ListInstalled()
-	if err != nil {
-		t.Fatalf("Apk.ListInstalled: %v", err)
-	}
-	if len(pkgs) == 0 {
-		t.Error("Apk.ListInstalled: expected at least one package")
-	}
-
-	ver, err := a.QueryVersion("musl")
-	if err != nil {
-		t.Fatalf("Apk.QueryVersion(musl): %v", err)
-	}
-	if ver == "" {
-		t.Error("Apk.QueryVersion(musl): expected non-empty version")
 	}
 }
 

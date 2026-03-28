@@ -222,7 +222,6 @@ func TestPlanInstall_AllManagers(t *testing.T) {
 		{"flatpak", "app.id", "flatpak"},
 		{"snap", "git", "sudo"},
 		{"brew", "git", "brew"},
-		{"macports", "git", "sudo"},
 		{"linuxbrew", "git", "brew"},
 	}
 	for _, tc := range tests {

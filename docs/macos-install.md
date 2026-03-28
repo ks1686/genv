@@ -103,8 +103,6 @@ Your `genv.json` lives at `~/.config/genv/genv.json`. Commit it to your dotfiles
 - **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). genv currently treats Homebrew as a single `brew` manager and defaults to formulae, relying on Homebrew's own resolution rules. If you specifically need the cask variant, install it manually with `brew install --cask <name>` or manage that application outside of genv for now.
 
 - **Apple Silicon vs Intel** — Homebrew installs to `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel. genv handles both automatically via PATH detection.
-- **macports** — If you use MacPorts instead of Homebrew, set `"prefer": "macports"` on packages where you want it used.
-
 ---
 
 **Focus tip:** Steps 1–2 are one-time setup. Steps 3–5 are what you repeat on each new machine.

@@ -754,18 +754,6 @@ func TestE2EZypper(t *testing.T) {
 	})
 }
 
-// TestE2EApk uses nano as the test package; it is in Alpine's main repository
-// (tree is in community, which may not be enabled in the base Docker image).
-func TestE2EApk(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "apk",
-		checkBin:    "apk",
-		testPkg:     "nano",
-		preferFlag:  "apk",
-		canInstall:  true,
-	})
-}
-
 func TestE2EPacman(t *testing.T) {
 	runE2ESuite(t, suiteConfig{
 		adapterName: "pacman",
@@ -821,18 +809,6 @@ func TestE2EBrew(t *testing.T) {
 		testPkg:     "tree",
 		preferFlag:  "brew",
 		canInstall:  true,
-	})
-}
-
-// TestE2EMacPorts tests all non-install commands for the MacPorts adapter.
-// Real installs are skipped because MacPorts is not universally available
-// and requires sudo. Skips automatically when port is not in PATH.
-func TestE2EMacPorts(t *testing.T) {
-	runE2ESuite(t, suiteConfig{
-		adapterName: "macports",
-		checkBin:    "port",
-		testPkg:     "tree",
-		canInstall:  false,
 	})
 }
 
