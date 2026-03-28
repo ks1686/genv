@@ -16,17 +16,21 @@ import (
 
 // systemdUnitName returns the systemd unit name for a genv-managed service.
 func systemdUnitName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	name = strings.ReplaceAll(name, "..", "")
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
 	return "genv-" + name + ".service"
 }
 
 // launchdPlistName returns the launchd plist filename for a genv-managed service.
 func launchdPlistName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	name = strings.ReplaceAll(name, "..", "")
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
 	return "genv." + name + ".plist"
 }
 
