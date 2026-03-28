@@ -12,16 +12,16 @@ type mockAdapter struct {
 	name string
 }
 
-func (m mockAdapter) Name() string                                                             { return m.name }
-func (m mockAdapter) Available() bool                                                          { return true }
-func (m mockAdapter) NormalizeID(id string, mgrs map[string]string) (string, bool)             { return id, false }
-func (m mockAdapter) PlanInstall(pkg string) []string                                          { return nil }
-func (m mockAdapter) PlanUninstall(pkg string) []string                                        { return nil }
-func (m mockAdapter) PlanUpgrade(pkg string) []string                                          { return nil }
-func (m mockAdapter) PlanClean() [][]string                                                    { return nil }
-func (m mockAdapter) Query(pkg string) (bool, error)                                           { return false, nil }
-func (m mockAdapter) ListInstalled() ([]string, error)                                         { return nil, nil }
-func (m mockAdapter) QueryVersion(pkg string) (string, error)                                  { return "", nil }
+func (m mockAdapter) Name() string                                                 { return m.name }
+func (m mockAdapter) Available() bool                                              { return true }
+func (m mockAdapter) NormalizeID(id string, mgrs map[string]string) (string, bool) { return id, false }
+func (m mockAdapter) PlanInstall(pkg string) []string                              { return nil }
+func (m mockAdapter) PlanUninstall(pkg string) []string                            { return nil }
+func (m mockAdapter) PlanUpgrade(pkg string) []string                              { return nil }
+func (m mockAdapter) PlanClean() [][]string                                        { return nil }
+func (m mockAdapter) Query(pkg string) (bool, error)                               { return false, nil }
+func (m mockAdapter) ListInstalled() ([]string, error)                             { return nil, nil }
+func (m mockAdapter) QueryVersion(pkg string) (string, error)                      { return "", nil }
 
 // mockSearchableAdapter implements both adapter.Adapter and adapter.Searchable
 type mockSearchableAdapter struct {
