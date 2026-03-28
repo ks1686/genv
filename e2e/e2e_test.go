@@ -759,6 +759,19 @@ func TestE2EBrew(t *testing.T) {
 	})
 }
 
+// TestE2ESnap runs the full E2E suite on Ubuntu using snapd.
+// hello is used as the test package — it is the canonical tiny snap.
+// Skips automatically when snap is not in PATH.
+func TestE2ESnap(t *testing.T) {
+	runE2ESuite(t, suiteConfig{
+		adapterName: "snap",
+		checkBin:    "snap",
+		testPkg:     "hello",
+		preferFlag:  "snap",
+		canInstall:  true,
+	})
+}
+
 // ── Service lifecycle tests ───────────────────────────────────────────────────
 
 // TestE2EServiceLifecycle validates the full service management workflow:
