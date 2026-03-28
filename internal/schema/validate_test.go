@@ -32,9 +32,8 @@ func TestParseAndValidate_Valid(t *testing.T) {
 						"id": "firefox",
 						"version": "*",
 						"managers": {
-							"flatpak": "org.mozilla.firefox",
-							"brew": "firefox",
-							"snap": "firefox"
+							"snap": "firefox",
+							"brew": "firefox"
 						}
 					}
 				]
@@ -432,11 +431,10 @@ func TestParseAndValidate_ValidAllFields(t *testing.T) {
 			{
 				"id": "firefox",
 				"version": "123.*",
-				"prefer": "flatpak",
+				"prefer": "snap",
 				"managers": {
-					"flatpak": "org.mozilla.firefox",
-					"brew": "firefox",
-					"snap": "firefox"
+					"snap": "hello",
+					"brew": "hello"
 				}
 			}
 		]
@@ -452,10 +450,10 @@ func TestParseAndValidate_ValidAllFields(t *testing.T) {
 		t.Fatalf("expected 1 package, got: %v", f)
 	}
 	p := f.Packages[0]
-	if p.ID != "firefox" || p.Version != "123.*" || p.Prefer != "flatpak" {
+	if p.ID != "firefox" || p.Version != "123.*" || p.Prefer != "snap" {
 		t.Errorf("unexpected package fields: %+v", p)
 	}
-	if p.Managers["flatpak"] != "org.mozilla.firefox" {
+	if p.Managers["snap"] != "hello" {
 		t.Errorf("managers map not populated correctly: %v", p.Managers)
 	}
 }
@@ -487,12 +485,8 @@ func TestParseAndValidate_PackageWithAllKnownManagers(t *testing.T) {
 		"packages": [{
 			"id": "pkg",
 			"managers": {
-				"apt":       "pkg-apt",
-				"dnf":       "pkg-dnf",
-				"pacman":    "pkg-pacman",
 				"paru":      "pkg-paru",
 				"yay":       "pkg-yay",
-				"flatpak":   "io.pkg",
 				"snap":      "pkg-snap",
 				"brew":      "pkg-brew",
 				"linuxbrew": "pkg-linuxbrew"

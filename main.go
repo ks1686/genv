@@ -288,7 +288,7 @@ func addCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
-	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
+	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 	noSearch := fs.Bool("no-search", false, "skip interactive package search and use id as-is")
 
 	id, flagArgs := extractPositional(args)
@@ -313,7 +313,7 @@ func addCmd(args []string) int {
 
 	// 0. When no explicit manager mapping is given and stdin is a terminal,
 	//    search available package managers and let the user pick a match.
-	//    This resolves ambiguous short names (e.g. "firefox" → flatpak:org.mozilla.firefox).
+	//    This resolves ambiguous short names (e.g. "hello" → snap:hello).
 	if !*noSearch && len(managers) == 0 && *prefer == "" && isTerminal() {
 		fPrintln(os.Stdout, "searching available package managers…")
 		candidates := search.All(id, available)
@@ -516,7 +516,7 @@ func adoptCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
-	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. flatpak:org.mozilla.firefox,brew:firefox)`)
+	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -1624,6 +1624,15 @@ func scanCmd(args []string) int {
 		logging.Init(true)
 	}
 
+	f, isNew, err := genvfile.ReadOrNew(*file)
+	if err != nil {
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+
 	available := resolver.Detect()
 	if len(available) == 0 {
 		if *jsonOut {
@@ -1636,15 +1645,6 @@ func scanCmd(args []string) int {
 		}
 		fPrintln(os.Stdout, "no supported package managers detected.")
 		return exitOK
-	}
-
-	f, isNew, err := genvfile.ReadOrNew(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
 	}
 
 	lockPath := genvfile.LockPathFrom(*file)
@@ -2423,7 +2423,7 @@ Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
   --prefer <mgr>               Preferred manager, e.g. brew
   --manager <mgr:name,...>     Manager-specific package names, e.g.
-                               flatpak:org.mozilla.firefox,brew:firefox
+                               snap:hello,brew:hello
 
 Apply-specific flags:
   --dry-run            Print the reconcile plan without executing

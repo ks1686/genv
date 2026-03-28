@@ -129,47 +129,7 @@ func runAdapterSuite(t *testing.T, s adapterSuite) {
 	})
 }
 
-// ---- per-adapter entry points (keep named so -run TestApt etc. work) --------
-
-func TestApt(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Apt{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"apt": "vim-nox"},
-		explicitWant:   "vim-nox",
-		knownInstalled: "bash",
-	})
-}
-
-func TestDnf(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Dnf{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"dnf": "vim-enhanced"},
-		explicitWant:   "vim-enhanced",
-		knownInstalled: "bash",
-	})
-}
-
-func TestZypper(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Zypper{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"zypper": "vim"},
-		explicitWant:   "vim",
-		knownInstalled: "bash",
-	})
-}
-
-func TestPacman(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Pacman{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"pacman": "vim"},
-		explicitWant:   "vim",
-		knownInstalled: "bash",
-	})
-}
+// ---- per-adapter entry points -----------------------------------------------
 
 func TestParu(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
@@ -189,32 +149,6 @@ func TestYay(t *testing.T) {
 		explicitWant:   "vim-aur",
 		knownInstalled: "bash",
 	})
-}
-
-func TestFlatpak(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:            adapter.Flatpak{},
-		wantBin:      "flatpak",
-		explicitMap:  map[string]string{"flatpak": "org.mozilla.firefox"},
-		explicitWant: "org.mozilla.firefox",
-		// No knownInstalled: no package is universally pre-installed via flatpak.
-	})
-}
-
-// TestFlatpak_Query_WithRemote checks Query when Flathub is configured.
-// Requires: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-func TestFlatpak_Query_WithRemote(t *testing.T) {
-	a := adapter.Flatpak{}
-	if !a.Available() {
-		t.Skip("flatpak not available on this host")
-	}
-	installed, err := a.Query(knownAbsent)
-	if err != nil {
-		t.Fatalf("Query(%q): unexpected error: %v", knownAbsent, err)
-	}
-	if installed {
-		t.Errorf("Query(%q): expected installed=false", knownAbsent)
-	}
 }
 
 func TestSnap(t *testing.T) {
@@ -263,29 +197,6 @@ func TestLinuxbrew(t *testing.T) {
 		wantBin:      "brew",
 		explicitMap:  map[string]string{"linuxbrew": "neovim"},
 		explicitWant: "neovim",
-	})
-}
-
-// TestEmerge uses "bash" as the known-installed probe: it is always present
-// in a Gentoo stage3 base system. qlist -I lists it as "app-shells/bash-*"
-// which the adapter normalises to "bash".
-func TestEmerge(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Emerge{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"emerge": "nano"},
-		explicitWant:   "nano",
-		knownInstalled: "bash",
-	})
-}
-
-func TestXbps(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Xbps{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"xbps": "nano"},
-		explicitWant:   "nano",
-		knownInstalled: "curl",
 	})
 }
 

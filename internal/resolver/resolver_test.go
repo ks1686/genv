@@ -39,14 +39,14 @@ func TestPlan_PreferredManagerUnavailable_FallsBackToAvailable(t *testing.T) {
 			{ID: "neovim", Prefer: "brew"},
 		},
 	}
-	// brew not available; apt is
-	actions := Plan(f, map[string]bool{"apt": true})
+	// brew not available; paru is
+	actions := Plan(f, map[string]bool{"paru": true})
 	a := actions[0]
 	if !a.Resolved() {
 		t.Fatal("expected resolved via fallback")
 	}
-	if a.Manager != "apt" {
-		t.Errorf("manager: got %q, want %q", a.Manager, "apt")
+	if a.Manager != "paru" {
+		t.Errorf("manager: got %q, want %q", a.Manager, "paru")
 	}
 }
 
@@ -54,41 +54,41 @@ func TestPlan_ManagersMapPicksCorrectName(t *testing.T) {
 	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
-				ID: "firefox",
+				ID: "hello",
 				Managers: map[string]string{
-					"flatpak": "org.mozilla.firefox",
-					"brew":    "firefox",
+					"snap": "hello",
+					"brew": "hello",
 				},
 			},
 		},
 	}
-	actions := Plan(f, map[string]bool{"flatpak": true})
+	actions := Plan(f, map[string]bool{"snap": true})
 	a := actions[0]
 	if !a.Resolved() {
 		t.Fatal("expected resolved")
 	}
-	if a.Manager != "flatpak" {
-		t.Errorf("manager: got %q, want %q", a.Manager, "flatpak")
+	if a.Manager != "snap" {
+		t.Errorf("manager: got %q, want %q", a.Manager, "snap")
 	}
-	if a.PkgName != "org.mozilla.firefox" {
-		t.Errorf("pkgName: got %q, want %q", a.PkgName, "org.mozilla.firefox")
+	if a.PkgName != "hello" {
+		t.Errorf("pkgName: got %q, want %q", a.PkgName, "hello")
 	}
 }
 
 func TestPlan_ManagersMap_FallbackOrder(t *testing.T) {
-	// Both brew and flatpak are in managers map; brew is first in fallbackOrder.
+	// Both brew and snap are in managers map; brew is first in fallbackOrder.
 	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
-				ID: "firefox",
+				ID: "hello",
 				Managers: map[string]string{
-					"flatpak": "org.mozilla.firefox",
-					"brew":    "firefox",
+					"snap": "hello",
+					"brew": "hello",
 				},
 			},
 		},
 	}
-	actions := Plan(f, map[string]bool{"brew": true, "flatpak": true})
+	actions := Plan(f, map[string]bool{"brew": true, "snap": true})
 	a := actions[0]
 	if a.Manager != "brew" {
 		t.Errorf("expected brew (higher priority), got %q", a.Manager)
@@ -120,7 +120,7 @@ func TestPlan_FallsBackToIDWhenNoManagersMap(t *testing.T) {
 			{ID: "git"}, // no managers map, no prefer
 		},
 	}
-	actions := Plan(f, map[string]bool{"apt": true})
+	actions := Plan(f, map[string]bool{"paru": true})
 	a := actions[0]
 	if !a.Resolved() {
 		t.Fatal("expected resolved via generic fallback")
@@ -138,7 +138,7 @@ func TestPlan_PreferWithManagersMap_UsesMapName(t *testing.T) {
 				Prefer: "brew",
 				Managers: map[string]string{
 					"brew": "neovim",
-					"apt":  "neovim",
+					"paru": "neovim",
 				},
 			},
 		},
@@ -214,12 +214,8 @@ func TestPlanInstall_AllManagers(t *testing.T) {
 		pkg     string
 		wantBin string
 	}{
-		{"apt", "git", "sudo"},
-		{"dnf", "git", "sudo"},
-		{"pacman", "git", "sudo"},
 		{"paru", "git", "paru"},
 		{"yay", "git", "yay"},
-		{"flatpak", "app.id", "flatpak"},
 		{"snap", "git", "sudo"},
 		{"brew", "git", "brew"},
 		{"linuxbrew", "git", "brew"},
@@ -284,7 +280,7 @@ func TestExecute_RunsCommand(t *testing.T) {
 	actions := []Action{
 		{
 			Pkg:     schema.Package{ID: "echo-test"},
-			Manager: "apt",
+			Manager: "brew",
 			PkgName: "echo-test",
 			Cmd:     []string{"echo", "hello-from-execute"},
 		},
@@ -304,7 +300,7 @@ func TestExecute_FailedCommand(t *testing.T) {
 	actions := []Action{
 		{
 			Pkg:     schema.Package{ID: "failing-pkg"},
-			Manager: "apt",
+			Manager: "brew",
 			PkgName: "failing-pkg",
 			Cmd:     []string{"false"},
 		},
@@ -379,13 +375,13 @@ func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
 			pkgs: []schema.Package{
 				{ID: "git"},
 				{
-					ID:       "only-flatpak",
-					Managers: map[string]string{"flatpak": "io.pkg"},
-					Prefer:   "flatpak",
+					ID:       "only-snap",
+					Managers: map[string]string{"snap": "io.pkg"},
+					Prefer:   "snap",
 				},
 			},
-			// brew available → git resolves; prefer=flatpak but flatpak absent → falls
-			// back to brew for only-flatpak too (step 3 fallback), so both resolve.
+			// brew available → git resolves; prefer=snap but snap absent → falls
+			// back to brew for only-snap too (step 3 fallback), so both resolve.
 			available:      map[string]bool{"brew": true},
 			wantResolved:   2,
 			wantUnresolved: 0,
@@ -432,11 +428,11 @@ func TestPlan_MultiplePackagesMixed(t *testing.T) {
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "neovim", Prefer: "brew"},
-			{ID: "secret-pkg", Prefer: "flatpak", Managers: map[string]string{"flatpak": "io.secret"}},
+			{ID: "secret-pkg", Prefer: "snap", Managers: map[string]string{"snap": "io.secret"}},
 		},
 	}
-	// brew available, flatpak absent → git and neovim resolve; secret-pkg's
-	// prefer is flatpak (unavailable) and its managers map has only flatpak
+	// brew available, snap absent → git and neovim resolve; secret-pkg's
+	// prefer is snap (unavailable) and its managers map has only snap
 	// (unavailable), so it falls back to the generic fallback at step 3 (brew).
 	available := map[string]bool{"brew": true}
 	actions := Plan(f, available)
@@ -463,10 +459,10 @@ func TestNormalizeID(t *testing.T) {
 	}{
 		{
 			name:         "uses managers map",
-			mgr:          "flatpak",
-			id:           "firefox",
-			managers:     map[string]string{"flatpak": "org.mozilla.firefox"},
-			wantName:     "org.mozilla.firefox",
+			mgr:          "snap",
+			id:           "hello",
+			managers:     map[string]string{"snap": "hello"},
+			wantName:     "hello",
 			wantExplicit: true,
 		},
 		{
@@ -481,7 +477,7 @@ func TestNormalizeID(t *testing.T) {
 			name:         "falls back to id when manager not in map",
 			mgr:          "brew",
 			id:           "firefox",
-			managers:     map[string]string{"flatpak": "org.mozilla.firefox"},
+			managers:     map[string]string{"snap": "hello"},
 			wantName:     "firefox",
 			wantExplicit: false,
 		},
@@ -509,13 +505,13 @@ func TestExecute_MultipleActions(t *testing.T) {
 	actions := []Action{
 		{
 			Pkg:     schema.Package{ID: "pkg1"},
-			Manager: "apt",
+			Manager: "brew",
 			PkgName: "pkg1",
 			Cmd:     []string{"echo", "installing-pkg1"},
 		},
 		{
 			Pkg:     schema.Package{ID: "pkg2"},
-			Manager: "apt",
+			Manager: "brew",
 			PkgName: "pkg2",
 			Cmd:     []string{"echo", "installing-pkg2"},
 		},
@@ -566,11 +562,11 @@ func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
 	f := &schema.GenvFile{
 		Packages: []schema.Package{
 			{
-				ID:     "firefox",
-				Prefer: "flatpak", // flatpak not available
+				ID:     "hello",
+				Prefer: "snap", // snap not available
 				Managers: map[string]string{
-					"flatpak": "org.mozilla.firefox",
-					"brew":    "firefox",
+					"snap": "hello",
+					"brew": "hello",
 				},
 			},
 		},
@@ -583,8 +579,8 @@ func TestPlan_PreferUnavailable_ManagersMapFallback(t *testing.T) {
 	if a.Manager != "brew" {
 		t.Errorf("manager: got %q, want %q", a.Manager, "brew")
 	}
-	if a.PkgName != "firefox" {
-		t.Errorf("pkgName: got %q, want %q", a.PkgName, "firefox")
+	if a.PkgName != "hello" {
+		t.Errorf("pkgName: got %q, want %q", a.PkgName, "hello")
 	}
 }
 
@@ -681,7 +677,7 @@ func TestReconcile_NoInstalledVersion_AlwaysUnchanged(t *testing.T) {
 	managed := []genvfile.LockedPackage{
 		{ID: "git", Manager: "apt", PkgName: "git"}, // InstalledVersion == ""
 	}
-	result := Reconcile(desired, managed, map[string]bool{"apt": true})
+	result := Reconcile(desired, managed, map[string]bool{"brew": true})
 	if len(result.Unchanged) != 1 {
 		t.Fatalf("Unchanged: got %d, want 1 (old lock entries must not cause drift)", len(result.Unchanged))
 	}
@@ -961,12 +957,12 @@ func BenchmarkResolve(b *testing.B) {
 		Packages: []schema.Package{
 			{ID: "git"},
 			{ID: "neovim", Prefer: "brew"},
-			{ID: "firefox", Managers: map[string]string{"flatpak": "org.mozilla.firefox", "brew": "firefox"}},
+			{ID: "hello", Managers: map[string]string{"snap": "hello", "brew": "hello"}},
 			{ID: "ripgrep"},
 			{ID: "tmux"},
 		},
 	}
-	available := map[string]bool{"brew": true, "apt": true, "flatpak": true}
+	available := map[string]bool{"brew": true, "paru": true, "snap": true}
 	b.ResetTimer()
 	for b.Loop() {
 		_ = Plan(f, available)
