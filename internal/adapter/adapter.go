@@ -131,7 +131,8 @@ func runQuery(cmd string, args ...string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if _, ok := errors.AsType[*exec.ExitError](err); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		return false, nil
 	}
 	return false, err
@@ -142,7 +143,8 @@ func runQuery(cmd string, args ...string) (bool, error) {
 func runListOutput(cmd string, args ...string) ([]string, error) {
 	out, err := exec.Command(cmd, args...).Output()
 	if err != nil {
-		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return nil, nil
 		}
 		return nil, err
@@ -162,7 +164,8 @@ func runListOutput(cmd string, args ...string) ([]string, error) {
 func runVersionOutput(cmd string, args ...string) (string, error) {
 	out, err := exec.Command(cmd, args...).Output()
 	if err != nil {
-		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return "", nil
 		}
 		return "", err

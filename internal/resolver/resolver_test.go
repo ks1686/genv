@@ -754,6 +754,10 @@ func TestPrintReconcilePlan_NothingToDo(t *testing.T) {
 	if toInstall != 0 || toRemove != 0 || unresolved != 0 {
 		t.Errorf("expected all zeros, got install=%d remove=%d unresolved=%d", toInstall, toRemove, unresolved)
 	}
+	out := sb.String()
+	if !strings.Contains(out, "0 packages") {
+		t.Errorf("expected output to contain \"0 packages\", got %q", out)
+	}
 }
 
 // TestPrintReconcilePlan_AllResolved verifies no "unresolved" hint is emitted
