@@ -259,3 +259,16 @@ func TestLaunchdPlistContent(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemdUnitName_PathTraversal(t *testing.T) {
+	name := "../../../evil"
+	unitName := systemdUnitName(name)
+	if strings.Contains(unitName, "/") || strings.Contains(unitName, "..") {
+		t.Errorf("systemdUnitName(%q) = %q; want no directory traversal characters", name, unitName)
+	}
+
+	plistName := launchdPlistName(name)
+	if strings.Contains(plistName, "/") || strings.Contains(plistName, "..") {
+		t.Errorf("launchdPlistName(%q) = %q; want no directory traversal characters", name, plistName)
+	}
+}
