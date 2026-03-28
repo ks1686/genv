@@ -18,6 +18,9 @@ import (
 func systemdUnitName(name string) string {
 	name = strings.ReplaceAll(name, "\\", "/")
 	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
 	return "genv-" + name + ".service"
 }
 
@@ -25,6 +28,9 @@ func systemdUnitName(name string) string {
 func launchdPlistName(name string) string {
 	name = strings.ReplaceAll(name, "\\", "/")
 	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
 	return "genv." + name + ".plist"
 }
 
