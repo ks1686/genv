@@ -75,11 +75,9 @@ type Adapter interface {
 // specified in genv.json the first available adapter wins.
 var All = []Adapter{
 	Brew{},
-	MacPorts{},
 	Apt{},
 	Dnf{},
 	Zypper{},
-	Apk{},
 	Pacman{},
 	Paru{},
 	Yay{},

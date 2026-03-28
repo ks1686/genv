@@ -161,16 +161,6 @@ func TestZypper(t *testing.T) {
 	})
 }
 
-func TestApk(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:              adapter.Apk{},
-		wantBin:        "sudo",
-		explicitMap:    map[string]string{"apk": "vim"},
-		explicitWant:   "vim",
-		knownInstalled: "musl", // always present — it is Alpine's C library
-	})
-}
-
 func TestPacman(t *testing.T) {
 	runAdapterSuite(t, adapterSuite{
 		a:              adapter.Pacman{},
@@ -273,16 +263,6 @@ func TestLinuxbrew(t *testing.T) {
 		wantBin:      "brew",
 		explicitMap:  map[string]string{"linuxbrew": "neovim"},
 		explicitWant: "neovim",
-	})
-}
-
-func TestMacPorts(t *testing.T) {
-	runAdapterSuite(t, adapterSuite{
-		a:            adapter.MacPorts{},
-		wantBin:      "sudo",
-		explicitMap:  map[string]string{"macports": "neovim"},
-		explicitWant: "neovim",
-		// No knownInstalled: MacPorts is not pre-installed in CI; tested on real macOS host only.
 	})
 }
 

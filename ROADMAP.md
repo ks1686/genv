@@ -51,7 +51,7 @@ Checklist:
 
 - [x] Build adapter interface: detect, query, plan install, plan uninstall, plan cache clean, and normalize package IDs.
 - [x] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`.
-- [x] Implement macOS adapters: `brew` (formulae and casks), `macports`.
+- [x] Implement macOS adapters: `brew` (formulae and casks).
 - [x] Implement Linuxbrew path support where available.
 - [x] Implement host manager detection and capability reporting.
 - [x] Implement package candidate scoring (`prefer` then OS priority).
@@ -129,13 +129,13 @@ Goal: Validate and automate genv on macOS and WSL2 hosts.
 
 Target outcomes:
 
-- macOS users can rely on `brew` and `macports` adapters with the same guarantees Linux adapters carry.
+- macOS users can rely on the `brew` adapter with the same guarantees Linux adapters carry.
 - WSL2 is explicitly treated as Linux userland and uses Linux adapters without native Windows path leakage.
 - Automated test coverage exists for both platforms.
 
 Checklist:
 
-- [x] Validate `brew` and `macports` adapters on a real macOS host (manual or self-hosted runner).
+- [x] Validate `brew` adapter on a real macOS host (manual or self-hosted runner).
 - [x] Add a macOS job to the integration workflow (self-hosted runner or `macos-latest` GitHub runner).
 - [x] Validate WSL2 environment detection — confirm Linux adapters are selected, no Windows path leakage.
 - [x] Add install and bootstrap documentation for macOS.
@@ -272,15 +272,11 @@ Target outcomes:
 
 Checklist:
 
-- [x] Implement Linux adapter: `apk` (Alpine Linux).
 - [x] Implement Linux adapter: `zypper` (openSUSE / SLES).
 - [x] Implement Linux adapter: `xbps` (Void Linux).
 - [x] Implement Linux adapter: `emerge` (Gentoo).
-- [x] Publish genv as `.deb`, `.rpm`, and `.apk` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and apk direct-install; zypper users covered by `.rpm`).
+- [x] Publish genv as `.deb` and `.rpm` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and zypper direct-install).
 - [x] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
-- [x] Submit genv APKBUILD to Alpine Linux aports so `apk add genv` works without a direct download.
-- [x] Submit genv Portfile to MacPorts ports tree.
-- [x] Publish genv to Fedora COPR for one-line install (`dnf copr enable ks1686/genv && dnf install genv`).
 - [x] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
 - [x] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
 - [x] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
@@ -398,7 +394,7 @@ These gates apply to every milestone.
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
-- [x] v2.1.0 — M10 complete; services management, new adapters (apk/zypper/xbps/emerge), Snap/Alpine/MacPorts/COPR packaging
+- [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), Snap packaging
 - [ ] v2.2.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
 - [ ] v2.3.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
 - [ ] v3.0.0 — M11 complete + first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements

@@ -111,8 +111,7 @@ snapcrafts:
     license: MIT
     grade: stable
     confinement: strict
-    # Set this to true to publish to the Snap Store.
-    publish: false  # set to true after registering 'genv' on snapcraft.io
+    publish: true
 
 
 
