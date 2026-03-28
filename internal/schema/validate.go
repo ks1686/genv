@@ -27,6 +27,36 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
+func unmarshalGenvFile(data []byte) (*GenvFile, map[string]json.RawMessage, []ValidationError, error) {
+	var f GenvFile
+	if err := json.Unmarshal(data, &f); err != nil {
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		switch {
+		case errors.As(err, &syntaxErr):
+			pos := offsetToPosition(data, syntaxErr.Offset)
+			return nil, nil, nil, fmt.Errorf("line %d:%d: JSON syntax error: %s", pos.Line, pos.Column, syntaxErr.Error())
+		case errors.As(err, &typeErr):
+			pos := offsetToPosition(data, typeErr.Offset)
+			return nil, nil, []ValidationError{{
+				Position: pos,
+				Field:    typeErr.Field,
+				Message:  fmt.Sprintf("expected %s, got %s", typeErr.Type, typeErr.Value),
+			}}, nil
+		default:
+			return nil, nil, nil, err
+		}
+	}
+
+	// Use a raw map to distinguish "key absent" from "key set to zero value".
+	// Error is intentionally ignored: the JSON was already successfully parsed
+	// above into &f, so this second unmarshal into a plain map cannot fail.
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+
+	return &f, raw, nil, nil
+}
+
 // ParseAndValidate parses data as a genv.json file and validates it against
 // schema v1 rules.
 //
@@ -39,42 +69,20 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	positions := make(map[string]Position)
 	locateFields(data, positions)
 
-	// Unmarshal into the typed struct, turning JSON errors into user messages.
-	var f GenvFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		var syntaxErr *json.SyntaxError
-		var typeErr *json.UnmarshalTypeError
-		switch {
-		case errors.As(err, &syntaxErr):
-			pos := offsetToPosition(data, syntaxErr.Offset)
-			return nil, nil, fmt.Errorf("line %d:%d: JSON syntax error: %s", pos.Line, pos.Column, syntaxErr.Error())
-		case errors.As(err, &typeErr):
-			pos := offsetToPosition(data, typeErr.Offset)
-			return nil, []ValidationError{{
-				Position: pos,
-				Field:    typeErr.Field,
-				Message:  fmt.Sprintf("expected %s, got %s", typeErr.Type, typeErr.Value),
-			}}, nil
-		default:
-			return nil, nil, err
-		}
+	f, raw, valErrs, err := unmarshalGenvFile(data)
+	if valErrs != nil || err != nil {
+		return f, valErrs, err
 	}
-
-	// Use a raw map to distinguish "key absent" from "key set to zero value".
-	// Error is intentionally ignored: the JSON was already successfully parsed
-	// above into &f, so this second unmarshal into a plain map cannot fail.
-	var raw map[string]json.RawMessage
-	_ = json.Unmarshal(data, &raw)
 
 	var errs []ValidationError
 
-	errs = append(errs, validateSchemaVersion(&f, raw, positions)...)
-	errs = append(errs, validatePackages(&f, raw, positions)...)
-	errs = append(errs, validateEnv(&f, raw, positions)...)
-	errs = append(errs, validateShell(&f, raw, positions)...)
-	errs = append(errs, validateServices(&f, raw, positions)...)
+	errs = append(errs, validateSchemaVersion(f, raw, positions)...)
+	errs = append(errs, validatePackages(f, raw, positions)...)
+	errs = append(errs, validateEnv(f, raw, positions)...)
+	errs = append(errs, validateShell(f, raw, positions)...)
+	errs = append(errs, validateServices(f, raw, positions)...)
 
-	return &f, errs, nil
+	return f, errs, nil
 }
 
 // ValidEnvName reports whether name is a valid POSIX shell environment variable
