@@ -32,13 +32,11 @@ archives:
     files:
       - src: completions/*
 
-# ── Native package formats (.deb, .rpm, .apk) ─────────────────────────────────
-# Generates installable packages for Debian/Ubuntu (.deb), Fedora/RHEL (.rpm),
-# and Alpine Linux (.apk). Artifacts are uploaded to GitHub Releases so users
-# can install directly without a repo server:
+# ── Native package formats (.deb, .rpm) ──────────────────────────────────────
+# Generates installable packages for Debian/Ubuntu (.deb) and Fedora/RHEL (.rpm).
+# Artifacts are uploaded to GitHub Releases so users can install directly:
 #   dpkg -i genv_*.deb
 #   rpm -i genv_*.rpm
-#   apk add --allow-untrusted genv_*.apk
 nfpms:
   - id: packages
     package_name: genv
@@ -50,7 +48,6 @@ nfpms:
     formats:
       - deb
       - rpm
-      - apk
 
     contents:
       - src: completions/genv.bash

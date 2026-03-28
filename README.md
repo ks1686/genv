@@ -54,19 +54,6 @@ brew install genv
 paru -S genv      # or: yay -S genv
 ```
 
-### Linux - Fedora (COPR)
-
-```bash
-sudo dnf copr enable ks1686/genv
-sudo dnf install genv
-```
-
-### Linux - Alpine
-
-```bash
-sudo apk add genv
-```
-
 ### Linux — other distros
 
 Download a pre-built binary from [Releases](https://github.com/ks1686/genv/releases/latest):

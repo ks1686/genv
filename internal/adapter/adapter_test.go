@@ -1125,7 +1125,7 @@ fi`)
 }
 
 // ---------------------------------------------------------------------------
-// trimVersionSuffix — pure function tests (used by apk)
+// trimVersionSuffix — pure function tests (used by emerge and xbps)
 // ---------------------------------------------------------------------------
 
 func TestTrimVersionSuffix_SimplePackage(t *testing.T) {
