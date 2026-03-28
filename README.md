@@ -29,11 +29,11 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
 ## Supported platforms and package managers
 
-| Platform | Managers                                                                                                 |
-| -------- | -------------------------------------------------------------------------------------------------------- |
-| Linux    | `apt`, `dnf`, `zypper`, `apk`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge` |
-| macOS    | `brew` (formulae + casks), `macports`                                                                    |
-| Windows  | WSL2 (targets the Linux userland inside WSL2)                                                            |
+| Platform | Managers                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| Linux    | `apt`, `dnf`, `zypper`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge` |
+| macOS    | `brew` (formulae + casks)                                                                           |
+| Windows  | WSL2 (targets the Linux userland inside WSL2)                                                       |
 
 `genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 

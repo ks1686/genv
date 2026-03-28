@@ -2,8 +2,7 @@
 
 This repository publishes GitHub releases, a Homebrew formula, and an AUR package
 automatically when an annotated tag is pushed. GoReleaser handles GitHub releases,
-Homebrew, AUR, and the Snap Store automatically. Alpine aports, MacPorts, and Fedora
-COPR require manual PR/spec updates after the GitHub release artifacts are published.
+Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-off required.
 
 ---
 
@@ -232,25 +231,7 @@ paru -S genv       # builds from source
    paru -Sy genv && genv version       # from source
    ```
 
-9. **Update manual packaging channels** (after GitHub release artifacts are published):
-
-   **Alpine aports (GitLab PR):**
-   - Bump `pkgver` in `packaging/alpine/APKBUILD` to the new version.
-   - Compute the sha512 of the new source tarball: `sha512sum genv-<ver>.tar.gz`.
-   - Update `sha512sums` in the APKBUILD and submit/update the aports MR.
-
-   **MacPorts (GitHub PR):**
-   - Bump the version in `packaging/macports/Portfile`.
-   - Run `port checksum` against the new tarball to get rmd160/sha256/size values.
-   - Update the `checksums` stanza and submit/update the macports-ports PR.
-
-   **Fedora COPR:**
-   - Bump `Version` and add a `%changelog` entry in `packaging/fedora/genv.spec`.
-   - **Fedora policy (Oct 2025):** if Claude or another AI tool assisted in writing the spec,
-     include `Assisted-by: Claude Sonnet 4.6` in the commit message or COPR PR description.
-   - Trigger a COPR build from the new tag or push the updated spec.
-
-   **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
+9. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
 
 ---
 

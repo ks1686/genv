@@ -495,7 +495,6 @@ func TestParseAndValidate_PackageWithAllKnownManagers(t *testing.T) {
 				"flatpak":   "io.pkg",
 				"snap":      "pkg-snap",
 				"brew":      "pkg-brew",
-				"macports":  "pkg-macports",
 				"linuxbrew": "pkg-linuxbrew"
 			}
 		}]
