@@ -15,7 +15,7 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
 | `v1.0.0` | M6 and M7 complete (stable API/quality bar + UX command set) |
 | `v2.0.0` | M8 and M9 complete (env and shell configuration management) |
-| `v2.1.0` | M10 complete (services management, new adapters: apk/zypper/xbps/emerge, expanded packaging/distribution) |
+| `v2.1.0` | M10 complete (services management, new adapters: zypper/xbps/emerge, Snap Store publishing) |
 | `v2.2.0` | M13 complete (hooks and lifecycle scripts) |
 | `v2.3.0` | M12 complete (named profiles) |
 | `v3.0.0` | M11 complete + first-party Windows support (Chocolatey, Scoop) |
