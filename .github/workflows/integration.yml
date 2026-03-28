@@ -13,9 +13,6 @@ permissions:
 #   2. End-to-end tests     (e2e/)
 #
 # Skipped adapters and reasons:
-#   snap        — snapd requires a live systemd session; Docker containers
-#                 do not run systemd, so snap commands fail unconditionally.
-#                 Test manually on a real Ubuntu host with snapd running.
 #   linuxbrew   — Brew on Linux; same caching/time constraint as macOS brew.
 
 jobs:
@@ -133,6 +130,34 @@ jobs:
                 go test -tags integration -race -v -run TestE2EYay ./e2e/
               "
             '
+
+  # ── snap (Ubuntu) ────────────────────────────────────────────────────────────
+  # GitHub-hosted ubuntu-latest runners have snapd and systemd available.
+  # snapd.socket must be explicitly enabled before snap commands work.
+  # The 'hello' snap is used as the test package — it is the canonical tiny snap.
+  snap:
+    name: ubuntu-latest (snap)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Enable snapd
+        run: |
+          sudo systemctl enable --now snapd.socket
+          sudo snap wait system seed.loaded
+
+      - name: Adapter integration test — TestSnap
+        run: go test -tags integration -race -v -run TestSnap ./internal/adapter/
+
+      - name: E2E test — TestE2ESnap
+        run: go test -tags integration -race -v -run TestE2ESnap ./e2e/
 
   # ── macOS (brew) ─────────────────────────────────────────────────────────────
   # GitHub's macos-latest runner has Homebrew pre-installed, so no setup is
