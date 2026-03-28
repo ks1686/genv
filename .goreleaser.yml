@@ -111,6 +111,8 @@ snapcrafts:
     license: MIT
     grade: stable
     confinement: strict
+    channel_templates:
+      - stable
     publish: true
 
 
