@@ -18,6 +18,7 @@ import (
 func systemdUnitName(name string) string {
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, "\\", "-")
+	name = strings.ReplaceAll(name, "..", "")
 	return "genv-" + name + ".service"
 }
 
@@ -25,6 +26,7 @@ func systemdUnitName(name string) string {
 func launchdPlistName(name string) string {
 	name = strings.ReplaceAll(name, "/", "-")
 	name = strings.ReplaceAll(name, "\\", "-")
+	name = strings.ReplaceAll(name, "..", "")
 	return "genv." + name + ".plist"
 }
 
