@@ -259,3 +259,31 @@ func TestLaunchdPlistContent(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeUnitName(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"normal", "normal"},
+		{"../../foo", "..-..-foo"},
+		{"foo/bar\\baz", "foo-bar-baz"},
+		{"C:\\windows\\path", "C:-windows-path"},
+	}
+
+	for _, tc := range cases {
+		// systemd unit
+		gotSystemd := systemdUnitName(tc.name)
+		wantSystemd := "genv-" + tc.want + ".service"
+		if gotSystemd != wantSystemd {
+			t.Errorf("systemdUnitName(%q) = %q, want %q", tc.name, gotSystemd, wantSystemd)
+		}
+
+		// launchd plist
+		gotLaunchd := launchdPlistName(tc.name)
+		wantLaunchd := "genv." + tc.want + ".plist"
+		if gotLaunchd != wantLaunchd {
+			t.Errorf("launchdPlistName(%q) = %q, want %q", tc.name, gotLaunchd, wantLaunchd)
+		}
+	}
+}
