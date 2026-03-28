@@ -68,155 +68,11 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 
 	var errs []ValidationError
 
-	// --- schemaVersion ---
-	if _, ok := raw["schemaVersion"]; !ok {
-		errs = append(errs, ValidationError{
-			Field:   "schemaVersion",
-			Message: "required field is missing",
-		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
-		errs = append(errs, ValidationError{
-			Position: positions["schemaVersion"],
-			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4),
-		})
-	}
-
-	// --- packages ---
-	if _, ok := raw["packages"]; !ok {
-		errs = append(errs, ValidationError{
-			Field:   "packages",
-			Message: "required field is missing",
-		})
-	} else {
-		seen := make(map[string]int) // id → first index
-		for i, pkg := range f.Packages {
-			pkgPath := fmt.Sprintf("packages[%d]", i)
-
-			if pkg.ID == "" {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath],
-					Field:    pkgPath + ".id",
-					Message:  "required field is missing or empty",
-				})
-			} else if prev, dup := seen[pkg.ID]; dup {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath+".id"],
-					Field:    pkgPath + ".id",
-					Message:  fmt.Sprintf("duplicate id %q (first seen at packages[%d])", pkg.ID, prev),
-				})
-			} else {
-				seen[pkg.ID] = i
-			}
-
-			if pkg.Prefer != "" && !KnownManagers[pkg.Prefer] {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath+".prefer"],
-					Field:    pkgPath + ".prefer",
-					Message:  fmt.Sprintf("unknown manager %q", pkg.Prefer),
-				})
-			}
-
-			for mgr := range pkg.Managers {
-				if !KnownManagers[mgr] {
-					field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
-					errs = append(errs, ValidationError{
-						Position: positions[field],
-						Field:    field,
-						Message:  fmt.Sprintf("unknown manager %q", mgr),
-					})
-				}
-			}
-		}
-	}
-
-	// --- env block (v2+ only) ---
-	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
-			errs = append(errs, ValidationError{
-				Position: positions["env"],
-				Field:    "env",
-				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, f.SchemaVersion),
-			})
-		}
-		for name, ev := range f.Env {
-			if !ValidEnvName(name) {
-				errs = append(errs, ValidationError{
-					Field:   "env." + name,
-					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
-				})
-			}
-			_ = ev
-		}
-	}
-
-	// --- shell block (v3+ only) ---
-	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
-			errs = append(errs, ValidationError{
-				Position: positions["shell"],
-				Field:    "shell",
-				Message:  fmt.Sprintf("shell block requires schemaVersion %q or %q (current: %q); run 'genv shell alias set' to upgrade", Version3, Version4, f.SchemaVersion),
-			})
-		}
-		if f.Shell != nil {
-			for name := range f.Shell.Aliases {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "shell.aliases",
-						Message: "alias name must not be empty",
-					})
-				}
-				if sh := f.Shell.Aliases[name].Shell; sh != "" && !KnownShellTargets[sh] {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
-						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
-					})
-				}
-			}
-			for name := range f.Shell.Functions {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "shell.functions",
-						Message: "function name must not be empty",
-					})
-				}
-				if sh := f.Shell.Functions[name].Shell; sh != "" && !KnownShellTargets[sh] {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.functions.%s.shell", name),
-						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
-					})
-				}
-			}
-		}
-	}
-
-	// --- services block (v4 only) ---
-	if _, hasServices := raw["services"]; hasServices {
-		if f.SchemaVersion != Version4 {
-			errs = append(errs, ValidationError{
-				Position: positions["services"],
-				Field:    "services",
-				Message:  fmt.Sprintf("services block requires schemaVersion %q (current: %q); run 'genv service add' to upgrade", Version4, f.SchemaVersion),
-			})
-		}
-		if f.Services != nil {
-			for name, svc := range f.Services {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "services",
-						Message: "service name must not be empty",
-					})
-				}
-				if len(svc.Start) == 0 {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("services.%s.start", name),
-						Message: "start command is required and must not be empty",
-					})
-				}
-			}
-		}
-	}
+	errs = append(errs, validateSchemaVersion(&f, raw, positions)...)
+	errs = append(errs, validatePackages(&f, raw, positions)...)
+	errs = append(errs, validateEnv(&f, raw, positions)...)
+	errs = append(errs, validateShell(&f, raw, positions)...)
+	errs = append(errs, validateServices(&f, raw, positions)...)
 
 	return &f, errs, nil
 }
@@ -334,4 +190,169 @@ func walkArrayBody(dec *json.Decoder, data []byte, path string, pos map[string]P
 		walkValue(dec, data, childPath, pos)
 	}
 	_, _ = dec.Token() // consume closing ]
+}
+
+func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, ok := raw["schemaVersion"]; !ok {
+		errs = append(errs, ValidationError{
+			Field:   "schemaVersion",
+			Message: "required field is missing",
+		})
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+		errs = append(errs, ValidationError{
+			Position: positions["schemaVersion"],
+			Field:    "schemaVersion",
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4),
+		})
+	}
+	return errs
+}
+
+func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, ok := raw["packages"]; !ok {
+		errs = append(errs, ValidationError{
+			Field:   "packages",
+			Message: "required field is missing",
+		})
+	} else {
+		seen := make(map[string]int) // id → first index
+		for i, pkg := range f.Packages {
+			pkgPath := fmt.Sprintf("packages[%d]", i)
+
+			if pkg.ID == "" {
+				errs = append(errs, ValidationError{
+					Position: positions[pkgPath],
+					Field:    pkgPath + ".id",
+					Message:  "required field is missing or empty",
+				})
+			} else if prev, dup := seen[pkg.ID]; dup {
+				errs = append(errs, ValidationError{
+					Position: positions[pkgPath+".id"],
+					Field:    pkgPath + ".id",
+					Message:  fmt.Sprintf("duplicate id %q (first seen at packages[%d])", pkg.ID, prev),
+				})
+			} else {
+				seen[pkg.ID] = i
+			}
+
+			if pkg.Prefer != "" && !KnownManagers[pkg.Prefer] {
+				errs = append(errs, ValidationError{
+					Position: positions[pkgPath+".prefer"],
+					Field:    pkgPath + ".prefer",
+					Message:  fmt.Sprintf("unknown manager %q", pkg.Prefer),
+				})
+			}
+
+			for mgr := range pkg.Managers {
+				if !KnownManagers[mgr] {
+					field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
+					errs = append(errs, ValidationError{
+						Position: positions[field],
+						Field:    field,
+						Message:  fmt.Sprintf("unknown manager %q", mgr),
+					})
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasEnv := raw["env"]; hasEnv {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+			errs = append(errs, ValidationError{
+				Position: positions["env"],
+				Field:    "env",
+				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, f.SchemaVersion),
+			})
+		}
+		for name, ev := range f.Env {
+			if !ValidEnvName(name) {
+				errs = append(errs, ValidationError{
+					Field:   "env." + name,
+					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
+				})
+			}
+			_ = ev
+		}
+	}
+	return errs
+}
+
+func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasShell := raw["shell"]; hasShell {
+		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+			errs = append(errs, ValidationError{
+				Position: positions["shell"],
+				Field:    "shell",
+				Message:  fmt.Sprintf("shell block requires schemaVersion %q or %q (current: %q); run 'genv shell alias set' to upgrade", Version3, Version4, f.SchemaVersion),
+			})
+		}
+		if f.Shell != nil {
+			for name := range f.Shell.Aliases {
+				if name == "" {
+					errs = append(errs, ValidationError{
+						Field:   "shell.aliases",
+						Message: "alias name must not be empty",
+					})
+				}
+				if sh := f.Shell.Aliases[name].Shell; sh != "" && !KnownShellTargets[sh] {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
+						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
+					})
+				}
+			}
+			for name := range f.Shell.Functions {
+				if name == "" {
+					errs = append(errs, ValidationError{
+						Field:   "shell.functions",
+						Message: "function name must not be empty",
+					})
+				}
+				if sh := f.Shell.Functions[name].Shell; sh != "" && !KnownShellTargets[sh] {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.functions.%s.shell", name),
+						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
+					})
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasServices := raw["services"]; hasServices {
+		if f.SchemaVersion != Version4 {
+			errs = append(errs, ValidationError{
+				Position: positions["services"],
+				Field:    "services",
+				Message:  fmt.Sprintf("services block requires schemaVersion %q (current: %q); run 'genv service add' to upgrade", Version4, f.SchemaVersion),
+			})
+		}
+		if f.Services != nil {
+			for name, svc := range f.Services {
+				if name == "" {
+					errs = append(errs, ValidationError{
+						Field:   "services",
+						Message: "service name must not be empty",
+					})
+				}
+				if len(svc.Start) == 0 {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("services.%s.start", name),
+						Message: "start command is required and must not be empty",
+					})
+				}
+			}
+		}
+	}
+	return errs
 }
