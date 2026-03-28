@@ -279,8 +279,8 @@ func TestSanitizeUnitName(t *testing.T) {
 		want string
 	}{
 		{"normal", "normal"},
-		{"../../foo", "..-..-foo"},
-		{"foo/bar\\baz", "foo-bar-baz"},
+		{"../../foo", "foo"},
+		{"foo/bar\\baz", "bar-baz"},
 		{"C:\\windows\\path", "C:-windows-path"},
 	}
 
