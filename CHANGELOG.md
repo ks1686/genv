@@ -14,12 +14,11 @@ Milestone M10 is complete. genv now supports virtually every mainstream Linux pa
 
 ### New adapters
 
-- **`apk`** — Alpine Linux package manager; supports install, remove, cache clean, version query, and list-installed.
 - **`zypper`** — openSUSE / SLES; full adapter parity with the existing Linux adapters.
 - **`xbps`** — Void Linux's native package manager (`xbps-install`, `xbps-remove`, `xbps-query`).
 - **`emerge`** — Gentoo Portage; installs via `emerge`, removes via `emerge --unmerge`, queries via `qlist`.
 
-Complete Linux adapter matrix: `apt`, `dnf`, `zypper`, `apk`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge`.
+Complete Linux adapter matrix: `apt`, `dnf`, `zypper`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `linuxbrew`, `xbps`, `emerge`.
 
 ### Services management (`genv service`)
 
@@ -39,11 +38,8 @@ Complete Linux adapter matrix: `apt`, `dnf`, `zypper`, `apk`, `pacman`, `paru`, 
 
 ### Distribution channels
 
-- `.deb`, `.rpm`, and `.apk` packages published to GitHub Releases via GoReleaser `nfpms`.
+- `.deb` and `.rpm` packages published to GitHub Releases via GoReleaser `nfpms`.
 - Snap package published to the Snap Store (`snap install genv`).
-- APKBUILD submitted to Alpine Linux aports (`apk add genv`).
-- Portfile submitted to MacPorts ports tree (`sudo port install genv`).
-- Fedora COPR repo: `dnf copr enable ks1686/genv && dnf install genv`.
 
 ---
 
@@ -147,7 +143,7 @@ Second stable release of `genv`. Milestones M3, M4, and M5 are complete. All fiv
 
 ### Cross-platform (M5)
 
-- macOS `brew` and `macports` adapters validated in the `macos-latest` CI runner.
+- macOS `brew` adapter validated in the `macos-latest` CI runner.
 - WSL2 detection sanitizes `$PATH` to strip Windows-host binary paths, preventing Windows binaries from shadowing Linux ones.
 - Install guides added for [macOS](docs/macos-install.md) and [WSL2](docs/wsl2-install.md).
 
@@ -173,13 +169,13 @@ Highlights:
 - declarative apply flow backed by `genv.lock.json`
 - `genv adopt` — track an already-installed package without reinstalling it
 - `genv disown` — stop tracking a package without uninstalling it
-- resolver and adapter support for `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `brew`, `macports`, and `linuxbrew`
+- resolver and adapter support for `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`, `brew`, and `linuxbrew`
 - Docker-based integration tests validating all Linux adapters in CI
 - Homebrew tap and AUR (`genv-bin` pre-compiled, `genv` source) distribution
 
 Notes:
 
-- macOS (`brew`, `macports`) and WSL2 adapters are implemented but not yet validated in automated CI — tracked in Milestone M5
+- macOS (`brew`) and WSL2 adapters are implemented but not yet validated in automated CI — tracked in Milestone M5
 - `go install github.com/ks1686/genv@latest` works on any platform with Go installed
 
 ## v0.1.0-beta.1 - 2026-03-17
