@@ -198,4 +198,3 @@ func parseMgrQueryVersion(out string) string {
 	}
 	return ""
 }
-

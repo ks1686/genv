@@ -502,7 +502,7 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 				Prefer:  "snap",
 				Managers: map[string]string{
 					"snap": "firefox",
-					"brew":    "firefox",
+					"brew": "firefox",
 				},
 			},
 		},
