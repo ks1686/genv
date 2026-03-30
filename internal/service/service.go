@@ -248,8 +248,8 @@ func SpecToLock(spec map[string]schema.Service) []genvfile.LockedService {
 			Start:       svc.Start,
 			Stop:        svc.Stop,
 			BrewFormula: svc.BrewFormula,
-			Restart: svc.Restart,
-			Status:  svc.Status,
+			Restart:     svc.Restart,
+			Status:      svc.Status,
 		})
 	}
 	sort.Slice(lock, func(i, j int) bool {
