@@ -198,6 +198,9 @@ When you run `genv apply`:
     "syncthing": {
       "start": ["syncthing", "serve"],
       "stop": ["pkill", "-f", "syncthing"]
+    },
+    "postgresql": {
+      "brew_formula": "postgresql@14"
     }
   }
 }
@@ -212,6 +215,8 @@ When you run `genv apply`:
 - `env` — optional map of global shell environment variables managed by genv
 - `shell` — optional shell config block for aliases/functions/source snippets
 - `services` — optional service block for declarative user-space service lifecycle management
+  - `start` — command array to start the service (raw, cross-platform)
+  - `brew_formula` — homebrew formula name to manage via `brew services` (macOS only; mutually exclusive with `start`)
 
 ---
 
@@ -267,6 +272,23 @@ When you run `genv apply`:
 ### `genv clean` flags
 
 - `--dry-run` — print the clean commands without executing
+
+### `genv service add` flags
+
+- `--start <cmd>` — command to start the service (e.g. `"syncthing serve"`)
+- `--stop <cmd>` — command to stop the service
+- `--restart <cmd>` — command to restart the service
+- `--status <cmd>` — command to check if the service is running
+- `--brew-formula <formula>` — homebrew formula to manage via `brew services` (macOS only; mutually exclusive with `--start`)
+
+**Examples:**
+```bash
+# Raw command service (any platform)
+genv service add syncthing --start "syncthing serve" --stop "pkill -f syncthing"
+
+# Brew-managed service (macOS only)
+genv service add postgresql --brew-formula postgresql@14
+```
 
 ### Common flag
 

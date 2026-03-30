@@ -16,21 +16,26 @@ var ErrServiceNotFound = errors.New("service not found in spec")
 
 // ServiceAdd adds or updates the service in f's services block.
 // It upgrades f.SchemaVersion to schema.Version4 if needed.
-func ServiceAdd(f *schema.GenvFile, name string, start, stop, restart, status []string) error {
+// Either start or brewFormula must be provided, but not both.
+func ServiceAdd(f *schema.GenvFile, name string, start, stop, restart, status []string, brewFormula string) error {
 	if name == "" {
 		return errors.New("service name must not be empty")
 	}
-	if len(start) == 0 {
-		return errors.New("start command is required")
+	if len(start) == 0 && brewFormula == "" {
+		return errors.New("either --start or --brew-formula is required")
+	}
+	if len(start) > 0 && brewFormula != "" {
+		return errors.New("--start and --brew-formula are mutually exclusive")
 	}
 	if f.Services == nil {
 		f.Services = make(map[string]schema.Service)
 	}
 	f.Services[name] = schema.Service{
-		Start:   start,
-		Stop:    stop,
-		Restart: restart,
-		Status:  status,
+		Start:       start,
+		Stop:        stop,
+		Restart:     restart,
+		Status:      status,
+		BrewFormula: brewFormula,
 	}
 	// Upgrade schema to v4 now that a services block is present.
 	f.SchemaVersion = schema.Version4

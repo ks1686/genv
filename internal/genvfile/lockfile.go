@@ -51,11 +51,12 @@ type LockedShellConfig struct {
 
 // LockedService records how one service was last applied by genv.
 type LockedService struct {
-	Name    string   `json:"name"`
-	Start   []string `json:"start"`
-	Stop    []string `json:"stop,omitempty"`
-	Restart []string `json:"restart,omitempty"`
-	Status  []string `json:"status,omitempty"`
+	Name        string   `json:"name"`
+	Start       []string `json:"start,omitempty"`
+	Stop        []string `json:"stop,omitempty"`
+	Restart     []string `json:"restart,omitempty"`
+	Status      []string `json:"status,omitempty"`
+	BrewFormula string   `json:"brew_formula,omitempty"`
 }
 
 // LockFile is the on-disk representation of the applied state tracked by genv.
