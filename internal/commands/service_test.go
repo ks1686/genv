@@ -14,7 +14,7 @@ func TestServiceCommands(t *testing.T) {
 	}
 
 	// Test ServiceAdd
-	err := ServiceAdd(f, "test-svc", []string{"echo", "start"}, []string{"echo", "stop"}, nil, []string{"true"})
+	err := ServiceAdd(f, "test-svc", []string{"echo", "start"}, []string{"echo", "stop"}, nil, []string{"true"}, "")
 	if err != nil {
 		t.Fatalf("ServiceAdd failed: %v", err)
 	}

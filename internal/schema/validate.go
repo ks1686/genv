@@ -353,10 +353,16 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 						Message: "service name must not be empty",
 					})
 				}
-				if len(svc.Start) == 0 {
+				if len(svc.Start) == 0 && svc.BrewFormula == "" {
 					errs = append(errs, ValidationError{
 						Field:   fmt.Sprintf("services.%s.start", name),
-						Message: "start command is required and must not be empty",
+						Message: "start command is required (or set brew_formula for brew-managed services)",
+					})
+				}
+				if svc.BrewFormula != "" && len(svc.Start) > 0 {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("services.%s", name),
+						Message: "brew_formula and start are mutually exclusive; use one or the other",
 					})
 				}
 			}
