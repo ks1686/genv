@@ -14,19 +14,16 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
-// systemdUnitName returns the systemd unit name for a genv-managed service.
-func systemdUnitName(name string) string {
+func sanitizeServiceName(name string) string {
 	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	return "genv-" + name + ".service"
+	return strings.ReplaceAll(name, "\\", "-")
 }
 
+// systemdUnitName returns the systemd unit name for a genv-managed service.
+func systemdUnitName(name string) string { return "genv-" + sanitizeServiceName(name) + ".service" }
+
 // launchdPlistName returns the launchd plist filename for a genv-managed service.
-func launchdPlistName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, "\\", "-")
-	return "genv." + name + ".plist"
-}
+func launchdPlistName(name string) string { return "genv." + sanitizeServiceName(name) + ".plist" }
 
 // SystemdLogsHint returns the journalctl command users should run to view logs for name.
 func SystemdLogsHint(name string) string {

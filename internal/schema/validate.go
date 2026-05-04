@@ -86,7 +86,6 @@ func ValidEnvName(name string) bool {
 	for i, r := range name {
 		switch {
 		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
-			// always valid
 		case r >= '0' && r <= '9':
 			if i == 0 {
 				return false // no leading digit
@@ -270,14 +269,13 @@ func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[stri
 				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, f.SchemaVersion),
 			})
 		}
-		for name, ev := range f.Env {
+		for name := range f.Env {
 			if !ValidEnvName(name) {
 				errs = append(errs, ValidationError{
 					Field:   "env." + name,
 					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
 				})
 			}
-			_ = ev
 		}
 	}
 	return errs
@@ -294,34 +292,36 @@ func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 			})
 		}
 		if f.Shell != nil {
-			for name := range f.Shell.Aliases {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "shell.aliases",
-						Message: "alias name must not be empty",
-					})
-				}
-				if sh := f.Shell.Aliases[name].Shell; sh != "" && !KnownShellTargets[sh] {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
-						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
-					})
-				}
+			aliasShells := make(map[string]string, len(f.Shell.Aliases))
+			for k, v := range f.Shell.Aliases {
+				aliasShells[k] = v.Shell
 			}
-			for name := range f.Shell.Functions {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "shell.functions",
-						Message: "function name must not be empty",
-					})
-				}
-				if sh := f.Shell.Functions[name].Shell; sh != "" && !KnownShellTargets[sh] {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.functions.%s.shell", name),
-						Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
-					})
-				}
+			errs = append(errs, validateShellEntries(aliasShells, "shell.aliases", "alias")...)
+
+			funcShells := make(map[string]string, len(f.Shell.Functions))
+			for k, v := range f.Shell.Functions {
+				funcShells[k] = v.Shell
 			}
+			errs = append(errs, validateShellEntries(funcShells, "shell.functions", "function")...)
+		}
+	}
+	return errs
+}
+
+func validateShellEntries(shells map[string]string, fieldPrefix, singularName string) []ValidationError {
+	var errs []ValidationError
+	for name, sh := range shells {
+		if name == "" {
+			errs = append(errs, ValidationError{
+				Field:   fieldPrefix,
+				Message: singularName + " name must not be empty",
+			})
+		}
+		if sh != "" && !KnownShellTargets[sh] {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.%s.shell", fieldPrefix, name),
+				Message: fmt.Sprintf("unknown shell %q; expected %s", sh, ValidShellTargetsMsg),
+			})
 		}
 	}
 	return errs
