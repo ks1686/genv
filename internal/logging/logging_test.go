@@ -1,6 +1,7 @@
 package logging_test
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 
@@ -22,14 +23,14 @@ func TestInit_SetsDefaultLogger(t *testing.T) {
 		t.Fatal("slog.Default() returned nil after Init")
 	}
 	// Debug messages must be enabled when debug=true.
-	if !l.Enabled(nil, slog.LevelDebug) {
+	if !l.Enabled(context.TODO(), slog.LevelDebug) {
 		t.Error("expected DEBUG level to be enabled after Init(true)")
 	}
 
 	logging.Init(false)
 	l = slog.Default()
 	// After Init(false) the debug level should NOT be enabled.
-	if l.Enabled(nil, slog.LevelDebug) {
+	if l.Enabled(context.TODO(), slog.LevelDebug) {
 		t.Error("expected DEBUG level to be disabled after Init(false)")
 	}
 }

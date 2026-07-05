@@ -84,14 +84,14 @@ func WriteFragment(path string, vars map[string]schema.EnvVar) error {
 // The source line is appended only if no line in rcPath already contains
 // fragmentPath as a substring. If rcPath does not exist it is created.
 func InjectSourceLine(rcPath, fragmentPath string) error {
-	sourceLine := ". " + fragmentPath
+	sourceLine := ". " + shellQuote(fragmentPath)
 
 	// Read existing contents to check for duplicate.
 	data, err := os.ReadFile(rcPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading %s: %w", rcPath, err)
 	}
-	if strings.Contains(string(data), fragmentPath) {
+	if strings.Contains(string(data), sourceLine) || strings.Contains(string(data), fragmentPath) {
 		// Already sourced.
 		return nil
 	}
@@ -105,7 +105,7 @@ func InjectSourceLine(rcPath, fragmentPath string) error {
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", rcPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = fmt.Fprintf(f, "\n# genv env\n%s\n", sourceLine)
 	return err
@@ -279,7 +279,21 @@ func ReadFragment(path string) (map[string]string, error) {
 // shellQuote wraps v in single quotes, escaping any embedded single quotes
 // using the 'x'\”y' idiom so the result is safe to embed in a POSIX shell script.
 func shellQuote(v string) string {
-	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+	if v == "" {
+		return "''"
+	}
+	var b strings.Builder
+	b.Grow(len(v) + 2)
+	b.WriteByte('\'')
+	for i := 0; i < len(v); i++ {
+		if v[i] == '\'' {
+			b.WriteString(`'\''`)
+			continue
+		}
+		b.WriteByte(v[i])
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // shellUnquote reverses shellQuote for testing purposes (single-quoted strings only).

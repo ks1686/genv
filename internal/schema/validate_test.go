@@ -567,3 +567,65 @@ func TestLocateFields_NestedManagers(t *testing.T) {
 		t.Errorf("expected position for %q to be tracked; got keys: %v", key, pos)
 	}
 }
+
+func TestParseAndValidate_RejectsShellSourceMetacharacters(t *testing.T) {
+	input := `{
+		"schemaVersion":"3",
+		"packages":[],
+		"shell":{"source":["/tmp/env.sh; rm -rf /"]}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "shell.source[0]" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected shell source validation error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_RejectsShellFunctionMetacharacters(t *testing.T) {
+	input := `{
+		"schemaVersion":"3",
+		"packages":[],
+		"shell":{"functions":{"bad":{"body":"echo hi; rm -rf /"}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "shell.functions.bad.body" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected shell function validation error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_RejectsServiceNewlineInjection(t *testing.T) {
+	input := `{
+		"schemaVersion":"4",
+		"packages":[],
+		"services":{
+			"svc\nbad":{"start":["echo","ok"]},
+			"ok":{"start":["echo","hello\nworld"]}
+		}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected newline validation errors")
+	}
+}

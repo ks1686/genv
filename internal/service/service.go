@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -150,7 +151,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 					continue
 				}
 				if verbose {
-					fmt.Fprintf(os.Stdout, "  service: starting %s via brew services\n", e.Name)
+					_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s via brew services\n", e.Name)
 				}
 				if err := BrewServicesStart(ctx, svc.BrewFormula); err != nil {
 					errs = append(errs, err)
@@ -171,7 +172,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 				}
 			} else {
 				if verbose {
-					fmt.Fprintf(os.Stdout, "  service: starting %s\n", e.Name)
+					_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s\n", e.Name)
 				}
 				cmd := exec.CommandContext(ctx, svc.Start[0], svc.Start[1:]...)
 				if err := cmd.Run(); err != nil {
@@ -196,7 +197,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 					continue
 				}
 				if verbose {
-					fmt.Fprintf(os.Stdout, "  service: stopping %s via brew services\n", e.Name)
+					_, _ = fmt.Fprintf(os.Stdout, "  service: stopping %s via brew services\n", e.Name)
 				}
 				if err := BrewServicesStop(ctx, ls.BrewFormula); err != nil {
 					errs = append(errs, err)
@@ -217,7 +218,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 				}
 			} else if len(ls.Stop) > 0 {
 				if verbose {
-					fmt.Fprintf(os.Stdout, "  service: stopping %s\n", e.Name)
+					_, _ = fmt.Fprintf(os.Stdout, "  service: stopping %s\n", e.Name)
 				}
 				cmd := exec.CommandContext(ctx, ls.Stop[0], ls.Stop[1:]...)
 				if err := cmd.Run(); err != nil {
@@ -227,7 +228,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 				}
 			} else {
 				if verbose {
-					fmt.Fprintf(os.Stdout, "  service: removed %s from spec (no stop command defined)\n", e.Name)
+					_, _ = fmt.Fprintf(os.Stdout, "  service: removed %s from spec (no stop command defined)\n", e.Name)
 				}
 				removed = append(removed, e.Name)
 			}
@@ -281,18 +282,19 @@ func IsLaunchdAvailable() bool {
 
 // SystemdUnitContent returns the systemd unit file content for the given service.
 func SystemdUnitContent(name string, svc schema.Service) string {
+	name = stripLineBreaks(name)
 	content := fmt.Sprintf(`[Unit]
 Description=genv managed service: %s
 
 [Service]
 ExecStart=%s
-`, name, strings.Join(svc.Start, " "))
+`, name, renderSystemdCommand(svc.Start))
 
 	if len(svc.Stop) > 0 {
-		content += fmt.Sprintf("ExecStop=%s\n", strings.Join(svc.Stop, " "))
+		content += fmt.Sprintf("ExecStop=%s\n", renderSystemdCommand(svc.Stop))
 	}
 	if len(svc.Restart) > 0 {
-		content += fmt.Sprintf("ExecReload=%s\n", strings.Join(svc.Restart, " "))
+		content += fmt.Sprintf("ExecReload=%s\n", renderSystemdCommand(svc.Restart))
 	}
 
 	content += `
@@ -304,9 +306,10 @@ WantedBy=default.target
 
 // LaunchdPlistContent returns the launchd plist file content for the given service.
 func LaunchdPlistContent(name string, svc schema.Service) string {
+	name = stripLineBreaks(name)
 	var b strings.Builder
 	for _, arg := range svc.Start {
-		fmt.Fprintf(&b, "        <string>%s</string>\n", arg)
+		fmt.Fprintf(&b, "        <string>%s</string>\n", xmlEscape(stripLineBreaks(arg)))
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -321,7 +324,37 @@ func LaunchdPlistContent(name string, svc schema.Service) string {
     <true/>
 </dict>
 </plist>
-`, name, b.String())
+`, xmlEscape(name), b.String())
+}
+
+func renderSystemdCommand(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, systemdQuoteArg(stripLineBreaks(arg)))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func systemdQuoteArg(arg string) string {
+	if arg == "" {
+		return `""`
+	}
+	arg = strings.ReplaceAll(arg, `\`, `\\`)
+	arg = strings.ReplaceAll(arg, `"`, `\"`)
+	return `"` + arg + `"`
+}
+
+func stripLineBreaks(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.ReplaceAll(s, "\n", " ")
+}
+
+func xmlEscape(s string) string {
+	var b strings.Builder
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		return s
+	}
+	return b.String()
 }
 
 func applySystemd(ctx context.Context, name string, svc schema.Service, verbose bool) error {
@@ -338,11 +371,11 @@ func applySystemd(ctx context.Context, name string, svc schema.Service, verbose 
 	}
 
 	if verbose {
-		fmt.Fprintf(os.Stdout, "  service: starting %s via systemd\n", name)
+		_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s via systemd\n", name)
 	}
 
 	// reload daemon, enable and start service
-	exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
+	_ = exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
 	if err := exec.CommandContext(ctx, "systemctl", "--user", "enable", "--now", unitName).Run(); err != nil {
 		return fmt.Errorf("enabling systemd service %q: %w\nTip: to view logs run: %s", unitName, err, SystemdLogsHint(name))
 	}
@@ -355,17 +388,17 @@ func removeSystemd(ctx context.Context, name string, verbose bool) error {
 	unitPath := filepath.Join(os.Getenv("HOME"), ".config/systemd/user", unitName)
 
 	if verbose {
-		fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via systemd\n", name)
+		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via systemd\n", name)
 	}
 
-	exec.CommandContext(ctx, "systemctl", "--user", "stop", unitName).Run()
-	exec.CommandContext(ctx, "systemctl", "--user", "disable", unitName).Run()
+	_ = exec.CommandContext(ctx, "systemctl", "--user", "stop", unitName).Run()
+	_ = exec.CommandContext(ctx, "systemctl", "--user", "disable", unitName).Run()
 
 	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing systemd unit file %q: %w", unitPath, err)
 	}
 
-	exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
+	_ = exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
 	return nil
 }
 
@@ -383,11 +416,11 @@ func applyLaunchd(ctx context.Context, name string, svc schema.Service, verbose 
 	}
 
 	if verbose {
-		fmt.Fprintf(os.Stdout, "  service: starting %s via launchd\n", name)
+		_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s via launchd\n", name)
 	}
 
 	// unload if already loaded, then load
-	exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
+	_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
 	if err := exec.CommandContext(ctx, "launchctl", "load", plistPath).Run(); err != nil {
 		return fmt.Errorf("loading launchd service %q: %w\nTip: to view logs run: log show --predicate 'subsystem == \"genv\"' --last 1h", name, err)
 	}
@@ -400,10 +433,10 @@ func removeLaunchd(ctx context.Context, name string, verbose bool) error {
 	plistPath := filepath.Join(os.Getenv("HOME"), "Library/LaunchAgents", plistName)
 
 	if verbose {
-		fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via launchd\n", name)
+		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via launchd\n", name)
 	}
 
-	exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
+	_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
 
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing launchd plist file %q: %w", plistPath, err)

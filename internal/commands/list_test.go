@@ -87,7 +87,7 @@ func TestList_ManagersSortedAlphabetically(t *testing.T) {
 	aptIdx := strings.Index(out, "apt=")
 	flatpakIdx := strings.Index(out, "flatpak=")
 	snapIdx := strings.Index(out, "snap=")
-	if !(aptIdx < flatpakIdx && flatpakIdx < snapIdx) {
+	if aptIdx >= flatpakIdx || flatpakIdx >= snapIdx {
 		t.Errorf("expected managers sorted apt < flatpak < snap, got: %q", out)
 	}
 }

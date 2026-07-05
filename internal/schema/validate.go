@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Position is a 1-based line and column in a source file.
@@ -309,8 +310,30 @@ func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 			funcShells := make(map[string]string, len(f.Shell.Functions))
 			for k, v := range f.Shell.Functions {
 				funcShells[k] = v.Shell
+				if containsShellMeta(v.Body) {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.functions.%s.body", k),
+						Message: "contains shell metacharacters; function body must be plain text without separators or substitutions",
+					})
+				}
 			}
 			errs = append(errs, validateShellEntries(funcShells, "shell.functions", "function")...)
+
+			for i, src := range f.Shell.Source {
+				if src == "" {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.source[%d]", i),
+						Message: "source path must not be empty",
+					})
+					continue
+				}
+				if containsShellMeta(src) {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("shell.source[%d]", i),
+						Message: "contains shell metacharacters",
+					})
+				}
+			}
 		}
 	}
 	return errs
@@ -353,6 +376,12 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 						Message: "service name must not be empty",
 					})
 				}
+				if strings.ContainsAny(name, "\r\n") {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("services.%s", name),
+						Message: "service name must not contain newlines",
+					})
+				}
 				if len(svc.Start) == 0 && svc.BrewFormula == "" {
 					errs = append(errs, ValidationError{
 						Field:   fmt.Sprintf("services.%s.start", name),
@@ -365,8 +394,41 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 						Message: "brew_formula and start are mutually exclusive; use one or the other",
 					})
 				}
+				if strings.ContainsAny(svc.BrewFormula, "\r\n") {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("services.%s.brew_formula", name),
+						Message: "brew_formula must not contain newlines",
+					})
+				}
+				errs = append(errs, validateServiceCommand(name, "start", svc.Start)...)
+				errs = append(errs, validateServiceCommand(name, "stop", svc.Stop)...)
+				errs = append(errs, validateServiceCommand(name, "restart", svc.Restart)...)
+				errs = append(errs, validateServiceCommand(name, "status", svc.Status)...)
 			}
 		}
 	}
 	return errs
+}
+
+func validateServiceCommand(name, field string, args []string) []ValidationError {
+	var errs []ValidationError
+	for i, arg := range args {
+		if arg == "" {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("services.%s.%s[%d]", name, field, i),
+				Message: "command arguments must not be empty",
+			})
+		}
+		if strings.ContainsAny(arg, "\r\n") {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("services.%s.%s[%d]", name, field, i),
+				Message: "command arguments must not contain newlines",
+			})
+		}
+	}
+	return errs
+}
+
+func containsShellMeta(s string) bool {
+	return strings.ContainsAny(s, "\r\n;&|`$<>()")
 }

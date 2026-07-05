@@ -211,9 +211,9 @@ func TestSystemdUnitContent(t *testing.T) {
 
 	checks := []string{
 		"Description=genv managed service: my-daemon",
-		"ExecStart=/usr/bin/my-daemon --config /etc/my.conf",
-		"ExecStop=/usr/bin/my-daemon --stop",
-		"ExecReload=/usr/bin/my-daemon --reload",
+		`ExecStart="/usr/bin/my-daemon" "--config" "/etc/my.conf"`,
+		`ExecStop="/usr/bin/my-daemon" "--stop"`,
+		`ExecReload="/usr/bin/my-daemon" "--reload"`,
 		"WantedBy=default.target",
 	}
 	for _, want := range checks {
@@ -228,7 +228,7 @@ func TestSystemdUnitContentMinimal(t *testing.T) {
 	svc := schema.Service{Start: []string{"sleep", "inf"}}
 	content := SystemdUnitContent("minimal", svc)
 
-	if !strings.Contains(content, "ExecStart=sleep inf") {
+	if !strings.Contains(content, `ExecStart="sleep" "inf"`) {
 		t.Errorf("missing ExecStart in unit:\n%s", content)
 	}
 	if strings.Contains(content, "ExecStop") {
@@ -257,6 +257,37 @@ func TestLaunchdPlistContent(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf("launchd plist missing %q\ncontent:\n%s", want, content)
 		}
+	}
+}
+
+func TestSystemdUnitContent_StripsNewlineInjection(t *testing.T) {
+	svc := schema.Service{
+		Start: []string{"/usr/bin/my-daemon", "ok\nExecStartPre=/bin/evil"},
+	}
+	content := SystemdUnitContent("svc\nInjected=1", svc)
+
+	if strings.Contains(content, "\nExecStartPre=/bin/evil") {
+		t.Fatalf("unit content contains injected directive:\n%s", content)
+	}
+	if strings.Contains(content, "\nInjected=1") {
+		t.Fatalf("service name should not inject unit directives:\n%s", content)
+	}
+}
+
+func TestLaunchdPlistContent_EscapesXML(t *testing.T) {
+	svc := schema.Service{
+		Start: []string{"/bin/echo", `<x>&"y"`},
+	}
+	content := LaunchdPlistContent("name&<>", svc)
+
+	if strings.Contains(content, `<string><x>&"y"</string>`) {
+		t.Fatalf("plist argument is not XML escaped:\n%s", content)
+	}
+	if !strings.Contains(content, `<string>&lt;x&gt;&amp;&#34;y&#34;</string>`) {
+		t.Fatalf("escaped plist argument missing:\n%s", content)
+	}
+	if !strings.Contains(content, `<string>genv.name&amp;&lt;&gt;</string>`) {
+		t.Fatalf("escaped plist label missing:\n%s", content)
 	}
 }
 

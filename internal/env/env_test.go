@@ -17,6 +17,8 @@ func TestShellQuoteRoundtrip(t *testing.T) {
 		"simple",
 		"with spaces",
 		"has'single'quote",
+		"'leading-quote",
+		"trailing-quote'",
 		`has"double"quote`,
 		"dollar$sign",
 		"back`tick`here",
@@ -133,7 +135,7 @@ func TestWriteFragment_Deterministic(t *testing.T) {
 	iAAA := strings.Index(content, "export AAA=")
 	iMMM := strings.Index(content, "export MMM=")
 	iZZZ := strings.Index(content, "export ZZZ=")
-	if !(iAAA < iMMM && iMMM < iZZZ) {
+	if iAAA >= iMMM || iMMM >= iZZZ {
 		t.Errorf("fragment not sorted: AAA@%d MMM@%d ZZZ@%d\n%s", iAAA, iMMM, iZZZ, content)
 	}
 }
@@ -175,6 +177,27 @@ func TestInjectSourceLine_CreatesRcFile(t *testing.T) {
 	}
 	if _, err := os.Stat(rc); err != nil {
 		t.Errorf("expected rc file to be created: %v", err)
+	}
+}
+
+func TestInjectSourceLine_QuotesFragmentPath(t *testing.T) {
+	dir := t.TempDir()
+	rc := filepath.Join(dir, ".bashrc")
+	frag := "/tmp/frag';echo pwned #.sh"
+
+	if err := InjectSourceLine(rc, frag); err != nil {
+		t.Fatalf("InjectSourceLine: %v", err)
+	}
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if strings.Contains(content, ". /tmp/frag';echo pwned #.sh") {
+		t.Fatalf("source line is unquoted and injectable: %s", content)
+	}
+	if !strings.Contains(content, ". '/tmp/frag'\\'';echo pwned #.sh'") {
+		t.Fatalf("expected quoted source line, got: %s", content)
 	}
 }
 
