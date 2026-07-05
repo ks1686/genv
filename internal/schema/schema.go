@@ -47,11 +47,14 @@ type GenvFile struct {
 }
 
 // Service is a single user-space service declaration.
+// Either Start or BrewFormula must be provided.
+// When BrewFormula is set, genv manages the service via `brew services` on macOS.
 type Service struct {
-	Start   []string `json:"start"`
-	Stop    []string `json:"stop,omitempty"`
-	Restart []string `json:"restart,omitempty"`
-	Status  []string `json:"status,omitempty"`
+	Start       []string `json:"start,omitempty"`
+	Stop        []string `json:"stop,omitempty"`
+	Restart     []string `json:"restart,omitempty"`
+	Status      []string `json:"status,omitempty"`
+	BrewFormula string   `json:"brew_formula,omitempty"`
 }
 
 // ShellConfig is the shell configuration block in genv.json.

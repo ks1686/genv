@@ -14,16 +14,25 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
-func sanitizeServiceName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	return strings.ReplaceAll(name, "\\", "-")
+// systemdUnitName returns the systemd unit name for a genv-managed service.
+func systemdUnitName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
+	return "genv-" + name + ".service"
 }
 
-// systemdUnitName returns the systemd unit name for a genv-managed service.
-func systemdUnitName(name string) string { return "genv-" + sanitizeServiceName(name) + ".service" }
-
 // launchdPlistName returns the launchd plist filename for a genv-managed service.
-func launchdPlistName(name string) string { return "genv." + sanitizeServiceName(name) + ".plist" }
+func launchdPlistName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	if name == "." || name == "/" {
+		name = "default"
+	}
+	return "genv." + name + ".plist"
+}
 
 // SystemdLogsHint returns the journalctl command users should run to view logs for name.
 func SystemdLogsHint(name string) string {
@@ -94,7 +103,9 @@ func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfi
 		}
 
 		running := false
-		if inSpec && len(svc.Status) > 0 {
+		if inSpec && svc.BrewFormula != "" {
+			running = BrewServicesRunning(svc.BrewFormula)
+		} else if inSpec && len(svc.Status) > 0 {
 			cmd := exec.Command(svc.Status[0], svc.Status[1:]...)
 			if err := cmd.Run(); err == nil {
 				running = true
@@ -120,7 +131,8 @@ func compareServices(s schema.Service, l genvfile.LockedService) bool {
 	return strings.Join(s.Start, " ") == strings.Join(l.Start, " ") &&
 		strings.Join(s.Stop, " ") == strings.Join(l.Stop, " ") &&
 		strings.Join(s.Restart, " ") == strings.Join(l.Restart, " ") &&
-		strings.Join(s.Status, " ") == strings.Join(l.Status, " ")
+		strings.Join(s.Status, " ") == strings.Join(l.Status, " ") &&
+		s.BrewFormula == l.BrewFormula
 }
 
 // ApplyServices reconciles the system state with the desired services.
@@ -132,7 +144,20 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 		switch e.Kind {
 		case ServiceStatusMissing, ServiceStatusModified:
 			svc := specServices[e.Name]
-			if IsSystemdAvailable() {
+			if svc.BrewFormula != "" {
+				if !IsBrewServicesAvailable() {
+					errs = append(errs, fmt.Errorf("service %q requires brew services but brew is not available on this platform", e.Name))
+					continue
+				}
+				if verbose {
+					fmt.Fprintf(os.Stdout, "  service: starting %s via brew services\n", e.Name)
+				}
+				if err := BrewServicesStart(ctx, svc.BrewFormula); err != nil {
+					errs = append(errs, err)
+				} else {
+					applied = append(applied, e.Name)
+				}
+			} else if IsSystemdAvailable() {
 				if err := applySystemd(ctx, e.Name, svc, verbose); err != nil {
 					errs = append(errs, err)
 				} else {
@@ -165,7 +190,20 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 				}
 			}
 
-			if IsSystemdAvailable() {
+			if ls.BrewFormula != "" {
+				if !IsBrewServicesAvailable() {
+					errs = append(errs, fmt.Errorf("service %q requires brew services but brew is not available on this platform", e.Name))
+					continue
+				}
+				if verbose {
+					fmt.Fprintf(os.Stdout, "  service: stopping %s via brew services\n", e.Name)
+				}
+				if err := BrewServicesStop(ctx, ls.BrewFormula); err != nil {
+					errs = append(errs, err)
+				} else {
+					removed = append(removed, e.Name)
+				}
+			} else if IsSystemdAvailable() {
 				if err := removeSystemd(ctx, e.Name, verbose); err != nil {
 					errs = append(errs, err)
 				} else {
@@ -206,11 +244,12 @@ func SpecToLock(spec map[string]schema.Service) []genvfile.LockedService {
 	var lock []genvfile.LockedService
 	for name, svc := range spec {
 		lock = append(lock, genvfile.LockedService{
-			Name:    name,
-			Start:   svc.Start,
-			Stop:    svc.Stop,
-			Restart: svc.Restart,
-			Status:  svc.Status,
+			Name:        name,
+			Start:       svc.Start,
+			Stop:        svc.Stop,
+			BrewFormula: svc.BrewFormula,
+			Restart:     svc.Restart,
+			Status:      svc.Status,
 		})
 	}
 	sort.Slice(lock, func(i, j int) bool {
