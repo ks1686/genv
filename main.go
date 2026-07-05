@@ -2487,7 +2487,8 @@ func serviceCmd(args []string) int {
 		fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|status> [flags]")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "subcommands:")
-		fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service")
+		fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service (raw commands)")
+		fPrintln(os.Stderr, "  add <name> --brew-formula <formula>                                          Add a brew-managed service (macOS)")
 		fPrintln(os.Stderr, "  remove <name>                                                              Remove a service from the spec")
 		fPrintln(os.Stderr, "  list                                                                        Show all declared services")
 		fPrintln(os.Stderr, "  start <name>                                                               Start a service")
@@ -2519,6 +2520,7 @@ func serviceAddCmd(args []string) int {
 	fs := flag.NewFlagSet("service add", flag.ContinueOnError)
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv service add <name> --start <cmd> [flags]")
+		fPrintln(os.Stderr, "       genv service add <name> --brew-formula <formula> [flags]")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -2528,6 +2530,7 @@ func serviceAddCmd(args []string) int {
 	stop := fs.String("stop", "", "command to stop the service")
 	restart := fs.String("restart", "", "command to restart the service")
 	status := fs.String("status", "", "command to check service status")
+	brewFormula := fs.String("brew-formula", "", "homebrew formula to manage via `brew services` (macOS only)")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -2538,8 +2541,8 @@ func serviceAddCmd(args []string) int {
 		fs.Usage()
 		return exitUsage
 	}
-	if *start == "" {
-		fPrintln(os.Stderr, "genv service add: --start command is required")
+	if *start == "" && *brewFormula == "" {
+		fPrintln(os.Stderr, "genv service add: either --start or --brew-formula is required")
 		fs.Usage()
 		return exitUsage
 	}
@@ -2553,7 +2556,10 @@ func serviceAddCmd(args []string) int {
 		return exitIO
 	}
 
-	startCmd := strings.Fields(*start)
+	var startCmd []string
+	if *start != "" {
+		startCmd = strings.Fields(*start)
+	}
 	var stopCmd, restartCmd, statusCmd []string
 	if *stop != "" {
 		stopCmd = strings.Fields(*stop)
@@ -2565,7 +2571,7 @@ func serviceAddCmd(args []string) int {
 		statusCmd = strings.Fields(*status)
 	}
 
-	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd); err != nil {
+	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd, *brewFormula); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitUsage
 	}
@@ -2697,6 +2703,15 @@ func serviceStartCmd(args []string) int {
 		return exitLogic
 	}
 
+	if svc.BrewFormula != "" {
+		fprintf(os.Stdout, "Starting service %q via brew services: %s\n", name, svc.BrewFormula)
+		if err := service.BrewServicesStart(context.Background(), svc.BrewFormula); err != nil {
+			fprintf(os.Stderr, "genv: %v\n", err)
+			return exitLogic
+		}
+		return exitOK
+	}
+
 	fprintf(os.Stdout, "Starting service %q: %s\n", name, strings.Join(svc.Start, " "))
 	cmd := exec.Command(svc.Start[0], svc.Start[1:]...)
 	cmd.Stdout = os.Stdout
@@ -2735,6 +2750,15 @@ func serviceStopCmd(args []string) int {
 	if !ok {
 		fprintf(os.Stderr, "genv: service %q not found in spec\n", name)
 		return exitLogic
+	}
+
+	if svc.BrewFormula != "" {
+		fprintf(os.Stdout, "Stopping service %q via brew services: %s\n", name, svc.BrewFormula)
+		if err := service.BrewServicesStop(context.Background(), svc.BrewFormula); err != nil {
+			fprintf(os.Stderr, "genv: %v\n", err)
+			return exitLogic
+		}
+		return exitOK
 	}
 
 	if len(svc.Stop) == 0 {

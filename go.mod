@@ -1,3 +1,3 @@
 module github.com/ks1686/genv
 
-go 1.26.1
+go 1.24.3
