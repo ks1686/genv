@@ -107,3 +107,8 @@ desktop.ini
 
 dev-notes/
 .vscode/settings.json
+
+# =============================================================================
+# OpenCode session state (local continuation data, not for the repo)
+# =============================================================================
+.omo/
