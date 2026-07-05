@@ -52,8 +52,9 @@ signs:
     output: true
 
 # ── Homebrew tap ──────────────────────────────────────────────────────────────
-# Cask generation remains enabled, but upload is currently disabled to avoid
-# failing releases when tap credentials are unavailable/invalid in CI.
+# Publishes a cask to ks1686/homebrew-tap on every non-prerelease tag.
+# Requires secret: HOMEBREW_TAP_GITHUB_TOKEN (fine-grained PAT with
+# Contents: read+write on the homebrew-tap repo).
 #
 # Install after setup:
 #   brew tap ks1686/tap
@@ -67,7 +68,7 @@ homebrew_casks:
     homepage: "https://github.com/ks1686/genv"
     description: "Track, sync, and reproduce your software environment across Linux, macOS, and WSL2."
     license: MIT
-    skip_upload: true
+    skip_upload: auto  # skips pre-releases automatically
 
 # ── Snap Store ────────────────────────────────────────────────────────────────
 # Publishes a snap to the Snap Store on every non-prerelease tag.
