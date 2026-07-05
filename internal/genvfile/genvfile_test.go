@@ -521,6 +521,27 @@ func TestWrite_ProducesValidJSON(t *testing.T) {
 	}
 }
 
+func TestWrite_RejectsInvalidSchemaContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+
+	f := &schema.GenvFile{
+		SchemaVersion: schema.Version4,
+		Packages:      []schema.Package{},
+		Services: map[string]schema.Service{
+			"bad\nname": {Start: []string{"echo", "ok"}},
+		},
+	}
+
+	err := Write(path, f)
+	if err == nil {
+		t.Fatal("expected Write to reject invalid content")
+	}
+	if !errors.Is(err, ErrInvalidFile) {
+		t.Fatalf("expected ErrInvalidFile, got: %v", err)
+	}
+}
+
 func TestDefaultDir_HomeDirError(t *testing.T) {
 	// First ensure XDG_CONFIG_HOME is unset
 	t.Setenv("XDG_CONFIG_HOME", "")

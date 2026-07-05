@@ -15,7 +15,7 @@ import (
 // TestMain disables interactive prompts (package search picker, remove fuzzy
 // match) for all unit tests so they run non-interactively.
 func TestMain(m *testing.M) {
-	os.Setenv("GENV_NO_INTERACTIVE", "1")
+	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
 	os.Exit(m.Run())
 }
 
@@ -1193,6 +1193,45 @@ func TestBuildEditorCmd(t *testing.T) {
 					if cmd.Args[i] != tc.wantArgs[i] {
 						t.Errorf("buildEditorCmd args[%d]: got %q, want %q", i, cmd.Args[i], tc.wantArgs[i])
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestParseCommandWords(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{name: "simple", input: "sleep 1", want: []string{"sleep", "1"}},
+		{name: "double quoted", input: `sh -c "echo hello world"`, want: []string{"sh", "-c", "echo hello world"}},
+		{name: "single quoted", input: `sh -c 'echo hello world'`, want: []string{"sh", "-c", "echo hello world"}},
+		{name: "escaped spaces", input: `echo hello\ world`, want: []string{"echo", "hello world"}},
+		{name: "unterminated quote", input: `sh -c "echo`, wantErr: true},
+		{name: "empty", input: `   `, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCommandWords(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseCommandWords(%q): expected error", tc.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseCommandWords(%q): %v", tc.input, err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseCommandWords(%q): len=%d want=%d got=%v", tc.input, len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("parseCommandWords(%q)[%d]=%q want %q", tc.input, i, got[i], tc.want[i])
 				}
 			}
 		})

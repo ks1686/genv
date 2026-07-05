@@ -192,7 +192,7 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 	fprintf(os.Stdout, "multiple packages match %q — select one to install:\n\n", id)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for i, c := range candidates {
-		fmt.Fprintf(tw, "  [%d]\t%s:\t%s\n", i+1, c.Manager, c.PkgName)
+		_, _ = fmt.Fprintf(tw, "  [%d]\t%s:\t%s\n", i+1, c.Manager, c.PkgName)
 	}
 	_ = tw.Flush()
 	fprintf(os.Stdout, "\nselect [1-%d] or 0 to cancel: ", len(candidates))
@@ -2078,6 +2078,84 @@ func buildEditorCmd(editor, file string) (*exec.Cmd, error) {
 	return exec.Command(bin, args...), nil
 }
 
+func parseCommandWords(input string) ([]string, error) {
+	var words []string
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+
+		if escaped {
+			current.WriteByte(ch)
+			escaped = false
+			continue
+		}
+
+		if inSingle {
+			if ch == '\'' {
+				inSingle = false
+			} else {
+				current.WriteByte(ch)
+			}
+			continue
+		}
+
+		if inDouble {
+			switch ch {
+			case '"':
+				inDouble = false
+			case '\\':
+				if i+1 < len(input) && strings.ContainsRune(`"$\`, rune(input[i+1])) {
+					i++
+					current.WriteByte(input[i])
+				} else {
+					current.WriteByte(ch)
+				}
+			default:
+				current.WriteByte(ch)
+			}
+			continue
+		}
+
+		switch ch {
+		case '\\':
+			escaped = true
+		case '\'':
+			inSingle = true
+		case '"':
+			inDouble = true
+		case ' ', '\t', '\n', '\r':
+			if current.Len() > 0 {
+				words = append(words, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+
+	if escaped {
+		return nil, errors.New("trailing escape")
+	}
+	if inSingle {
+		return nil, errors.New("unterminated single-quoted string")
+	}
+	if inDouble {
+		return nil, errors.New("unterminated double-quoted string")
+	}
+	if current.Len() > 0 {
+		words = append(words, current.String())
+	}
+	if len(words) == 0 {
+		return nil, errors.New("command must not be empty")
+	}
+
+	return words, nil
+}
+
 // editCmd implements `genv edit`.
 // Opens genv.json in the user's preferred editor ($VISUAL, $EDITOR, or vi).
 func editCmd(args []string) int {
@@ -2558,17 +2636,33 @@ func serviceAddCmd(args []string) int {
 
 	var startCmd []string
 	if *start != "" {
-		startCmd = strings.Fields(*start)
+		startCmd, err = parseCommandWords(*start)
+		if err != nil {
+			fprintf(os.Stderr, "genv service add: invalid --start command: %v\n", err)
+			return exitUsage
+		}
 	}
 	var stopCmd, restartCmd, statusCmd []string
 	if *stop != "" {
-		stopCmd = strings.Fields(*stop)
+		stopCmd, err = parseCommandWords(*stop)
+		if err != nil {
+			fprintf(os.Stderr, "genv service add: invalid --stop command: %v\n", err)
+			return exitUsage
+		}
 	}
 	if *restart != "" {
-		restartCmd = strings.Fields(*restart)
+		restartCmd, err = parseCommandWords(*restart)
+		if err != nil {
+			fprintf(os.Stderr, "genv service add: invalid --restart command: %v\n", err)
+			return exitUsage
+		}
 	}
 	if *status != "" {
-		statusCmd = strings.Fields(*status)
+		statusCmd, err = parseCommandWords(*status)
+		if err != nil {
+			fprintf(os.Stderr, "genv service add: invalid --status command: %v\n", err)
+			return exitUsage
+		}
 	}
 
 	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd, *brewFormula); err != nil {

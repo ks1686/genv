@@ -104,6 +104,18 @@ func Write(path string, f *schema.GenvFile) error {
 	}
 	data = append(data, '\n')
 
+	_, valErrs, parseErr := schema.ParseAndValidate(data)
+	if parseErr != nil {
+		return fmt.Errorf("%w: %s: %w", ErrInvalidFile, path, parseErr)
+	}
+	if len(valErrs) > 0 {
+		msgs := make([]string, len(valErrs))
+		for i, e := range valErrs {
+			msgs[i] = e.Error()
+		}
+		return fmt.Errorf("%w: %s: validation errors:\n  %s", ErrInvalidFile, path, strings.Join(msgs, "\n  "))
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating directory %s: %w", dir, err)

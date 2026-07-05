@@ -19,6 +19,8 @@ func TestSingleQuote(t *testing.T) {
 	}{
 		{"simple", "'simple'"},
 		{"it's a test", `'it'\''s a test'`},
+		{"'leading", `''\''leading'`},
+		{"trailing'", `'trailing'\'''`},
 		{"", "''"},
 	}
 	for _, c := range cases {
@@ -59,6 +61,28 @@ func TestWriteFragment_Aliases(t *testing.T) {
 	}
 	if !strings.Contains(content, "'ls -la'") {
 		t.Error("expected single-quoted value for ll")
+	}
+}
+
+func TestWriteFragment_SourceQuoted(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shell.sh")
+	cfg := &schema.ShellConfig{
+		Source: []string{`/tmp/source';echo pwned #.sh`},
+	}
+	if err := WriteFragment(path, cfg); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if strings.Contains(content, ". /tmp/source';echo pwned #.sh") {
+		t.Fatalf("source path should be quoted, got:\n%s", content)
+	}
+	if !strings.Contains(content, ". '/tmp/source'\\'';echo pwned #.sh'") {
+		t.Fatalf("missing quoted source line, got:\n%s", content)
 	}
 }
 
@@ -138,7 +162,7 @@ func TestWriteFragment_Source(t *testing.T) {
 	}
 
 	data, _ := os.ReadFile(path)
-	if !strings.Contains(string(data), ". /path/to/script.sh") {
+	if !strings.Contains(string(data), ". '/path/to/script.sh'") {
 		t.Error("expected source line in fragment")
 	}
 }
@@ -182,7 +206,7 @@ func TestWriteFragment_Deterministic(t *testing.T) {
 	iAAA := strings.Index(content, "alias aaa=")
 	iMMM := strings.Index(content, "alias mmm=")
 	iZZZ := strings.Index(content, "alias zzz=")
-	if !(iAAA < iMMM && iMMM < iZZZ) {
+	if iAAA >= iMMM || iMMM >= iZZZ {
 		t.Errorf("fragment not sorted: aaa@%d mmm@%d zzz@%d", iAAA, iMMM, iZZZ)
 	}
 }
@@ -337,7 +361,7 @@ func TestApplyShell_Success(t *testing.T) {
 			t.Errorf("ReadFile(%s): %v", rc, err)
 			continue
 		}
-		if !strings.Contains(string(data), ". "+fragPath) {
+		if !strings.Contains(string(data), ". '"+fragPath+"'") {
 			t.Errorf("rc file %s does not contain injected source line", rc)
 		}
 	}

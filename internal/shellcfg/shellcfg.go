@@ -77,7 +77,7 @@ func WriteFragment(path string, cfg *schema.ShellConfig) error {
 	if len(cfg.Source) > 0 {
 		sb.WriteString("\n# source\n")
 		for _, s := range cfg.Source {
-			sb.WriteString(fmt.Sprintf(". %s\n", s))
+			_, _ = fmt.Fprintf(&sb, ". %s\n", singleQuote(s))
 		}
 	}
 
@@ -259,7 +259,21 @@ func shellGuard(line, target string) string {
 
 // singleQuote wraps v in POSIX single quotes, escaping embedded single quotes.
 func singleQuote(v string) string {
-	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+	if v == "" {
+		return "''"
+	}
+	var b strings.Builder
+	b.Grow(len(v) + 2)
+	b.WriteByte('\'')
+	for i := 0; i < len(v); i++ {
+		if v[i] == '\'' {
+			b.WriteString(`'\''`)
+			continue
+		}
+		b.WriteByte(v[i])
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // indent prefixes every line of s with two spaces.
