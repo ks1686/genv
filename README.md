@@ -134,7 +134,9 @@ Your `genv.json` lives at `~/.config/genv/genv.json` by default (respects `$XDG_
 
 ## How the declarative model works
 
-`genv` maintains two files side by side:
+`genv` reads the desired state from `genv.json` and tracks the applied state in
+`genv.lock.json`. The lock file always lives in the genv configuration directory
+so that a spec checked into a repo does not carry host-specific applied state:
 
 | File             | Default location                | Purpose                                                                                                 |
 | ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -163,7 +165,7 @@ When you run `genv apply`:
 
 ```json
 {
-  "schemaVersion": "4",
+  "schemaVersion": "5",
   "packages": [
     {
       "id": "git"
@@ -171,7 +173,8 @@ When you run `genv apply`:
     {
       "id": "neovim",
       "version": "0.10.*",
-      "prefer": "brew"
+      "prefer": "brew",
+      "host": ["arch", "wsl2"]
     },
     {
       "id": "firefox",
@@ -202,21 +205,71 @@ When you run `genv apply`:
     "postgresql": {
       "brew_formula": "postgresql@14"
     }
+  },
+  "files": {
+    "links": [
+      {
+        "source": "shell/.zshrc",
+        "target": "~/.zshrc",
+        "mode": "link"
+      }
+    ],
+    "templates": [
+      {
+        "source": "codex/config.toml",
+        "target": "~/.config/codex/config.toml"
+      }
+    ],
+    "dirs": [
+      {
+        "target": "~/.config/genv"
+      }
+    ]
+  },
+  "hooks": {
+    "preUpgrade": [
+      {
+        "command": "brew upgrade",
+        "host": "macos"
+      }
+    ],
+    "postApply": [
+      {
+        "command": "echo 'apply complete'"
+      }
+    ]
+  },
+  "repo": {
+    "url": "https://github.com/example/dotfiles",
+    "ref": "main"
   }
 }
 ```
 
 **Fields:**
 
-- `id` — canonical name for the package (used by genv)
-- `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
-- `prefer` — optional hint for which manager to use first
-- `managers` — optional map of manager-specific package identifiers (for packages with different names across managers)
+- `schemaVersion` — `"1"` through `"5"`; older versions still load
+- `packages` — array of tracked packages
+  - `id` — canonical name for the package (used by genv)
+  - `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
+  - `prefer` — optional hint for which manager to use first
+  - `managers` — optional map of manager-specific package identifiers (for packages with different names across managers)
+  - `host` — optional host selector (string or array), e.g. `"macos"` or `["arch","wsl2"]`
 - `env` — optional map of global shell environment variables managed by genv
 - `shell` — optional shell config block for aliases/functions/source snippets
 - `services` — optional service block for declarative user-space service lifecycle management
   - `start` — command array to start the service (raw, cross-platform)
   - `brew_formula` — homebrew formula name to manage via `brew services` (macOS only; mutually exclusive with `start`)
+- `files` — optional filesystem reconciliation block (schema v5)
+  - `links` — symlinks to create (`mode`: `"link"` or `"managed-link"`)
+  - `templates` — files to copy after rendering `__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`
+  - `dirs` — directories to ensure exist
+  - per-record `host` and `backup` fields are supported
+- `hooks` — optional lifecycle shell commands (schema v5)
+  - `preUpgrade`, `postApply`, `postUpgrade` arrays of `{ command, host }`
+- `repo` — optional source repository for `genv pull` (schema v5)
+  - `url` — repository URL or local path
+  - `ref` — optional branch/tag/ref
 
 ---
 

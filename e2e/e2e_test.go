@@ -76,7 +76,7 @@ func newRunner(t *testing.T, prefer string) *runner {
 	return &runner{
 		bin:      genvBin,
 		genvJSON: g,
-		lockJSON: genvfile.LockPathFrom(g),
+		lockJSON: filepath.Join(dir, "genv.lock.json"),
 		prefer:   prefer,
 	}
 }
@@ -106,7 +106,7 @@ func (r *runner) rawExec(stdinData string, args ...string) (stdout, stderr strin
 // Use rawExec for commands that do not accept --file (help, clean).
 func (r *runner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr string, code int) {
 	args := make([]string, 0, 3+len(extra))
-	args = append(args, subcmd, "--file", r.genvJSON)
+	args = append(args, subcmd, "--file", r.genvJSON, "--lock-file", r.lockJSON)
 	args = append(args, extra...)
 	return r.rawExec(stdinData, args...)
 }
@@ -884,7 +884,7 @@ func TestE2EServiceLifecycle(t *testing.T) {
 		}
 	}`)
 
-	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON)
+	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON, "--lock-file", r.lockJSON)
 	if code != 0 {
 		t.Logf("apply with services: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -909,7 +909,7 @@ func TestE2EServiceLifecycle(t *testing.T) {
 		"services": {}
 	}`)
 
-	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON)
+	stdout, stderr, code = r.rawExec("y\n", "apply", "--file", r.genvJSON, "--lock-file", r.lockJSON)
 	if code != 0 {
 		t.Logf("apply after service removal: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -934,7 +934,7 @@ func TestE2EServiceLifecycle(t *testing.T) {
 		}
 	}`)
 
-	stdout, stderr, code = r.rawExec("", "status", "--file", r.genvJSON)
+	stdout, stderr, code = r.rawExec("", "status", "--file", r.genvJSON, "--lock-file", r.lockJSON)
 	if code != 0 {
 		t.Logf("status with services drift: exit %d (expected non-zero)", code)
 	}

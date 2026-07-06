@@ -629,3 +629,163 @@ func TestParseAndValidate_RejectsServiceNewlineInjection(t *testing.T) {
 		t.Fatal("expected newline validation errors")
 	}
 }
+
+func TestParseAndValidate_V5FilesAndHooks(t *testing.T) {
+	input := `{
+		"schemaVersion": "5",
+		"packages": [{"id": "git", "host": ["arch", "wsl2"]}],
+		"env": {"EDITOR": {"value": "nvim"}},
+		"shell": {"aliases": {"ll": {"value": "ls -lh", "shell": "zsh"}}},
+		"files": {
+			"links": [{"source": "a", "target": "~/b", "mode": "managed-link", "host": "macos"}],
+			"templates": [{"source": "c", "target": "~/d"}],
+			"dirs": [{"target": "~/.config/foo"}]
+		},
+		"hooks": {
+			"preUpgrade": [{"command": "brew upgrade", "host": "macos"}],
+			"postApply": [{"command": "echo done"}],
+			"postUpgrade": [{"command": "echo upgraded"}]
+		},
+		"repo": {"url": "~/terminal-config", "ref": "main"}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f.SchemaVersion != Version5 {
+		t.Errorf("schemaVersion = %q, want %q", f.SchemaVersion, Version5)
+	}
+	if f.Files == nil || len(f.Files.Links) != 1 || len(f.Files.Templates) != 1 || len(f.Files.Dirs) != 1 {
+		t.Errorf("files block not parsed: %+v", f.Files)
+	}
+	if f.Hooks == nil || len(f.Hooks.PreUpgrade) != 1 || len(f.Hooks.PostApply) != 1 || len(f.Hooks.PostUpgrade) != 1 {
+		t.Errorf("hooks block not parsed: %+v", f.Hooks)
+	}
+	if f.Repo == nil || f.Repo.URL == "" {
+		t.Errorf("repo block not parsed: %+v", f.Repo)
+	}
+	if len(f.Packages[0].Host) != 2 {
+		t.Errorf("package host predicate = %v, want 2 entries", f.Packages[0].Host)
+	}
+	if f.Env["EDITOR"].Value != "nvim" {
+		t.Errorf("v5 env block not parsed: %+v", f.Env)
+	}
+	if f.Shell == nil || f.Shell.Aliases["ll"].Value != "ls -lh" {
+		t.Errorf("v5 shell block not parsed: %+v", f.Shell)
+	}
+}
+
+func TestParseAndValidate_V4StillValid(t *testing.T) {
+	input := `{"schemaVersion":"4","packages":[],"services":{"svc":{"start":["true"]}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("v4 spec should still validate: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V5RejectsV6(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "schemaVersion" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected schemaVersion error for v6, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_FilesBlockRequiresV5(t *testing.T) {
+	input := `{"schemaVersion":"4","packages":[],"files":{"links":[]}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "files" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected files block rejected on v4, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_FilesRejectsEmptySource(t *testing.T) {
+	input := `{"schemaVersion":"5","packages":[],"files":{"links":[{"source":"","target":"~/x"}]}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "files.links[0].source" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected empty source error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_FilesRejectsInvalidLinkMode(t *testing.T) {
+	input := `{"schemaVersion":"5","packages":[],"files":{"links":[{"source":"a","target":"~/x","mode":"copy"}]}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "files.links[0].mode" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected invalid mode error, got: %v", errs)
+	}
+}
+
+func TestHostPredicate_UnmarshalString(t *testing.T) {
+	var hp HostPredicate
+	if err := hp.UnmarshalJSON([]byte(`"macos"`)); err != nil {
+		t.Fatalf("unmarshal string: %v", err)
+	}
+	if len(hp) != 1 || hp[0] != "macos" {
+		t.Errorf("got %v, want [macos]", hp)
+	}
+}
+
+func TestHostPredicate_UnmarshalArray(t *testing.T) {
+	var hp HostPredicate
+	if err := hp.UnmarshalJSON([]byte(`["arch","wsl2"]`)); err != nil {
+		t.Fatalf("unmarshal array: %v", err)
+	}
+	want := []string{"arch", "wsl2"}
+	if len(hp) != len(want) {
+		t.Fatalf("got %v, want %v", hp, want)
+	}
+	for i, w := range want {
+		if hp[i] != w {
+			t.Errorf("hp[%d] = %q, want %q", i, hp[i], w)
+		}
+	}
+}
+
+func TestHostPredicate_RejectsInt(t *testing.T) {
+	var hp HostPredicate
+	if err := hp.UnmarshalJSON([]byte(`42`)); err == nil {
+		t.Error("expected error for numeric host predicate")
+	}
+}

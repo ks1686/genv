@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "5",
+  "repo": {
+    "url": ".",
+    "ref": "main"
+  },
+  "files": {
+    "links": [
+      {
+        "source": "simple.txt",
+        "target": "~/.genv-test/simple.txt",
+        "mode": "link"
+      }
+    ],
+    "templates": [
+      {
+        "source": "codex-config.toml",
+        "target": "~/.config/codex/config.toml"
+      }
+    ],
+    "dirs": []
+  }
+}

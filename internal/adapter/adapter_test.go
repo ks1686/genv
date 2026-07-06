@@ -68,6 +68,7 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		{"snap", "code", map[string]string{"snap": "code"}, "code", true},
 		{"brew", "neovim", map[string]string{"brew": "neovim"}, "neovim", true},
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
+		{"bun", "cf", map[string]string{"bun": "cf@latest"}, "cf@latest", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgrName+"/explicit", func(t *testing.T) {
@@ -131,7 +132,10 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"yay", "yay"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
+		{"uv", "uv"},
+		{"pacman", "pacman"},
 		{"linuxbrew", "brew"},
+		{"bun", "bun"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -173,7 +177,10 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"yay", "yay"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
+		{"uv", "uv"},
+		{"pacman", "pacman"},
 		{"linuxbrew", "brew"},
+		{"bun", "bun"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -592,7 +599,10 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"yay", "yay"},
 		{"snap", "sudo"},
 		{"brew", "brew"},
+		{"uv", "uv"},
+		{"pacman", "pacman"},
 		{"linuxbrew", "brew"},
+		{"bun", "bun"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -630,7 +640,10 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"yay", "-S"},
 		{"snap", "refresh"},
 		{"brew", "upgrade"},
+		{"uv", "--upgrade"},
+		{"pacman", "-S"},
 		{"linuxbrew", "upgrade"},
+		{"bun", "update"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -667,7 +680,10 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"yay", 1},
 		{"snap", 0},
 		{"brew", 1},
+		{"uv", 0},
+		{"pacman", 1},
 		{"linuxbrew", 1},
+		{"bun", 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -693,7 +709,9 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"brew", "brew"},
+		{"pacman", "pacman"},
 		{"linuxbrew", "brew"},
+		{"bun", "bun"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -728,7 +746,10 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"yay", "-S"},
 		{"snap", "install"},
 		{"brew", "install"},
+		{"uv", "install"},
+		{"pacman", "-S"},
 		{"linuxbrew", "install"},
+		{"bun", "add"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -750,6 +771,7 @@ func TestPlanInstall_ContainsNoninteractiveFlag(t *testing.T) {
 	}{
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
+		{"pacman", "--noconfirm"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -777,7 +799,10 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"yay", "-Rns"},
 		{"snap", "remove"},
 		{"brew", "uninstall"},
+		{"uv", "uninstall"},
+		{"pacman", "-Rcs"},
 		{"linuxbrew", "uninstall"},
+		{"bun", "remove"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -799,6 +824,7 @@ func TestPlanUninstall_ContainsNoninteractiveFlag(t *testing.T) {
 	}{
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
+		{"pacman", "--noconfirm"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {

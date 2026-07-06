@@ -267,24 +267,27 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LockPathFrom — pure function
+// LockPathFrom — lock lives in the genv config directory, ignoring spec path.
 // ---------------------------------------------------------------------------
 
 func TestLockPathFrom(t *testing.T) {
-	tests := []struct {
-		specPath string
-		want     string
-	}{
-		{"genv.json", "genv.lock.json"},
-		{"/home/user/.config/genv/genv.json", "/home/user/.config/genv/genv.lock.json"},
-		{"custom.json", "custom.lock.json"},
-		{"/tmp/env.json", "/tmp/env.lock.json"},
-	}
-	for _, tc := range tests {
-		got := LockPathFrom(tc.specPath)
-		if got != tc.want {
-			t.Errorf("LockPathFrom(%q) = %q, want %q", tc.specPath, got, tc.want)
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	want := "/custom/config/genv/genv.lock.json"
+	for _, specPath := range []string{"genv.json", "/tmp/repo/genv.json", "/any/path.json"} {
+		got := LockPathFrom(specPath)
+		if got != want {
+			t.Errorf("LockPathFrom(%q) = %q, want %q", specPath, got, want)
 		}
+	}
+}
+
+func TestLockPathFrom_FallsBackToHomeConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "/home/testuser")
+	got := LockPathFrom("/ignored/path/genv.json")
+	want := "/home/testuser/.config/genv/genv.lock.json"
+	if got != want {
+		t.Errorf("LockPathFrom fallback = %q, want %q", got, want)
 	}
 }
 

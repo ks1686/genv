@@ -31,14 +31,24 @@ type PlanPackage struct {
 	Cmd     string `json:"cmd,omitempty"`
 }
 
+// FilePlanEntry is one planned filesystem change in an apply plan.
+type FilePlanEntry struct {
+	Source string `json:"source,omitempty"`
+	Target string `json:"target"`
+	Mode   string `json:"mode"`
+	Kind   string `json:"kind"`
+}
+
 // PlanResult is the Data payload for `genv apply [--dry-run] --json`.
 type PlanResult struct {
-	ToInstall       []PlanPackage `json:"toInstall"`
-	ToRemove        []PlanPackage `json:"toRemove"`
-	Unchanged       []PlanPackage `json:"unchanged"`
-	Unresolved      int           `json:"unresolved"`
-	ServicesToStart []string      `json:"servicesToStart,omitempty"`
-	ServicesToStop  []string      `json:"servicesToStop,omitempty"`
+	ToInstall       []PlanPackage   `json:"toInstall"`
+	ToRemove        []PlanPackage   `json:"toRemove"`
+	Unchanged       []PlanPackage   `json:"unchanged"`
+	Unresolved      int             `json:"unresolved"`
+	ServicesToStart []string        `json:"servicesToStart,omitempty"`
+	ServicesToStop  []string        `json:"servicesToStop,omitempty"`
+	Files           []FilePlanEntry `json:"files,omitempty"`
+	FailedHooks     []string        `json:"failedHooks,omitempty"`
 }
 
 // StatusEntry is a single package entry in a StatusResult.
@@ -56,6 +66,8 @@ type StatusResult struct {
 	EnvEntries     []EnvStatusEntry     `json:"envEntries,omitempty"`
 	ShellEntries   []ShellStatusEntry   `json:"shellEntries,omitempty"`
 	ServiceEntries []ServiceStatusEntry `json:"serviceEntries,omitempty"`
+	FileEntries    []FilePlanEntry      `json:"fileEntries,omitempty"`
+	FailedHooks    []string             `json:"failedHooks,omitempty"`
 }
 
 // ScanResult is the Data payload for `genv scan --json`.
@@ -74,6 +86,9 @@ type ApplyResult struct {
 	ShellRemoved    []string `json:"shellRemoved,omitempty"`
 	ServicesApplied []string `json:"servicesApplied,omitempty"`
 	ServicesRemoved []string `json:"servicesRemoved,omitempty"`
+	FilesApplied    []string `json:"filesApplied,omitempty"`
+	FilesUpdated    []string `json:"filesUpdated,omitempty"`
+	FailedHooks     []string `json:"failedHooks,omitempty"`
 }
 
 // EnvStatusEntry is a single env variable entry in an EnvStatusResult.

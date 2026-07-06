@@ -36,10 +36,16 @@ func DefaultSpecPath() (string, error) {
 	return filepath.Join(dir, "genv.json"), nil
 }
 
-// LockPathFrom derives the lock file path from a genv.json path.
-// "genv.json" → "genv.lock.json", "custom.json" → "custom.lock.json".
+// LockPathFrom returns the per-host lock file path inside the genv config
+// directory (~/.config/genv/genv.lock.json, or $XDG_CONFIG_HOME/genv/genv.lock.json
+// when set). The specPath argument is ignored so the lock lives outside the spec
+// repo by default.
 func LockPathFrom(specPath string) string {
-	return strings.TrimSuffix(specPath, ".json") + ".lock.json"
+	dir, err := DefaultDir()
+	if err != nil {
+		return "genv.lock.json"
+	}
+	return filepath.Join(dir, "genv.lock.json")
 }
 
 // ErrNotFound is returned by Read when the file does not exist.
