@@ -75,10 +75,13 @@ type Adapter interface {
 // specified in genv.json the first available adapter wins.
 var All = []Adapter{
 	Brew{},
+	Pacman{},
 	Paru{},
 	Yay{},
 	Snap{},
 	Linuxbrew{},
+	Bun{},
+	Uv{},
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.

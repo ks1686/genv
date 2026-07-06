@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 Targets Milestone M13: hooks and lifecycle scripts. Users will be able to declare `pre` and `post` hooks in `genv.json` for events like `apply`, `add`, `remove`, and `upgrade`, with event context passed via environment variables.
 
+### Re-added adapters
+
+- **`pacman`** — Arch Linux official repositories only (`pacman -S --needed --noconfirm`). Re-added because Arch official repositories are first-party to the distro, unlike the v2.1.2-removed apt/dnf-style managers that required submission to and approval by external repositories. AUR packages remain covered by the existing `paru` and `yay` adapters.
+
 ---
 
 ## v2.1.2 - 2026-03-28

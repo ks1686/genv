@@ -325,6 +325,8 @@ Acceptance criteria:
 
 Goal: Allow users to declare multiple named environment profiles in a single repository and switch between them, enabling distinct configurations for different contexts (e.g. work, personal, server, laptop).
 
+Note: the record-level `host:` filter shipped as part of the `tc-genv-migration` work (see Migration Surface below) is additive and non-conflicting with M12 named profiles. It does not implement full profiles, but it covers the macOS/Arch/WSL2 host divergence that M12 is intended to address more generally.
+
 Target outcomes:
 
 - Users can maintain multiple named profiles (e.g. `work`, `home`, `server`) that each declare their own packages, env vars, and shell config.
@@ -351,6 +353,8 @@ Acceptance criteria:
 
 ## Milestone M13 - Hooks and Lifecycle Scripts
 
+Status: shipped by `tc-genv-migration` (see Migration Surface below and `~/terminal-config/.omo/plans/tc-genv-migration.md`).
+
 Goal: Allow users to declare shell hooks that run before or after specific genv lifecycle events, enabling custom bootstrapping, notifications, and integration with external tools.
 
 Target outcomes:
@@ -376,6 +380,25 @@ Acceptance criteria:
 - [ ] A failing hook exits the command with a non-zero code and prints the hook's stderr output.
 - [ ] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded.
 - [ ] Hook timeouts are enforced and reported clearly.
+
+## Migration Surface (tc-genv-migration)
+
+This release ships the surface needed to move `~/terminal-config` from shell scripts into a declarative `genv.json` v5 spec.
+
+- **Schema v5** (`internal/schema/schema.go`):
+  - `files` block with `link`, `copy`, `copy-template`, and `managed-link` modes
+  - `hooks` block with `pre.upgrade`, `post.apply`, and `post.upgrade` phases
+  - `host` selector on packages, services, files, and hooks
+  - `repo` field for the local spec-repo path consumed by `genv pull`
+  - `template` flag and `backup` flag on file targets
+- **Adapters**: `pacman` (official repos only), `bun` (global installs only), `uv` (global tool installs only)
+- **Commands**:
+  - `genv pull` — self-pull the spec repo declared in the `repo` field, refusing on a dirty tree
+  - `genv adopt --files` — register already-managed files into the lock without rewriting them
+  - `genv status --files` — live filesystem parity check for the `files` block
+- **Host filter**: `internal/host` detects `macos`, `arch`, and `wsl2`; WSL2 inherits all `host: "arch"` records
+- **Hooks executor**: `internal/hooks` runs declared shell command strings, filters by host, propagates non-zero exits, and honors `GENV_NO_INTERACTIVE=1`
+- **Lock file outside repo**: default lock path is `~/.config/genv/genv.lock.json` from `genvfile.DefaultDir`, not derived from the spec path; overridable via `--lock-file`
 
 ## Cross-Cutting Quality Gates
 

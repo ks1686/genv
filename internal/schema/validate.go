@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -82,6 +83,9 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateEnv(f, raw, positions)...)
 	errs = append(errs, validateShell(f, raw, positions)...)
 	errs = append(errs, validateServices(f, raw, positions)...)
+	errs = append(errs, validateFiles(f, raw, positions)...)
+	errs = append(errs, validateHooks(f, raw, positions)...)
+	errs = append(errs, validateRepo(f, raw, positions)...)
 
 	return f, errs, nil
 }
@@ -207,11 +211,11 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5),
 		})
 	}
 	return errs
@@ -220,10 +224,14 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, ok := raw["packages"]; !ok {
-		errs = append(errs, ValidationError{
-			Field:   "packages",
-			Message: "required field is missing",
-		})
+		// Schema v5 adds files/hooks/repo blocks; a spec may legitimately contain
+		// only those blocks, so packages is optional in v5.
+		if f.SchemaVersion != Version5 {
+			errs = append(errs, ValidationError{
+				Field:   "packages",
+				Message: "required field is missing",
+			})
+		}
 	} else {
 		seen := make(map[string]int) // id → first index
 		for i, pkg := range f.Packages {
@@ -271,7 +279,7 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
@@ -293,7 +301,7 @@ func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[stri
 func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 {
+		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
 			errs = append(errs, ValidationError{
 				Position: positions["shell"],
 				Field:    "shell",
@@ -423,6 +431,146 @@ func validateServiceCommand(name, field string, args []string) []ValidationError
 			errs = append(errs, ValidationError{
 				Field:   fmt.Sprintf("services.%s.%s[%d]", name, field, i),
 				Message: "command arguments must not contain newlines",
+			})
+		}
+	}
+	return errs
+}
+
+// expandPath performs the v5 path expansion rules: leading ~ becomes the user
+// home directory, and $VAR/${VAR} are replaced with os.Getenv values. It is a
+// best-effort helper; callers validate the result rather than the raw string.
+func expandPath(s string) (string, error) {
+	if strings.HasPrefix(s, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		s = home + s[1:]
+	}
+	return os.Expand(s, os.Getenv), nil
+}
+
+func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasFiles := raw["files"]; hasFiles {
+		if f.SchemaVersion != Version5 {
+			errs = append(errs, ValidationError{
+				Position: positions["files"],
+				Field:    "files",
+				Message:  fmt.Sprintf("files block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+			})
+		}
+		if f.Files == nil {
+			return errs
+		}
+		for i, l := range f.Files.Links {
+			field := fmt.Sprintf("files.links[%d]", i)
+			if l.Source == "" {
+				errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
+			}
+			if l.Target == "" {
+				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+			}
+			if l.Mode != "" && l.Mode != "link" && l.Mode != "managed-link" {
+				errs = append(errs, ValidationError{
+					Field:   field + ".mode",
+					Message: fmt.Sprintf("invalid link mode %q; expected \"link\" or \"managed-link\"", l.Mode),
+				})
+			}
+			if expanded, err := expandPath(l.Target); err != nil || expanded == "" {
+				msg := "cannot expand target path"
+				if err != nil {
+					msg = fmt.Sprintf("%s: %v", msg, err)
+				}
+				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+			}
+		}
+		for i, tpl := range f.Files.Templates {
+			field := fmt.Sprintf("files.templates[%d]", i)
+			if tpl.Source == "" {
+				errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
+			}
+			if tpl.Target == "" {
+				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+			}
+			if expanded, err := expandPath(tpl.Target); err != nil || expanded == "" {
+				msg := "cannot expand target path"
+				if err != nil {
+					msg = fmt.Sprintf("%s: %v", msg, err)
+				}
+				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+			}
+		}
+		for i, d := range f.Files.Dirs {
+			field := fmt.Sprintf("files.dirs[%d]", i)
+			if d.Target == "" {
+				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+			}
+			if expanded, err := expandPath(d.Target); err != nil || expanded == "" {
+				msg := "cannot expand target path"
+				if err != nil {
+					msg = fmt.Sprintf("%s: %v", msg, err)
+				}
+				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+			}
+		}
+	}
+	return errs
+}
+
+func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasHooks := raw["hooks"]; hasHooks {
+		if f.SchemaVersion != Version5 {
+			errs = append(errs, ValidationError{
+				Position: positions["hooks"],
+				Field:    "hooks",
+				Message:  fmt.Sprintf("hooks block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+			})
+		}
+		if f.Hooks == nil {
+			return errs
+		}
+		for phase, hooks := range map[string][]Hook{
+			"preUpgrade":  f.Hooks.PreUpgrade,
+			"postApply":   f.Hooks.PostApply,
+			"postUpgrade": f.Hooks.PostUpgrade,
+		} {
+			for i, h := range hooks {
+				if h.Command == "" {
+					errs = append(errs, ValidationError{
+						Field:   fmt.Sprintf("hooks.%s[%d].command", phase, i),
+						Message: "command must not be empty",
+					})
+				}
+			}
+		}
+	}
+	return errs
+}
+
+func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasRepo := raw["repo"]; hasRepo {
+		if f.SchemaVersion != Version5 {
+			errs = append(errs, ValidationError{
+				Position: positions["repo"],
+				Field:    "repo",
+				Message:  fmt.Sprintf("repo block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+			})
+		}
+		if f.Repo == nil {
+			errs = append(errs, ValidationError{
+				Position: positions["repo"],
+				Field:    "repo",
+				Message:  "repo block must be an object with a url field",
+			})
+		} else if f.Repo.URL == "" {
+			errs = append(errs, ValidationError{
+				Position: positions["repo.url"],
+				Field:    "repo.url",
+				Message:  "required field is missing or empty",
 			})
 		}
 	}

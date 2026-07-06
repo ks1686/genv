@@ -59,16 +59,25 @@ type LockedService struct {
 	BrewFormula string   `json:"brew_formula,omitempty"`
 }
 
+// LockedFile records a single applied file entry from the spec files block.
+type LockedFile struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Mode   string `json:"mode,omitempty"`
+}
+
 // LockFile is the on-disk representation of the applied state tracked by genv.
 // The Env field is added in M8 (schemaVersion "2") and is absent in v1 lock files.
 // The Shell field is added in M9 (schemaVersion "3") and is absent in v1/v2 lock files.
 // The Services field is added in M10 (schemaVersion "4") and is absent in v1/v2/v3 lock files.
+// The Files field is added in M11 (schemaVersion "5") and is absent in v1-v4 lock files.
 type LockFile struct {
 	SchemaVersion string             `json:"schemaVersion"`
 	Packages      []LockedPackage    `json:"packages"`
 	Env           []LockedEnvVar     `json:"env,omitempty"`
 	Shell         *LockedShellConfig `json:"shell,omitempty"`
 	Services      []LockedService    `json:"services,omitempty"`
+	Files         []LockedFile       `json:"files,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),

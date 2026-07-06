@@ -10,12 +10,21 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // TestMain disables interactive prompts (package search picker, remove fuzzy
-// match) for all unit tests so they run non-interactively.
+// match) for all unit tests so they run non-interactively. It also isolates
+// the genv config directory so tests do not read or write the developer's
+// real lock file now that LockPathFrom uses the genv config directory.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
+	if os.Getenv("XDG_CONFIG_HOME") == "" {
+		dir, err := os.MkdirTemp("", "genv-test-xdg-*")
+		if err == nil {
+			_ = os.Setenv("XDG_CONFIG_HOME", dir)
+		}
+	}
 	os.Exit(m.Run())
 }
 
@@ -70,6 +79,7 @@ func TestRun_Version(t *testing.T) {
 
 func TestAddCmd_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "git"})
@@ -83,6 +93,7 @@ func TestAddCmd_CreatesFile(t *testing.T) {
 
 func TestAddCmd_DuplicateFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if code := run([]string{"add", "--file", path, "git"}); code != exitOK {
@@ -96,6 +107,7 @@ func TestAddCmd_DuplicateFails(t *testing.T) {
 
 func TestAddCmd_WithVersionAndPrefer(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--version", "0.10.*", "--prefer", "brew", "neovim"})
@@ -118,6 +130,7 @@ func TestAddCmd_WithVersionAndPrefer(t *testing.T) {
 
 func TestAddCmd_WithManagerFlag(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "snap:hello,brew:hello", "hello"})
@@ -137,6 +150,7 @@ func TestAddCmd_WithManagerFlag(t *testing.T) {
 
 func TestAddCmd_FlagsAfterID(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "neovim", "--version", "0.10.*", "--prefer", "brew"})
@@ -159,6 +173,7 @@ func TestAddCmd_FlagsAfterID(t *testing.T) {
 
 func TestAddCmd_FlagsBeforeID(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--version", "1.0.*", "--prefer", "brew", "neovim"})
@@ -181,6 +196,7 @@ func TestAddCmd_FlagsBeforeID(t *testing.T) {
 
 func TestAddCmd_UnknownPreferFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--prefer", "yum", "git"})
@@ -191,6 +207,7 @@ func TestAddCmd_UnknownPreferFails(t *testing.T) {
 
 func TestAddCmd_MissingIDFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path})
@@ -201,6 +218,7 @@ func TestAddCmd_MissingIDFails(t *testing.T) {
 
 func TestAddCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
@@ -214,6 +232,7 @@ func TestAddCmd_InvalidFileFails(t *testing.T) {
 
 func TestAddCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
@@ -228,6 +247,7 @@ func TestAddCmd_IOError(t *testing.T) {
 
 func TestAddCmd_BadManagerFormatFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "notaformat", "git"})
@@ -238,6 +258,7 @@ func TestAddCmd_BadManagerFormatFails(t *testing.T) {
 
 func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"add", "--file", path, "--manager", "yum:git", "git"})
@@ -250,6 +271,7 @@ func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
 
 func TestRemoveCmd_Basic(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -275,6 +297,7 @@ func TestRemoveCmd_Basic(t *testing.T) {
 
 func TestRemoveCmd_NotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -287,6 +310,7 @@ func TestRemoveCmd_NotFound(t *testing.T) {
 
 func TestRemoveCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"remove", "--file", path, "git"})
@@ -297,6 +321,7 @@ func TestRemoveCmd_FileNotFound(t *testing.T) {
 
 func TestRemoveCmd_AliasRm(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -308,6 +333,7 @@ func TestRemoveCmd_AliasRm(t *testing.T) {
 
 func TestRemoveCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
@@ -321,6 +347,7 @@ func TestRemoveCmd_InvalidFileFails(t *testing.T) {
 
 func TestRemoveCmd_MissingID(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -332,6 +359,7 @@ func TestRemoveCmd_MissingID(t *testing.T) {
 
 func TestRemoveCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
@@ -346,6 +374,7 @@ func TestRemoveCmd_IOError(t *testing.T) {
 
 func TestRemoveCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"remove", "--file", path, "--no-such-flag", "git"})
 	if code != exitUsage {
@@ -355,6 +384,7 @@ func TestRemoveCmd_FlagParseError(t *testing.T) {
 
 func TestRemoveCmd_MultiplePackages(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -390,6 +420,7 @@ func TestRemoveCmd_MultiplePackages(t *testing.T) {
 
 func TestAdoptCmd_MissingIDFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"adopt", "--file", path})
@@ -400,6 +431,7 @@ func TestAdoptCmd_MissingIDFails(t *testing.T) {
 
 func TestAdoptCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
@@ -415,6 +447,7 @@ func TestAdoptCmd_InvalidFileFails(t *testing.T) {
 
 func TestAdoptCmd_AlreadyTrackedFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -428,6 +461,7 @@ func TestAdoptCmd_AlreadyTrackedFails(t *testing.T) {
 
 func TestAdoptCmd_BadManagerFormatFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"adopt", "--file", path, "--manager", "notaformat", "git"})
@@ -438,6 +472,7 @@ func TestAdoptCmd_BadManagerFormatFails(t *testing.T) {
 
 func TestAdoptCmd_UnknownPreferFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	// --prefer validation happens inside commands.Add, which is called after the
@@ -450,6 +485,7 @@ func TestAdoptCmd_UnknownPreferFails(t *testing.T) {
 
 func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	// In any environment: either no manager resolves (exitLogic) or the package
@@ -465,8 +501,9 @@ func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 
 func TestDisownCmd_Basic(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	// Set up: git and neovim in spec and lock.
 	run([]string{"add", "--file", path, "git"})
@@ -507,6 +544,7 @@ func TestDisownCmd_Basic(t *testing.T) {
 
 func TestDisownCmd_NotInSpec(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -518,6 +556,7 @@ func TestDisownCmd_NotInSpec(t *testing.T) {
 
 func TestDisownCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"disown", "--file", path, "git"})
@@ -528,6 +567,7 @@ func TestDisownCmd_FileNotFound(t *testing.T) {
 
 func TestDisownCmd_MissingID(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -539,6 +579,7 @@ func TestDisownCmd_MissingID(t *testing.T) {
 
 func TestDisownCmd_InvalidFileFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
@@ -552,6 +593,7 @@ func TestDisownCmd_InvalidFileFails(t *testing.T) {
 
 func TestDisownCmd_NotInLock(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	// Package in spec but never in lock (never installed by genv).
@@ -573,6 +615,7 @@ func TestDisownCmd_NotInLock(t *testing.T) {
 
 func TestDisownCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"disown", "--file", path, "--no-such-flag", "git"})
 	if code != exitUsage {
@@ -585,6 +628,7 @@ func TestDisownCmd_FlagParseError(t *testing.T) {
 
 func TestListCmd_Empty(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	// No lock file exists — should succeed with "no packages installed".
@@ -596,6 +640,7 @@ func TestListCmd_Empty(t *testing.T) {
 
 func TestListCmd_AliasLs(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"ls", "--file", path})
@@ -606,8 +651,9 @@ func TestListCmd_AliasLs(t *testing.T) {
 
 func TestListCmd_ShowsLockedPackages(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
@@ -622,10 +668,14 @@ func TestListCmd_ShowsLockedPackages(t *testing.T) {
 
 func TestListCmd_IOError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	// Make the lock file unreadable.
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	if err := os.WriteFile(lockPath, []byte(`{"schemaVersion":"1","packages":[]}`), 0o200); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -638,6 +688,7 @@ func TestListCmd_IOError(t *testing.T) {
 
 func TestListCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"list", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
@@ -649,6 +700,7 @@ func TestListCmd_FlagParseError(t *testing.T) {
 
 func TestApplyCmd_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -662,6 +714,7 @@ func TestApplyCmd_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_DryRun_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	code := run([]string{"apply", "--file", path, "--dry-run"})
@@ -672,6 +725,7 @@ func TestApplyCmd_DryRun_FileNotFound(t *testing.T) {
 
 func TestApplyCmd_DryRun_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
@@ -685,6 +739,7 @@ func TestApplyCmd_DryRun_InvalidFile(t *testing.T) {
 
 func TestApplyCmd_DryRun_EmptyPackages(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
@@ -699,6 +754,7 @@ func TestApplyCmd_DryRun_EmptyPackages(t *testing.T) {
 
 func TestApplyCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	run([]string{"add", "--file", path, "git"})
@@ -712,8 +768,9 @@ func TestApplyCmd_Strict_DryRun_DoesNotPanic(t *testing.T) {
 
 func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	// Desired: git, neovim. Previously applied: git, htop.
 	// Expected: install neovim, remove htop, git unchanged.
@@ -732,8 +789,9 @@ func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 
 func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
@@ -749,10 +807,85 @@ func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 
 func TestApplyCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"apply", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
 		t.Errorf("unknown flag: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestApply_CreatesLinks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	sourcePath := filepath.Join(dir, "source.txt")
+	targetPath := filepath.Join(dir, "target.txt")
+
+	if err := os.WriteFile(sourcePath, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":"` + targetPath + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(writeSpec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes"})
+	if code != exitOK {
+		t.Fatalf("apply files: expected exitOK (%d), got %d", exitOK, code)
+	}
+	linkTarget, err := os.Readlink(targetPath)
+	if err != nil {
+		t.Fatalf("target should be a symlink: %v", err)
+	}
+	if linkTarget != sourcePath {
+		t.Fatalf("link target: got %q, want %q", linkTarget, sourcePath)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.Files) != 1 {
+		t.Fatalf("lock files: got %d entries, want 1", len(lf.Files))
+	}
+	if lf.Files[0].Source != "source.txt" || lf.Files[0].Target != targetPath || lf.Files[0].Mode != "link" {
+		t.Fatalf("lock file entry = %#v", lf.Files[0])
+	}
+}
+
+func TestApply_DryRunJSON_IncludesFilePlan(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(filepath.Join(dir, "source.txt"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	targetPath := filepath.Join(dir, "target.txt")
+	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":"` + targetPath + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(writeSpec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--dry-run", "--json"})
+	})
+	if code != exitOK {
+		t.Fatalf("apply dry-run json: expected exitOK (%d), got %d\noutput: %s", exitOK, code, out)
+	}
+	var env map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("apply --json output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	data, ok := env["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("JSON data field missing or wrong type: %v", env["data"])
+	}
+	files, ok := data["files"].([]interface{})
+	if !ok || len(files) != 1 {
+		t.Fatalf("data.files: got %#v, want one planned file", data["files"])
 	}
 }
 
@@ -815,6 +948,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func TestScanCmd_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	// scan must not crash regardless of what managers are available in CI.
 	code := run([]string{"scan", "--file", path})
@@ -825,6 +959,7 @@ func TestScanCmd_NoCrash(t *testing.T) {
 
 func TestScanCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"scan", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
@@ -834,6 +969,7 @@ func TestScanCmd_FlagParseError(t *testing.T) {
 
 func TestScanCmd_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -846,6 +982,7 @@ func TestScanCmd_InvalidFile(t *testing.T) {
 
 func TestScanCmd_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	var code int
 	out := captureStdout(t, func() {
@@ -868,6 +1005,7 @@ func TestScanCmd_JsonOutput(t *testing.T) {
 
 func TestScanCmd_Debug_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"scan", "--file", path, "--debug"})
 	if code != exitOK {
@@ -879,6 +1017,7 @@ func TestScanCmd_Debug_NoCrash(t *testing.T) {
 
 func TestStatusCmd_FileNotFound(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"status", "--file", path})
 	if code != exitIO {
@@ -888,6 +1027,7 @@ func TestStatusCmd_FileNotFound(t *testing.T) {
 
 func TestStatusCmd_NothingTracked(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -900,8 +1040,9 @@ func TestStatusCmd_NothingTracked(t *testing.T) {
 
 func TestStatusCmd_AllOK(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
@@ -916,6 +1057,7 @@ func TestStatusCmd_AllOK(t *testing.T) {
 
 func TestStatusCmd_MissingEntry(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 
 	// Package in spec but not in lock — "missing" exits OK (not drift/extra).
@@ -928,8 +1070,9 @@ func TestStatusCmd_MissingEntry(t *testing.T) {
 
 func TestStatusCmd_ExtraEntry(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	// Empty spec but lock has git → "extra" exits with exitLogic.
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
@@ -946,8 +1089,9 @@ func TestStatusCmd_ExtraEntry(t *testing.T) {
 
 func TestStatusCmd_DriftEntry(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "--version", "2.0.*", "git"})
 	// Lock records version 1.x — does not satisfy "2.0.*" → drift.
@@ -962,6 +1106,7 @@ func TestStatusCmd_DriftEntry(t *testing.T) {
 
 func TestStatusCmd_InvalidFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"99","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -974,6 +1119,7 @@ func TestStatusCmd_InvalidFile(t *testing.T) {
 
 func TestStatusCmd_FlagParseError(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	code := run([]string{"status", "--file", path, "--no-such-flag"})
 	if code != exitUsage {
@@ -983,8 +1129,9 @@ func TestStatusCmd_FlagParseError(t *testing.T) {
 
 func TestStatusCmd_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
@@ -1019,6 +1166,7 @@ func TestStatusCmd_JsonOutput(t *testing.T) {
 
 func TestStatusCmd_Debug_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -1029,12 +1177,75 @@ func TestStatusCmd_Debug_NoCrash(t *testing.T) {
 	}
 }
 
+func TestStatusFiles_DispatchesFilesOnlyMode(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","files":{"dirs":[{"target":"`+filepath.Join(dir, "managed")+`"}]}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	code := run([]string{"status", "--files", "--file", specPath, "--lock-file", lockPath})
+	if code != exitLogic {
+		t.Fatalf("status --files: expected exitLogic (%d) from current stub, got %d", exitLogic, code)
+	}
+}
+
+func TestLockFileFlag_OverridesDefaultForList(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "custom.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"list", "--file", specPath, "--lock-file", lockPath})
+	})
+	if code != exitOK {
+		t.Fatalf("list custom lock: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "git") {
+		t.Fatalf("list custom lock output = %q, want tracked package", out)
+	}
+}
+
+func TestUpgrade_RunsHooks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	marker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `"}],"postUpgrade":[{"command":"printf post >> ` + marker + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "missing-manager", PkgName: "git"}})
+
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--yes"})
+	if code != exitOK {
+		t.Fatalf("upgrade hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("read hook marker: %v", err)
+	}
+	if string(got) != "prepost" {
+		t.Fatalf("hook marker: got %q, want %q", string(got), "prepost")
+	}
+}
+
 // ---- genv apply new flags ----------------------------------------------------
 
 func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
@@ -1050,6 +1261,7 @@ func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 
 func TestApplyCmd_Debug_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"apply", "--file", path, "--dry-run", "--debug"})
@@ -1060,6 +1272,7 @@ func TestApplyCmd_Debug_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 	code := run([]string{"apply", "--file", path, "--dry-run", "--timeout", "5m"})
@@ -1070,6 +1283,7 @@ func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 
 func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
 	run([]string{"add", "--file", path, "git"})
 
@@ -1101,8 +1315,9 @@ func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
 
 func TestApplyCmd_AlreadyUpToDate_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
-	lockPath := filepath.Join(dir, "genv.lock.json")
+	lockPath := genvfile.LockPathFrom(path)
 
 	run([]string{"add", "--file", path, "git"})
 	writeLock(t, lockPath, []genvfile.LockedPackage{
@@ -1235,5 +1450,150 @@ func TestParseCommandWords(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ---- genv pull ---------------------------------------------------------------
+
+func TestResolvePullSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		repo    *schema.Repo
+		urlFlag string
+		refFlag string
+		wantURL string
+		wantRef string
+		wantErr bool
+	}{
+		{
+			name:    "from repo only",
+			repo:    &schema.Repo{URL: "https://example.com/repo.git", Ref: "stable"},
+			wantURL: "https://example.com/repo.git",
+			wantRef: "stable",
+		},
+		{
+			name:    "from repo with default ref",
+			repo:    &schema.Repo{URL: "https://example.com/repo.git"},
+			wantURL: "https://example.com/repo.git",
+			wantRef: "main",
+		},
+		{
+			name:    "url flag overrides repo url",
+			repo:    &schema.Repo{URL: "https://example.com/repo.git", Ref: "stable"},
+			urlFlag: "https://other.example/repo.git",
+			wantURL: "https://other.example/repo.git",
+			wantRef: "stable",
+		},
+		{
+			name:    "ref flag overrides repo ref",
+			repo:    &schema.Repo{URL: "https://example.com/repo.git", Ref: "stable"},
+			refFlag: "develop",
+			wantURL: "https://example.com/repo.git",
+			wantRef: "develop",
+		},
+		{
+			name:    "flags alone are sufficient",
+			urlFlag: "https://example.com/repo.git",
+			refFlag: "v1.0.0",
+			wantURL: "https://example.com/repo.git",
+			wantRef: "v1.0.0",
+		},
+		{
+			name:    "empty repo and no flags errors",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url, ref, err := resolvePullSource(tc.repo, tc.urlFlag, tc.refFlag)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("resolvePullSource: expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolvePullSource: unexpected error: %v", err)
+			}
+			if url != tc.wantURL {
+				t.Errorf("url: got %q, want %q", url, tc.wantURL)
+			}
+			if ref != tc.wantRef {
+				t.Errorf("ref: got %q, want %q", ref, tc.wantRef)
+			}
+		})
+	}
+}
+
+func TestPullCmd_StdoutTargetFails(t *testing.T) {
+	code := run([]string{"pull", "--file", "-"})
+	if code != exitUsage {
+		t.Errorf("pull to stdout: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestPullCmd_NoURLError(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"5","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	code := run([]string{"pull", "--file", path})
+	if code != exitUsage {
+		t.Errorf("no url: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestPullCmd_DryRun(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"5","packages":[],"repo":{"url":"https://example.com/spec.git","ref":"main"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", path, "--dry-run"})
+	})
+
+	if code != exitOK {
+		t.Fatalf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "https://example.com/spec.git") {
+		t.Errorf("dry-run output missing url: %q", out)
+	}
+	if !strings.Contains(out, "main") {
+		t.Errorf("dry-run output missing ref: %q", out)
+	}
+}
+
+func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"5","packages":[],"repo":{"url":"https://example.com/spec.git","ref":"main"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", path, "--url", "https://other.example/spec.git", "--ref", "dev", "--dry-run"})
+	})
+
+	if code != exitOK {
+		t.Fatalf("dry-run override: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "https://other.example/spec.git") {
+		t.Errorf("dry-run output missing override url: %q", out)
+	}
+	if !strings.Contains(out, "dev") {
+		t.Errorf("dry-run output missing override ref: %q", out)
 	}
 }
