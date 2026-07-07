@@ -22,12 +22,18 @@ type Searchable interface {
 	Search(query string) ([]string, error)
 }
 
+// VersionLister is an optional extension of Adapter for managers whose list
+// command reports installed package versions in the same call.
+type VersionLister interface {
+	ListInstalledVersions() (map[string]string, error)
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.
 type Adapter interface {
 	// Name returns the canonical manager identifier used in genv.json
-	// (e.g. "apt", "brew", "flatpak").
+	// (e.g. "pacman", "brew", "winget").
 	Name() string
 
 	// Available reports whether this manager's binary exists in PATH.
