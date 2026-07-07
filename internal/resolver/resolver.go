@@ -193,8 +193,18 @@ type SkippedPackage struct {
 // It returns a list of actions and a list of packages that were skipped because
 // their recorded package manager adapter is no longer registered.
 func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipped []SkippedPackage) {
+	adapters := make(map[string]adapter.Adapter)
+	getAdapter := func(name string) adapter.Adapter {
+		if mgr, ok := adapters[name]; ok {
+			return mgr
+		}
+		mgr := adapter.ByName(name)
+		adapters[name] = mgr
+		return mgr
+	}
+
 	for _, lp := range packages {
-		mgr := adapter.ByName(lp.Manager)
+		mgr := getAdapter(lp.Manager)
 		if mgr == nil {
 			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager})
 			continue
@@ -256,6 +266,16 @@ type ReconcileResult struct {
 //     recorded in the lock (not re-resolved, preserving the original manager).
 //   - Unchanged: in both desired and lock → nothing to do.
 func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool) ReconcileResult {
+	adapters := make(map[string]adapter.Adapter)
+	getAdapter := func(name string) adapter.Adapter {
+		if mgr, ok := adapters[name]; ok {
+			return mgr
+		}
+		mgr := adapter.ByName(name)
+		adapters[name] = mgr
+		return mgr
+	}
+
 	managedByID := make(map[string]genvfile.LockedPackage, len(managed))
 	for _, lp := range managed {
 		managedByID[lp.ID] = lp
@@ -286,7 +306,7 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 	var unchanged []genvfile.LockedPackage
 	for _, lp := range managed {
 		if !desiredByID[lp.ID] {
-			a := adapter.ByName(lp.Manager)
+			a := getAdapter(lp.Manager)
 			if a == nil {
 				continue // adapter no longer registered; skip silently
 			}

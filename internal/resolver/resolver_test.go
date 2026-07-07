@@ -240,6 +240,52 @@ func TestPlanInstall_AllManagers(t *testing.T) {
 	}
 }
 
+func TestPlanUpgrade_SkipsMissingManagers(t *testing.T) {
+	packages := []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "legacy", Manager: "yum", PkgName: "legacy"},
+	}
+
+	plan, skipped := PlanUpgrade(packages)
+
+	if len(plan) != 1 {
+		t.Fatalf("expected 1 upgrade action, got %d", len(plan))
+	}
+	if len(skipped) != 1 {
+		t.Fatalf("expected 1 skipped package, got %d", len(skipped))
+	}
+	if got := plan[0].LP.ID; got != "git" {
+		t.Fatalf("expected git upgrade action, got %q", got)
+	}
+	if got := skipped[0].ID; got != "legacy" {
+		t.Fatalf("expected legacy to be skipped, got %q", got)
+	}
+}
+
+func TestReconcile_RemovalPathSkipsMissingManagers(t *testing.T) {
+	result := Reconcile(
+		nil,
+		[]genvfile.LockedPackage{
+			{ID: "git", Manager: "brew", PkgName: "git"},
+			{ID: "legacy", Manager: "yum", PkgName: "legacy"},
+		},
+		map[string]bool{"brew": true},
+	)
+
+	if len(result.ToRemove) != 1 {
+		t.Fatalf("expected 1 removal action, got %d", len(result.ToRemove))
+	}
+	if got := result.ToRemove[0].Pkg.ID; got != "git" {
+		t.Fatalf("expected git removal action, got %q", got)
+	}
+	if got := result.ToRemove[0].Manager; got != "brew" {
+		t.Fatalf("expected brew removal action, got %q", got)
+	}
+	if len(result.Unchanged) != 0 {
+		t.Fatalf("expected no unchanged packages, got %d", len(result.Unchanged))
+	}
+}
+
 func TestByName_UnknownManager(t *testing.T) {
 	a := adapter.ByName("yum")
 	if a != nil {
