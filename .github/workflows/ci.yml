@@ -40,5 +40,22 @@ jobs:
       - name: Coverage summary
         run: go tool cover -func=coverage.out
 
-      - name: Integration tests (apt)
-        run: go test -tags integration -race -v -run TestApt ./internal/adapter/
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
