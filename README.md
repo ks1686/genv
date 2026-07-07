@@ -261,7 +261,8 @@ When you run `genv apply`:
   - `start` — command array to start the service (raw, cross-platform)
   - `brew_formula` — homebrew formula name to manage via `brew services` (macOS only; mutually exclusive with `start`)
 - `files` — optional filesystem reconciliation block (schema v5)
-  - `links` — symlinks to create (`mode`: `"link"` or `"managed-link"`)
+  - `links` — symlinks to create (`mode`: `"link"`, `"managed-link"`, or `"merge-dir"`)
+    - `"merge-dir"` symlinks source's files individually into target (rather than symlinking the whole directory as one unit), so multiple records — e.g. one unfiltered, one `host`-filtered — can target the *same* directory and layer: a later record's same-named file wins over an earlier one without needing `--force`, letting you keep one shared base plus a small host-specific override directory instead of a full separate source tree per host
   - `templates` — files to copy after rendering `__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`
   - `dirs` — directories to ensure exist
   - per-record `host` and `backup` fields are supported
@@ -280,9 +281,12 @@ When you run `genv apply`:
 | `genv add <id> [flags]`                           | Add package to spec and install it now                                 |
 | `genv remove <id>`                                | Remove package from spec and uninstall it now (alias: `rm`)            |
 | `genv adopt <id> [flags]`                         | Track an already-installed package without reinstalling                |
+| `genv adopt --files [flags]`                      | Register already-correct `files` block entries into the lock without rewriting them |
 | `genv disown <id>`                                | Stop tracking a package without uninstalling it                        |
 | `genv scan [flags]`                               | Bulk-adopt all installed packages into genv.json                       |
 | `genv status [flags]`                             | Show drift between genv.json and the lock file                         |
+| `genv status --files [flags]`                     | Check the `files` block against the live filesystem only (does not touch the spec-vs-lock check above) |
+| `genv pull [flags]`                               | Fetch genv.json from the `repo.url`/`repo.ref` git remote configured in the spec |
 | `genv list`                                       | List packages currently tracked by genv (from lock file) (alias: `ls`) |
 | `genv apply [flags]`                              | Reconcile system state with genv.json                                  |
 | `genv validate [flags]`                           | Validate genv.json without changing the system                         |
@@ -316,6 +320,13 @@ When you run `genv apply`:
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
+- `--files` — check the `files` block against the live filesystem instead of the spec-vs-lock diff
+
+### `genv pull` flags
+
+- `--url <url>` — override the repository URL configured in `repo.url`
+- `--ref <ref>` — override the repository ref configured in `repo.ref` (default: `main`)
+- `--dry-run` — print what would be pulled without writing `genv.json`
 
 ### `genv scan` flags
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -41,6 +42,16 @@ func Status(cfg *schema.FilesConfig, hostName string) (*StatusResult, error) {
 		res.add(entry)
 	}
 	for _, l := range filtered.Links {
+		if l.Mode == "merge-dir" {
+			entries, err := statusMergeDir(l)
+			if err != nil {
+				return res, err
+			}
+			for _, entry := range entries {
+				res.add(entry)
+			}
+			continue
+		}
 		entry, err := statusLink(l)
 		if err != nil {
 			return res, err
@@ -99,6 +110,58 @@ func statusLink(l schema.FileLink) (StatusEntry, error) {
 	if mode == "" {
 		mode = "link"
 	}
+	return statusLinkAt(target, source, mode)
+}
+
+// statusMergeDir reports one StatusEntry per file found under l's source
+// directory, checking each against target/<relative path> exactly like
+// statusLink checks a single file.
+func statusMergeDir(l schema.FileLink) ([]StatusEntry, error) {
+	sourceDir, err := resolveSource("", l.Source)
+	if err != nil {
+		return nil, fmt.Errorf("merge-dir source %q: %w", l.Source, err)
+	}
+	targetDir, err := statusTarget(l.Target)
+	if err != nil {
+		return nil, fmt.Errorf("merge-dir target %q: %w", l.Target, err)
+	}
+
+	info, err := os.Stat(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("merge-dir source %q: %w", l.Source, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("merge-dir source %q: not a directory", l.Source)
+	}
+
+	var entries []StatusEntry
+	walkErr := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return fmt.Errorf("merge-dir %s: %w", path, err)
+		}
+		entry, err := statusLinkAt(filepath.Join(targetDir, rel), path, "merge-dir")
+		if err != nil {
+			return err
+		}
+		entries = append(entries, entry)
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return entries, nil
+}
+
+// statusLinkAt is the single-file check shared by statusLink and
+// statusMergeDir: is target a symlink pointing at source?
+func statusLinkAt(target, source, mode string) (StatusEntry, error) {
 	entry := StatusEntry{Source: source, Target: target, Mode: mode}
 	fi, err := os.Lstat(target)
 	if err != nil {
