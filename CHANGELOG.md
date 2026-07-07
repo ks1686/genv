@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.2.1 - 2026-07-06
+
+### Fixed
+
+- `Brew`/`Linuxbrew` adapters' `ListInstalled` ran `brew list --formula --1` (and `--cask --1`) — `--1` is not a recognized brew flag, so brew silently printed its usage banner and exited 0 instead of listing anything. This broke `genv scan` for every brew/Linuxbrew user: it always reported "0 added" regardless of how much was actually installed. Fixed to `-1` (one-per-line output), with new regression tests in `internal/adapter/brew_test.go` that check the exact arguments passed, not just that *some* output comes back.
+
 ## v2.2.0 - 2026-07-06
 
 Ships the `tc-genv-migration` surface: schema v5 (`files` + `hooks` blocks, `host` selector, `repo` field), three new adapters, and the commands needed to move a dotfiles repo from shell scripts to a declarative `genv.json`. This is a **scoped subset** of Milestone M13 (hooks and lifecycle scripts) — see ROADMAP.md M13 for what's shipped versus still open (no `add`/`remove` hook wiring, no `GENV_EVENT`/`GENV_INSTALLED`/`GENV_REMOVED` env context, no `--no-hooks` flag, no script-file hook references, no hook-specific timeout).
