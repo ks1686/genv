@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"maps"
 	"os"
 	"testing"
 )
@@ -129,6 +130,44 @@ EOF`)
 	}
 	if ver != "1.3.14" {
 		t.Errorf("QueryVersion: got %q, want %q", ver, "1.3.14")
+	}
+}
+
+func TestScoop_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) {
+	// Given
+	counterPath := t.TempDir() + "/count"
+	t.Setenv("GENV_FAKE_COUNTER", counterPath)
+	installFakeBinary(t, "scoop", `if [ "$1" = "list" ]; then
+  count=$(cat "$GENV_FAKE_COUNTER" 2>/dev/null || printf 0)
+  count=$((count + 1))
+  printf "%s" "$count" > "$GENV_FAKE_COUNTER"
+  cat <<'EOF'
+`+scoopListSample+`
+EOF
+fi`)
+
+	// When
+	versions, err := Scoop{}.ListInstalledVersions()
+
+	// Then
+	if err != nil {
+		t.Fatalf("ListInstalledVersions: unexpected error: %v", err)
+	}
+	want := map[string]string{
+		"7zip":       "26.02",
+		"bun":        "1.3.14",
+		"git":        "2.55.0.2",
+		"nodejs-lts": "24.18.0",
+	}
+	if !maps.Equal(versions, want) {
+		t.Errorf("ListInstalledVersions: got %v, want %v", versions, want)
+	}
+	count, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("counter: %v", err)
+	}
+	if string(count) != "1" {
+		t.Errorf("scoop list exec count = %q, want 1", string(count))
 	}
 }
 
