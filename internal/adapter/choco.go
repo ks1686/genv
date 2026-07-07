@@ -37,12 +37,12 @@ func (Choco) PlanClean() [][]string {
 // Query reports whether pkgName is installed, checked against choco's own
 // installed-packages list rather than a per-package exit code.
 func (Choco) Query(pkgName string) (bool, error) {
-	installed, err := Choco{}.ListInstalled()
+	entries, err := Choco{}.listEntries()
 	if err != nil {
 		return false, err
 	}
-	for _, name := range installed {
-		if name == pkgName {
+	for _, entry := range entries {
+		if entry.name == pkgName {
 			return true, nil
 		}
 	}
@@ -69,29 +69,48 @@ func (Choco) Search(query string) ([]string, error) {
 // packages by default, one "<name> <version>" pair per line, preceded by a
 // "Chocolatey vX.Y.Z" banner line.
 func (Choco) ListInstalled() ([]string, error) {
-	lines, err := runListOutput("choco", "list")
+	entries, err := Choco{}.listEntries()
 	if err != nil {
 		return nil, err
 	}
-	rows := parseChocoList(lines)
-	names := make([]string, 0, len(rows))
-	for _, r := range rows {
-		names = append(names, r.name)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
 	}
 	return names, nil
 }
 
 func (Choco) QueryVersion(pkgName string) (string, error) {
-	lines, err := runListOutput("choco", "list")
+	entries, err := Choco{}.listEntries()
 	if err != nil {
 		return "", err
 	}
-	for _, r := range parseChocoList(lines) {
-		if r.name == pkgName {
-			return r.version, nil
+	for _, entry := range entries {
+		if entry.name == pkgName {
+			return entry.version, nil
 		}
 	}
 	return "", nil
+}
+
+func (Choco) ListInstalledVersions() (map[string]string, error) {
+	entries, err := Choco{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		versions[entry.name] = entry.version
+	}
+	return versions, nil
+}
+
+func (Choco) listEntries() ([]chocoEntry, error) {
+	lines, err := runListOutput("choco", "list")
+	if err != nil {
+		return nil, err
+	}
+	return parseChocoList(lines), nil
 }
 
 type chocoEntry struct {
