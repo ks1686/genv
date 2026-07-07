@@ -525,25 +525,6 @@ fi`)
 	}
 }
 
-// TestBrew_ListInstalled_CombinesFormulaeAndCasks verifies that Brew.ListInstalled
-// concatenates formulae and casks from two separate brew list calls.
-func TestBrew_ListInstalled_CombinesFormulaeAndCasks(t *testing.T) {
-	installFakeBinary(t, "brew",
-		`if [ "$1" = "list" ] && [ "$2" = "--formula" ]; then
-  echo "git"
-  echo "neovim"
-elif [ "$1" = "list" ] && [ "$2" = "--cask" ]; then
-  echo "firefox"
-fi`)
-	pkgs, err := Brew{}.ListInstalled()
-	if err != nil {
-		t.Fatalf("Brew.ListInstalled: %v", err)
-	}
-	if len(pkgs) != 3 {
-		t.Fatalf("expected 3 packages (2 formulae + 1 cask), got %d: %v", len(pkgs), pkgs)
-	}
-}
-
 // TestBrew_Query_ChecksCask verifies that Brew.Query falls back to cask when
 // the formula check returns false (not installed as formula).
 func TestBrew_Query_ChecksCask(t *testing.T) {

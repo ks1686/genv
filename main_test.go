@@ -25,6 +25,13 @@ func TestMain(m *testing.M) {
 			_ = os.Setenv("XDG_CONFIG_HOME", dir)
 		}
 	}
+	// Shadow real package managers with fakes so CLI-level tests below never
+	// install/uninstall/upgrade anything on the machine actually running
+	// `go test`. See main_fakebin_test.go.
+	if err := installFakeManagers(); err != nil {
+		_, _ = os.Stderr.WriteString("genv test: " + err.Error() + "\n")
+		os.Exit(1)
+	}
 	os.Exit(m.Run())
 }
 
