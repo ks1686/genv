@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -53,4 +54,28 @@ func BenchmarkAdapterLookup(b *testing.B) {
 			_ = getAdapter("linuxbrew")
 		}
 	})
+}
+
+func BenchmarkPlanUpgradeAdapterLookup(b *testing.B) {
+	packages := make([]genvfile.LockedPackage, 1000)
+	for i := range packages {
+		packages[i] = genvfile.LockedPackage{ID: "pkg", Manager: "brew", PkgName: "pkg"}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = PlanUpgrade(packages)
+	}
+}
+
+func BenchmarkReconcileRemovalAdapterLookup(b *testing.B) {
+	managed := make([]genvfile.LockedPackage, 1000)
+	for i := range managed {
+		managed[i] = genvfile.LockedPackage{ID: "pkg", Manager: "brew", PkgName: "pkg"}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = Reconcile(nil, managed, nil)
+	}
 }
