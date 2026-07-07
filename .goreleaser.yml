@@ -77,7 +77,7 @@ homebrew_casks:
 #   snap install genv
 snapcrafts:
   - name: genv
-    summary: "Declarative package and environment manager for Linux, macOS, Windows, and WSL2."
+    summary: "Declarative package and environment manager."
     description: "genv is a command-line tool to track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2. It helps you manage packages, environment variables, and shell configuration declaratively."
     license: MIT
     grade: stable

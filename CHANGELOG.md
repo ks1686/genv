@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v2.3.2 - 2026-07-07
+
+### Fixed
+
+- Shortened Snap Store package summary metadata to satisfy snapcraft's 78-character validation limit.
+
 ## v2.3.1 - 2026-07-07
 
 ### Changed
