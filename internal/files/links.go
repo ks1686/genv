@@ -6,9 +6,28 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/ks1686/genv/internal/schema"
 )
+
+// symlink creates a symlink like os.Symlink, but on Windows augments a
+// failure with an actionable privilege hint. The original error is
+// preserved for errors.Is / errors.As.
+func symlink(source, target string) error {
+	return windowsSymlinkHint(runtime.GOOS, os.Symlink(source, target))
+}
+
+// windowsSymlinkHint wraps a Windows symlink failure with a hint about
+// enabling Developer Mode or running as Administrator, since unprivileged
+// Windows processes cannot create symlinks. On other platforms, or for a
+// nil error, it returns err unchanged so non-Windows behavior is identical.
+func windowsSymlinkHint(goos string, err error) error {
+	if err == nil || goos != "windows" {
+		return err
+	}
+	return fmt.Errorf("%w (on Windows, creating symlinks requires enabling Developer Mode or running as Administrator)", err)
+}
 
 func applyLink(ctx context.Context, l schema.FileLink, opts ApplyOptions, res *ApplyResult) error {
 	if err := ctx.Err(); err != nil {
@@ -83,7 +102,7 @@ func applyLinkAt(target, source string, managed, backup bool, opts ApplyOptions,
 		if err := ensureParentDir(target); err != nil {
 			return err
 		}
-		if err := os.Symlink(source, target); err != nil {
+		if err := symlink(source, target); err != nil {
 			return fmt.Errorf("link %s: %w", target, err)
 		}
 		res.Created = append(res.Created, target)
@@ -132,7 +151,7 @@ func replaceLinkAt(target, source string, backup bool, opts ApplyOptions, res *A
 			return fmt.Errorf("link %s: remove existing: %w", target, err)
 		}
 	}
-	if err := os.Symlink(source, target); err != nil {
+	if err := symlink(source, target); err != nil {
 		return fmt.Errorf("link %s: %w", target, err)
 	}
 	res.Updated = append(res.Updated, target)
