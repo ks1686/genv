@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
+	"runtime"
 
 	"github.com/ks1686/genv/internal/host"
 	"github.com/ks1686/genv/internal/schema"
@@ -24,6 +25,11 @@ type Executor struct {
 	// runner abstracts command execution so tests can verify behavior without
 	// spawning real subprocesses.
 	runner commandRunner
+
+	// goos selects the shell used to run hook commands. It defaults to
+	// runtime.GOOS (set by NewExecutor); tests override it to exercise the
+	// per-OS shell selection without spawning real subprocesses.
+	goos string
 }
 
 type commandRunner interface {
@@ -41,6 +47,16 @@ func (execRunner) Run(ctx context.Context, args []string, stdout, stderr io.Writ
 
 func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
+// shellFor returns the shell binary and its command flag for the given GOOS.
+// Native Windows has no "sh", so hooks run via "cmd /C"; every other OS uses
+// the POSIX "sh -c".
+func shellFor(goos string) (bin string, flag string) {
+	if goos == "windows" {
+		return "cmd", "/C"
+	}
+	return "sh", "-c"
+}
+
 // NewExecutor returns an Executor that writes subprocess output to stdout and stderr.
 func NewExecutor(stdout, stderr io.Writer) *Executor {
 	if stdout == nil {
@@ -53,6 +69,7 @@ func NewExecutor(stdout, stderr io.Writer) *Executor {
 		Stdout: stdout,
 		Stderr: stderr,
 		runner: execRunner{},
+		goos:   runtime.GOOS,
 	}
 }
 
@@ -75,6 +92,9 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 	if e.runner == nil {
 		e.runner = execRunner{}
 	}
+	if e.goos == "" {
+		e.goos = runtime.GOOS
+	}
 	if e.Stdout == nil {
 		e.Stdout = io.Discard
 	}
@@ -95,7 +115,8 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		}
 
 		slog.Info("running hook", "phase", phase, "index", i, "command", h.Command)
-		if err := e.runner.Run(ctx, []string{"sh", "-c", h.Command}, e.Stdout, e.Stderr); err != nil {
+		bin, flag := shellFor(e.goos)
+		if err := e.runner.Run(ctx, []string{bin, flag, h.Command}, e.Stdout, e.Stderr); err != nil {
 			return fmt.Errorf("%s hook %q: %w", phase, h.Command, err)
 		}
 	}
