@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"maps"
 	"os"
 	"testing"
 )
@@ -132,6 +133,41 @@ fi`)
 	}
 	if ver != "" {
 		t.Errorf("version: got %q, want empty", ver)
+	}
+}
+
+func TestUv_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) {
+	// Given
+	counterPath := t.TempDir() + "/count"
+	t.Setenv("GENV_FAKE_COUNTER", counterPath)
+	installFakeBinary(t, "uv",
+		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
+  count=$(cat "$GENV_FAKE_COUNTER" 2>/dev/null || printf 0)
+  count=$((count + 1))
+  printf "%s" "$count" > "$GENV_FAKE_COUNTER"
+  echo "ruff v0.6.9"
+  echo "  ruff"
+  echo "black 24.10.0"
+  echo "  black"
+fi`)
+
+	// When
+	versions, err := Uv{}.ListInstalledVersions()
+
+	// Then
+	if err != nil {
+		t.Fatalf("Uv.ListInstalledVersions: %v", err)
+	}
+	want := map[string]string{"ruff": "0.6.9", "black": "24.10.0"}
+	if !maps.Equal(versions, want) {
+		t.Errorf("ListInstalledVersions = %v, want %v", versions, want)
+	}
+	count, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("counter: %v", err)
+	}
+	if string(count) != "1" {
+		t.Errorf("uv tool list exec count = %q, want 1", string(count))
 	}
 }
 

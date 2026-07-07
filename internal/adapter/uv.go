@@ -44,12 +44,12 @@ func (Uv) PlanClean() [][]string {
 
 func (Uv) Query(pkgName string) (bool, error) {
 	name := uvToolName(pkgName)
-	tools, err := Uv{}.ListInstalled()
+	entries, err := Uv{}.listEntries()
 	if err != nil {
 		return false, err
 	}
-	for _, tool := range tools {
-		if tool == name {
+	for _, entry := range entries {
+		if entry.name == name {
 			return true, nil
 		}
 	}
@@ -59,18 +59,13 @@ func (Uv) Query(pkgName string) (bool, error) {
 // ListInstalled parses "uv tool list" output. Top-level lines name the tool
 // (e.g. "black v24.2.0"); indented lines are entrypoints and are skipped.
 func (Uv) ListInstalled() ([]string, error) {
-	lines, err := runUvToolList()
+	entries, err := Uv{}.listEntries()
 	if err != nil {
 		return nil, err
 	}
-	var names []string
-	for _, line := range lines {
-		if line == "" || isIndented(line) {
-			continue
-		}
-		if fields := strings.Fields(line); len(fields) > 0 {
-			names = append(names, fields[0])
-		}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
 	}
 	return names, nil
 }
@@ -79,25 +74,57 @@ func (Uv) ListInstalled() ([]string, error) {
 // Returns "", nil when the tool is not installed or has no reported version.
 func (Uv) QueryVersion(pkgName string) (string, error) {
 	name := uvToolName(pkgName)
-	lines, err := runUvToolList()
+	entries, err := Uv{}.listEntries()
 	if err != nil {
 		return "", err
 	}
+	for _, entry := range entries {
+		if entry.name == name {
+			return entry.version, nil
+		}
+	}
+	return "", nil
+}
+
+func (Uv) ListInstalledVersions() (map[string]string, error) {
+	entries, err := Uv{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		versions[entry.name] = entry.version
+	}
+	return versions, nil
+}
+
+type uvEntry struct {
+	name    string
+	version string
+}
+
+func (Uv) listEntries() ([]uvEntry, error) {
+	lines, err := runUvToolList()
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]uvEntry, 0, len(lines))
 	for _, line := range lines {
 		if line == "" || isIndented(line) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		if len(fields) == 0 {
 			continue
 		}
-		if fields[0] != name {
-			continue
+		version := ""
+		if len(fields) > 1 {
+			// Output is "<tool> v<version>" or "<tool> <version>".
+			version = strings.TrimPrefix(fields[1], "v")
 		}
-		// Output is "<tool> v<version>" or "<tool> <version>".
-		return strings.TrimPrefix(fields[1], "v"), nil
+		entries = append(entries, uvEntry{name: fields[0], version: version})
 	}
-	return "", nil
+	return entries, nil
 }
 
 // runUvToolList runs "uv tool list" and returns stdout split into lines,
