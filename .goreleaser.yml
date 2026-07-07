@@ -38,16 +38,15 @@ checksum:
 # ── Keyless signing via Sigstore/cosign ────────────────────────────────────────
 # Signs the checksums file using the cosign keyless (OIDC) workflow.
 # Requires: sigstore/cosign-installer step + id-token: write permission in the
-# release workflow. Produces checksums.txt.sig and checksums.txt.pem alongside
-# every release.
+# release workflow. Produces checksums.txt.sigstore.json alongside every release.
 signs:
   - cmd: cosign
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
-      - --yes
-      - --output-certificate=${certificate}
-      - --output-signature=${signature}
+      - --bundle=${signature}
       - ${artifact}
+      - --yes
     artifacts: checksum
     output: true
 
