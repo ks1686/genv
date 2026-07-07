@@ -57,7 +57,16 @@ pacman|paru|yay)
 	;;
 snap)
 	case "$1" in
-	install|remove|refresh|list)
+	install|remove|refresh)
+		exit 0
+		;;
+	list)
+		# "snap list" (list all, no third arg): succeed with just a header
+		# line. "snap list <pkg>" (query one package): not installed.
+		if [ -n "$2" ]; then
+			exit 1
+		fi
+		echo "Name  Version  Rev  Tracking  Publisher  Notes"
 		exit 0
 		;;
 	esac
