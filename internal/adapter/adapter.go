@@ -82,6 +82,9 @@ var All = []Adapter{
 	Linuxbrew{},
 	Bun{},
 	Uv{},
+	Winget{},
+	Scoop{},
+	Choco{},
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.

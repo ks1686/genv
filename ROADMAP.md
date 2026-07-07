@@ -420,7 +420,7 @@ These gates apply to every milestone.
 - [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), Snap packaging
 - [ ] v2.2.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
 - [ ] v2.3.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
-- [ ] v3.0.0 — M11 complete + first-party Windows support via native Windows package managers (e.g. Chocolatey, Scoop) and WSL2 improvements
+- [ ] v3.0.0 — M11 complete + first-party Windows support via native Windows package managers and WSL2 improvements. The Windows-support half shipped ahead of a full v3.0.0 tag: `windows` host classification plus `winget`/`scoop`/`choco` adapters (`bun`/`uv` already worked cross-platform). M11 (updates daemon) is unimplemented — see below.
 - [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip, cargo) and/or a plugin system for custom adapters
 
 ## How to Contribute Against This Roadmap

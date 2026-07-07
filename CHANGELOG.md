@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Native Windows support** (previously WSL2-only): a new `windows` host classification (`internal/host.Classify`), plus three new adapters — `winget`, `scoop`, and `choco`. `bun` and `uv` already worked cross-platform and now cover global installs on native Windows too. This is the Windows-support portion of the v3.0.0 milestone; the updates-daemon portion (M11) is separate and still unimplemented.
 - `files.links[]` gains a third mode, `"merge-dir"`, alongside `"link"` and `"managed-link"`. Instead of symlinking an entire source directory as one unit, it symlinks each file under source individually into target. This lets multiple records target the *same* directory — e.g. one with no `host`, one `host`-filtered — and layer: a later record's same-named file wins over an earlier one without needing `--force`, so a shared base directory plus a small host-specific override directory can compose one target directory, instead of requiring a full separate source tree per host. `genv status --files` reports one entry per merged file for per-file drift detection.
 
 ### Fixed
