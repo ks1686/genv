@@ -67,11 +67,11 @@ func (Brew) Query(pkgName string) (bool, error) {
 
 // ListInstalled returns both formulae and casks managed by Homebrew.
 func (Brew) ListInstalled() ([]string, error) {
-	formulae, err := runListOutput("brew", "list", "--formula", "--1")
+	formulae, err := runListOutput("brew", "list", "--formula", "-1")
 	if err != nil {
 		return nil, err
 	}
-	casks, err := runListOutput("brew", "list", "--cask", "--1")
+	casks, err := runListOutput("brew", "list", "--cask", "-1")
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (Linuxbrew) Query(pkgName string) (bool, error) {
 }
 
 func (Linuxbrew) ListInstalled() ([]string, error) {
-	return runListOutput("brew", "list", "--formula", "--1")
+	return runListOutput("brew", "list", "--formula", "-1")
 }
 
 func (Linuxbrew) QueryVersion(pkgName string) (string, error) { return brewQueryVersion(pkgName) }
