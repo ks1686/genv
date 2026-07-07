@@ -661,7 +661,7 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"yay", 1},
 		{"snap", 0},
 		{"brew", 1},
-		{"uv", 0},
+		{"uv", 1},
 		{"pacman", 1},
 		{"linuxbrew", 1},
 		{"bun", 1},
@@ -693,6 +693,7 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"uv", "uv"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {

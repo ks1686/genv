@@ -180,11 +180,20 @@ func TestUv_PlanUpgrade_IncludesUpgradeFlag(t *testing.T) {
 	}
 }
 
-// TestUv_PlanClean_ReturnsNil verifies that Uv.PlanClean returns nil.
-func TestUv_PlanClean_ReturnsNil(t *testing.T) {
+// TestUv_PlanClean verifies that Uv.PlanClean runs uv's global cache clean.
+func TestUv_PlanClean(t *testing.T) {
 	cmds := Uv{}.PlanClean()
-	if cmds != nil {
-		t.Errorf("Uv.PlanClean: expected nil, got %v", cmds)
+	if len(cmds) != 1 {
+		t.Fatalf("Uv.PlanClean: expected 1 command, got %v", cmds)
+	}
+	want := []string{"uv", "cache", "clean"}
+	if len(cmds[0]) != len(want) {
+		t.Fatalf("Uv.PlanClean[0]: got %v, want %v", cmds[0], want)
+	}
+	for i, w := range want {
+		if cmds[0][i] != w {
+			t.Errorf("Uv.PlanClean[0][%d] = %q, want %q", i, cmds[0][i], w)
+		}
 	}
 }
 

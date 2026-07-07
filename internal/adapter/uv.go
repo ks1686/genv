@@ -36,8 +36,11 @@ func (Uv) PlanUpgrade(pkgName string) []string {
 	return []string{"uv", "tool", "install", "--upgrade", pkgName}
 }
 
-// PlanClean returns nil: uv has no standard tool-only cache-clean command.
-func (Uv) PlanClean() [][]string { return nil }
+// PlanClean runs uv's global cache clean. There is no tool-only variant;
+// this clears uv's shared wheel/build cache, which can grow unbounded.
+func (Uv) PlanClean() [][]string {
+	return [][]string{{"uv", "cache", "clean"}}
+}
 
 func (Uv) Query(pkgName string) (bool, error) {
 	name := uvToolName(pkgName)
