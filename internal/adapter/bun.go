@@ -38,13 +38,13 @@ func (Bun) PlanClean() [][]string {
 }
 
 func (b Bun) Query(pkgName string) (bool, error) {
-	installed, err := b.ListInstalled()
+	entries, err := b.listEntries()
 	if err != nil {
 		return false, err
 	}
 	base := bunBaseName(pkgName)
-	for _, p := range installed {
-		if p == base {
+	for _, entry := range entries {
+		if entry.name == base {
 			return true, nil
 		}
 	}
@@ -52,25 +52,54 @@ func (b Bun) Query(pkgName string) (bool, error) {
 }
 
 func (Bun) ListInstalled() ([]string, error) {
-	lines, err := runListOutput("bun", "pm", "ls", "--global")
+	entries, err := Bun{}.listEntries()
 	if err != nil {
 		return nil, err
 	}
-	return parseBunList(lines), nil
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
+	}
+	return names, nil
 }
 
 func (Bun) QueryVersion(pkgName string) (string, error) {
-	lines, err := runListOutput("bun", "pm", "ls", "--global")
+	entries, err := Bun{}.listEntries()
 	if err != nil {
 		return "", err
 	}
 	base := bunBaseName(pkgName)
-	for _, line := range lines {
-		if name, version, ok := parseBunListLine(line); ok && name == base {
-			return version, nil
+	for _, entry := range entries {
+		if entry.name == base {
+			return entry.version, nil
 		}
 	}
 	return "", nil
+}
+
+func (Bun) ListInstalledVersions() (map[string]string, error) {
+	entries, err := Bun{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		versions[entry.name] = entry.version
+	}
+	return versions, nil
+}
+
+type bunEntry struct {
+	name    string
+	version string
+}
+
+func (Bun) listEntries() ([]bunEntry, error) {
+	lines, err := runListOutput("bun", "pm", "ls", "--global")
+	if err != nil {
+		return nil, err
+	}
+	return parseBunEntries(lines), nil
 }
 
 // bunBaseName strips an @version suffix from a package spec, returning the
@@ -92,13 +121,22 @@ func bunBaseName(pkgName string) string {
 
 // parseBunList extracts package base names from `bun pm ls --global` output.
 func parseBunList(lines []string) []string {
-	var names []string
-	for _, line := range lines {
-		if name, _, ok := parseBunListLine(line); ok {
-			names = append(names, name)
-		}
+	entries := parseBunEntries(lines)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
 	}
 	return names
+}
+
+func parseBunEntries(lines []string) []bunEntry {
+	var entries []bunEntry
+	for _, line := range lines {
+		if name, version, ok := parseBunListLine(line); ok {
+			entries = append(entries, bunEntry{name: name, version: version})
+		}
+	}
+	return entries
 }
 
 // parseBunListLine parses a single line of `bun pm ls --global` output.
