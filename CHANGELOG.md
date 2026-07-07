@@ -4,11 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased — v2.2.0
 
-Targets Milestone M13: hooks and lifecycle scripts. Users will be able to declare `pre` and `post` hooks in `genv.json` for events like `apply`, `add`, `remove`, and `upgrade`, with event context passed via environment variables.
+Ships the `tc-genv-migration` surface: schema v5 (`files` + `hooks` blocks, `host` selector, `repo` field), three new adapters, and the commands needed to move a dotfiles repo from shell scripts to a declarative `genv.json`. This is a **scoped subset** of Milestone M13 (hooks and lifecycle scripts) — see ROADMAP.md M13 for what's shipped versus still open (no `add`/`remove` hook wiring, no `GENV_EVENT`/`GENV_INSTALLED`/`GENV_REMOVED` env context, no `--no-hooks` flag, no script-file hook references, no hook-specific timeout).
 
-### Re-added adapters
+### Schema v5
 
-- **`pacman`** — Arch Linux official repositories only (`pacman -S --needed --noconfirm`). Re-added because Arch official repositories are first-party to the distro, unlike the v2.1.2-removed apt/dnf-style managers that required submission to and approval by external repositories. AUR packages remain covered by the existing `paru` and `yay` adapters.
+- `files` block with `link`, `copy`, `copy-template`, and `managed-link` modes, per-record `Host` selector, and a `Backup` flag controlling whether a forced overwrite preserves the old target.
+- `hooks` block with three fixed phases: `hooks.preUpgrade`, `hooks.postApply`, `hooks.postUpgrade`. Hooks are literal shell command strings, host-filtered, executed via `sh -c`; the hook carries its own privilege (e.g. `sudo pacman -Syu`) — genv does not add `sudo` itself.
+- `host` selector (`HostPredicate`, accepting a single string or a string array) on `packages`, `services`, `files`, and `hooks` records, matched against a runtime-detected `macos`/`arch`/`wsl2` host. WSL2 inherits every `host:"arch"` record.
+- `repo` top-level field: the local path to the spec repo, consumed by `genv pull`.
+- Lock file location changed: the default lock path is now `~/.config/genv/genv.lock.json` (from the genv config dir), no longer derived from the spec path. Overridable with `--lock-file`. v1–v4 specs still load unchanged.
+
+### Re-added and new adapters
+
+- **`pacman`** — Arch Linux official repositories only (`pacman -S --needed --noconfirm`, `sudo`-prefixed). Re-added because Arch official repositories are first-party to the distro, unlike the v2.1.2-removed apt/dnf-style managers that required submission to and approval by external repositories. AUR packages remain covered by the existing `paru` and `yay` adapters.
+- **`bun`** — global installs only (`bun add --global <pkg>`); cwd-scoped installs are out of scope and belong in a hook.
+- **`uv`** — global tool installs only (`uv tool install <pkg>`); venv-scoped installs are out of scope.
+
+### New commands
+
+- `genv pull` — self-pulls the spec repo declared in the `repo` field; refuses on a dirty working tree.
+- `genv adopt --files` — registers already-managed files into the lock without rewriting them (template targets are rendered before comparison).
+- `genv status --files` — live-filesystem parity check for the `files` block, separate from the existing spec-vs-lock `genv status` contract.
+
+### Fixes
+
+- `pacman`'s `PlanInstall`/`PlanUninstall`/`PlanUpgrade`/`PlanClean` commands are now `sudo`-prefixed, matching `snap`. Unlike `paru`/`yay`, bare `pacman` has no built-in privilege escalation, so `genv clean` (which runs every detected adapter's clean command) failed for any non-root user.
+- The `internal/host` `Classify()` unit test no longer fails on a plain Linux CI runner that is neither Arch nor WSL2 (it now skips instead of asserting a known class).
 
 ---
 
