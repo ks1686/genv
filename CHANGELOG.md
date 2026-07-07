@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- `files.links[]` gains a third mode, `"merge-dir"`, alongside `"link"` and `"managed-link"`. Instead of symlinking an entire source directory as one unit, it symlinks each file under source individually into target. This lets multiple records target the *same* directory — e.g. one with no `host`, one `host`-filtered — and layer: a later record's same-named file wins over an earlier one without needing `--force`, so a shared base directory plus a small host-specific override directory can compose one target directory, instead of requiring a full separate source tree per host. `genv status --files` reports one entry per merged file for per-file drift detection.
+
+### Fixed
+
+- `Uv.PlanClean` returned `nil` ("no standard tool-only cache-clean command") — true for `uv tool`, but `uv` itself has a real global cache-clean command. `genv clean` now runs `uv cache clean` for uv, same as every other adapter with a real cache to clear.
+
+### Documentation
+
+- README's CLI reference table was missing `genv adopt --files`, `genv status --files`, and `genv pull` entirely (never added when they shipped). Documented all three, plus a `genv pull` flags section and the `--files` flag under `genv status` flags.
+
 ## v2.2.1 - 2026-07-06
 
 ### Fixed

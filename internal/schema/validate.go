@@ -472,10 +472,10 @@ func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 			if l.Target == "" {
 				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
 			}
-			if l.Mode != "" && l.Mode != "link" && l.Mode != "managed-link" {
+			if l.Mode != "" && l.Mode != "link" && l.Mode != "managed-link" && l.Mode != "merge-dir" {
 				errs = append(errs, ValidationError{
 					Field:   field + ".mode",
-					Message: fmt.Sprintf("invalid link mode %q; expected \"link\" or \"managed-link\"", l.Mode),
+					Message: fmt.Sprintf("invalid link mode %q; expected \"link\", \"managed-link\", or \"merge-dir\"", l.Mode),
 				})
 			}
 			if expanded, err := expandPath(l.Target); err != nil || expanded == "" {

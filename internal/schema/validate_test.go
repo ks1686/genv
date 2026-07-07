@@ -678,6 +678,52 @@ func TestParseAndValidate_V5FilesAndHooks(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_MergeDirModeAccepted(t *testing.T) {
+	input := `{
+		"schemaVersion": "5",
+		"packages": [],
+		"files": {
+			"links": [
+				{"source": "zsh/common", "target": "~/.config/zsh", "mode": "merge-dir"},
+				{"source": "zsh/arch", "target": "~/.config/zsh", "mode": "merge-dir", "host": "arch"}
+			]
+		}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if len(f.Files.Links) != 2 || f.Files.Links[0].Mode != "merge-dir" {
+		t.Errorf("merge-dir links not parsed: %+v", f.Files.Links)
+	}
+}
+
+func TestParseAndValidate_InvalidLinkModeRejected(t *testing.T) {
+	input := `{
+		"schemaVersion": "5",
+		"packages": [],
+		"files": {
+			"links": [{"source": "a", "target": "~/b", "mode": "bogus-mode"}]
+		}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "files.links[0].mode" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected files.links[0].mode validation error, got: %v", errs)
+	}
+}
+
 func TestParseAndValidate_V4StillValid(t *testing.T) {
 	input := `{"schemaVersion":"4","packages":[],"services":{"svc":{"start":["true"]}}}`
 	_, errs, err := ParseAndValidate([]byte(input))
