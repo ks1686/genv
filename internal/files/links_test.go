@@ -3,12 +3,56 @@ package files
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
 )
+
+// sentinelSymlinkErr stands in for the Windows os.Symlink privilege error
+// (Developer Mode off, unelevated); tests assert errors.Is reaches it.
+var sentinelSymlinkErr = errors.New("A required privilege is not held by the client.")
+
+func TestWindowsSymlinkHint_wrapsOnWindows(t *testing.T) {
+	got := windowsSymlinkHint("windows", sentinelSymlinkErr)
+	if got == nil {
+		t.Fatal("windowsSymlinkHint(windows, err) = nil, want wrapped error")
+	}
+	if !errors.Is(got, sentinelSymlinkErr) {
+		t.Fatalf("errors.Is could not reach original error through wrapper: %v", got)
+	}
+	msg := got.Error()
+	if !strings.Contains(msg, sentinelSymlinkErr.Error()) {
+		t.Fatalf("wrapped message %q does not contain original error %q", msg, sentinelSymlinkErr.Error())
+	}
+	lower := strings.ToLower(msg)
+	if !strings.Contains(lower, "developer mode") {
+		t.Fatalf("wrapped message %q missing 'Developer Mode' hint", msg)
+	}
+	if !strings.Contains(lower, "administrator") {
+		t.Fatalf("wrapped message %q missing 'Administrator' hint", msg)
+	}
+}
+
+func TestWindowsSymlinkHint_passthroughOnNonWindows(t *testing.T) {
+	got := windowsSymlinkHint("linux", sentinelSymlinkErr)
+	if got != sentinelSymlinkErr {
+		t.Fatalf("windowsSymlinkHint(linux, err) = %v, want identical error value", got)
+	}
+	got = windowsSymlinkHint("darwin", sentinelSymlinkErr)
+	if got != sentinelSymlinkErr {
+		t.Fatalf("windowsSymlinkHint(darwin, err) = %v, want identical error value", got)
+	}
+}
+
+func TestWindowsSymlinkHint_nilPassthrough(t *testing.T) {
+	if got := windowsSymlinkHint("windows", nil); got != nil {
+		t.Fatalf("windowsSymlinkHint(windows, nil) = %v, want nil", got)
+	}
+}
 
 func setupSource(t *testing.T, home, name string) string {
 	t.Helper()
