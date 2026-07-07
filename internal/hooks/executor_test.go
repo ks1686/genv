@@ -30,7 +30,7 @@ func newTestExecutor(stdout, stderr io.Writer) (*Executor, *fakeRunner) {
 		stderr = io.Discard
 	}
 	fr := &fakeRunner{}
-	e := &Executor{Stdout: stdout, Stderr: stderr, runner: fr}
+	e := &Executor{Stdout: stdout, Stderr: stderr, runner: fr, goos: "linux"}
 	return e, fr
 }
 
@@ -56,6 +56,56 @@ func TestPreUpgrade_RunsMatchingHooks(t *testing.T) {
 	}
 	if !slicesEqual(fr.calls[1], want1) {
 		t.Errorf("call 1 = %v, want %v", fr.calls[1], want1)
+	}
+}
+
+func TestExecutor_ShellArgvPerOS(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		goos string
+		bin  string
+		flag string
+	}{
+		{name: "windows uses cmd /C", goos: "windows", bin: "cmd", flag: "/C"},
+		{name: "linux uses sh -c", goos: "linux", bin: "sh", flag: "-c"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, fr := newTestExecutor(nil, nil)
+			e.goos = tc.goos
+			hooks := []schema.Hook{{Command: "echo hi"}}
+
+			if err := e.PreUpgrade(ctx, hooks, "any", false); err != nil {
+				t.Fatalf("PreUpgrade() error = %v, want nil", err)
+			}
+
+			if len(fr.calls) != 1 {
+				t.Fatalf("got %d calls, want 1", len(fr.calls))
+			}
+			want := []string{tc.bin, tc.flag, "echo hi"}
+			if !slicesEqual(fr.calls[0], want) {
+				t.Errorf("call 0 = %v, want %v", fr.calls[0], want)
+			}
+		})
+	}
+}
+
+func TestShellFor(t *testing.T) {
+	cases := []struct {
+		goos string
+		bin  string
+		flag string
+	}{
+		{goos: "windows", bin: "cmd", flag: "/C"},
+		{goos: "linux", bin: "sh", flag: "-c"},
+		{goos: "darwin", bin: "sh", flag: "-c"},
+	}
+	for _, tc := range cases {
+		bin, flag := shellFor(tc.goos)
+		if bin != tc.bin || flag != tc.flag {
+			t.Errorf("shellFor(%q) = (%q, %q), want (%q, %q)", tc.goos, bin, flag, tc.bin, tc.flag)
+		}
 	}
 }
 
