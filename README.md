@@ -1,6 +1,6 @@
 # genv — Global Environment Manager
 
-Track, sync, and reproduce your software environment across Linux, macOS, and WSL2.
+Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2.
 
 ```bash
 genv add git                       # add and immediately install a package
@@ -74,14 +74,16 @@ Use the Linux instructions above inside your WSL2 shell. See the [WSL2 install g
 
 ### Windows (native)
 
-Not yet published to winget/scoop/choco. Download the Windows binary from [Releases](https://github.com/ks1686/genv/releases/latest):
+Native Windows is a first-class host (detected as the `windows` host class). The
+`genv` binary is not yet published to winget/scoop/choco as an install channel, so
+download the Windows binary from [Releases](https://github.com/ks1686/genv/releases/latest):
 
 ```powershell
 Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 ```
 
-Once installed, `genv` on native Windows manages packages via `winget`, `scoop`, and `choco` (whichever are present), plus `bun`/`uv` for global installs.
+Once installed, `genv` on native Windows manages packages via `winget`, `scoop`, and `choco` (whichever are present), plus `bun`/`uv` for global installs. See the [Windows install guide](docs/windows-install.md) for a full walkthrough.
 
 ### Any platform — Go install
 
@@ -89,7 +91,7 @@ Once installed, `genv` on native Windows manages packages via `winget`, `scoop`,
 go install github.com/ks1686/genv@latest
 ```
 
-Requires Go 1.21+. The binary is placed in `$GOPATH/bin`.
+Requires Go 1.24+. The binary is placed in `$GOPATH/bin`.
 
 ---
 
@@ -109,7 +111,7 @@ Release binaries are signed with [cosign](https://docs.sigstore.dev/cosign/overv
 # Add packages — each one is tracked in genv.json and installed immediately
 genv add git
 genv add neovim --version "0.10.*"
-genv add firefox --manager flatpak:org.mozilla.firefox
+genv add firefox --manager brew:firefox
 
 # Bulk-adopt all packages already installed on this machine
 genv scan
@@ -193,9 +195,9 @@ When you run `genv apply`:
     {
       "id": "firefox",
       "managers": {
-        "flatpak": "org.mozilla.firefox",
         "brew": "firefox",
-        "snap": "firefox"
+        "snap": "firefox",
+        "winget": "Mozilla.Firefox"
       }
     }
   ],
@@ -293,7 +295,7 @@ When you run `genv apply`:
 | Command                                           | Description                                                            |
 | ------------------------------------------------- | ---------------------------------------------------------------------- |
 | `genv add <id> [flags]`                           | Add package to spec and install it now                                 |
-| `genv remove <id>`                                | Remove package from spec and uninstall it now (alias: `rm`)            |
+| `genv remove <id> [flags]`                        | Remove package from spec and uninstall it now (alias: `rm`)            |
 | `genv adopt <id> [flags]`                         | Track an already-installed package without reinstalling                |
 | `genv adopt --files [flags]`                      | Register already-correct `files` block entries into the lock without rewriting them |
 | `genv disown <id>`                                | Stop tracking a package without uninstalling it                        |
@@ -308,33 +310,51 @@ When you run `genv apply`:
 | `genv init [flags]`                               | Interactive wizard to create a new genv.json                           |
 | `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
-| `genv service <add\|remove\|start\|stop\|status>` | Manage declared user-space services                                    |
+| `genv service <add\|remove\|list\|start\|stop\|status>` | Manage declared user-space services (aliases: `rm`, `ls`)         |
 | `genv completion <bash\|zsh\|fish>`               | Print shell completion script                                          |
 | `genv clean [--dry-run]`                          | Clear the cache of all detected package managers                       |
 | `genv edit`                                       | Open genv.json in `$EDITOR`                                            |
-| `genv version`                                    | Show build version, commit, and date                                   |
+| `genv version`                                    | Show build version, commit, and date (alias: `--version`)              |
 | `genv help`                                       | Show help text                                                         |
 
-### `genv add` / `genv adopt` flags
+### `genv add` flags
 
 - `--version <ver>` — version constraint, e.g. `"0.10.*"`
 - `--prefer <mgr>` — preferred manager, e.g. `brew`
-- `--manager <mgr:name,...>` — manager-specific names, e.g. `flatpak:org.mozilla.firefox`
+- `--manager <mgr:name,...>` — manager-specific names, e.g. `winget:Mozilla.Firefox`
+- `--no-search` — skip the interactive package search and use the id as-is
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+
+### `genv adopt` flags
+
+- `--version <ver>` — version constraint, e.g. `"0.10.*"`
+- `--prefer <mgr>` — preferred manager, e.g. `brew`
+- `--manager <mgr:name,...>` — manager-specific names, e.g. `winget:Mozilla.Firefox`
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--files` — adopt matching `files` block entries into the lock without changing targets
+- `--json` — emit machine-readable JSON to stdout instead of human-readable text
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
 ### `genv apply` flags
 
 - `--dry-run` — print the reconcile plan without executing
+- `--force` — overwrite mismatched managed files
 - `--strict` — exit with an error if any package cannot be resolved
 - `--yes` — skip the confirmation prompt (for CI and scripts)
+- `--quiet` — suppress plan output (useful in scripts)
 - `--json` — emit machine-readable JSON to stdout instead of human-readable text
 - `--timeout <duration>` — per-subprocess deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
 ### `genv status` flags
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
 - `--files` — check the `files` block against the live filesystem instead of the spec-vs-lock diff
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
 ### `genv pull` flags
 
@@ -346,6 +366,15 @@ When you run `genv apply`:
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+
+### `genv upgrade` flags
+
+- `--dry-run` — print the upgrade commands without executing
+- `--yes` — skip the confirmation prompt
+- `--debug` — emit debug-level structured logs to stderr
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
 ### `genv clean` flags
 
@@ -368,9 +397,10 @@ genv service add syncthing --start "syncthing serve" --stop "pkill -f syncthing"
 genv service add postgresql --brew-formula postgresql@14
 ```
 
-### Common flag
+### Common flags
 
 - `--file <path>` — path to genv.json (default: `$XDG_CONFIG_HOME/genv/genv.json` or `~/.config/genv/genv.json`)
+- `--lock-file <path>` — path to the lock file (default: `genv.lock.json` in the genv config directory). Accepted by the spec-mutating and reconciling commands (`add`, `remove`, `adopt`, `disown`, `list`, `apply`, `scan`, `status`, `upgrade`).
 
 ---
 

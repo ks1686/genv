@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply scan status clean edit completion validate upgrade init version help
+        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade pull init env shell service version help
             return 1
         end
     end
@@ -15,6 +15,62 @@ function __fish_genv_using_command
         if [ $argv[1] = $cmd[2] ]
             return 0
         end
+    end
+    return 1
+end
+
+# True when 'genv <cmd>' is ready to complete a subcommand. Pass the command
+# followed by its known subcommands so partial current tokens still complete.
+function __fish_genv_at_subcommand
+    set -l tokens (commandline -opc)
+    if test (count $tokens) -ge 2
+        and test $tokens[2] = $argv[1]
+        if test (count $tokens) -eq 2
+            return 0
+        end
+        if not contains -- $tokens[3] $argv[2..-1]
+            return 0
+        end
+    end
+    return 1
+end
+
+# True when 'genv <cmd> <sub>' is present (argv[1]=cmd, argv[2]=sub).
+function __fish_genv_seen_sub
+    set -l tokens (commandline -opc)
+    if test (count $tokens) -ge 3
+        and test $tokens[2] = $argv[1]
+        and test $tokens[3] = $argv[2]
+        return 0
+    end
+    return 1
+end
+
+# True when 'genv <cmd> <sub>' is ready for a sub-subcommand. Pass the command,
+# subcommand, and then its known sub-subcommands.
+function __fish_genv_at_subsubcommand
+    set -l tokens (commandline -opc)
+    if test (count $tokens) -ge 3
+        and test $tokens[2] = $argv[1]
+        and test $tokens[3] = $argv[2]
+        if test (count $tokens) -eq 3
+            return 0
+        end
+        if not contains -- $tokens[4] $argv[3..-1]
+            return 0
+        end
+    end
+    return 1
+end
+
+# True when 'genv <cmd> <sub> <subsub>' is present.
+function __fish_genv_seen_subsub
+    set -l tokens (commandline -opc)
+    if test (count $tokens) -ge 4
+        and test $tokens[2] = $argv[1]
+        and test $tokens[3] = $argv[2]
+        and test $tokens[4] = $argv[3]
+        return 0
     end
     return 1
 end
@@ -48,14 +104,18 @@ complete -c genv -n __fish_genv_no_subcommand -f -a adopt -d 'Track an already-i
 complete -c genv -n __fish_genv_no_subcommand -f -a disown -d 'Stop tracking a package in genv.json without uninstalling it'
 complete -c genv -n __fish_genv_no_subcommand -f -a 'list ls' -d 'List all packages installed by genv'
 complete -c genv -n __fish_genv_no_subcommand -f -a apply -d 'Reconcile system state with genv.json'
+complete -c genv -n __fish_genv_no_subcommand -f -a edit -d 'Open genv.json in $EDITOR'
+complete -c genv -n __fish_genv_no_subcommand -f -a clean -d 'Clear the cache of all detected package managers'
 complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover all installed packages and bulk-adopt them into genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between genv.json, the lock file, and recorded versions'
-complete -c genv -n __fish_genv_no_subcommand -f -a clean -d 'Clear the cache of all detected package managers'
-complete -c genv -n __fish_genv_no_subcommand -f -a edit -d 'Open genv.json in $EDITOR'
 complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
+complete -c genv -n __fish_genv_no_subcommand -f -a pull -d 'Fetch the spec from a git repository and update genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a init -d 'Create a new genv.json interactively'
+complete -c genv -n __fish_genv_no_subcommand -f -a env -d 'Manage shell environment variables'
+complete -c genv -n __fish_genv_no_subcommand -f -a shell -d 'Manage shell aliases and config'
+complete -c genv -n __fish_genv_no_subcommand -f -a service -d 'Manage background services'
 complete -c genv -n __fish_genv_no_subcommand -f -a version -d 'Show genv build version information'
 complete -c genv -n __fish_genv_no_subcommand -f -a help -d 'Show this help text'
 
@@ -65,36 +125,89 @@ complete -c genv -l file -d 'Path to genv.json' -r
 # remove / rm / disown — complete positional arg with tracked package IDs
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' \
     -f -a '(__fish_genv_packages)' -d 'Tracked package'
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' \
+    -l lock-file -d 'Path to genv lock file' -r
+
+# list / ls
+complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_command ls' -l lock-file -d 'Path to genv lock file' -r
 
 # add / adopt
+complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l version -d 'Version constraint' -x
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' \
     -l prefer -d 'Preferred manager' -x -a '(__fish_genv_managers)'
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l manager -d 'Manager-specific names' -x
 complete -c genv -n '__fish_genv_using_command add' -l no-search -d 'Skip interactive package search'
 
+# adopt-only
+complete -c genv -n '__fish_genv_using_command adopt' -l host -d 'Host name for host-specific records' -x
+complete -c genv -n '__fish_genv_using_command adopt' -l files -d 'Adopt matching files block entries into the lock without changing targets'
+complete -c genv -n '__fish_genv_using_command adopt' -l json -d 'Emit machine-readable JSON to stdout'
+
 # upgrade — complete positional arg with tracked package IDs
 complete -c genv -n '__fish_genv_using_command upgrade' \
     -f -a '(__fish_genv_packages)' -d 'Tracked package'
+complete -c genv -n '__fish_genv_using_command upgrade' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
 complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
 complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
+complete -c genv -n '__fish_genv_using_command upgrade' -l host -d 'Host name for host-specific records' -x
 
 # apply
+complete -c genv -n '__fish_genv_using_command apply' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command apply' -l dry-run -d 'Print the reconcile plan without executing'
+complete -c genv -n '__fish_genv_using_command apply' -l force -d 'Overwrite mismatched managed files'
 complete -c genv -n '__fish_genv_using_command apply' -l strict -d 'Exit with an error if any package cannot be resolved'
 complete -c genv -n '__fish_genv_using_command apply' -l yes -d 'Skip the confirmation prompt'
 complete -c genv -n '__fish_genv_using_command apply' -l quiet -d 'Suppress plan output'
 complete -c genv -n '__fish_genv_using_command apply' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command apply' -l timeout -d 'Per-subprocess timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
+complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
 
 # status / scan
+complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l debug -d 'Emit debug-level structured logs to stderr'
+complete -c genv -n '__fish_genv_using_command status' -l files -d 'Check files block against the live filesystem only'
+complete -c genv -n '__fish_genv_using_command status' -l host -d 'Host name for host-specific records' -x
 
 # clean
 complete -c genv -n '__fish_genv_using_command clean' -l dry-run -d 'Print the clean commands without executing'
+
+# pull
+complete -c genv -n '__fish_genv_using_command pull' -l url -d 'Override the repository URL' -x
+complete -c genv -n '__fish_genv_using_command pull' -l ref -d 'Override the repository ref' -x
+complete -c genv -n '__fish_genv_using_command pull' -l dry-run -d 'Print what would be pulled without writing'
+
+# env subcommands
+complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a set -d 'Add or update a variable in the spec'
+complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a unset -d 'Remove a variable from the spec'
+complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a 'list ls' -d 'Show all declared variables'
+complete -c genv -n '__fish_genv_seen_sub env set' -l sensitive -d 'Mark value as sensitive (redacted in output and logs)'
+complete -c genv -n '__fish_genv_seen_sub env list; or __fish_genv_seen_sub env ls' -l json -d 'Emit machine-readable JSON to stdout'
+
+# shell subcommands
+complete -c genv -n '__fish_genv_at_subcommand shell alias status edit' -f -a alias -d 'Add, update, or remove a shell alias'
+complete -c genv -n '__fish_genv_at_subcommand shell alias status edit' -f -a status -d 'Show shell config drift'
+complete -c genv -n '__fish_genv_at_subcommand shell alias status edit' -f -a edit -d 'Open genv.json in $EDITOR'
+complete -c genv -n '__fish_genv_at_subsubcommand shell alias set unset' -f -a set -d 'Add or update an alias'
+complete -c genv -n '__fish_genv_at_subsubcommand shell alias set unset' -f -a unset -d 'Remove an alias'
+complete -c genv -n '__fish_genv_seen_subsub shell alias set' -l shell -d 'Target shell' -x -a 'bash zsh fish'
+complete -c genv -n '__fish_genv_seen_sub shell status' -l json -d 'Emit machine-readable JSON to stdout'
+
+# service subcommands
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a add -d 'Add or update a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a 'remove rm' -d 'Remove a service from the spec'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a 'list ls' -d 'Show all declared services'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a start -d 'Start a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a stop -d 'Stop a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a status -d 'Show service running status'
+complete -c genv -n '__fish_genv_seen_sub service add' -l start -d 'Command to start the service' -x
+complete -c genv -n '__fish_genv_seen_sub service add' -l stop -d 'Command to stop the service' -x
+complete -c genv -n '__fish_genv_seen_sub service add' -l restart -d 'Command to restart the service' -x
+complete -c genv -n '__fish_genv_seen_sub service add' -l status -d 'Command to check service status' -x
+complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homebrew formula to manage via brew services (macOS only)' -x
 
 # completion
 complete -c genv -n '__fish_genv_using_command completion' -f -a 'bash zsh fish' -d 'Shell type'
