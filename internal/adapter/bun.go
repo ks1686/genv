@@ -119,16 +119,6 @@ func bunBaseName(pkgName string) string {
 	return pkgName
 }
 
-// parseBunList extracts package base names from `bun pm ls --global` output.
-func parseBunList(lines []string) []string {
-	entries := parseBunEntries(lines)
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.name)
-	}
-	return names
-}
-
 func parseBunEntries(lines []string) []bunEntry {
 	var entries []bunEntry
 	for _, line := range lines {
