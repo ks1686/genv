@@ -117,7 +117,7 @@ func TestParseBunListLine(t *testing.T) {
 	}
 }
 
-func TestParseBunList(t *testing.T) {
+func TestParseBunEntries(t *testing.T) {
 	lines := []string{
 		"/Users/ks1686/.cache/.bun/install/global node_modules (164)",
 		"├── @colbymchenry/codegraph@1.0.1",
@@ -126,20 +126,20 @@ func TestParseBunList(t *testing.T) {
 		"├── ajv-formats@3.0.1",
 		"└── cf@0.0.6",
 	}
-	got := parseBunList(lines)
-	want := []string{"@colbymchenry/codegraph", "add-gitignore", "ajv", "ajv-formats", "cf"}
+	got := parseBunEntries(lines)
+	want := []bunEntry{{"@colbymchenry/codegraph", "1.0.1"}, {"add-gitignore", "1.1.1"}, {"ajv", "8.20.0"}, {"ajv-formats", "3.0.1"}, {"cf", "0.0.6"}}
 	if !slices.Equal(got, want) {
-		t.Errorf("parseBunList = %v, want %v", got, want)
+		t.Errorf("parseBunEntries = %v, want %v", got, want)
 	}
 }
 
-func TestParseBunList_Empty(t *testing.T) {
+func TestParseBunEntries_Empty(t *testing.T) {
 	lines := []string{
 		"/Users/ks1686/.cache/.bun/install/global node_modules (0)",
 	}
-	got := parseBunList(lines)
+	got := parseBunEntries(lines)
 	if len(got) != 0 {
-		t.Errorf("parseBunList(empty) = %v, want empty", got)
+		t.Errorf("parseBunEntries(empty) = %v, want empty", got)
 	}
 }
 
