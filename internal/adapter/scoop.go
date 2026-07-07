@@ -38,12 +38,12 @@ func (Scoop) PlanClean() [][]string {
 // installed-apps list rather than relying on a per-package exit code (scoop
 // list <app> does not reliably signal absence via exit status).
 func (Scoop) Query(pkgName string) (bool, error) {
-	installed, err := Scoop{}.ListInstalled()
+	entries, err := Scoop{}.listEntries()
 	if err != nil {
 		return false, err
 	}
-	for _, name := range installed {
-		if name == pkgName {
+	for _, entry := range entries {
+		if entry.name == pkgName {
 			return true, nil
 		}
 	}
@@ -70,29 +70,48 @@ func (Scoop) Search(query string) ([]string, error) {
 // simple first-field split per data row is sufficient once escape codes and
 // header/separator/blank lines are stripped.
 func (Scoop) ListInstalled() ([]string, error) {
-	lines, err := runListOutput("scoop", "list")
+	entries, err := Scoop{}.listEntries()
 	if err != nil {
 		return nil, err
 	}
-	rows := parseScoopList(lines)
-	names := make([]string, 0, len(rows))
-	for _, r := range rows {
-		names = append(names, r.name)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
 	}
 	return names, nil
 }
 
 func (Scoop) QueryVersion(pkgName string) (string, error) {
-	lines, err := runListOutput("scoop", "list")
+	entries, err := Scoop{}.listEntries()
 	if err != nil {
 		return "", err
 	}
-	for _, r := range parseScoopList(lines) {
-		if r.name == pkgName {
-			return r.version, nil
+	for _, entry := range entries {
+		if entry.name == pkgName {
+			return entry.version, nil
 		}
 	}
 	return "", nil
+}
+
+func (Scoop) ListInstalledVersions() (map[string]string, error) {
+	entries, err := Scoop{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		versions[entry.name] = entry.version
+	}
+	return versions, nil
+}
+
+func (Scoop) listEntries() ([]scoopEntry, error) {
+	lines, err := runListOutput("scoop", "list")
+	if err != nil {
+		return nil, err
+	}
+	return parseScoopList(lines), nil
 }
 
 type scoopEntry struct {
