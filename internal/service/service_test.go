@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -301,6 +302,42 @@ func TestSystemdUnitName_PathTraversal(t *testing.T) {
 	plistName := launchdPlistName(name)
 	if strings.Contains(plistName, "/") || strings.Contains(plistName, "\\") {
 		t.Errorf("launchdPlistName(%q) = %q; want no path separator characters", name, plistName)
+	}
+}
+
+func TestHomeDirUsesUserHomeDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME is not the source of truth for os.UserHomeDir on Windows")
+	}
+
+	want := t.TempDir()
+	t.Setenv("HOME", want)
+
+	got, err := homeDir()
+	if err != nil {
+		t.Fatalf("homeDir() returned unexpected error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("homeDir() = %q, want %q", got, want)
+	}
+}
+
+func TestHomeDirRejectsEmptyHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME is not the source of truth for os.UserHomeDir on Windows")
+	}
+
+	t.Setenv("HOME", "")
+
+	got, err := homeDir()
+	if err == nil {
+		t.Fatalf("homeDir() = %q, nil; want error", got)
+	}
+	if got != "" {
+		t.Fatalf("homeDir() got home %q with error %v, want empty home", got, err)
+	}
+	if !strings.Contains(err.Error(), "home directory") {
+		t.Fatalf("homeDir() error = %q, want home directory context", err)
 	}
 }
 
