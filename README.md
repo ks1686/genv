@@ -101,7 +101,7 @@ Verify the installation:
 genv version
 ```
 
-Release binaries are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. The signature and certificate are attached to every GitHub release alongside `checksums.txt`.
+Release binaries are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. The Sigstore bundle is attached to every GitHub release alongside `checksums.txt`.
 
 ---
 

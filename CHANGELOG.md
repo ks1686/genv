@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v2.3.1 - 2026-07-07
+
 ### Changed
 
 - Rewrote repository history to preserve only the active contributors, Karim Smires and Omar Waseem, while removing bot/AI co-author trailers from commits.
@@ -18,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Service unit/plist path construction now resolves the user home directory through `os.UserHomeDir()` instead of directly reading `HOME`.
 - File-apply summary errors now preserve underlying errors for `errors.Is` / `errors.As` without changing the human-readable summary.
 - Built-in help, bash/zsh/fish completions, and CI metadata now reflect the current command set and platform support.
+- Release checksum signing now uses cosign v3's Sigstore bundle output instead of the removed separate certificate/signature output flags.
 
 ### Documentation
 
