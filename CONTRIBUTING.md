@@ -1,58 +1,61 @@
 # Contributing to genv
 
-Thank you for your interest in contributing to `genv`!
-
-The project has reached v0.2.0 with all core milestones (M1–M5) complete. We are now working toward v1.0.0, which focuses on API stability (M6) and developer experience (M7). Contributions in both areas are welcome.
-
----
-
-## Where to focus
-
-**Bug reports and bug fixes** are always welcome.
-If something crashes, produces wrong output, or behaves unexpectedly, please open an issue or submit a fix.
-
-**Performance optimizations** are a great way to help, especially for the resolver and adapter detection path (target: <200ms cold start).
-
-**M6 and M7 feature work** is now open for community contributions. See [ROADMAP.md](ROADMAP.md) for the unchecked items. Good first targets:
-
-- Shell completions (`genv completion <shell>`) — self-contained, no core changes needed.
-- `genv validate` — validate `genv.json` without installing anything; straightforward CLI addition.
-- Test coverage improvements — adding table-driven tests for uncovered code paths.
-- Fuzz tests for the version constraint logic in `internal/version`.
-
-**Adapter improvements** — if a package manager's install/uninstall/query behavior is wrong on your distro, fix the adapter in `internal/adapter/` and add a test.
+`genv` is a personal, solo-maintained project. I build it primarily to manage my
+own machines, and I'm sharing it in case it's useful to others. There is no broad
+call for contributors — but bug reports are genuinely appreciated, and the notes
+below explain how to file a good one and what to expect.
 
 ---
 
-## How to contribute
+## Maintainer
 
-1. **Check existing issues** — search [Issues](https://github.com/ks1686/genv/issues) before opening a new one to avoid duplicates.
-2. **Open an issue first** — for anything beyond a trivial fix, open an issue to discuss the problem before sending a PR.
-3. **Fork and branch** — work in a feature branch off `main`:
-   ```bash
-   git checkout -b fix/short-description
-   ```
-4. **Write or update tests** — all changes must include tests. Run the existing suite with:
-   ```bash
-   go test ./...
-   ```
-5. **Keep the diff small** — one logical change per PR makes review faster.
-6. **Describe your change** — explain what broke and how you fixed it in the PR description. Link the related issue.
-7. **Update the roadmap checklist** — if your PR completes a checklist item in ROADMAP.md, check it off in the same PR.
-8. **Submit a pull request** — a maintainer will review and may ask for changes.
+`genv` is maintained by [Karim Smires](https://github.com/ks1686).
+
+Because it is a personal tool, I make no promises about response times, feature
+requests, or accepting external pull requests. I may decline changes that don't
+fit how I use `genv`, even if they're well-made — please don't take it personally.
+
+## Contributors
+
+- [Omar Waseem](https://github.com/OWaseem) — a friend and trusted contributor
+  who added the WSL2 host detection and PATH sanitization, the macOS
+  Homebrew/cask fixes and integration tests, the `brew services` wrapper for
+  macOS-managed services, and the original macOS and WSL2 install guides. Omar
+  contributes by arrangement rather than through the open PR queue.
 
 ---
 
-## Bug reports
+## Reporting bugs
 
-A good bug report includes:
+Bug reports are the most useful thing you can send. If `genv` crashes, produces
+wrong output, or behaves unexpectedly, please [open an issue](https://github.com/ks1686/genv/issues).
+
+Search [existing issues](https://github.com/ks1686/genv/issues) first to avoid
+duplicates. A good bug report includes:
 
 - `genv version` output
-- Operating system and package manager(s) in use
+- Operating system and package manager(s) in use (macOS / Arch / WSL2 / native Windows, and which of `pacman`/`paru`/`yay`/`snap`/`brew`/`linuxbrew`/`bun`/`uv`/`winget`/`scoop`/`choco`)
 - The `genv.json` content (or a minimal reproduction)
 - The exact command you ran
 - The actual output vs. what you expected
 - If possible, re-run with `--debug` and include the debug output
+
+Clear reproductions get fixed fastest.
+
+---
+
+## Pull requests
+
+Since this is a personal project, please **open an issue before sending a PR** so
+we can agree the change is a fit before you spend time on it. Unsolicited PRs may
+sit or be declined.
+
+If we've agreed on a change:
+
+- Work in a feature branch off `main`.
+- Include tests for any behavior change (`go test ./...`).
+- Keep the diff small and focused — one logical change per PR.
+- Describe what broke and how you fixed it, and link the related issue.
 
 ---
 
@@ -85,4 +88,5 @@ go test -tags integration ./internal/adapter/
 
 ## Questions
 
-If you are unsure whether something is a bug or a feature, open a discussion or an issue and ask. We are happy to clarify.
+If you're unsure whether something is a bug or intended behavior, open an issue
+and ask. I'm happy to clarify, time permitting.

@@ -47,14 +47,46 @@ genv version
 
 ## Step 5 — Create your config
 
+genv classifies WSL2 as the `wsl2` host, and WSL2 also matches records aimed at
+`arch` (host inheritance), so `host` selectors like `["arch", "wsl2"]` both apply
+here. Manager availability is detected separately from the host class.
+
+**Ubuntu / non-Arch WSL2** installs through `snap` or `linuxbrew` (Homebrew on
+Linux). genv does not use `apt`:
+
 ```bash
 mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
-  "schemaVersion": "1",
+  "schemaVersion": "5",
   "packages": [
     {
       "id": "jq",
-      "prefer": "apt"
+      "prefer": "snap",
+      "managers": {
+        "snap": "jq",
+        "linuxbrew": "jq"
+      }
+    }
+  ]
+}
+EOF
+```
+
+> Snap needs `snapd`, which relies on systemd being enabled in WSL2. If that is
+> not set up, install [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux)
+> and use `"prefer": "linuxbrew"` instead.
+
+**Arch-based WSL2** (e.g. ArchWSL) supports `pacman` plus the `paru`/`yay` AUR
+helpers, exactly like a native Arch host. A bare package id resolves
+automatically:
+
+```bash
+mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
+{
+  "schemaVersion": "5",
+  "packages": [
+    {
+      "id": "jq"
     }
   ]
 }
@@ -70,7 +102,7 @@ genv apply --dry-run   # preview what will happen
 genv apply             # apply it
 ```
 
-Confirm it installed via apt (not a Windows binary):
+Confirm it installed via a Linux manager (not a Windows binary):
 
 ```bash
 jq --version
@@ -82,7 +114,7 @@ Confirm genv tracked it:
 genv list
 ```
 
-- `apply` output should show `apt` as the adapter ✅
+- `apply` output should show `snap` or `linuxbrew` as the adapter (`pacman`/`paru`/`yay` on Arch-based WSL2) ✅
 - `jq --version` should print a version number ✅
 - `genv list` should show `jq` as an installed package ✅
 

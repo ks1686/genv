@@ -41,7 +41,7 @@ genv version
 ```bash
 mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
-  "schemaVersion": "1",
+  "schemaVersion": "5",
   "packages": []
 }
 EOF

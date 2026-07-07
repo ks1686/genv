@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-**genv** is a Go CLI tool that tracks, syncs, and reproduces software environments across Linux, macOS, and WSL2. It sits as a thin layer on top of existing package managers (brew, paru, yay, snap, linuxbrew) and uses a declarative model: edit `genv.json`, run `genv apply`, and the tool makes reality match the spec.
+**genv** is a Go CLI tool that tracks, syncs, and reproduces software environments across Linux, macOS, native Windows, and WSL2. It sits as a thin layer on top of existing package managers (`pacman`, `paru`, `yay`, `snap`, `brew`, `linuxbrew`, `bun`, `uv`, `winget`, `scoop`, `choco`) and uses a declarative model: edit `genv.json`, run `genv apply`, and the tool makes reality match the spec.
 
 ## Architecture
 
 ### Core Packages
 
-- **`internal/adapter`** — Adapter interface and implementations for each package manager. Each adapter defines `Name()`, `Available()`, `NormalizeID()`, `PlanInstall()`, `PlanUninstall()`, `PlanUpgrade()`, `PlanClean()`, `Query()`, `ListInstalled()`, and `QueryVersion()`. Optional `Searchable` extension for repository search.
+- **`internal/adapter`** — Adapter interface and implementations for each package manager. Each adapter defines `Name()`, `Available()`, `NormalizeID()`, `PlanInstall()`, `PlanUninstall()`, `PlanUpgrade()`, `PlanClean()`, `Query()`, `ListInstalled()`, and `QueryVersion()`. Optional `Searchable` extension for repository search and optional `VersionLister` extension for managers whose list command reports installed versions.
 - **`internal/resolver`** — Detects available managers on the host and resolves packages to concrete install/uninstall actions. Entry points: `Detect()`, `ResolveOne()`, `Reconcile()`, `ExecuteApply()`.
 - **`internal/commands`** — Pure helper functions that mutate `schema.GenvFile` in memory (`Add`, `Remove`, `EnvSet`, `EnvUnset`, `ShellAliasSet`, `ShellAliasUnset`, `ServiceAdd`, etc.). These are library functions, not CLI command entry points.
 - **`internal/schema`** — `GenvFile` struct, JSON schema, validation logic, and `KnownManagers` registry.
@@ -66,7 +66,7 @@ Current top-level commands (see `main.go:81-127`):
 
 ## The Adapter Interface
 
-Every package manager adapter lives in `internal/adapter/` and implements the `Adapter` interface defined in `internal/adapter/adapter.go:28-71`:
+Every package manager adapter lives in `internal/adapter/` and implements the `Adapter` interface defined in `internal/adapter/adapter.go`:
 
 ```go
 type Adapter interface {
@@ -83,7 +83,7 @@ type Adapter interface {
 }
 ```
 
-Optional `Searchable` is defined at `internal/adapter/adapter.go:17-23`.
+Optional `Searchable` and `VersionLister` extensions are defined in `internal/adapter/adapter.go`.
 
 Adapters are registered in priority order in `internal/adapter/adapter.go:76-82` (`var All`). `adapter.ByName` looks up an adapter by its `Name()`.
 
@@ -101,7 +101,7 @@ Adapters are registered in priority order in `internal/adapter/adapter.go:76-82`
 | File | Purpose |
 |------|---------|
 | `main.go` | CLI entry point and manual command dispatch (`main.go:81-127`) |
-| `go.mod` | Module: `github.com/ks1686/genv`, Go 1.26.1 |
+| `go.mod` | Module: `github.com/ks1686/genv`, Go 1.24.3 |
 | `Makefile` | Build, test, CI, lint, benchmark targets |
 | `schema/v1/genv.json` | JSON Schema for `genv.json` validation |
 | `.goreleaser.yml` | Release build configuration |
@@ -132,7 +132,7 @@ make fmt                      # gofmt -w .
 
 ## Coding Conventions
 
-- **Go version**: 1.26.1
+- **Go version**: 1.24.3 (see `go.mod`)
 - **Error handling**: Return `error` values; wrap with context using `fmt.Errorf("...: %w", err)`
 - **Logging**: Use `log/slog` for structured logging; never `fmt.Println` in library code
 - **Tests**: Table-driven tests with `t.Run`. Use `testing/fstest` for filesystem mocks where possible.
@@ -151,9 +151,11 @@ make fmt                      # gofmt -w .
 
 Tag-driven GitHub releases via `.github/workflows/release.yml`. See `RELEASING.md` for full process.
 
-## CodeGraph
+## CodeGraph (optional)
 
-This repo has a `.codegraph/` index. Use it before grep/find when exploring code:
+This repo does **not** ship a `.codegraph/` index today — treat CodeGraph as an
+optional local aid, not part of the checked-in tooling. If you choose to build an
+index locally, you can then explore code with it before falling back to grep/find:
 
 ```bash
 codegraph explore "resolver Detect"     # symbols + call paths
@@ -161,4 +163,5 @@ codegraph node resolver.go              # full file with dependents
 codegraph impact "Adapter.Available"    # blast radius of a change
 ```
 
-The post-commit hook auto-syncs the index after each commit.
+If you wire up a post-commit hook to auto-sync the index, that too is a local,
+opt-in convenience and is not configured in this repository.
