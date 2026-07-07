@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased — v2.2.0
+## v2.2.0 - 2026-07-06
 
 Ships the `tc-genv-migration` surface: schema v5 (`files` + `hooks` blocks, `host` selector, `repo` field), three new adapters, and the commands needed to move a dotfiles repo from shell scripts to a declarative `genv.json`. This is a **scoped subset** of Milestone M13 (hooks and lifecycle scripts) — see ROADMAP.md M13 for what's shipped versus still open (no `add`/`remove` hook wiring, no `GENV_EVENT`/`GENV_INSTALLED`/`GENV_REMOVED` env context, no `--no-hooks` flag, no script-file hook references, no hook-specific timeout).
 
