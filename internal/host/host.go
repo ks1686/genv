@@ -29,6 +29,7 @@ func Current() (string, error) {
 //   - macOS -> "macos"
 //   - WSL2  -> "wsl2"
 //   - Arch Linux -> "arch"
+//   - Windows -> "windows" (the native Windows host, not WSL2)
 //
 // Callers that receive an error should log a warning and treat all non-empty
 // host predicates as non-matching.
@@ -39,6 +40,8 @@ func Classify() (string, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		return "macos", nil
+	case "windows":
+		return "windows", nil
 	case "linux":
 		if isWSL() {
 			return "wsl2", nil

@@ -111,6 +111,10 @@ func TestClassify_ReturnsKnownClassForCurrentPlatform(t *testing.T) {
 		if h != "arch" && h != "wsl2" {
 			t.Fatalf("Classify() = %q, want arch or wsl2", h)
 		}
+	case "windows":
+		if h != "windows" {
+			t.Fatalf("Classify() = %q, want %q", h, "windows")
+		}
 	default:
 		t.Fatalf("unexpected classified host %q on GOOS %q", h, runtime.GOOS)
 	}

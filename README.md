@@ -29,11 +29,14 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 
 ## Supported platforms and package managers
 
-| Platform | Managers                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------------- |
-| Linux    | `paru`, `yay` (AUR), `snap`, `linuxbrew`                                                            |
-| macOS    | `brew` (formulae + casks)                                                                           |
-| Windows  | WSL2 (targets the Linux userland inside WSL2)                                                       |
+| Platform          | Managers                                                     |
+| ----------------- | -------------------------------------------------------------- |
+| Linux (Arch)      | `pacman` (official repos), `paru`/`yay` (AUR)                |
+| Linux (other)     | `snap`, `linuxbrew`                                           |
+| macOS             | `brew` (formulae + casks)                                     |
+| Windows (native)  | `winget`, `scoop`, `choco`                                    |
+| WSL2              | Targets the Linux userland inside WSL2 (treated as `arch`)    |
+| Any of the above  | `bun` (global installs), `uv` (global tool installs)          |
 
 `genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 
@@ -68,6 +71,17 @@ sudo mv genv /usr/local/bin/
 ### Windows (WSL2)
 
 Use the Linux instructions above inside your WSL2 shell. See the [WSL2 install guide](docs/wsl2-install.md) for a full walkthrough.
+
+### Windows (native)
+
+Not yet published to winget/scoop/choco. Download the Windows binary from [Releases](https://github.com/ks1686/genv/releases/latest):
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_windows_amd64.zip -OutFile genv.zip
+Expand-Archive genv.zip -DestinationPath .
+```
+
+Once installed, `genv` on native Windows manages packages via `winget`, `scoop`, and `choco` (whichever are present), plus `bun`/`uv` for global installs.
 
 ### Any platform — Go install
 

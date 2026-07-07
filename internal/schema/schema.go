@@ -42,6 +42,9 @@ var KnownManagers = map[string]bool{
 	"pacman":    true,
 	"bun":       true,
 	"uv":        true,
+	"winget":    true,
+	"scoop":     true,
+	"choco":     true,
 }
 
 // HostPredicate selects which host(s) a record applies to. It unmarshals from

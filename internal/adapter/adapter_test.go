@@ -136,6 +136,9 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"winget", "winget"},
+		{"scoop", "scoop"},
+		{"choco", "choco"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -181,6 +184,9 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"winget", "winget"},
+		{"scoop", "scoop"},
+		{"choco", "choco"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -584,6 +590,9 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"winget", "winget"},
+		{"scoop", "scoop"},
+		{"choco", "choco"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -665,6 +674,9 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"pacman", 1},
 		{"linuxbrew", 1},
 		{"bun", 1},
+		{"winget", 0},
+		{"scoop", 1},
+		{"choco", 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -694,6 +706,8 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
 		{"uv", "uv"},
+		{"scoop", "scoop"},
+		{"choco", "choco"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -732,6 +746,9 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"pacman", "-S"},
 		{"linuxbrew", "install"},
 		{"bun", "add"},
+		{"winget", "install"},
+		{"scoop", "install"},
+		{"choco", "install"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -754,6 +771,8 @@ func TestPlanInstall_ContainsNoninteractiveFlag(t *testing.T) {
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
 		{"pacman", "--noconfirm"},
+		{"winget", "--silent"},
+		{"choco", "-y"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -785,6 +804,9 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"pacman", "-Rcs"},
 		{"linuxbrew", "uninstall"},
 		{"bun", "remove"},
+		{"winget", "uninstall"},
+		{"scoop", "uninstall"},
+		{"choco", "uninstall"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -807,6 +829,8 @@ func TestPlanUninstall_ContainsNoninteractiveFlag(t *testing.T) {
 		{"paru", "--noconfirm"},
 		{"yay", "--noconfirm"},
 		{"pacman", "--noconfirm"},
+		{"winget", "--silent"},
+		{"choco", "-y"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
