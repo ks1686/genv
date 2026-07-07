@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 )
@@ -1017,6 +1018,81 @@ func TestScanCmd_Debug_NoCrash(t *testing.T) {
 	code := run([]string{"scan", "--file", path, "--debug"})
 	if code != exitOK {
 		t.Errorf("scan --debug: expected exitOK (%d), got %d", exitOK, code)
+	}
+}
+
+type scanVersionListerAdapter struct {
+	listCalls         int
+	versionListCalls  int
+	queryVersionCalls int
+}
+
+func (a *scanVersionListerAdapter) Name() string { return "batch" }
+func (a *scanVersionListerAdapter) Available() bool {
+	return true
+}
+func (a *scanVersionListerAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
+	return id, false
+}
+func (a *scanVersionListerAdapter) PlanInstall(pkgName string) []string   { return []string{"true"} }
+func (a *scanVersionListerAdapter) PlanUninstall(pkgName string) []string { return []string{"true"} }
+func (a *scanVersionListerAdapter) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
+func (a *scanVersionListerAdapter) PlanClean() [][]string                 { return nil }
+func (a *scanVersionListerAdapter) Query(pkgName string) (bool, error)    { return true, nil }
+func (a *scanVersionListerAdapter) ListInstalled() ([]string, error) {
+	a.listCalls++
+	return []string{"alpha", "beta"}, nil
+}
+func (a *scanVersionListerAdapter) QueryVersion(pkgName string) (string, error) {
+	a.queryVersionCalls++
+	return "fallback", nil
+}
+func (a *scanVersionListerAdapter) ListInstalledVersions() (map[string]string, error) {
+	a.versionListCalls++
+	return map[string]string{"beta": "2.0.0", "alpha": "1.0.0"}, nil
+}
+
+func TestScanCmd_UsesVersionListerWithoutPerPackageVersionQueries(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	originalAll := adapter.All
+	batch := &scanVersionListerAdapter{}
+	adapter.All = []adapter.Adapter{batch}
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	code := run([]string{"scan", "--file", path})
+	if code != exitOK {
+		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if batch.versionListCalls != 1 {
+		t.Fatalf("ListInstalledVersions calls = %d, want 1", batch.versionListCalls)
+	}
+	if batch.listCalls != 0 {
+		t.Fatalf("ListInstalled calls = %d, want 0", batch.listCalls)
+	}
+	if batch.queryVersionCalls != 0 {
+		t.Fatalf("QueryVersion calls = %d, want 0", batch.queryVersionCalls)
+	}
+
+	lockPath := lockPathForSpec(path, "")
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	versions := map[string]string{}
+	for _, pkg := range lf.Packages {
+		versions[pkg.ID] = pkg.InstalledVersion
+	}
+	want := map[string]string{"alpha": "1.0.0", "beta": "2.0.0"}
+	if len(versions) != len(want) {
+		t.Fatalf("versions = %#v, want %#v", versions, want)
+	}
+	for id, version := range want {
+		if versions[id] != version {
+			t.Fatalf("version for %s = %q, want %q (all versions %#v)", id, versions[id], version, versions)
+		}
 	}
 }
 

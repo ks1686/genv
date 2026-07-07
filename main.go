@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -31,6 +32,14 @@ import (
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/shellcfg"
 )
+
+func runForegroundCommand(argv []string) error {
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
 
 //go:embed completions/genv.bash
 var completionBash string
@@ -371,11 +380,7 @@ func addCmd(args []string) int {
 
 	fprintf(os.Stdout, "added %s — installing via %s\n", id, action.Manager)
 	fprintf(os.Stdout, "\n==> %s\n", strings.Join(action.Cmd, " "))
-	cmd := exec.Command(action.Cmd[0], action.Cmd[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := runForegroundCommand(action.Cmd); err != nil {
 		// Installation failure is non-fatal: the spec was already updated.
 		// The user can run 'genv apply' to retry.
 		fprintf(os.Stderr, "genv: installation failed: %v\n", err)
@@ -489,11 +494,7 @@ func runRemove(file, id, lockFile string) int {
 	uninstallCmd := mgr.PlanUninstall(locked.PkgName)
 	fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
 	fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
-	cmd := exec.Command(uninstallCmd[0], uninstallCmd[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	uninstallErr := cmd.Run()
+	uninstallErr := runForegroundCommand(uninstallCmd)
 	if uninstallErr != nil {
 		fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
 		// Still update the lock — the package is removed from the spec.
@@ -502,11 +503,7 @@ func runRemove(file, id, lockFile string) int {
 	// Cache clean.
 	for _, cleanCmd := range mgr.PlanClean() {
 		fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-		c := exec.Command(cleanCmd[0], cleanCmd[1:]...)
-		c.Stdin = os.Stdin
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		if err := c.Run(); err != nil {
+		if err := runForegroundCommand(cleanCmd); err != nil {
 			fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
 		}
 	}
@@ -2037,10 +2034,24 @@ func scanCmd(args []string) int {
 		if !available[a.Name()] {
 			continue
 		}
-		pkgs, err := a.ListInstalled()
-		if err != nil {
-			fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
-			continue
+		versions := map[string]string(nil)
+		var pkgs []string
+		if versionLister, ok := a.(adapter.VersionLister); ok {
+			if listedVersions, err := versionLister.ListInstalledVersions(); err == nil {
+				versions = listedVersions
+				for pkgName := range versions {
+					pkgs = append(pkgs, pkgName)
+				}
+				sort.Strings(pkgs)
+			}
+		}
+		if pkgs == nil {
+			listed, err := a.ListInstalled()
+			if err != nil {
+				fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
+				continue
+			}
+			pkgs = listed
 		}
 		for _, pkgName := range pkgs {
 			if seen[pkgName] {
@@ -2067,7 +2078,9 @@ func scanCmd(args []string) int {
 				Manager: a.Name(),
 				PkgName: pkgName,
 			}
-			if v, err := a.QueryVersion(pkgName); err == nil {
+			if v, ok := versions[pkgName]; ok {
+				lp.InstalledVersion = v
+			} else if v, err := a.QueryVersion(pkgName); err == nil {
 				lp.InstalledVersion = v
 			}
 			lf.Packages = append(lf.Packages, lp)
@@ -2950,6 +2963,9 @@ Commands:
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
   env         Manage shell environment variables (set, unset, list)
+  shell       Manage shell aliases and shell config drift
+  service     Manage user-space services
+  pull        Fetch genv.json from the configured spec repository
   completion  Print the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
