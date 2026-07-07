@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"maps"
 	"os"
 	"testing"
 )
@@ -131,6 +132,44 @@ EOF`)
 	}
 	if ver != "0.142.5" {
 		t.Errorf("QueryVersion: got %q, want %q", ver, "0.142.5")
+	}
+}
+
+func TestChoco_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) {
+	// Given
+	counterPath := t.TempDir() + "/count"
+	t.Setenv("GENV_FAKE_COUNTER", counterPath)
+	installFakeBinary(t, "choco", `if [ "$1" = "list" ]; then
+  count=$(cat "$GENV_FAKE_COUNTER" 2>/dev/null || printf 0)
+  count=$((count + 1))
+  printf "%s" "$count" > "$GENV_FAKE_COUNTER"
+  cat <<'EOF'
+`+chocoListSample+`
+EOF
+fi`)
+
+	// When
+	versions, err := Choco{}.ListInstalledVersions()
+
+	// Then
+	if err != nil {
+		t.Fatalf("ListInstalledVersions: unexpected error: %v", err)
+	}
+	want := map[string]string{
+		"chocolatey":                "2.7.3",
+		"chocolatey-core.extension": "1.4.0",
+		"codex":                     "0.142.5",
+		"dotnet-8.0-desktopruntime": "8.0.28",
+	}
+	if !maps.Equal(versions, want) {
+		t.Errorf("ListInstalledVersions: got %v, want %v", versions, want)
+	}
+	count, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("counter: %v", err)
+	}
+	if string(count) != "1" {
+		t.Errorf("choco list exec count = %q, want 1", string(count))
 	}
 }
 
