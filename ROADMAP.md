@@ -353,7 +353,7 @@ Acceptance criteria:
 
 ## Milestone M13 - Hooks and Lifecycle Scripts
 
-Status: shipped by `tc-genv-migration` (see Migration Surface below and `~/terminal-config/.omo/plans/tc-genv-migration.md`).
+Status: a **scoped subset** shipped by `tc-genv-migration` (see Migration Surface below and `~/terminal-config/.omo/plans/tc-genv-migration.md`, Todo 5) — enough to replace topgrade's system-wide upgrade step and the terminal-config install/update lifecycle, not the full milestone below. `internal/hooks/executor.go` implements exactly three fixed phases (`pre.upgrade`, `post.apply`, `post.upgrade`) with host filtering and inline shell commands only; the remaining checklist items are still open.
 
 Goal: Allow users to declare shell hooks that run before or after specific genv lifecycle events, enabling custom bootstrapping, notifications, and integration with external tools.
 
@@ -365,20 +365,20 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Extend `genv.json` schema to accept a `hooks` block mapping event names to shell command strings.
-- [ ] Implement hook execution in the apply, add, remove, and upgrade command paths.
-- [ ] Pass event context to hooks via environment variables (e.g. `GENV_EVENT`, `GENV_INSTALLED`, `GENV_REMOVED`).
-- [ ] Define and enforce a timeout for hook execution; surface timeout errors clearly.
-- [ ] Implement `--no-hooks` flag on apply and related commands to skip hook execution.
-- [ ] Support both inline commands and script file references (`file: ~/.config/genv/hooks/post-apply.sh`).
-- [ ] Add unit tests for hook parsing, execution ordering, and error propagation.
-- [ ] Document hook security implications: hooks run as the current user with full shell access; warn in docs.
+- [x] Extend `genv.json` schema to accept a `hooks` block mapping event names to shell command strings. (Shipped as three fixed arrays — `hooks.preUpgrade`/`hooks.postApply`/`hooks.postUpgrade` — not an open event-name map.)
+- [ ] Implement hook execution in the apply, add, remove, and upgrade command paths. (Only `apply` (`post.apply`) and `upgrade` (`pre.upgrade`/`post.upgrade`) are wired; `add`/`remove` are not.)
+- [ ] Pass event context to hooks via environment variables (e.g. `GENV_EVENT`, `GENV_INSTALLED`, `GENV_REMOVED`). (Not implemented — hooks inherit the parent shell env only.)
+- [ ] Define and enforce a timeout for hook execution; surface timeout errors clearly. (No hook-specific timeout; hooks share whatever general command-timeout context the caller passes in.)
+- [ ] Implement `--no-hooks` flag on apply and related commands to skip hook execution. (Not implemented.)
+- [ ] Support both inline commands and script file references (`file: ~/.config/genv/hooks/post-apply.sh`). (Inline commands only.)
+- [x] Add unit tests for hook parsing, execution ordering, and error propagation. (`internal/hooks/executor_test.go`.)
+- [ ] Document hook security implications: hooks run as the current user with full shell access; warn in docs. (No `docs/hooks.md` yet.)
 
 Acceptance criteria:
 
-- [ ] A `post.apply` hook declared in `genv.json` runs after every successful `genv apply`, with `GENV_INSTALLED` set to the list of installed package IDs.
-- [ ] A failing hook exits the command with a non-zero code and prints the hook's stderr output.
-- [ ] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded.
+- [ ] A `post.apply` hook declared in `genv.json` runs after every successful `genv apply`, with `GENV_INSTALLED` set to the list of installed package IDs. (Hook runs after apply; `GENV_INSTALLED` is not set.)
+- [x] A failing hook exits the command with a non-zero code and prints the hook's stderr output.
+- [ ] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded. (Flag does not exist.)
 - [ ] Hook timeouts are enforced and reported clearly.
 
 ## Migration Surface (tc-genv-migration)
