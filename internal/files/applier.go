@@ -3,7 +3,6 @@ package files
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,6 +156,18 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 	return nil
 }
 
+// summaryError reports the aggregate mismatch/error counts as a
+// human-readable string via Error, while Unwrap exposes the underlying
+// collected errors so callers can errors.Is / errors.As past the summary.
+type summaryError struct {
+	summary string
+	errs    []error
+}
+
+func (e *summaryError) Error() string { return e.summary }
+
+func (e *summaryError) Unwrap() []error { return e.errs }
+
 func summarize(res *ApplyResult) error {
 	var parts []string
 	if n := len(res.Mismatched); n > 0 {
@@ -165,5 +176,5 @@ func summarize(res *ApplyResult) error {
 	if n := len(res.Errors); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d error(s)", n))
 	}
-	return errors.New(strings.Join(parts, ", "))
+	return &summaryError{summary: strings.Join(parts, ", "), errs: res.Errors}
 }

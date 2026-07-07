@@ -26,7 +26,6 @@ type StatusResult struct {
 }
 
 // Status compares cfg against the live filesystem for hostName.
-// Todo 10 replaces this stub with the real comparator.
 func Status(cfg *schema.FilesConfig, hostName string) (*StatusResult, error) {
 	res := &StatusResult{OK: true}
 	if cfg == nil {
