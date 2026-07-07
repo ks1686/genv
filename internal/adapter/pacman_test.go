@@ -14,7 +14,7 @@ func TestPacman_Name(t *testing.T) {
 
 func TestPacman_PlanInstall(t *testing.T) {
 	args := Pacman{}.PlanInstall("git")
-	want := []string{"pacman", "-S", "--needed", "--noconfirm", "git"}
+	want := []string{"sudo", "pacman", "-S", "--needed", "--noconfirm", "git"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanInstall: got %v, want %v", args, want)
 	}
@@ -27,7 +27,7 @@ func TestPacman_PlanInstall(t *testing.T) {
 
 func TestPacman_PlanUninstall(t *testing.T) {
 	args := Pacman{}.PlanUninstall("git")
-	want := []string{"pacman", "-Rcs", "--noconfirm", "git"}
+	want := []string{"sudo", "pacman", "-Rcs", "--noconfirm", "git"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanUninstall: got %v, want %v", args, want)
 	}
@@ -40,7 +40,7 @@ func TestPacman_PlanUninstall(t *testing.T) {
 
 func TestPacman_PlanUpgrade(t *testing.T) {
 	args := Pacman{}.PlanUpgrade("git")
-	want := []string{"pacman", "-S", "--needed", "--noconfirm", "git"}
+	want := []string{"sudo", "pacman", "-S", "--needed", "--noconfirm", "git"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanUpgrade: got %v, want %v", args, want)
 	}
@@ -56,7 +56,7 @@ func TestPacman_PlanClean(t *testing.T) {
 	if len(cmds) != 1 {
 		t.Fatalf("PlanClean: expected 1 command, got %v", cmds)
 	}
-	want := []string{"pacman", "-Sc", "--noconfirm"}
+	want := []string{"sudo", "pacman", "-Sc", "--noconfirm"}
 	if len(cmds[0]) != len(want) {
 		t.Fatalf("PlanClean[0]: got %v, want %v", cmds[0], want)
 	}

@@ -133,7 +133,7 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"uv", "uv"},
-		{"pacman", "pacman"},
+		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
 	}
@@ -178,7 +178,7 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"uv", "uv"},
-		{"pacman", "pacman"},
+		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
 	}
@@ -600,7 +600,7 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"snap", "sudo"},
 		{"brew", "brew"},
 		{"uv", "uv"},
-		{"pacman", "pacman"},
+		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
 	}
@@ -709,7 +709,7 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"paru", "paru"},
 		{"yay", "yay"},
 		{"brew", "brew"},
-		{"pacman", "pacman"},
+		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
 	}
