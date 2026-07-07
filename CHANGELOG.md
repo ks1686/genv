@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Rewrote repository history to preserve only the active contributors, Karim Smires and Omar Waseem, while removing bot/AI co-author trailers from commits.
+- Reduced redundant package-manager listing work for `bun`, `choco`, `scoop`, and `uv`, and taught `genv scan` to use the new batch version-listing path instead of querying versions package-by-package.
+- Parallelized package search across searchable adapters while preserving adapter-priority ordering and first-seen deduplication.
+- Cached repeated adapter lookups in resolver upgrade/removal planning paths.
+
+### Fixed
+
+- Hooks now use `cmd /C` on native Windows instead of assuming `sh -c` exists.
+- File symlink errors on Windows now include an actionable Developer Mode / Administrator hint while preserving the original error for unwrapping.
+- Service unit/plist path construction now resolves the user home directory through `os.UserHomeDir()` instead of directly reading `HOME`.
+- File-apply summary errors now preserve underlying errors for `errors.Is` / `errors.As` without changing the human-readable summary.
+- Built-in help, bash/zsh/fish completions, and CI metadata now reflect the current command set and platform support.
+
+### Documentation
+
+- Rewrote stale install and e2e documentation for schema v5 files, WSL2, macOS, and native Windows.
+- Reframed contribution guidance around the project being personal/solo-maintained while preserving Omar Waseem's contributor attribution.
+- Updated README, roadmap, release metadata, and agent guidance for the v2.3.x state of the tool.
+
 ## v2.3.0 - 2026-07-07
 
 ### Added

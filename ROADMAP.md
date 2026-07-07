@@ -408,7 +408,7 @@ These gates apply to every milestone.
 - [x] Add tests for every new command or resolver rule.
 - [x] Keep dry-run output human-readable and stable for CI snapshots.
 - [x] Ensure commands are non-destructive unless explicitly requested.
-- [x] Keep WSL2 behavior explicitly Linux-only (no native Windows installer scope creep).
+- [x] ~~Keep WSL2 behavior explicitly Linux-only (no native Windows installer scope creep).~~ **Superseded by v2.3.0:** native Windows is now a first-class host. WSL2 still uses Linux adapters with no Windows path leakage, but genv additionally ships a `windows` host class and `winget`/`scoop`/`choco` adapters, so "no native Windows" is no longer a project constraint.
 
 ## Release Plan
 
@@ -418,9 +418,9 @@ These gates apply to every milestone.
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
 - [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), Snap packaging
-- [ ] v2.2.0 — M13 complete; hooks and lifecycle scripts for custom bootstrapping and integration
-- [ ] v2.3.0 — M12 complete; named profiles for context-switching between work, personal, and server environments
-- [ ] v3.0.0 — M11 complete + first-party Windows support via native Windows package managers and WSL2 improvements. The Windows-support half shipped ahead of a full v3.0.0 tag: `windows` host classification plus `winget`/`scoop`/`choco` adapters (`bun`/`uv` already worked cross-platform). M11 (updates daemon) is unimplemented — see below.
+- [x] v2.2.0 — scoped M13 surface shipped: schema v5 `files`, `hooks`, host selectors, repo metadata, and `pull`/`status --files`/`adopt --files` commands
+- [x] v2.3.0 — native Windows support shipped ahead of the original v3.0.0 milestone: `windows` host classification, `winget`/`scoop`/`choco` adapters, and `merge-dir` file links
+- [ ] v3.0.0 — M11 complete: updates daemon and any remaining first-party Windows polish. M11 is unimplemented — see below.
 - [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip, cargo) and/or a plugin system for custom adapters
 
 ## How to Contribute Against This Roadmap
