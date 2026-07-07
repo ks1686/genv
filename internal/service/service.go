@@ -357,8 +357,23 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
+func homeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	if home == "" {
+		return "", fmt.Errorf("cannot determine home directory")
+	}
+	return home, nil
+}
+
 func applySystemd(ctx context.Context, name string, svc schema.Service, verbose bool) error {
-	unitDir := filepath.Join(os.Getenv("HOME"), ".config/systemd/user")
+	home, err := homeDir()
+	if err != nil {
+		return err
+	}
+	unitDir := filepath.Join(home, ".config/systemd/user")
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
 		return fmt.Errorf("creating systemd unit directory: %w", err)
 	}
@@ -384,8 +399,12 @@ func applySystemd(ctx context.Context, name string, svc schema.Service, verbose 
 }
 
 func removeSystemd(ctx context.Context, name string, verbose bool) error {
+	home, err := homeDir()
+	if err != nil {
+		return err
+	}
 	unitName := systemdUnitName(name)
-	unitPath := filepath.Join(os.Getenv("HOME"), ".config/systemd/user", unitName)
+	unitPath := filepath.Join(home, ".config/systemd/user", unitName)
 
 	if verbose {
 		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via systemd\n", name)
@@ -403,7 +422,11 @@ func removeSystemd(ctx context.Context, name string, verbose bool) error {
 }
 
 func applyLaunchd(ctx context.Context, name string, svc schema.Service, verbose bool) error {
-	agentDir := filepath.Join(os.Getenv("HOME"), "Library/LaunchAgents")
+	home, err := homeDir()
+	if err != nil {
+		return err
+	}
+	agentDir := filepath.Join(home, "Library/LaunchAgents")
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		return fmt.Errorf("creating launchd agent directory: %w", err)
 	}
@@ -429,8 +452,12 @@ func applyLaunchd(ctx context.Context, name string, svc schema.Service, verbose 
 }
 
 func removeLaunchd(ctx context.Context, name string, verbose bool) error {
+	home, err := homeDir()
+	if err != nil {
+		return err
+	}
 	plistName := launchdPlistName(name)
-	plistPath := filepath.Join(os.Getenv("HOME"), "Library/LaunchAgents", plistName)
+	plistPath := filepath.Join(home, "Library/LaunchAgents", plistName)
 
 	if verbose {
 		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via launchd\n", name)
