@@ -39,6 +39,7 @@ var KnownManagers = map[string]bool{
 	"snap":      true,
 	"brew":      true,
 	"linuxbrew": true,
+	"mas":       true,
 	"pacman":    true,
 	"bun":       true,
 	"uv":        true,

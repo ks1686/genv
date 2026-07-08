@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v2.3.3 - 2026-07-07
+
+### Added
+
+- **`mas` adapter** for managing Mac App Store apps through the `mas` CLI (macOS only). Apps are tracked by their numeric App Store product ID via the `managers.mas` field, e.g. `{"id": "xcode", "managers": {"mas": "497799835"}}`. Implements install/uninstall (`sudo`-prefixed, like `pacman`/`snap`)/upgrade planning, installed-membership and version queries, and the batch `VersionLister` path (a single `mas list` call) consumed by `genv scan` and `genv status`. `mas` is now a recognized manager in both Go schema validation and the published JSON schema.
+
+### Fixed
+
+- `genv upgrade` no longer prints raw lifecycle-hook command strings to the terminal. The per-hook "running hook" log line dropped from INFO to DEBUG, so it now appears only under `--debug` instead of trailing every upgrade with escaped shell commands.
+
 ## v2.3.2 - 2026-07-07
 
 ### Fixed
