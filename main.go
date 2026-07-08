@@ -2595,12 +2595,22 @@ func editCmd(args []string) int {
 	return exitOK
 }
 
-// completionCmd implements `genv completion <shell>`.
-// Prints the shell completion script for bash, zsh, or fish to stdout.
+// completionCmd implements `genv completion <shell>` and
+// `genv completion install [shell]`.
+//
+// Without the install subcommand it prints the shell completion script for
+// bash, zsh, or fish to stdout. With `install` it writes that script into the
+// shell's standard completion directory so completions work with no manual
+// setup.
 func completionCmd(args []string) int {
+	if len(args) > 0 && args[0] == "install" {
+		return completionInstallCmd(args[1:])
+	}
+
 	fs := flag.NewFlagSet("completion", flag.ContinueOnError)
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv completion <shell>")
+		fPrintln(os.Stderr, "       genv completion install [shell] [--dir <path>]")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish")
 		fPrintln(os.Stderr)
@@ -2608,6 +2618,8 @@ func completionCmd(args []string) int {
 		fPrintln(os.Stderr, "  genv completion bash >> ~/.bashrc")
 		fPrintln(os.Stderr, "  genv completion zsh  > ~/.zsh/completions/_genv")
 		fPrintln(os.Stderr, "  genv completion fish > ~/.config/fish/completions/genv.fish")
+		fPrintln(os.Stderr, "  genv completion install        # auto-detect the current shell")
+		fPrintln(os.Stderr, "  genv completion install zsh    # install for a specific shell")
 	}
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -2617,18 +2629,126 @@ func completionCmd(args []string) int {
 		fs.Usage()
 		return exitUsage
 	}
-	switch fs.Arg(0) {
-	case "bash":
-		fprint(os.Stdout, completionBash)
-	case "zsh":
-		fprint(os.Stdout, completionZsh)
-	case "fish":
-		fprint(os.Stdout, completionFish)
-	default:
-		fprintf(os.Stderr, "genv completion: unknown shell %q — supported shells are: bash, zsh, fish\n", fs.Arg(0))
+	script, _, _, err := completionScriptFor(fs.Arg(0))
+	if err != nil {
+		fprintf(os.Stderr, "genv completion: %v\n", err)
 		return exitUsage
 	}
+	fprint(os.Stdout, script)
 	return exitOK
+}
+
+// completionScriptFor maps a shell name to its embedded completion script, the
+// filename that shell expects the script to be installed as, and the default
+// directory that shell auto-loads completions from. An unknown or empty shell
+// name returns an error.
+func completionScriptFor(shell string) (script, filename, defaultDir string, err error) {
+	switch shell {
+	case "bash":
+		// bash-completion sources files named after the command from this dir.
+		return completionBash, "genv", filepath.Join(xdgDataHome(), "bash-completion", "completions"), nil
+	case "zsh":
+		// site-functions is on the default $fpath in modern zsh; compinit binds
+		// the "#compdef genv" tag in the _genv function file.
+		return completionZsh, "_genv", filepath.Join(xdgDataHome(), "zsh", "site-functions"), nil
+	case "fish":
+		return completionFish, "genv.fish", filepath.Join(xdgConfigHome(), "fish", "completions"), nil
+	case "":
+		return "", "", "", fmt.Errorf("missing shell argument (bash, zsh, or fish)")
+	default:
+		return "", "", "", fmt.Errorf("unknown shell %q — supported shells are: bash, zsh, fish", shell)
+	}
+}
+
+// completionInstallCmd implements `genv completion install [shell] [--dir <path>]`.
+// It writes the embedded completion script into the shell's standard completion
+// directory (or --dir), creating parent directories as needed. When no shell is
+// given it is detected from $SHELL.
+func completionInstallCmd(args []string) int {
+	fs := flag.NewFlagSet("completion install", flag.ContinueOnError)
+	dir := fs.String("dir", "", "Target directory (overrides the per-shell default)")
+	fs.Usage = func() {
+		fPrintln(os.Stderr, "usage: genv completion install [shell] [--dir <path>]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish (default: detected from $SHELL)")
+		fPrintln(os.Stderr, "  --dir   Install into this directory instead of the shell default")
+	}
+	shell, flagArgs := extractPositional(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return exitUsage
+	}
+	if shell == "" {
+		shell = detectShell()
+		if shell == "" {
+			fPrintln(os.Stderr, "genv completion install: could not detect shell from $SHELL; pass one of: bash, zsh, fish")
+			return exitUsage
+		}
+	}
+
+	script, filename, defaultDir, err := completionScriptFor(shell)
+	if err != nil {
+		fprintf(os.Stderr, "genv completion install: %v\n", err)
+		return exitUsage
+	}
+
+	target := *dir
+	if target == "" {
+		target = defaultDir
+	}
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		fprintf(os.Stderr, "genv completion install: %v\n", err)
+		return exitIO
+	}
+	path := filepath.Join(target, filename)
+	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
+		fprintf(os.Stderr, "genv completion install: %v\n", err)
+		return exitIO
+	}
+
+	fprintf(os.Stdout, "Installed %s completion to %s\n", shell, path)
+	if shell == "zsh" && *dir == "" {
+		fprintf(os.Stdout, "Ensure %s is on your $fpath before compinit runs, then restart your shell.\n", target)
+	}
+	return exitOK
+}
+
+// detectShell returns "bash", "zsh", or "fish" based on the basename of $SHELL,
+// or "" when it is unset or unrecognized.
+func detectShell() string {
+	switch filepath.Base(os.Getenv("SHELL")) {
+	case "bash":
+		return "bash"
+	case "zsh":
+		return "zsh"
+	case "fish":
+		return "fish"
+	default:
+		return ""
+	}
+}
+
+// xdgDataHome returns $XDG_DATA_HOME or ~/.local/share.
+func xdgDataHome() string {
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+		return x
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".local/share"
+	}
+	return filepath.Join(home, ".local", "share")
+}
+
+// xdgConfigHome returns $XDG_CONFIG_HOME or ~/.config.
+func xdgConfigHome() string {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return x
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".config"
+	}
+	return filepath.Join(home, ".config")
 }
 
 // completeInternalCmd implements the hidden `genv __complete <topic>` command
@@ -2966,7 +3086,7 @@ Commands:
   shell       Manage shell aliases and shell config drift
   service     Manage user-space services
   pull        Fetch genv.json from the configured spec repository
-  completion  Print the shell completion script (bash, zsh, or fish)
+  completion  Print or install the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
   init        Create a new genv.json interactively
