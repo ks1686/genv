@@ -81,6 +81,7 @@ type Adapter interface {
 // specified in genv.json the first available adapter wins.
 var All = []Adapter{
 	Brew{},
+	Mas{},
 	Pacman{},
 	Paru{},
 	Yay{},

@@ -112,4 +112,5 @@ dev-notes/
 # OpenCode session state (local continuation data, not for the repo)
 # =============================================================================
 .omo/
+.omc/
 .opencode/

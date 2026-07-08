@@ -33,7 +33,7 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 | ----------------- | -------------------------------------------------------------- |
 | Linux (Arch)      | `pacman` (official repos), `paru`/`yay` (AUR)                |
 | Linux (other)     | `snap`, `linuxbrew`                                           |
-| macOS             | `brew` (formulae + casks)                                     |
+| macOS             | `brew` (formulae + casks), `mas` (Mac App Store)             |
 | Windows (native)  | `winget`, `scoop`, `choco`                                    |
 | WSL2              | Targets the Linux userland inside WSL2 (treated as `arch`)    |
 | Any of the above  | `bun` (global installs), `uv` (global tool installs)          |

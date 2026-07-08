@@ -114,7 +114,7 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 			continue
 		}
 
-		slog.Info("running hook", "phase", phase, "index", i, "command", h.Command)
+		slog.Debug("running hook", "phase", phase, "index", i, "command", h.Command)
 		bin, flag := shellFor(e.goos)
 		if err := e.runner.Run(ctx, []string{bin, flag, h.Command}, e.Stdout, e.Stderr); err != nil {
 			return fmt.Errorf("%s hook %q: %w", phase, h.Command, err)

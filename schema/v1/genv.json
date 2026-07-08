@@ -37,7 +37,7 @@
         },
         "prefer": {
           "type": "string",
-          "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew"],
+          "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas"],
           "description": "Preferred package manager for this package."
         },
         "managers": {
@@ -45,7 +45,7 @@
           "description": "Manager-specific package identifiers (for packages with different names across managers).",
           "additionalProperties": { "type": "string" },
           "propertyNames": {
-            "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew"]
+            "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas"]
           }
         }
       }
