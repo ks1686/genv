@@ -254,12 +254,191 @@ func TestPlanUpgrade_SkipsMissingManagers(t *testing.T) {
 	if len(skipped) != 1 {
 		t.Fatalf("expected 1 skipped package, got %d", len(skipped))
 	}
-	if got := plan[0].LP.ID; got != "git" {
-		t.Fatalf("expected git upgrade action, got %q", got)
+	if len(plan[0].LPs) != 1 || plan[0].LPs[0].ID != "git" {
+		t.Fatalf("expected git upgrade action, got %v", plan[0].LPs)
 	}
 	if got := skipped[0].ID; got != "legacy" {
 		t.Fatalf("expected legacy to be skipped, got %q", got)
 	}
+}
+
+func TestPlanUpgrade_BatchesSameManager(t *testing.T) {
+	packages := []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
+		{ID: "ruff", Manager: "uv", PkgName: "ruff"},
+	}
+
+	plan, skipped := PlanUpgrade(packages)
+	if len(skipped) != 0 {
+		t.Fatalf("expected no skipped packages, got %v", skipped)
+	}
+	if len(plan) != 2 {
+		t.Fatalf("expected 2 upgrade actions (brew batch + uv single), got %d", len(plan))
+	}
+
+	// Brew packages should be batched into one action.
+	brewAction := plan[0]
+	if len(brewAction.LPs) != 2 {
+		t.Fatalf("expected brew action with 2 packages, got %d", len(brewAction.LPs))
+	}
+	if brewAction.LPs[0].ID != "git" || brewAction.LPs[1].ID != "neovim" {
+		t.Errorf("expected brew action ids [git neovim], got %v", brewAction.LPs)
+	}
+	want := []string{"brew", "upgrade", "git", "neovim"}
+	if len(brewAction.Cmd) != len(want) {
+		t.Fatalf("brew command: got %v, want %v", brewAction.Cmd, want)
+	}
+	for i, w := range want {
+		if brewAction.Cmd[i] != w {
+			t.Errorf("brew command[%d] = %q, want %q", i, brewAction.Cmd[i], w)
+		}
+	}
+
+	// uv is not a BatchUpgrader, so it stays single-package.
+	uvAction := plan[1]
+	if len(uvAction.LPs) != 1 || uvAction.LPs[0].ID != "ruff" {
+		t.Fatalf("expected uv action with [ruff], got %v", uvAction.LPs)
+	}
+	if len(uvAction.Cmd) == 0 || uvAction.Cmd[0] != "uv" {
+		t.Fatalf("expected uv upgrade command, got %v", uvAction.Cmd)
+	}
+}
+
+func TestPlanUpgrade_PreservesManagerOrder(t *testing.T) {
+	packages := []genvfile.LockedPackage{
+		{ID: "a", Manager: "snap", PkgName: "a"},
+		{ID: "b", Manager: "brew", PkgName: "b"},
+		{ID: "c", Manager: "snap", PkgName: "c"},
+	}
+
+	plan, _ := PlanUpgrade(packages)
+	if len(plan) != 2 {
+		t.Fatalf("expected 2 actions, got %d", len(plan))
+	}
+	if plan[0].Mgr.Name() != "snap" {
+		t.Errorf("expected first action manager snap, got %q", plan[0].Mgr.Name())
+	}
+	if plan[1].Mgr.Name() != "brew" {
+		t.Errorf("expected second action manager brew, got %q", plan[1].Mgr.Name())
+	}
+}
+
+func TestExecuteUpgrade_BatchUsesVersionLister(t *testing.T) {
+	mgr := &testBatchVersionListerMgr{versions: map[string]string{"git": "2.45.0", "neovim": "0.10.0"}}
+	plan := []UpgradeAction{
+		{
+			LPs: []genvfile.LockedPackage{
+				{ID: "git", Manager: "batchmgr", PkgName: "git", InstalledVersion: "2.44.0"},
+				{ID: "neovim", Manager: "batchmgr", PkgName: "neovim", InstalledVersion: "0.9.0"},
+			},
+			Mgr: mgr,
+			Cmd: []string{"true"},
+		},
+	}
+
+	out := ExecuteUpgrade(context.Background(), plan, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	if len(out.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", out.Errors)
+	}
+	if len(out.Upgraded) != 2 {
+		t.Fatalf("expected 2 upgraded packages, got %d", len(out.Upgraded))
+	}
+	if mgr.listCalls != 1 {
+		t.Fatalf("expected 1 ListInstalledVersions call, got %d", mgr.listCalls)
+	}
+	versions := map[string]string{}
+	for _, lp := range out.Upgraded {
+		versions[lp.ID] = lp.InstalledVersion
+	}
+	if versions["git"] != "2.45.0" {
+		t.Errorf("git version = %q, want %q", versions["git"], "2.45.0")
+	}
+	if versions["neovim"] != "0.10.0" {
+		t.Errorf("neovim version = %q, want %q", versions["neovim"], "0.10.0")
+	}
+}
+
+func TestExecuteUpgrade_PartialFailureStillUpdatesChangedVersions(t *testing.T) {
+	// The command fails, but ListInstalledVersions reports that one package
+	// did upgrade anyway.
+	mgr := &testBatchVersionListerMgr{versions: map[string]string{"git": "2.45.0", "neovim": "0.9.0"}}
+	plan := []UpgradeAction{
+		{
+			LPs: []genvfile.LockedPackage{
+				{ID: "git", Manager: "batchmgr", PkgName: "git", InstalledVersion: "2.44.0"},
+				{ID: "neovim", Manager: "batchmgr", PkgName: "neovim", InstalledVersion: "0.9.0"},
+			},
+			Mgr: mgr,
+			Cmd: []string{"false"},
+		},
+	}
+
+	out := ExecuteUpgrade(context.Background(), plan, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	if len(out.Errors) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(out.Errors))
+	}
+	if len(out.Upgraded) != 1 {
+		t.Fatalf("expected 1 upgraded package (git), got %d", len(out.Upgraded))
+	}
+	if out.Upgraded[0].ID != "git" || out.Upgraded[0].InstalledVersion != "2.45.0" {
+		t.Errorf("expected upgraded git 2.45.0, got %v", out.Upgraded[0])
+	}
+}
+
+// testBatchVersionListerMgr is a minimal adapter implementing BatchUpgrader and
+// VersionLister for resolver-level upgrade tests.
+type testBatchVersionListerMgr struct {
+	versions  map[string]string
+	listCalls int
+}
+
+func (m *testBatchVersionListerMgr) Name() string { return "batchmgr" }
+
+func (m *testBatchVersionListerMgr) Available() bool { return true }
+
+func (m *testBatchVersionListerMgr) NormalizeID(id string, _ map[string]string) (string, bool) {
+	return id, false
+}
+
+func (m *testBatchVersionListerMgr) PlanInstall(pkgName string) []string {
+	return []string{"install", pkgName}
+}
+
+func (m *testBatchVersionListerMgr) PlanUninstall(pkgName string) []string {
+	return []string{"uninstall", pkgName}
+}
+
+func (m *testBatchVersionListerMgr) PlanUpgrade(pkgName string) []string {
+	return []string{"upgrade", pkgName}
+}
+
+func (m *testBatchVersionListerMgr) PlanUpgradeBatch(pkgNames []string) []string {
+	return append([]string{"upgrade-batch"}, pkgNames...)
+}
+
+func (m *testBatchVersionListerMgr) PlanClean() [][]string { return nil }
+
+func (m *testBatchVersionListerMgr) Query(pkgName string) (bool, error) {
+	_, ok := m.versions[pkgName]
+	return ok, nil
+}
+
+func (m *testBatchVersionListerMgr) ListInstalled() ([]string, error) {
+	var names []string
+	for name := range m.versions {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func (m *testBatchVersionListerMgr) QueryVersion(pkgName string) (string, error) {
+	return m.versions[pkgName], nil
+}
+
+func (m *testBatchVersionListerMgr) ListInstalledVersions() (map[string]string, error) {
+	m.listCalls++
+	return m.versions, nil
 }
 
 func TestReconcile_RemovalPathSkipsMissingManagers(t *testing.T) {

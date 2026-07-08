@@ -175,9 +175,12 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 
 // ---- Upgrade (genv upgrade) --------------------------------------------------
 
-// UpgradeAction is the resolved upgrade action for a single package.
+// UpgradeAction is the resolved upgrade action for one or more packages that
+// can be upgraded together by the same package manager. Most adapters produce
+// one action per package; adapters implementing BatchUpgrader may produce one
+// action for several packages.
 type UpgradeAction struct {
-	LP  genvfile.LockedPackage
+	LPs []genvfile.LockedPackage
 	Mgr adapter.Adapter
 	Cmd []string
 }
@@ -192,6 +195,8 @@ type SkippedPackage struct {
 // PlanUpgrade builds an upgrade plan for all packages tracked in the lock file.
 // It returns a list of actions and a list of packages that were skipped because
 // their recorded package manager adapter is no longer registered.
+// Packages are grouped by manager; when a manager implements BatchUpgrader and
+// has more than one tracked package, a single batched command is emitted.
 func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipped []SkippedPackage) {
 	adapters := make(map[string]adapter.Adapter)
 	getAdapter := func(name string) adapter.Adapter {
@@ -203,13 +208,39 @@ func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipp
 		return mgr
 	}
 
+	// Group packages by manager while preserving first-seen order.
+	type group struct {
+		mgr adapter.Adapter
+		lps []genvfile.LockedPackage
+	}
+	groups := make(map[string]*group)
+	var order []string
 	for _, lp := range packages {
 		mgr := getAdapter(lp.Manager)
 		if mgr == nil {
 			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager})
 			continue
 		}
-		plan = append(plan, UpgradeAction{LP: lp, Mgr: mgr, Cmd: mgr.PlanUpgrade(lp.PkgName)})
+		if _, ok := groups[lp.Manager]; !ok {
+			groups[lp.Manager] = &group{mgr: mgr}
+			order = append(order, lp.Manager)
+		}
+		groups[lp.Manager].lps = append(groups[lp.Manager].lps, lp)
+	}
+
+	for _, name := range order {
+		g := groups[name]
+		if batcher, ok := g.mgr.(adapter.BatchUpgrader); ok && len(g.lps) > 1 {
+			pkgNames := make([]string, len(g.lps))
+			for i, lp := range g.lps {
+				pkgNames[i] = lp.PkgName
+			}
+			plan = append(plan, UpgradeAction{LPs: g.lps, Mgr: g.mgr, Cmd: batcher.PlanUpgradeBatch(pkgNames)})
+			continue
+		}
+		for _, lp := range g.lps {
+			plan = append(plan, UpgradeAction{LPs: []genvfile.LockedPackage{lp}, Mgr: g.mgr, Cmd: g.mgr.PlanUpgrade(lp.PkgName)})
+		}
 	}
 	return plan, skipped
 }
@@ -222,20 +253,57 @@ type UpgradeExecution struct {
 }
 
 // ExecuteUpgrade runs each resolved upgrade action sequentially, updating the
-// InstalledVersion on success. Returns an UpgradeExecution holding the updated
-// packages and any errors encountered.
+// InstalledVersion for packages whose version changed. Returns an UpgradeExecution
+// holding the updated packages and any errors encountered.
 func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, stdout, stderr io.Writer) UpgradeExecution {
 	var out UpgradeExecution
 	for _, a := range plan {
-		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
-			out.Errors = append(out.Errors, fmt.Errorf("upgrade %q: %w", a.LP.ID, err))
-			continue
+		ids := make([]string, len(a.LPs))
+		for i, lp := range a.LPs {
+			ids[i] = lp.ID
 		}
-		// Update InstalledVersion in lock for successfully upgraded packages.
-		if v, err := a.Mgr.QueryVersion(a.LP.PkgName); err == nil && v != "" {
-			a.LP.InstalledVersion = v
+
+		cmdErr := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr)
+		if cmdErr != nil {
+			out.Errors = append(out.Errors, fmt.Errorf("upgrade %q: %w", ids, cmdErr))
 		}
-		out.Upgraded = append(out.Upgraded, a.LP)
+
+		// Collect current versions for every package in the action. Use a single
+		// ListInstalledVersions call when the adapter supports it, then fall back
+		// to per-package QueryVersion for anything missing.
+		versions := make(map[string]string, len(a.LPs))
+		if versionLister, ok := a.Mgr.(adapter.VersionLister); ok {
+			if listedVersions, err := versionLister.ListInstalledVersions(); err == nil {
+				for _, lp := range a.LPs {
+					if v, ok := listedVersions[lp.PkgName]; ok {
+						versions[lp.ID] = v
+					}
+				}
+			}
+		}
+		for _, lp := range a.LPs {
+			if _, ok := versions[lp.ID]; ok {
+				continue
+			}
+			if v, err := a.Mgr.QueryVersion(lp.PkgName); err == nil && v != "" {
+				versions[lp.ID] = v
+			}
+		}
+
+		// Update the lock for packages whose version actually changed. On a
+		// successful command include every package so already-current packages
+		// remain recorded; on failure only include packages that upgraded anyway.
+		for i := range a.LPs {
+			lp := &a.LPs[i]
+			v, hasV := versions[lp.ID]
+			versionChanged := hasV && v != "" && v != lp.InstalledVersion
+			if cmdErr == nil || versionChanged {
+				if versionChanged {
+					lp.InstalledVersion = v
+				}
+				out.Upgraded = append(out.Upgraded, *lp)
+			}
+		}
 	}
 	return out
 }

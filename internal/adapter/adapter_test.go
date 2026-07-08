@@ -647,6 +647,83 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// PlanUpgradeBatch — adapters that support selective multi-package upgrades
+// ---------------------------------------------------------------------------
+
+// TestBatchUpgrader_ExpectedAdapters verifies that the adapters expected to
+// support selective multi-package upgrades implement BatchUpgrader.
+func TestBatchUpgrader_ExpectedAdapters(t *testing.T) {
+	want := map[string]bool{
+		"pacman":    true,
+		"paru":      true,
+		"yay":       true,
+		"brew":      true,
+		"linuxbrew": true,
+		"choco":     true,
+		"scoop":     true,
+		"snap":      true,
+	}
+	for _, a := range All {
+		_, got := a.(BatchUpgrader)
+		if want[a.Name()] && !got {
+			t.Errorf("%s: expected BatchUpgrader implementation", a.Name())
+		}
+		if !want[a.Name()] && got {
+			t.Errorf("%s: unexpected BatchUpgrader implementation", a.Name())
+		}
+	}
+}
+
+// TestPlanUpgradeBatch_PkgNamesPresent verifies that every package name appears
+// in the batched command produced by adapters implementing BatchUpgrader.
+func TestPlanUpgradeBatch_PkgNamesPresent(t *testing.T) {
+	pkgs := []string{"neovim", "git", "jq"}
+	for _, a := range All {
+		batcher, ok := a.(BatchUpgrader)
+		if !ok {
+			continue
+		}
+		t.Run(a.Name(), func(t *testing.T) {
+			args := batcher.PlanUpgradeBatch(pkgs)
+			for _, pkg := range pkgs {
+				assertContainsArg(t, args, pkg)
+			}
+		})
+	}
+}
+
+// TestPlanUpgradeBatch_ExpectedBinaries verifies the leading binary for each
+// adapter's batched upgrade command.
+func TestPlanUpgradeBatch_ExpectedBinaries(t *testing.T) {
+	tests := []struct {
+		mgr     string
+		wantBin string
+	}{
+		{"paru", "paru"},
+		{"yay", "yay"},
+		{"snap", "sudo"},
+		{"brew", "brew"},
+		{"pacman", "sudo"},
+		{"linuxbrew", "brew"},
+		{"scoop", "scoop"},
+		{"choco", "choco"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.mgr, func(t *testing.T) {
+			a := ByName(tc.mgr)
+			if a == nil {
+				t.Fatalf("ByName(%q): no adapter", tc.mgr)
+			}
+			batcher := a.(BatchUpgrader)
+			args := batcher.PlanUpgradeBatch([]string{"pkg"})
+			if args[0] != tc.wantBin {
+				t.Errorf("%s PlanUpgradeBatch: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // PlanClean — content and argument validation (previously only non-empty)
 // ---------------------------------------------------------------------------
 

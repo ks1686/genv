@@ -82,6 +82,7 @@ go test -tags integration ./internal/adapter/
 - Keep functions focused; prefer small, testable units.
 - Match the naming and structure of existing files.
 - New adapter methods must implement the full `Adapter` interface defined in `internal/adapter/adapter.go`.
+- Adapters may also implement optional extensions (`Searchable`, `VersionLister`, `BatchUpgrader`) when the underlying package manager supports those capabilities.
 - All user-facing errors must include a corrective action or next step.
 
 ---

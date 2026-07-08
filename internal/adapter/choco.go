@@ -29,6 +29,12 @@ func (Choco) PlanUpgrade(pkgName string) []string {
 	return []string{"choco", "upgrade", "-y", pkgName}
 }
 
+// PlanUpgradeBatch upgrades multiple packages in one choco invocation.
+func (Choco) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"choco", "upgrade", "-y"}
+	return append(args, pkgNames...)
+}
+
 // PlanClean clears Chocolatey's HTTP/package download cache.
 func (Choco) PlanClean() [][]string {
 	return [][]string{{"choco", "cache", "remove", "--all"}}

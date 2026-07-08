@@ -59,6 +59,32 @@ func TestBrew_PlanClean(t *testing.T) {
 	}
 }
 
+func TestBrew_PlanUpgradeBatch(t *testing.T) {
+	args := Brew{}.PlanUpgradeBatch([]string{"git", "neovim"})
+	want := []string{"brew", "upgrade", "git", "neovim"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgradeBatch: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgradeBatch[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
+func TestLinuxbrew_PlanUpgradeBatch(t *testing.T) {
+	args := Linuxbrew{}.PlanUpgradeBatch([]string{"git"})
+	want := []string{"brew", "upgrade", "git"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgradeBatch: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgradeBatch[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
 // TestBrew_ListInstalled_UsesSingleDashOne is a regression test for a bug
 // where the adapter passed "--1" (an unrecognized flag that makes brew print
 // its usage banner and exit 0) instead of "-1" (one-per-line output). With

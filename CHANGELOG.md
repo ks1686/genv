@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v2.4.0 - 2026-07-07
+
+### Changed
+
+- `genv upgrade` now batches tracked packages by package manager and issues one selective multi-package upgrade command per manager when the underlying tool supports it (`pacman`, `paru`, `yay`, `brew`, `linuxbrew`, `choco`, `scoop`, `snap`). Managers without selective multi-package upgrade syntax (`uv`, `mas`, `bun`) remain per-package. Post-upgrade version refresh also uses a single list command for managers that support it (`pacman`, `paru`, `yay`, `snap`, plus existing `bun`, `choco`, `scoop`, `uv`, `mas`), reducing the total number of subprocesses from O(packages) to O(managers). Untracked packages are never touched.
+
+### Added
+
+- New optional `adapter.BatchUpgrader` interface for adapters that can upgrade multiple named packages in one command while leaving untracked packages alone.
+- `ListInstalledVersions` implementations for `pacman`, `paru`, `yay`, and `snap` to power the batched version refresh.
+
+### Documentation
+
+- README, CHANGELOG, ROADMAP, AGENTS, and CONTRIBUTING now reflect the batched upgrade behavior and the new `BatchUpgrader` extension.
+
 ## v2.3.4 - 2026-07-07
 
 ### Added

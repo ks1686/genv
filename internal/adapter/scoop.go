@@ -29,6 +29,12 @@ func (Scoop) PlanUpgrade(pkgName string) []string {
 	return []string{"scoop", "update", pkgName}
 }
 
+// PlanUpgradeBatch updates multiple apps in one scoop invocation.
+func (Scoop) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"scoop", "update"}
+	return append(args, pkgNames...)
+}
+
 // PlanClean clears scoop's downloaded-installer cache for every app.
 func (Scoop) PlanClean() [][]string {
 	return [][]string{{"scoop", "cache", "rm", "*"}}

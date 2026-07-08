@@ -2871,14 +2871,16 @@ func upgradeCmd(args []string) int {
 		allowedIDs[p.ID] = true
 	}
 
-	plan, skipped := resolver.PlanUpgrade(lf.Packages)
-	filtered := make([]resolver.UpgradeAction, 0, len(plan))
-	for _, a := range plan {
-		if allowedIDs[a.LP.ID] {
-			filtered = append(filtered, a)
+	// Filter to packages still in the spec before planning so batching only
+	// groups packages genv is actually allowed to upgrade.
+	allowedPackages := make([]genvfile.LockedPackage, 0, len(lf.Packages))
+	for _, lp := range lf.Packages {
+		if allowedIDs[lp.ID] {
+			allowedPackages = append(allowedPackages, lp)
 		}
 	}
-	plan = filtered
+
+	plan, skipped := resolver.PlanUpgrade(allowedPackages)
 	for _, s := range skipped {
 		fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", s.Manager, s.ID)
 	}
@@ -2901,7 +2903,11 @@ func upgradeCmd(args []string) int {
 
 	fPrintln(os.Stdout, "upgrade plan:")
 	for _, a := range plan {
-		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", a.LP.ID, a.LP.Manager, strings.Join(a.Cmd, " "))
+		ids := make([]string, len(a.LPs))
+		for i, lp := range a.LPs {
+			ids[i] = lp.ID
+		}
+		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), a.LPs[0].Manager, strings.Join(a.Cmd, " "))
 	}
 
 	if *dryRun {
