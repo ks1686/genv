@@ -28,6 +28,15 @@ type VersionLister interface {
 	ListInstalledVersions() (map[string]string, error)
 }
 
+// BatchUpgrader is an optional extension of Adapter for managers that can
+// upgrade multiple named packages in a single command while leaving untracked
+// packages alone. When implemented, the resolver groups tracked packages by
+// manager and invokes PlanUpgradeBatch instead of running one command per
+// package.
+type BatchUpgrader interface {
+	PlanUpgradeBatch(pkgNames []string) []string
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.

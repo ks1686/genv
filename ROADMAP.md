@@ -309,7 +309,7 @@ Checklist:
 
 - [ ] Implement `genv updates start` and `genv updates stop` to manage the daemon lifecycle (using the M10 service layer where possible).
 - [ ] Add an `updates` block to `genv.json` with `enabled`, `interval`, and `autoApply` fields.
-- [ ] Implement daemon logic: on each tick, call `genv upgrade --dry-run` per package, collect candidates, then either apply or log a notification.
+- [ ] Implement daemon logic: on each tick, call `genv upgrade --dry-run` to collect candidates in batched per-manager plans, then either apply or log a notification.
 - [ ] Respect pinned version constraints in the lock file — never upgrade a package beyond its constraint.
 - [ ] Add structured logging to a genv-managed log file (`~/.config/genv/updates.log`) with rotation.
 - [ ] Implement desktop notification support (via `notify-send` on Linux, `osascript` on macOS) when updates are available but `autoApply` is false.

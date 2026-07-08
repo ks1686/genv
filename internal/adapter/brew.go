@@ -24,6 +24,12 @@ func (brewBase) PlanUpgrade(pkgName string) []string {
 	return []string{"brew", "upgrade", pkgName}
 }
 
+// PlanUpgradeBatch upgrades multiple formulae/casks in one brew invocation.
+func (brewBase) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"brew", "upgrade"}
+	return append(args, pkgNames...)
+}
+
 func (brewBase) PlanClean() [][]string {
 	return [][]string{{"brew", "cleanup"}}
 }

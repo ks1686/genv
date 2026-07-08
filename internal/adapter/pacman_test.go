@@ -51,6 +51,40 @@ func TestPacman_PlanUpgrade(t *testing.T) {
 	}
 }
 
+func TestPacman_PlanUpgradeBatch(t *testing.T) {
+	args := Pacman{}.PlanUpgradeBatch([]string{"git", "neovim"})
+	want := []string{"sudo", "pacman", "-S", "--needed", "--noconfirm", "git", "neovim"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgradeBatch: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgradeBatch[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
+func TestPacman_ListInstalledVersions(t *testing.T) {
+	installFakeBinary(t, "pacman",
+		`if [ "$1" = "-Q" ]; then
+	echo "bash 5.2.37-1"
+	echo "git 2.45.0-1"
+fi`)
+	versions, err := Pacman{}.ListInstalledVersions()
+	if err != nil {
+		t.Fatalf("ListInstalledVersions: %v", err)
+	}
+	want := map[string]string{"bash": "5.2.37-1", "git": "2.45.0-1"}
+	if len(versions) != len(want) {
+		t.Fatalf("ListInstalledVersions: got %v, want %v", versions, want)
+	}
+	for pkg, ver := range want {
+		if versions[pkg] != ver {
+			t.Errorf("ListInstalledVersions[%q] = %q, want %q", pkg, versions[pkg], ver)
+		}
+	}
+}
+
 func TestPacman_PlanClean(t *testing.T) {
 	cmds := Pacman{}.PlanClean()
 	if len(cmds) != 1 {

@@ -1,5 +1,7 @@
 package adapter
 
+import "strings"
+
 // Yay is the adapter for yay (Yet Another Yogurt), an AUR helper for Arch Linux.
 // yay wraps pacman and handles AUR packages; it manages privilege escalation
 // internally so no sudo prefix is needed.
@@ -29,6 +31,12 @@ func (Yay) PlanUpgrade(pkgName string) []string {
 	return []string{"yay", "-S", "--noconfirm", pkgName}
 }
 
+// PlanUpgradeBatch upgrades multiple packages in one yay invocation.
+func (Yay) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"yay", "-S", "--noconfirm"}
+	return append(args, pkgNames...)
+}
+
 func (Yay) PlanClean() [][]string {
 	return [][]string{{"yay", "-Sc", "--noconfirm"}}
 }
@@ -47,6 +55,24 @@ func (Yay) Search(query string) ([]string, error) {
 // ListInstalled delegates to pacman since yay manages the same pacman DB.
 func (Yay) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")
+}
+
+// ListInstalledVersions returns installed versions from the pacman database,
+// which paru/yay share. This satisfies VersionLister for batch upgrade version
+// refresh.
+func (Yay) ListInstalledVersions() (map[string]string, error) {
+	lines, err := runListOutput("pacman", "-Q")
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(lines))
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			versions[fields[0]] = fields[1]
+		}
+	}
+	return versions, nil
 }
 
 func (Yay) QueryVersion(pkgName string) (string, error) {

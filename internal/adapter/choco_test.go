@@ -54,6 +54,19 @@ func TestChoco_PlanClean(t *testing.T) {
 	}
 }
 
+func TestChoco_PlanUpgradeBatch(t *testing.T) {
+	args := Choco{}.PlanUpgradeBatch([]string{"git", "neovim"})
+	want := []string{"choco", "upgrade", "-y", "git", "neovim"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgradeBatch: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgradeBatch[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
 // Real "choco list" output on Chocolatey CLI v2+ (bare "list" now shows
 // locally installed packages; --local-only was removed).
 const chocoListSample = `Chocolatey v2.7.3
