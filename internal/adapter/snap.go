@@ -28,6 +28,12 @@ func (Snap) PlanUpgrade(pkgName string) []string {
 	return []string{"sudo", "snap", "refresh", pkgName}
 }
 
+// PlanUpgradeBatch refreshes multiple snaps in one snap invocation.
+func (Snap) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"sudo", "snap", "refresh"}
+	return append(args, pkgNames...)
+}
+
 // PlanClean returns nil: snap has no standard cache-clean command.
 func (Snap) PlanClean() [][]string { return nil }
 
@@ -57,6 +63,16 @@ func (Snap) Search(query string) ([]string, error) {
 
 // ListInstalled parses "snap list" output, skipping the header line.
 func (Snap) ListInstalled() ([]string, error) {
+	return snapList()
+}
+
+// ListInstalledVersions returns the installed version of every snap. This
+// satisfies VersionLister for batch upgrade version refresh.
+func (Snap) ListInstalledVersions() (map[string]string, error) {
+	return snapListVersions()
+}
+
+func snapList() ([]string, error) {
 	lines, err := runListOutput("snap", "list")
 	if err != nil {
 		return nil, err
@@ -72,6 +88,23 @@ func (Snap) ListInstalled() ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+func snapListVersions() (map[string]string, error) {
+	lines, err := runListOutput("snap", "list")
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(lines))
+	for i, line := range lines {
+		if i == 0 {
+			continue // skip header
+		}
+		if fields := strings.Fields(line); len(fields) >= 2 {
+			versions[fields[0]] = fields[1]
+		}
+	}
+	return versions, nil
 }
 
 func (Snap) QueryVersion(pkgName string) (string, error) {

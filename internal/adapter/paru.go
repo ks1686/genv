@@ -1,5 +1,7 @@
 package adapter
 
+import "strings"
+
 // Paru is the adapter for paru, an AUR helper for Arch Linux.
 // paru wraps pacman and handles AUR packages; it manages privilege escalation
 // internally so no sudo prefix is needed.
@@ -29,6 +31,12 @@ func (Paru) PlanUpgrade(pkgName string) []string {
 	return []string{"paru", "-S", "--noconfirm", pkgName}
 }
 
+// PlanUpgradeBatch upgrades multiple packages in one paru invocation.
+func (Paru) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"paru", "-S", "--noconfirm"}
+	return append(args, pkgNames...)
+}
+
 func (Paru) PlanClean() [][]string {
 	return [][]string{{"paru", "-Sc", "--noconfirm"}}
 }
@@ -47,6 +55,24 @@ func (Paru) Search(query string) ([]string, error) {
 // ListInstalled delegates to pacman since paru manages the same pacman DB.
 func (Paru) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")
+}
+
+// ListInstalledVersions returns installed versions from the pacman database,
+// which paru/yay share. This satisfies VersionLister for batch upgrade version
+// refresh.
+func (Paru) ListInstalledVersions() (map[string]string, error) {
+	lines, err := runListOutput("pacman", "-Q")
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(lines))
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			versions[fields[0]] = fields[1]
+		}
+	}
+	return versions, nil
 }
 
 func (Paru) QueryVersion(pkgName string) (string, error) {

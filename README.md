@@ -306,7 +306,7 @@ When you run `genv apply`:
 | `genv list`                                       | List packages currently tracked by genv (from lock file) (alias: `ls`) |
 | `genv apply [flags]`                              | Reconcile system state with genv.json                                  |
 | `genv validate [flags]`                           | Validate genv.json without changing the system                         |
-| `genv upgrade [flags]`                            | Upgrade tracked packages and refresh lock versions                     |
+| `genv upgrade [flags]`                            | Upgrade tracked packages in per-manager batches and refresh lock versions |
 | `genv init [flags]`                               | Interactive wizard to create a new genv.json                           |
 | `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
@@ -445,6 +445,26 @@ When genv needs to install a package it:
 4. Falls back to the first available manager in the registry, using the package ID as the name.
 
 Unresolved packages (no compatible manager found) produce a warning. Use `--strict` to treat them as a hard error.
+
+---
+
+## How upgrades work
+
+`genv upgrade` updates the packages recorded in `genv.lock.json` without touching packages that are installed but not tracked by genv.
+
+To minimize the number of subprocesses, genv groups tracked packages by their recorded package manager and issues one batched upgrade command per manager when the underlying tool supports it:
+
+- `pacman`, `paru`, `yay` — `pacman -S pkg1 pkg2 ...`
+- `brew` / `linuxbrew` — `brew upgrade pkg1 pkg2 ...`
+- `choco` — `choco upgrade -y pkg1 pkg2 ...`
+- `scoop` — `scoop update pkg1 pkg2 ...`
+- `snap` — `snap refresh pkg1 pkg2 ...`
+
+Managers that do not provide a selective multi-package upgrade command (`uv`, `mas`, `bun`) still upgrade one package at a time.
+
+After each command, genv refreshes the installed versions in the lock file. For managers that can list all installed versions in one call, that list is used instead of querying each package individually.
+
+Because batching means a single command may upgrade several packages at once, a failure is reported for the whole batch while still recording the versions of any packages that did upgrade.
 
 ---
 

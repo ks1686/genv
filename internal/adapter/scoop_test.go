@@ -54,6 +54,19 @@ func TestScoop_PlanClean(t *testing.T) {
 	}
 }
 
+func TestScoop_PlanUpgradeBatch(t *testing.T) {
+	args := Scoop{}.PlanUpgradeBatch([]string{"git", "neovim"})
+	want := []string{"scoop", "update", "git", "neovim"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgradeBatch: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgradeBatch[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
 // Real "scoop list" output (ANSI color codes stripped here for readability;
 // the parser strips them itself — see TestScoop_ListInstalled_StripsANSI).
 const scoopListSample = `Installed apps:

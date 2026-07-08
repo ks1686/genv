@@ -83,7 +83,7 @@ type Adapter interface {
 }
 ```
 
-Optional `Searchable` and `VersionLister` extensions are defined in `internal/adapter/adapter.go`.
+Optional `Searchable`, `VersionLister`, and `BatchUpgrader` extensions are defined in `internal/adapter/adapter.go`.
 
 Adapters are registered in priority order in `internal/adapter/adapter.go:76-82` (`var All`). `adapter.ByName` looks up an adapter by its `Name()`.
 
