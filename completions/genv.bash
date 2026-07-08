@@ -194,8 +194,24 @@ _genv() {
 		fi
 		;;
 	completion)
-		mapfile -t COMPREPLY < <(compgen -W "bash zsh fish" -- "${cur}")
-		return 0
+		# Detect the "install" subcommand, if present.
+		local comp_sub=""
+		for ((i = 1; i < ${#COMP_WORDS[@]}; i++)); do
+			if [[ "${COMP_WORDS[i]}" == "install" ]]; then
+				comp_sub="install"
+				break
+			fi
+		done
+		if [[ "${comp_sub}" == "install" ]]; then
+			if [[ "${cur}" != -* ]]; then
+				mapfile -t COMPREPLY < <(compgen -W "bash zsh fish" -- "${cur}")
+				return 0
+			fi
+			opts="--dir"
+		else
+			mapfile -t COMPREPLY < <(compgen -W "bash zsh fish install" -- "${cur}")
+			return 0
+		fi
 		;;
 	*)
 		opts="--file"

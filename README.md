@@ -312,6 +312,7 @@ When you run `genv apply`:
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
 | `genv service <add\|remove\|list\|start\|stop\|status>` | Manage declared user-space services (aliases: `rm`, `ls`)         |
 | `genv completion <bash\|zsh\|fish>`               | Print shell completion script                                          |
+| `genv completion install [shell] [--dir]`         | Install completion into the shell's completion dir (shell auto-detected from `$SHELL`) |
 | `genv clean [--dry-run]`                          | Clear the cache of all detected package managers                       |
 | `genv edit`                                       | Open genv.json in `$EDITOR`                                            |
 | `genv version`                                    | Show build version, commit, and date (alias: `--version`)              |

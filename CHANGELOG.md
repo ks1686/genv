@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v2.3.4 - 2026-07-07
+
+### Added
+
+- **`genv completion install [shell] [--dir <path>]`** — installs the embedded completion script into the shell's standard completion directory so completions work with no manual setup: zsh → `$XDG_DATA_HOME/zsh/site-functions/_genv`, bash → `$XDG_DATA_HOME/bash-completion/completions/genv`, fish → `$XDG_CONFIG_HOME/fish/completions/genv.fish`. The shell is auto-detected from `$SHELL` when omitted, and `--dir` overrides the target directory (e.g. to install into a directory already on your zsh `$fpath`). The positional shell may appear before or after `--dir`.
+- The shipped bash/zsh/fish completion scripts now complete the new `completion install` subcommand and its `--dir` flag.
+
 ## v2.3.3 - 2026-07-07
 
 ### Added

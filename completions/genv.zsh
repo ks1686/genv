@@ -271,7 +271,26 @@ _genv() {
 			esac
 			;;
 		completion)
-			_values 'shell' bash zsh fish
+			_arguments \
+				'1: :->caction' \
+				'*::arg:->carg'
+			case $state in
+			caction)
+				_values 'action' bash zsh fish install
+				;;
+			carg)
+				case ${line[1]} in
+				install)
+					_arguments \
+						'--dir=[Target directory (overrides the per-shell default)]:dir:_files -/' \
+						'1: :->cshell'
+					if [[ $state == cshell ]]; then
+						_values 'shell' bash zsh fish
+					fi
+					;;
+				esac
+				;;
+			esac
 			;;
 		esac
 		;;
