@@ -210,4 +210,7 @@ complete -c genv -n '__fish_genv_seen_sub service add' -l status -d 'Command to 
 complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homebrew formula to manage via brew services (macOS only)' -x
 
 # completion
-complete -c genv -n '__fish_genv_using_command completion' -f -a 'bash zsh fish' -d 'Shell type'
+complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a 'bash zsh fish' -d 'Shell type'
+complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a install -d 'Install the completion into the shell config directory'
+complete -c genv -n '__fish_genv_seen_sub completion install' -f -a 'bash zsh fish' -d 'Shell type'
+complete -c genv -n '__fish_genv_seen_sub completion install' -l dir -d 'Target directory (overrides the per-shell default)' -r
