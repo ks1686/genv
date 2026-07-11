@@ -139,23 +139,14 @@ func runUvToolList() ([]string, error) {
 		}
 		return nil, err
 	}
-	var result []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if line != "" {
-			result = append(result, line)
-		}
-	}
-	return result, nil
+	return nonEmptyLines(string(out)), nil
 }
 
 // uvToolName strips an optional @version suffix so that "ruff@0.6.0" is
 // treated as the tool "ruff". uv tool uninstall and status checks expect the
 // bare tool name, while uv tool install accepts the full specifier.
 func uvToolName(s string) string {
-	if before, _, ok := strings.Cut(s, "@"); ok {
-		return before
-	}
-	return s
+	return atVersionBaseName(s)
 }
 
 // isIndented reports whether line starts with horizontal whitespace.

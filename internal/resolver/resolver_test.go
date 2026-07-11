@@ -1156,6 +1156,50 @@ func TestResolveOne(t *testing.T) {
 	}
 }
 
+func TestResolveOne_DefaultFallbackSkipsEcosystemManagers(t *testing.T) {
+	pkg := schema.Package{ID: "git"}
+	action := ResolveOne(pkg, map[string]bool{"npm": true, "cargo": true, "vscode": true})
+	if action.Resolved() {
+		t.Fatalf("ResolveOne resolved via %q; ecosystem managers must be explicit-only fallback targets", action.Manager)
+	}
+}
+
+func TestResolveOne_DefaultFallbackStillUsesSystemManagers(t *testing.T) {
+	pkg := schema.Package{ID: "git"}
+	action := ResolveOne(pkg, map[string]bool{"npm": true, "paru": true})
+	if !action.Resolved() {
+		t.Fatal("ResolveOne: expected resolved action")
+	}
+	if action.Manager != "paru" {
+		t.Errorf("Manager: got %q, want %q", action.Manager, "paru")
+	}
+}
+
+func TestResolveOne_PreferCanSelectEcosystemManager(t *testing.T) {
+	pkg := schema.Package{ID: "typescript", Prefer: "npm"}
+	action := ResolveOne(pkg, map[string]bool{"npm": true})
+	if !action.Resolved() {
+		t.Fatal("ResolveOne: expected resolved action")
+	}
+	if action.Manager != "npm" {
+		t.Errorf("Manager: got %q, want %q", action.Manager, "npm")
+	}
+}
+
+func TestResolveOne_ManagersMapCanSelectEcosystemManager(t *testing.T) {
+	pkg := schema.Package{ID: "kubectx", Managers: map[string]string{"krew": "ctx"}}
+	action := ResolveOne(pkg, map[string]bool{"krew": true})
+	if !action.Resolved() {
+		t.Fatal("ResolveOne: expected resolved action")
+	}
+	if action.Manager != "krew" {
+		t.Errorf("Manager: got %q, want %q", action.Manager, "krew")
+	}
+	if action.PkgName != "ctx" {
+		t.Errorf("PkgName: got %q, want %q", action.PkgName, "ctx")
+	}
+}
+
 // TestResolveOne_Unresolved verifies that ResolveOne returns an unresolved
 // action when no manager is available.
 func TestResolveOne_Unresolved(t *testing.T) {

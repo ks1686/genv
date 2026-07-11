@@ -84,9 +84,14 @@ func resolve(pkg schema.Package, available map[string]bool) Action {
 		}
 	}
 
-	// 3. Fall back to the first available adapter, using the package ID as name.
+	// 3. Fall back to the first available default-fallback-eligible adapter,
+	//    using the package ID as name. Only OS/system package managers are
+	//    eligible here; ecosystem/language/plugin managers are explicit-only
+	//    (reachable via prefer or the managers map above) so `genv add git`
+	//    never silently resolves to npm/cargo/go just because one happens to be
+	//    installed.
 	for _, a := range adapter.All {
-		if available[a.Name()] {
+		if available[a.Name()] && adapter.IsDefaultFallbackEligible(a) {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
 			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}
 		}
@@ -185,11 +190,11 @@ type UpgradeAction struct {
 	Cmd []string
 }
 
-// SkippedPackage records a package that was skipped during upgrade planning
-// because its recorded package manager adapter is no longer registered.
+// SkippedPackage records a package that was skipped during upgrade planning.
 type SkippedPackage struct {
 	ID      string
 	Manager string
+	Reason  string
 }
 
 // PlanUpgrade builds an upgrade plan for all packages tracked in the lock file.
@@ -218,7 +223,7 @@ func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipp
 	for _, lp := range packages {
 		mgr := getAdapter(lp.Manager)
 		if mgr == nil {
-			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager})
+			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager, Reason: fmt.Sprintf("adapter %q not registered", lp.Manager)})
 			continue
 		}
 		if _, ok := groups[lp.Manager]; !ok {
