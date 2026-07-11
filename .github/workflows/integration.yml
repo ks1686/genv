@@ -35,6 +35,8 @@ jobs:
             bash -c '
               set -euo pipefail
 
+              sed -i "s/^CheckSpace/#CheckSpace/; s/^#DisableSandbox/DisableSandbox/" /etc/pacman.conf
+
               echo "==> Updating system and installing build dependencies"
               pacman -Syu --noconfirm
               pacman -S --noconfirm base-devel git curl sudo
@@ -91,6 +93,8 @@ jobs:
             archlinux:latest \
             bash -c '
               set -euo pipefail
+
+              sed -i "s/^CheckSpace/#CheckSpace/; s/^#DisableSandbox/DisableSandbox/" /etc/pacman.conf
 
               echo "==> Updating system and installing build dependencies"
               pacman -Syu --noconfirm
