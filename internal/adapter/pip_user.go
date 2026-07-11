@@ -11,8 +11,14 @@ type PipUser struct{}
 func (PipUser) Name() string { return "pip-user" }
 
 func (PipUser) Available() bool {
-	_, err := lookPath("python3")
-	return err == nil
+	if _, err := lookPath("python3"); err != nil {
+		return false
+	}
+	return pipUserProbe() == nil
+}
+
+var pipUserProbe = func() error {
+	return exec.Command("python3", "-m", "pip", "--version").Run()
 }
 
 func (PipUser) NormalizeID(id string, managers map[string]string) (string, bool) {
