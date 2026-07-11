@@ -113,14 +113,39 @@ func filterHooks(in *schema.HooksConfig, host string) *schema.HooksConfig {
 		return nil
 	}
 	out := &schema.HooksConfig{}
-	for _, h := range in.PreUpgrade {
+	for _, h := range in.PreApply {
 		if Match(h.Host, host) {
-			out.PreUpgrade = append(out.PreUpgrade, h)
+			out.PreApply = append(out.PreApply, h)
 		}
 	}
 	for _, h := range in.PostApply {
 		if Match(h.Host, host) {
 			out.PostApply = append(out.PostApply, h)
+		}
+	}
+	for _, h := range in.PreAdd {
+		if Match(h.Host, host) {
+			out.PreAdd = append(out.PreAdd, h)
+		}
+	}
+	for _, h := range in.PostAdd {
+		if Match(h.Host, host) {
+			out.PostAdd = append(out.PostAdd, h)
+		}
+	}
+	for _, h := range in.PreRemove {
+		if Match(h.Host, host) {
+			out.PreRemove = append(out.PreRemove, h)
+		}
+	}
+	for _, h := range in.PostRemove {
+		if Match(h.Host, host) {
+			out.PostRemove = append(out.PostRemove, h)
+		}
+	}
+	for _, h := range in.PreUpgrade {
+		if Match(h.Host, host) {
+			out.PreUpgrade = append(out.PreUpgrade, h)
 		}
 	}
 	for _, h := range in.PostUpgrade {

@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -678,6 +679,110 @@ func TestParseAndValidate_V5FilesAndHooks(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_V5OldHookArraysRemainValid(t *testing.T) {
+	// Given: an existing v5 spec using only the original hook arrays.
+	input := `{"schemaVersion":"5","packages":[],"hooks":{"preUpgrade":[{"command":"echo pre"}],"postApply":[{"command":"echo apply"}],"postUpgrade":[{"command":"echo post"}]}}`
+
+	// When
+	f, errs, err := ParseAndValidate([]byte(input))
+
+	// Then
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f.Hooks == nil || len(f.Hooks.PreUpgrade) != 1 || len(f.Hooks.PostApply) != 1 || len(f.Hooks.PostUpgrade) != 1 {
+		t.Fatalf("old hook arrays not parsed: %+v", f.Hooks)
+	}
+}
+
+func TestParseAndValidate_V6LifecycleHooksAndFiles(t *testing.T) {
+	// Given: a v6 spec using every lifecycle hook phase and a script-file hook.
+	input := `{
+		"schemaVersion":"6",
+		"packages":[],
+		"hooks":{
+			"preApply":[{"command":"echo pre-apply"}],
+			"postApply":[{"file":"~/.config/genv/hooks/post-apply.sh"}],
+			"preAdd":[{"command":"echo pre-add"}],
+			"postAdd":[{"command":"echo post-add"}],
+			"preRemove":[{"command":"echo pre-remove"}],
+			"postRemove":[{"command":"echo post-remove"}],
+			"preUpgrade":[{"command":"echo pre-upgrade"}],
+			"postUpgrade":[{"command":"echo post-upgrade"}]
+		}
+	}`
+
+	// When
+	f, errs, err := ParseAndValidate([]byte(input))
+
+	// Then
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f.Hooks == nil || len(f.Hooks.PreApply) != 1 || len(f.Hooks.PostApply) != 1 || f.Hooks.PostApply[0].File == "" || len(f.Hooks.PreAdd) != 1 || len(f.Hooks.PostRemove) != 1 {
+		t.Fatalf("v6 lifecycle hooks not parsed: %+v", f.Hooks)
+	}
+}
+
+func TestParseAndValidate_NewHooksRequireV6(t *testing.T) {
+	// Given: a v5 spec using a new lifecycle phase.
+	input := `{"schemaVersion":"5","packages":[],"hooks":{"preApply":[{"command":"echo pre"}]}}`
+
+	// When
+	_, errs, err := ParseAndValidate([]byte(input))
+
+	// Then
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if !hasValidationField(errs, "hooks.preApply") {
+		t.Fatalf("expected hooks.preApply v6 validation error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_HookCommandOrFileExactlyOne(t *testing.T) {
+	tests := []struct {
+		name  string
+		hook  string
+		field string
+	}{
+		{name: "both command and file", hook: `{"command":"echo hi","file":"~/hook.sh"}`, field: "hooks.postApply[0]"},
+		{name: "neither command nor file", hook: `{}`, field: "hooks.postApply[0]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given
+			input := `{"schemaVersion":"6","packages":[],"hooks":{"postApply":[` + tc.hook + `]}}`
+
+			// When
+			_, errs, err := ParseAndValidate([]byte(input))
+
+			// Then
+			if err != nil {
+				t.Fatalf("unexpected fatal error: %v", err)
+			}
+			if !hasValidationField(errs, tc.field) {
+				t.Fatalf("expected %s validation error, got: %v", tc.field, errs)
+			}
+		})
+	}
+}
+
+func hasValidationField(errs []ValidationError, field string) bool {
+	for _, e := range errs {
+		if e.Field == field {
+			return true
+		}
+	}
+	return false
+}
+
 func TestParseAndValidate_MergeDirModeAccepted(t *testing.T) {
 	input := `{
 		"schemaVersion": "5",
@@ -735,8 +840,8 @@ func TestParseAndValidate_V4StillValid(t *testing.T) {
 	}
 }
 
-func TestParseAndValidate_V5RejectsV6(t *testing.T) {
-	input := `{"schemaVersion":"6","packages":[]}`
+func TestParseAndValidate_RejectsV7(t *testing.T) {
+	input := `{"schemaVersion":"7","packages":[]}`
 	_, errs, err := ParseAndValidate([]byte(input))
 	if err != nil {
 		t.Fatalf("unexpected fatal error: %v", err)
@@ -748,7 +853,7 @@ func TestParseAndValidate_V5RejectsV6(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected schemaVersion error for v6, got: %v", errs)
+		t.Errorf("expected schemaVersion error for v7, got: %v", errs)
 	}
 }
 
@@ -833,5 +938,240 @@ func TestHostPredicate_RejectsInt(t *testing.T) {
 	var hp HostPredicate
 	if err := hp.UnmarshalJSON([]byte(`42`)); err == nil {
 		t.Error("expected error for numeric host predicate")
+	}
+}
+
+// ─── Updates block (v6) tests ────────────────────────────────────────────────
+
+// TestParseAndValidate_V6MinimalUpdates verifies that a minimal updates block on
+// schemaVersion "6" loads and round-trips through marshal/unmarshal unchanged.
+func TestParseAndValidate_V6MinimalUpdates(t *testing.T) {
+	input := `{
+		"schemaVersion": "6",
+		"packages": [],
+		"updates": {
+			"enabled": true,
+			"interval": "24h",
+			"autoApply": false,
+			"notify": true
+		}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f.Updates == nil {
+		t.Fatal("expected updates block to be parsed")
+	}
+	if !f.Updates.Enabled || f.Updates.Interval != "24h" || f.Updates.AutoApply || !f.Updates.Notify {
+		t.Errorf("updates block not parsed correctly: %+v", f.Updates)
+	}
+
+	// Round-trip: marshal then re-parse and confirm the same values survive and
+	// still validate cleanly.
+	data, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rt, rtErrs, rtErr := ParseAndValidate(data)
+	if rtErr != nil {
+		t.Fatalf("round-trip fatal error: %v", rtErr)
+	}
+	if len(rtErrs) > 0 {
+		t.Fatalf("round-trip validation errors: %v", rtErrs)
+	}
+	if rt.Updates == nil || rt.Updates.Interval != "24h" || !rt.Updates.Enabled || !rt.Updates.Notify {
+		t.Errorf("round-trip lost updates data: %+v", rt.Updates)
+	}
+}
+
+// TestParseAndValidate_UpdatesBlockRequiresV6 verifies the updates block is
+// rejected on schema versions below v6.
+func TestParseAndValidate_UpdatesBlockRequiresV6(t *testing.T) {
+	input := `{"schemaVersion":"5","packages":[],"updates":{"enabled":false}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "updates" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected updates block rejected on v5, got: %v", errs)
+	}
+}
+
+// TestParseAndValidate_UpdatesInvalidInterval verifies an unparseable interval
+// yields a validation error with an actionable hint.
+func TestParseAndValidate_UpdatesInvalidInterval(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"soon"}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	var found *ValidationError
+	for i := range errs {
+		if errs[i].Field == "updates.interval" {
+			found = &errs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected updates.interval validation error, got: %v", errs)
+	}
+	if !strings.Contains(found.Message, "24h") {
+		t.Errorf("expected corrective hint mentioning a valid duration, got: %q", found.Message)
+	}
+}
+
+// TestParseAndValidate_UpdatesNegativeInterval verifies a zero or negative
+// interval is rejected when the checker is enabled.
+func TestParseAndValidate_UpdatesNegativeInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		interval string
+	}{
+		{"zero", "0s"},
+		{"negative", "-1h"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"` + tc.interval + `"}}`
+			_, errs, err := ParseAndValidate([]byte(input))
+			if err != nil {
+				t.Fatalf("unexpected fatal error: %v", err)
+			}
+			found := false
+			for _, e := range errs {
+				if e.Field == "updates.interval" {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected updates.interval error for %q, got: %v", tc.interval, errs)
+			}
+		})
+	}
+}
+
+// TestParseAndValidate_UpdatesMissingIntervalWhenEnabled verifies an enabled
+// checker with no interval is rejected.
+func TestParseAndValidate_UpdatesMissingIntervalWhenEnabled(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":true}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "updates.interval" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected updates.interval required error, got: %v", errs)
+	}
+}
+
+// TestParseAndValidate_UpdatesDisabledSkipsIntervalCheck verifies that when the
+// checker is disabled, an absent or invalid interval is tolerated (nothing runs).
+func TestParseAndValidate_UpdatesDisabledSkipsIntervalCheck(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":false}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("disabled updates block should validate with no interval: %v", errs)
+	}
+}
+
+// TestParseAndValidate_UpdatesUnknownManager verifies filter arrays reject
+// unknown manager names.
+func TestParseAndValidate_UpdatesUnknownManager(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"24h","onlyManagers":["yum"]}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "updates.onlyManagers[0]" && strings.Contains(e.Message, "yum") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected unknown manager error, got: %v", errs)
+	}
+}
+
+// TestParseAndValidate_V1ThroughV5StillLoadWithoutUpdates confirms adding v6 did
+// not regress loading of older specs that never carry an updates block.
+func TestParseAndValidate_V1ThroughV5StillLoadWithoutUpdates(t *testing.T) {
+	specs := []string{
+		`{"schemaVersion":"1","packages":[{"id":"git"}]}`,
+		`{"schemaVersion":"2","packages":[],"env":{"FOO":{"value":"bar"}}}`,
+		`{"schemaVersion":"3","packages":[],"shell":{"aliases":{"ll":{"value":"ls -lah"}}}}`,
+		`{"schemaVersion":"4","packages":[],"services":{"svc":{"start":["true"]}}}`,
+		`{"schemaVersion":"5","packages":[],"files":{"dirs":[{"target":"~/.config/foo"}]}}`,
+	}
+	for _, s := range specs {
+		f, errs, err := ParseAndValidate([]byte(s))
+		if err != nil {
+			t.Fatalf("unexpected fatal error for %s: %v", s, err)
+		}
+		if len(errs) > 0 {
+			t.Fatalf("v1-v5 spec should still validate (%s): %v", s, errs)
+		}
+		if f.Updates != nil {
+			t.Errorf("did not expect updates block for %s: %+v", s, f.Updates)
+		}
+	}
+}
+
+func TestParseAndValidate_V6Additive(t *testing.T) {
+	input := `{
+		"schemaVersion": "6",
+		"packages": [],
+		"env": {"FOO": {"value": "bar"}},
+		"shell": {"aliases": {"ll": {"value": "ls -lah"}}},
+		"services": {"svc": {"start": ["true"]}},
+		"files": {"dirs": [{"target": "~/.config/foo"}]},
+		"hooks": {"postApply": [{"command": "echo done"}]},
+		"repo": {"url": "https://github.com/example/dotfiles"},
+		"updates": {
+			"enabled": true,
+			"interval": "24h"
+		}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("v6 additive spec should validate with zero errors, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_UpdatesDisabledUnknownManager(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"updates":{"enabled":false,"onlyManagers":["yum"]}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "updates.onlyManagers[0]" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected unknown manager error even when disabled, got: %v", errs)
 	}
 }

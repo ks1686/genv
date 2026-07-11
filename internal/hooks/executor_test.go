@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ks1686/genv/internal/schema"
 )
@@ -14,12 +17,21 @@ import (
 // fakeRunner records command invocations and returns a programmed error.
 type fakeRunner struct {
 	calls [][]string
+	envs  [][]string
 	err   error
 }
 
-func (f *fakeRunner) Run(_ context.Context, args []string, _, _ io.Writer) error {
+func (f *fakeRunner) Run(_ context.Context, args []string, env []string, _, _ io.Writer) error {
 	f.calls = append(f.calls, args)
+	f.envs = append(f.envs, env)
 	return f.err
+}
+
+type blockingRunner struct{}
+
+func (blockingRunner) Run(ctx context.Context, _ []string, _ []string, _, _ io.Writer) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func newTestExecutor(stdout, stderr io.Writer) (*Executor, *fakeRunner) {
@@ -202,6 +214,143 @@ func TestExecutor_PhaseIncludedInError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "post-apply") {
 		t.Errorf("error %q does not contain post-apply", err.Error())
+	}
+}
+
+func TestPreUpgrade_WithEnv_passes_additions_without_changing_argv(t *testing.T) {
+	ctx := context.Background()
+	e, fr := newTestExecutor(nil, nil)
+	hooks := []schema.Hook{{Command: "printf '%s' \"$GENV_HOST\""}}
+	env := []string{
+		"GENV_EVENT=upgrade",
+		"GENV_PHASE=pre-upgrade",
+		"GENV_HOST=ci-host",
+		"GENV_UPGRADE_MANAGERS=brew,bun",
+	}
+
+	err := e.PreUpgradeWithOptions(ctx, hooks, RunOptions{Host: "ci-host", Env: env})
+
+	if err != nil {
+		t.Fatalf("PreUpgradeWithOptions() error = %v, want nil", err)
+	}
+	if len(fr.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(fr.calls))
+	}
+	wantArgs := []string{"sh", "-c", "printf '%s' \"$GENV_HOST\""}
+	if !slicesEqual(fr.calls[0], wantArgs) {
+		t.Fatalf("call args = %v, want %v", fr.calls[0], wantArgs)
+	}
+	if len(fr.envs) != 1 || !slicesEqual(fr.envs[0], env) {
+		t.Fatalf("env = %v, want %v", fr.envs, env)
+	}
+}
+
+func TestPostUpgrade_WithTimeout_returns_actionable_deadline_error(t *testing.T) {
+	ctx := context.Background()
+	e := &Executor{Stdout: io.Discard, Stderr: io.Discard, runner: blockingRunner{}, goos: "linux"}
+	hooks := []schema.Hook{{Command: "sleep 60"}}
+
+	err := e.PostUpgradeWithOptions(ctx, hooks, RunOptions{Host: "any", Timeout: time.Nanosecond})
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "post-upgrade hook timed out after") {
+		t.Fatalf("error = %q, want timeout context", err.Error())
+	}
+}
+
+func TestLifecyclePhaseRunners_use_expected_phase_names(t *testing.T) {
+	tests := []struct {
+		name    string
+		run     func(context.Context, *Executor, []schema.Hook) error
+		wantArg string
+	}{
+		{name: "pre apply", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PreApplyWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "pre-apply"},
+		{name: "post apply", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PostApplyWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "post-apply"},
+		{name: "pre add", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PreAddWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "pre-add"},
+		{name: "post add", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PostAddWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "post-add"},
+		{name: "pre remove", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PreRemoveWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "pre-remove"},
+		{name: "post remove", run: func(ctx context.Context, e *Executor, hs []schema.Hook) error {
+			return e.PostRemoveWithOptions(ctx, hs, RunOptions{Host: "any"})
+		}, wantArg: "post-remove"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given
+			ctx := context.Background()
+			e, fr := newTestExecutor(nil, nil)
+
+			// When
+			err := tc.run(ctx, e, []schema.Hook{{Command: "echo ok"}})
+
+			// Then
+			if err != nil {
+				t.Fatalf("runner returned error: %v", err)
+			}
+			if len(fr.calls) != 1 || !slicesEqual(fr.calls[0], []string{"sh", "-c", "echo ok"}) {
+				t.Fatalf("call = %v, want inline shell argv", fr.calls)
+			}
+		})
+	}
+}
+
+func TestHookFile_executes_resolved_script_as_argv_element(t *testing.T) {
+	// Given
+	ctx := context.Background()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	scriptPath := filepath.Join(dir, "hook.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	e, fr := newTestExecutor(nil, nil)
+
+	// When
+	err := e.PostApplyWithOptions(ctx, []schema.Hook{{File: "~/hook.sh"}}, RunOptions{Host: "any"})
+
+	// Then
+	if err != nil {
+		t.Fatalf("PostApplyWithOptions(file) error = %v, want nil", err)
+	}
+	if len(fr.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(fr.calls))
+	}
+	want := []string{"sh", scriptPath}
+	if !slicesEqual(fr.calls[0], want) {
+		t.Fatalf("call args = %v, want %v", fr.calls[0], want)
+	}
+}
+
+func TestHookFile_missing_script_returns_actionable_error(t *testing.T) {
+	// Given
+	ctx := context.Background()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	e, fr := newTestExecutor(nil, nil)
+
+	// When
+	err := e.PostApplyWithOptions(ctx, []schema.Hook{{File: "~/missing.sh"}}, RunOptions{Host: "any"})
+
+	// Then
+	if err == nil {
+		t.Fatal("expected missing script error")
+	}
+	if !strings.Contains(err.Error(), "hook script") || !strings.Contains(err.Error(), "missing.sh") {
+		t.Fatalf("error = %q, want actionable missing script", err.Error())
+	}
+	if len(fr.calls) != 0 {
+		t.Fatalf("runner calls = %v, want none for missing script", fr.calls)
 	}
 }
 

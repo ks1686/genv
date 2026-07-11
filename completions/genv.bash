@@ -4,13 +4,13 @@ _genv() {
 	local i j cur prev opts cmds
 	COMPREPLY=()
 	cur="${COMP_WORDS[COMP_CWORD]}"
-	prev="${COMP_WORDS[COMP_CWORD-1]}"
+	prev="${COMP_WORDS[COMP_CWORD - 1]}"
 	cmd=""
 	opts=""
 
 	for i in "${COMP_WORDS[@]}"; do
 		case "${i}" in
-		add | remove | rm | adopt | disown | list | ls | apply | edit | clean | scan | status | completion | validate | upgrade | pull | init | env | shell | service | version | help)
+		add | remove | rm | adopt | disown | list | ls | apply | edit | clean | scan | status | completion | validate | upgrade | updates | pull | init | env | shell | service | profile | version | help)
 			cmd="${i}"
 			break
 			;;
@@ -22,7 +22,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "--file" -- "${cur}")
 			return 0
 		fi
-		cmds="add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade pull init env shell service version help"
+		cmds="add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates pull init env shell service profile version help"
 		mapfile -t COMPREPLY < <(compgen -W "${cmds}" -- "${cur}")
 		return 0
 	fi
@@ -32,16 +32,23 @@ _genv() {
 	local file_arg=""
 	for ((i = 1; i < ${#COMP_WORDS[@]} - 1; i++)); do
 		if [[ "${COMP_WORDS[i]}" == "--file" ]]; then
-			file_arg="--file ${COMP_WORDS[i+1]}"
+			file_arg="--file ${COMP_WORDS[i + 1]}"
 			break
 		fi
 	done
 
 	case "${cmd}" in
-	remove | rm | disown)
+	remove | rm)
 		# Complete positional arg with tracked package IDs.
 		if [[ "${cur}" != -* ]]; then
 			# shellcheck disable=SC2086
+			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
+			return 0
+		fi
+		opts="--file --lock-file --no-hooks --hook-timeout --host"
+		;;
+	disown)
+		if [[ "${cur}" != -* ]]; then
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
@@ -53,7 +60,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --no-search"
+		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host"
 		;;
 	adopt)
 		# Complete --prefer value with available managers.
@@ -70,10 +77,35 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --dry-run --yes --debug --host"
+		opts="--file --lock-file --dry-run --yes --no-hooks --json --only --skip --only-manager --skip-manager --hook-timeout --debug --host"
+		;;
+	updates)
+		local updates_sub=""
+		for ((i = 1; i < ${#COMP_WORDS[@]}; i++)); do
+			case "${COMP_WORDS[i]}" in
+			check | start | stop | status)
+				updates_sub="${COMP_WORDS[i]}"
+				break
+				;;
+			esac
+		done
+		if [[ -z "${updates_sub}" ]]; then
+			if [[ "${cur}" == -* ]]; then
+				opts="--file"
+			else
+				mapfile -t COMPREPLY < <(compgen -W "check start stop status" -- "${cur}")
+				return 0
+			fi
+		else
+			case "${updates_sub}" in
+			check) opts="--file --lock-file --json --only --skip --only-manager --skip-manager --host" ;;
+			start) opts="--file --lock-file --host" ;;
+			*) opts="" ;;
+			esac
+		fi
 		;;
 	apply)
-		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --debug --host"
+		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host"
 		;;
 	status)
 		opts="--file --lock-file --json --debug --files --host"
@@ -165,6 +197,31 @@ _genv() {
 				;;
 			status) opts="--file --json" ;;
 			edit) opts="--file" ;;
+			esac
+		fi
+		;;
+	profile)
+		local prof_sub=""
+		for ((i = 1; i < ${#COMP_WORDS[@]}; i++)); do
+			case "${COMP_WORDS[i]}" in
+			list | ls | create | switch)
+				prof_sub="${COMP_WORDS[i]}"
+				break
+				;;
+			esac
+		done
+		if [[ -z "${prof_sub}" ]]; then
+			if [[ "${cur}" == -* ]]; then
+				opts="--file"
+			else
+				mapfile -t COMPREPLY < <(compgen -W "list ls create switch" -- "${cur}")
+				return 0
+			fi
+		else
+			case "${prof_sub}" in
+			list | ls) opts="--file --lock-file" ;;
+			create) opts="--file" ;;
+			switch) opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --debug --host" ;;
 			esac
 		fi
 		;;

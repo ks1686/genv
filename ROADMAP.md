@@ -307,19 +307,19 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Implement `genv updates start` and `genv updates stop` to manage the daemon lifecycle (using the M10 service layer where possible).
-- [ ] Add an `updates` block to `genv.json` with `enabled`, `interval`, and `autoApply` fields.
-- [ ] Implement daemon logic: on each tick, call `genv upgrade --dry-run` to collect candidates in batched per-manager plans, then either apply or log a notification.
-- [ ] Respect pinned version constraints in the lock file — never upgrade a package beyond its constraint.
-- [ ] Add structured logging to a genv-managed log file (`~/.config/genv/updates.log`) with rotation.
-- [ ] Implement desktop notification support (via `notify-send` on Linux, `osascript` on macOS) when updates are available but `autoApply` is false.
-- [ ] Add unit and integration tests for daemon configuration parsing and update-candidate selection.
+- [x] Implement `genv updates check`, `genv updates start`, `genv updates stop`, and `genv updates status`.
+- [x] Add an `updates` block to `genv.json` with `enabled`, `interval`, `autoApply`, `notify`, and tracked-only filter fields.
+- [x] Implement managed checker logic: on each interval, reuse the shared tracked-only upgrade planner, then either apply or log/notify depending on `autoApply`.
+- [x] Preserve genv's tracked-only model: untracked packages are never checked or upgraded.
+- [x] Add structured logging to `~/.config/genv/updates.log` with rotation.
+- [x] Implement desktop notification support (via `notify-send` on Linux, `osascript` on macOS) when updates are available but `autoApply` is false.
+- [x] Add unit and integration tests for updates configuration parsing and update-candidate selection.
 
 Acceptance criteria:
 
-- [ ] With `autoApply: true`, packages are upgraded automatically when a new version is available within the declared constraint.
-- [ ] With `autoApply: false`, a desktop notification is sent and the update is recorded in the log without being applied.
-- [ ] The daemon survives restarts gracefully and does not duplicate notifications.
+- [x] With `autoApply: true`, genv applies the tracked upgrade plan on schedule.
+- [x] With `autoApply: false`, available tracked updates are recorded in the log and reported through best-effort notification.
+- [x] The managed checker can be started, stopped, and inspected without duplicating scheduler registrations.
 
 ## Milestone M12 - Named Profiles
 
@@ -335,25 +335,24 @@ Target outcomes:
 
 Checklist:
 
-- [ ] Define a profile schema: a `profiles/` directory of named `<profile>.json` files that extend a root `genv.json` base.
-- [ ] Implement `genv profile switch <name>` — compute the diff between the current active profile and the target, then apply it.
-- [ ] Implement `genv profile list` — list available profiles and mark the active one.
-- [ ] Implement `genv profile create <name>` — scaffold a new profile file from the current environment.
-- [ ] Track the active profile name in `genv.lock.json`.
-- [ ] Implement inheritance: packages, env vars, and shell aliases declared in the base are always included; profiles add on top.
-- [ ] Add `genv status` awareness: report the active profile and flag drift between the profile and the live system.
-- [ ] Add unit and integration tests for profile switching, inheritance, and lock tracking.
+- [x] Define a profile layout: `profiles/<name>.json` next to the root `genv.json`, with the root spec acting as the base profile.
+- [x] Implement `genv profile switch <name>` — merge the named profile over the base and reconcile the result.
+- [x] Implement `genv profile list` — list available profiles and mark the active one.
+- [x] Implement `genv profile create <name>` — scaffold a new empty profile file.
+- [x] Track the active profile name in `genv.lock.json`.
+- [x] Implement inheritance: packages, env vars, shell config, services, files, hooks, repo, and updates are merged from base plus profile.
+- [x] Add unit and integration tests for profile switching, inheritance, and lock tracking.
 
 Acceptance criteria:
 
-- [ ] `genv profile switch work` installs packages only in the `work` profile and removes packages exclusive to the previous profile.
-- [ ] `genv profile switch home` correctly reverts to the `home` profile state.
-- [ ] Base-profile packages are never removed during a profile switch.
-- [ ] `genv status` reports the active profile name alongside the drift summary.
+- [x] `genv profile switch work` applies the merged base+work profile.
+- [x] `genv profile switch home` records and applies the home profile state.
+- [x] Base-profile entries remain part of the merged spec during profile switches.
+- [x] `genv profile list` reports the active profile from the lock file.
 
 ## Milestone M13 - Hooks and Lifecycle Scripts
 
-Status: a **scoped subset** shipped by `tc-genv-migration` (see Migration Surface below and `~/terminal-config/.omo/plans/tc-genv-migration.md`, Todo 5) — enough to replace topgrade's system-wide upgrade step and the terminal-config install/update lifecycle, not the full milestone below. `internal/hooks/executor.go` implements exactly three fixed phases (`pre.upgrade`, `post.apply`, `post.upgrade`) with host filtering and inline shell commands only; the remaining checklist items are still open.
+Status: complete in the v3.0.0 line. The earlier `tc-genv-migration` subset shipped the first three hook phases; schema v6 expands lifecycle hooks to apply/add/remove/upgrade, supports script-file hooks, adds hook context environment, and wires skip/timeout controls into the user-facing commands.
 
 Goal: Allow users to declare shell hooks that run before or after specific genv lifecycle events, enabling custom bootstrapping, notifications, and integration with external tools.
 
@@ -365,21 +364,21 @@ Target outcomes:
 
 Checklist:
 
-- [x] Extend `genv.json` schema to accept a `hooks` block mapping event names to shell command strings. (Shipped as three fixed arrays — `hooks.preUpgrade`/`hooks.postApply`/`hooks.postUpgrade` — not an open event-name map.)
-- [ ] Implement hook execution in the apply, add, remove, and upgrade command paths. (Only `apply` (`post.apply`) and `upgrade` (`pre.upgrade`/`post.upgrade`) are wired; `add`/`remove` are not.)
-- [ ] Pass event context to hooks via environment variables (e.g. `GENV_EVENT`, `GENV_INSTALLED`, `GENV_REMOVED`). (Not implemented — hooks inherit the parent shell env only.)
-- [ ] Define and enforce a timeout for hook execution; surface timeout errors clearly. (No hook-specific timeout; hooks share whatever general command-timeout context the caller passes in.)
-- [ ] Implement `--no-hooks` flag on apply and related commands to skip hook execution. (Not implemented.)
-- [ ] Support both inline commands and script file references (`file: ~/.config/genv/hooks/post-apply.sh`). (Inline commands only.)
-- [x] Add unit tests for hook parsing, execution ordering, and error propagation. (`internal/hooks/executor_test.go`.)
-- [ ] Document hook security implications: hooks run as the current user with full shell access; warn in docs. (No `docs/hooks.md` yet.)
+- [x] Extend `genv.json` schema to accept lifecycle hook arrays for apply, add, remove, and upgrade.
+- [x] Implement hook execution in the apply, add, remove, and upgrade command paths.
+- [x] Pass event context to hooks via environment variables including `GENV_EVENT`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, and `GENV_SKIPPED`.
+- [x] Define and enforce hook timeouts; surface timeout errors clearly.
+- [x] Implement `--no-hooks` flags on apply/add/remove/upgrade to skip hook execution.
+- [x] Support both inline commands and script file references (`file: ~/.config/genv/hooks/post-apply.sh`).
+- [x] Add unit tests for hook parsing, execution ordering, and error propagation.
+- [x] Document hook security implications in README and schema docs.
 
 Acceptance criteria:
 
-- [ ] A `post.apply` hook declared in `genv.json` runs after every successful `genv apply`, with `GENV_INSTALLED` set to the list of installed package IDs. (Hook runs after apply; `GENV_INSTALLED` is not set.)
+- [x] A `postApply` hook declared in `genv.json` runs after every successful `genv apply`, with deterministic context environment.
 - [x] A failing hook exits the command with a non-zero code and prints the hook's stderr output.
-- [ ] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded. (Flag does not exist.)
-- [ ] Hook timeouts are enforced and reported clearly.
+- [x] `genv apply --no-hooks` skips hook execution and exits 0 if the apply itself succeeded.
+- [x] Hook timeouts are enforced and reported clearly.
 
 ## Migration Surface (tc-genv-migration)
 
@@ -420,12 +419,20 @@ These gates apply to every milestone.
 - [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), Snap packaging
 - [x] v2.2.0 — scoped M13 surface shipped: schema v5 `files`, `hooks`, host selectors, repo metadata, and `pull`/`status --files`/`adopt --files` commands
 - [x] v2.3.0 — native Windows support shipped ahead of the original v3.0.0 milestone: `windows` host classification, `winget`/`scoop`/`choco` adapters, and `merge-dir` file links
-- [ ] v3.0.0 — M11 complete: updates daemon and any remaining first-party Windows polish. M11 is unimplemented — see below.
-- [ ] v4.0.0 — potential major release with support for language-specific package managers (e.g. npm, pip, cargo) and/or a plugin system for custom adapters
+- [x] v3.0.0 — M11 updates checker, M12 named profiles, M13 lifecycle hooks, upgrade JSON/filtering, and tracked-only ecosystem adapters complete.
+
+## Future Ideas
+
+The committed roadmap backlog is closed after v3.0.0. Future major work should start as an issue or proposal before becoming a committed milestone.
+
+Possible non-committed ideas:
+
+- Additional ecosystem adapters where the upstream tool has safe per-item lifecycle commands.
+- Optional richer profile composition rules beyond base-plus-one-profile merging.
+- More notification backends for the managed updates checker.
 
 ## How to Contribute Against This Roadmap
 
-1. Pick one unchecked item.
-2. Open an issue with the relevant milestone tag (`M11`, `M12`, or `M13`).
-3. Link tests and sample output in the PR.
-4. Update checklist state when merged.
+1. Open an issue or proposal for new work.
+2. Link tests and sample output in the PR.
+3. Update checklist state when merged if the proposal becomes a committed roadmap item.

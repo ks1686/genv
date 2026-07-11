@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // Position is a 1-based line and column in a source file.
@@ -86,6 +87,7 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateFiles(f, raw, positions)...)
 	errs = append(errs, validateHooks(f, raw, positions)...)
 	errs = append(errs, validateRepo(f, raw, positions)...)
+	errs = append(errs, validateUpdates(f, raw, positions)...)
 
 	return f, errs, nil
 }
@@ -211,11 +213,11 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6),
 		})
 	}
 	return errs
@@ -224,9 +226,9 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, ok := raw["packages"]; !ok {
-		// Schema v5 adds files/hooks/repo blocks; a spec may legitimately contain
-		// only those blocks, so packages is optional in v5.
-		if f.SchemaVersion != Version5 {
+		// Schema v5 adds files/hooks/repo blocks and v6 adds updates; a spec may
+		// legitimately contain only those blocks, so packages is optional there.
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Field:   "packages",
 				Message: "required field is missing",
@@ -279,11 +281,11 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
-				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, f.SchemaVersion),
+				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, Version5, Version6, f.SchemaVersion),
 			})
 		}
 		for name := range f.Env {
@@ -301,11 +303,11 @@ func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[stri
 func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 {
+		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["shell"],
 				Field:    "shell",
-				Message:  fmt.Sprintf("shell block requires schemaVersion %q or %q (current: %q); run 'genv shell alias set' to upgrade", Version3, Version4, f.SchemaVersion),
+				Message:  fmt.Sprintf("shell block requires schemaVersion %q, %q, %q, or %q (current: %q); run 'genv shell alias set' to upgrade", Version3, Version4, Version5, Version6, f.SchemaVersion),
 			})
 		}
 		if f.Shell != nil {
@@ -369,11 +371,11 @@ func validateShellEntries(shells map[string]string, fieldPrefix, singularName st
 func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasServices := raw["services"]; hasServices {
-		if f.SchemaVersion != Version4 {
+		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["services"],
 				Field:    "services",
-				Message:  fmt.Sprintf("services block requires schemaVersion %q (current: %q); run 'genv service add' to upgrade", Version4, f.SchemaVersion),
+				Message:  fmt.Sprintf("services block requires schemaVersion %q, %q, or %q (current: %q); run 'genv service add' to upgrade", Version4, Version5, Version6, f.SchemaVersion),
 			})
 		}
 		if f.Services != nil {
@@ -454,11 +456,11 @@ func expandPath(s string) (string, error) {
 func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasFiles := raw["files"]; hasFiles {
-		if f.SchemaVersion != Version5 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["files"],
 				Field:    "files",
-				Message:  fmt.Sprintf("files block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+				Message:  fmt.Sprintf("files block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
 			})
 		}
 		if f.Files == nil {
@@ -522,29 +524,90 @@ func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasHooks := raw["hooks"]; hasHooks {
-		if f.SchemaVersion != Version5 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["hooks"],
 				Field:    "hooks",
-				Message:  fmt.Sprintf("hooks block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+				Message:  fmt.Sprintf("hooks block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
 			})
 		}
 		if f.Hooks == nil {
 			return errs
 		}
-		for phase, hooks := range map[string][]Hook{
-			"preUpgrade":  f.Hooks.PreUpgrade,
-			"postApply":   f.Hooks.PostApply,
-			"postUpgrade": f.Hooks.PostUpgrade,
-		} {
-			for i, h := range hooks {
-				if h.Command == "" {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("hooks.%s[%d].command", phase, i),
-						Message: "command must not be empty",
-					})
-				}
+		err := validateHookPhase("preUpgrade", f.Hooks.PreUpgrade)
+		errs = append(errs, err...)
+		err = validateHookPhase("postApply", f.Hooks.PostApply)
+		errs = append(errs, err...)
+		err = validateHookPhase("postUpgrade", f.Hooks.PostUpgrade)
+		errs = append(errs, err...)
+		if f.SchemaVersion != Version6 {
+			errs = append(errs, validateNoV6Hooks(f.Hooks, positions)...)
+			return errs
+		}
+		err = validateHookPhase("preApply", f.Hooks.PreApply)
+		errs = append(errs, err...)
+		err = validateHookPhase("preAdd", f.Hooks.PreAdd)
+		errs = append(errs, err...)
+		err = validateHookPhase("postAdd", f.Hooks.PostAdd)
+		errs = append(errs, err...)
+		err = validateHookPhase("preRemove", f.Hooks.PreRemove)
+		errs = append(errs, err...)
+		err = validateHookPhase("postRemove", f.Hooks.PostRemove)
+		errs = append(errs, err...)
+	}
+	return errs
+}
+
+func validateHookPhase(phase string, hooks []Hook) []ValidationError {
+	var errs []ValidationError
+	for i, h := range hooks {
+		field := fmt.Sprintf("hooks.%s[%d]", phase, i)
+		hasCommand := h.Command != ""
+		hasFile := h.File != ""
+		if hasCommand == hasFile {
+			errs = append(errs, ValidationError{
+				Field:   field,
+				Message: "exactly one of command or file must be set",
+			})
+		}
+		if strings.ContainsAny(h.File, "\r\n") {
+			errs = append(errs, ValidationError{Field: field + ".file", Message: "file must not contain newlines"})
+		}
+	}
+	return errs
+}
+
+func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []ValidationError {
+	phases := map[string][]Hook{
+		"preApply":   h.PreApply,
+		"preAdd":     h.PreAdd,
+		"postAdd":    h.PostAdd,
+		"preRemove":  h.PreRemove,
+		"postRemove": h.PostRemove,
+	}
+	var errs []ValidationError
+	for phase, hooks := range phases {
+		if len(hooks) == 0 {
+			continue
+		}
+		field := "hooks." + phase
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  fmt.Sprintf("%s requires schemaVersion %q", phase, Version6),
+		})
+	}
+	for phase, hooks := range map[string][]Hook{"preUpgrade": h.PreUpgrade, "postApply": h.PostApply, "postUpgrade": h.PostUpgrade} {
+		for i, hook := range hooks {
+			if hook.File == "" {
+				continue
 			}
+			field := fmt.Sprintf("hooks.%s[%d].file", phase, i)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("script file hooks require schemaVersion %q", Version6),
+			})
 		}
 	}
 	return errs
@@ -553,11 +616,11 @@ func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasRepo := raw["repo"]; hasRepo {
-		if f.SchemaVersion != Version5 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
 			errs = append(errs, ValidationError{
 				Position: positions["repo"],
 				Field:    "repo",
-				Message:  fmt.Sprintf("repo block requires schemaVersion %q (current: %q)", Version5, f.SchemaVersion),
+				Message:  fmt.Sprintf("repo block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
 			})
 		}
 		if f.Repo == nil {
@@ -573,6 +636,69 @@ func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[str
 				Message:  "required field is missing or empty",
 			})
 		}
+	}
+	return errs
+}
+
+func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasUpdates := raw["updates"]; !hasUpdates {
+		return errs
+	}
+	if f.SchemaVersion != Version6 {
+		errs = append(errs, ValidationError{
+			Position: positions["updates"],
+			Field:    "updates",
+			Message:  fmt.Sprintf("updates block requires schemaVersion %q (current: %q); bump schemaVersion to %q to use the updates config", Version6, f.SchemaVersion, Version6),
+		})
+	}
+	if f.Updates == nil {
+		return errs
+	}
+	errs = append(errs, validateUpdatesManagers("updates.onlyManagers", f.Updates.OnlyManagers, positions)...)
+	errs = append(errs, validateUpdatesManagers("updates.skipManagers", f.Updates.SkipManagers, positions)...)
+	if !f.Updates.Enabled {
+		return errs
+	}
+	if f.Updates.Interval == "" {
+		errs = append(errs, ValidationError{
+			Position: positions["updates.interval"],
+			Field:    "updates.interval",
+			Message:  `interval is required when updates.enabled is true; set a positive Go duration such as "24h"`,
+		})
+		return errs
+	}
+	d, err := time.ParseDuration(f.Updates.Interval)
+	if err != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["updates.interval"],
+			Field:    "updates.interval",
+			Message:  fmt.Sprintf("invalid duration %q: %v; use a Go duration such as \"24h\", \"90m\", or \"1h30m\"", f.Updates.Interval, err),
+		})
+		return errs
+	}
+	if d <= 0 {
+		errs = append(errs, ValidationError{
+			Position: positions["updates.interval"],
+			Field:    "updates.interval",
+			Message:  fmt.Sprintf("interval %q must be a positive duration; set a value greater than zero such as \"24h\"", f.Updates.Interval),
+		})
+	}
+	return errs
+}
+
+func validateUpdatesManagers(field string, managers []string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	for i, mgr := range managers {
+		if KnownManagers[mgr] {
+			continue
+		}
+		elem := fmt.Sprintf("%s[%d]", field, i)
+		errs = append(errs, ValidationError{
+			Position: positions[elem],
+			Field:    elem,
+			Message:  fmt.Sprintf("unknown manager %q", mgr),
+		})
 	}
 	return errs
 }

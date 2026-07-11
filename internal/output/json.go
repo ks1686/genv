@@ -62,6 +62,7 @@ type StatusEntry struct {
 
 // StatusResult is the Data payload for `genv status --json`.
 type StatusResult struct {
+	ActiveProfile  string               `json:"activeProfile,omitempty"`
 	Entries        []StatusEntry        `json:"entries"`
 	EnvEntries     []EnvStatusEntry     `json:"envEntries,omitempty"`
 	ShellEntries   []ShellStatusEntry   `json:"shellEntries,omitempty"`
@@ -136,4 +137,53 @@ type ServiceStatusResult struct {
 // Write serializes env to w as a single JSON line followed by a newline.
 func Write(w io.Writer, env Envelope) error {
 	return json.NewEncoder(w).Encode(env)
+}
+
+// UpgradeFilters summarizes which filters were applied to the upgrade plan.
+type UpgradeFilters struct {
+	Only         []string `json:"only,omitempty"`
+	Skip         []string `json:"skip,omitempty"`
+	OnlyManager  []string `json:"onlyManager,omitempty"`
+	SkipManager  []string `json:"skipManager,omitempty"`
+	HooksSkipped bool     `json:"hooksSkipped,omitempty"`
+}
+
+// UpgradeBatch represents a single batched command in the upgrade plan.
+type UpgradeBatch struct {
+	Manager  string   `json:"manager"`
+	IDs      []string `json:"ids"`
+	PkgNames []string `json:"pkgNames"`
+	Cmd      string   `json:"cmd"`
+	Status   string   `json:"status"`
+	Error    string   `json:"error,omitempty"`
+}
+
+// UpgradeSkipped represents a package skipped during upgrade planning.
+type UpgradeSkipped struct {
+	ID      string `json:"id"`
+	Manager string `json:"manager"`
+	Reason  string `json:"reason"`
+}
+
+// UpgradePackage represents a package whose version was updated.
+type UpgradePackage struct {
+	ID         string `json:"id"`
+	Manager    string `json:"manager"`
+	NewVersion string `json:"newVersion"`
+}
+
+// UpgradeHookResult represents a failed hook execution.
+type UpgradeHookResult struct {
+	Phase string `json:"phase"`
+	Error string `json:"error"`
+}
+
+// UpgradeResult is the Data payload for `genv upgrade [--dry-run] --json`.
+type UpgradeResult struct {
+	DryRun      bool                `json:"dryRun"`
+	Batches     []UpgradeBatch      `json:"batches"`
+	Updated     []UpgradePackage    `json:"updated,omitempty"`
+	Skipped     []UpgradeSkipped    `json:"skipped,omitempty"`
+	FailedHooks []UpgradeHookResult `json:"failedHooks,omitempty"`
+	Filters     UpgradeFilters      `json:"filters"`
 }

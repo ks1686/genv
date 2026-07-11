@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade pull init env shell service version help
+        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates pull init env shell service profile version help
             return 1
         end
     end
@@ -111,11 +111,13 @@ complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between
 complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
+complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'
 complete -c genv -n __fish_genv_no_subcommand -f -a pull -d 'Fetch the spec from a git repository and update genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a init -d 'Create a new genv.json interactively'
 complete -c genv -n __fish_genv_no_subcommand -f -a env -d 'Manage shell environment variables'
 complete -c genv -n __fish_genv_no_subcommand -f -a shell -d 'Manage shell aliases and config'
 complete -c genv -n __fish_genv_no_subcommand -f -a service -d 'Manage background services'
+complete -c genv -n __fish_genv_no_subcommand -f -a profile -d 'Manage named environment profiles'
 complete -c genv -n __fish_genv_no_subcommand -f -a version -d 'Show genv build version information'
 complete -c genv -n __fish_genv_no_subcommand -f -a help -d 'Show this help text'
 
@@ -127,6 +129,9 @@ complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_comm
     -f -a '(__fish_genv_packages)' -d 'Tracked package'
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' \
     -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l no-hooks -d 'Skip pre-remove and post-remove hooks'
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l hook-timeout -d 'Per-hook timeout' -x
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l host -d 'Host name for host-specific records' -x
 
 # list / ls
 complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_command ls' -l lock-file -d 'Path to genv lock file' -r
@@ -138,6 +143,9 @@ complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command
     -l prefer -d 'Preferred manager' -x -a '(__fish_genv_managers)'
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l manager -d 'Manager-specific names' -x
 complete -c genv -n '__fish_genv_using_command add' -l no-search -d 'Skip interactive package search'
+complete -c genv -n '__fish_genv_using_command add' -l no-hooks -d 'Skip pre-add and post-add hooks'
+complete -c genv -n '__fish_genv_using_command add' -l hook-timeout -d 'Per-hook timeout' -x
+complete -c genv -n '__fish_genv_using_command add' -l host -d 'Host name for host-specific records' -x
 
 # adopt-only
 complete -c genv -n '__fish_genv_using_command adopt' -l host -d 'Host name for host-specific records' -x
@@ -150,8 +158,30 @@ complete -c genv -n '__fish_genv_using_command upgrade' \
 complete -c genv -n '__fish_genv_using_command upgrade' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
 complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command upgrade' -l no-hooks -d 'Skip pre-upgrade and post-upgrade hooks'
+complete -c genv -n '__fish_genv_using_command upgrade' -l json -d 'Emit machine-readable JSON to stdout'
+complete -c genv -n '__fish_genv_using_command upgrade' -l only -d 'Package IDs or names to upgrade' -x
+complete -c genv -n '__fish_genv_using_command upgrade' -l skip -d 'Package IDs or names to skip' -x
+complete -c genv -n '__fish_genv_using_command upgrade' -l only-manager -d 'Managers to upgrade' -x
+complete -c genv -n '__fish_genv_using_command upgrade' -l skip-manager -d 'Managers to skip' -x
+complete -c genv -n '__fish_genv_using_command upgrade' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command upgrade' -l host -d 'Host name for host-specific records' -x
+
+# updates
+complete -c genv -n '__fish_genv_at_subcommand updates check start stop status' -f -a check -d 'Plan available updates for genv-tracked packages only'
+complete -c genv -n '__fish_genv_at_subcommand updates check start stop status' -f -a start -d 'Register the managed background updates checker'
+complete -c genv -n '__fish_genv_at_subcommand updates check start stop status' -f -a stop -d 'Stop and unregister the managed background updates checker'
+complete -c genv -n '__fish_genv_at_subcommand updates check start stop status' -f -a status -d 'Show managed background updates checker status'
+complete -c genv -n '__fish_genv_seen_sub updates check' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_seen_sub updates check' -l json -d 'Emit machine-readable JSON to stdout'
+complete -c genv -n '__fish_genv_seen_sub updates check' -l only -d 'Package IDs or names to check' -x
+complete -c genv -n '__fish_genv_seen_sub updates check' -l skip -d 'Package IDs or names to skip' -x
+complete -c genv -n '__fish_genv_seen_sub updates check' -l only-manager -d 'Managers to check' -x
+complete -c genv -n '__fish_genv_seen_sub updates check' -l skip-manager -d 'Managers to skip' -x
+complete -c genv -n '__fish_genv_seen_sub updates check' -l host -d 'Host name for host-specific records' -x
+complete -c genv -n '__fish_genv_seen_sub updates start' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_seen_sub updates start' -l host -d 'Host name for host-specific records' -x
 
 # apply
 complete -c genv -n '__fish_genv_using_command apply' -l lock-file -d 'Path to genv lock file' -r
@@ -162,6 +192,8 @@ complete -c genv -n '__fish_genv_using_command apply' -l yes -d 'Skip the confir
 complete -c genv -n '__fish_genv_using_command apply' -l quiet -d 'Suppress plan output'
 complete -c genv -n '__fish_genv_using_command apply' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command apply' -l timeout -d 'Per-subprocess timeout' -x
+complete -c genv -n '__fish_genv_using_command apply' -l no-hooks -d 'Skip pre-apply and post-apply hooks'
+complete -c genv -n '__fish_genv_using_command apply' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
 
@@ -208,6 +240,23 @@ complete -c genv -n '__fish_genv_seen_sub service add' -l stop -d 'Command to st
 complete -c genv -n '__fish_genv_seen_sub service add' -l restart -d 'Command to restart the service' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l status -d 'Command to check service status' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homebrew formula to manage via brew services (macOS only)' -x
+
+# profile
+complete -c genv -n '__fish_genv_at_subcommand profile list ls create switch' -f -a 'list ls' -d 'List available profiles and mark the active one'
+complete -c genv -n '__fish_genv_at_subcommand profile list ls create switch' -f -a create -d 'Scaffold a new profile file'
+complete -c genv -n '__fish_genv_at_subcommand profile list ls create switch' -f -a switch -d 'Switch to a named profile and reconcile the system'
+
+complete -c genv -n '__fish_genv_seen_sub profile list; or __fish_genv_seen_sub profile ls' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l dry-run -d 'Print the reconcile plan without executing'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l force -d 'Overwrite mismatched managed files'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l strict -d 'Exit with an error if any package cannot be resolved'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l quiet -d 'Suppress plan output'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l json -d 'Emit machine-readable JSON to stdout'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l timeout -d 'Per-subprocess timeout' -x
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l debug -d 'Emit debug-level structured logs to stderr'
+complete -c genv -n '__fish_genv_seen_sub profile switch' -l host -d 'Host name for host-specific records' -x
 
 # completion
 complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a 'bash zsh fish' -d 'Shell type'

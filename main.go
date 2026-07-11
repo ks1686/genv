@@ -26,11 +26,13 @@ import (
 	"github.com/ks1686/genv/internal/host"
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
+	"github.com/ks1686/genv/internal/profile"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/search"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/shellcfg"
+	"github.com/ks1686/genv/internal/upgrade"
 )
 
 func runForegroundCommand(argv []string) error {
@@ -112,12 +114,16 @@ func run(args []string) int {
 		return scanCmd(args[1:])
 	case "status":
 		return statusCmd(args[1:])
+	case "profile":
+		return profileCmd(args[1:])
 	case "completion":
 		return completionCmd(args[1:])
 	case "validate":
 		return validateCmd(args[1:])
 	case "upgrade":
 		return upgradeCmd(args[1:])
+	case "updates":
+		return updatesCmd(args[1:])
 	case "pull":
 		return pullCmd(args[1:])
 	case "init":
@@ -321,9 +327,16 @@ func addCmd(args []string) int {
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 	noSearch := fs.Bool("no-search", false, "skip interactive package search and use id as-is")
+	noHooks := fs.Bool("no-hooks", false, "skip pre-add and post-add hooks")
+	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
+		return exitUsage
+	}
+	if *hookTimeout < 0 {
+		fPrintln(os.Stderr, "genv add: --hook-timeout must be non-negative")
 		return exitUsage
 	}
 	if id == "" {
@@ -365,6 +378,28 @@ func addCmd(args []string) int {
 		}
 	}
 
+	hostName := hostForCommand(*hostFlag)
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lf, _ := genvfile.ReadLock(lockPath)
+	if !*noHooks {
+		if f, err := genvfile.Read(*file); err == nil && f != nil && f.Hooks != nil {
+			filtered := host.FilterForHost(f, hostName)
+			profileName := ""
+			if lf != nil {
+				profileName = lf.ActiveProfile
+			}
+			errs := runHookPhase(context.Background(), hookPhaseRun{
+				Hooks:   filtered.Hooks.PreAdd,
+				Context: hookContext{Event: "add", Phase: "pre-add", Host: hostName, Profile: profileName, Installed: []string{id}},
+				Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
+			})
+			if len(errs) > 0 {
+				fprintf(os.Stderr, "genv add: %s\n", errs[0])
+				return exitLogic
+			}
+		}
+	}
+
 	// 1. Update genv.json.
 	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
 		return exit
@@ -389,11 +424,33 @@ func addCmd(args []string) int {
 	}
 
 	// 3. Update lock file.
-	return appendLockEntry(lockPathForSpec(*file, *lockFile), genvfile.LockedPackage{
+	exit := appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
 	})
+	if exit != exitOK || *noHooks {
+		return exit
+	}
+	f, err := genvfile.Read(*file)
+	if err != nil || f == nil || f.Hooks == nil {
+		return exit
+	}
+	filtered := host.FilterForHost(f, hostName)
+	profileName := ""
+	if lf != nil {
+		profileName = lf.ActiveProfile
+	}
+	errs := runHookPhase(context.Background(), hookPhaseRun{
+		Hooks:   filtered.Hooks.PostAdd,
+		Context: hookContext{Event: "add", Phase: "post-add", Host: hostName, Profile: profileName, Installed: []string{id}},
+		Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
+	})
+	if len(errs) > 0 {
+		fprintf(os.Stderr, "genv add: %s\n", errs[0])
+		return exitLogic
+	}
+	return exit
 }
 
 // removeCmd implements `genv remove <id>`.
@@ -409,8 +466,15 @@ func removeCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	noHooks := fs.Bool("no-hooks", false, "skip pre-remove and post-remove hooks")
+	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 
 	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *hookTimeout < 0 {
+		fPrintln(os.Stderr, "genv remove: --hook-timeout must be non-negative")
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
@@ -420,10 +484,21 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	return runRemove(*file, id, *lockFile)
+	return runRemove(removeOptions{File: *file, ID: id, LockFile: *lockFile, NoHooks: *noHooks, HookTimeout: *hookTimeout, Host: *hostFlag})
 }
 
-func runRemove(file, id, lockFile string) int {
+type removeOptions struct {
+	File        string
+	ID          string
+	LockFile    string
+	Host        string
+	NoHooks     bool
+	HookTimeout time.Duration
+}
+
+func runRemove(opts removeOptions) int {
+	file := opts.File
+	id := opts.ID
 	// 0. When stdin is a terminal and id has no exact match in the spec,
 	//    fall back to substring matching so users can type short names
 	//    (e.g. "firefox" resolving to a tracked id like "org.mozilla.firefox").
@@ -460,9 +535,30 @@ func runRemove(file, id, lockFile string) int {
 			}
 		}
 	}
+	hostName := hostForCommand(opts.Host)
+	lockPath := lockPathForSpec(file, opts.LockFile)
+	lfBefore, _ := genvfile.ReadLock(lockPath)
+	if !opts.NoHooks {
+		if f, err := genvfile.Read(file); err == nil && f != nil && f.Hooks != nil {
+			filtered := host.FilterForHost(f, hostName)
+			profileName := ""
+			if lfBefore != nil {
+				profileName = lfBefore.ActiveProfile
+			}
+			errs := runHookPhase(context.Background(), hookPhaseRun{
+				Hooks:   filtered.Hooks.PreRemove,
+				Context: hookContext{Event: "remove", Phase: "pre-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
+				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
+			})
+			if len(errs) > 0 {
+				fprintf(os.Stderr, "genv remove: %s\n", errs[0])
+				return exitLogic
+			}
+		}
+	}
 
 	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(file, id, lockFile)
+	lf, lockPath, exit := removeFromSpecAndReadLock(file, id, opts.LockFile)
 	if exit != exitOK {
 		return exit
 	}
@@ -517,6 +613,24 @@ func runRemove(file, id, lockFile string) int {
 
 	if uninstallErr != nil {
 		return exitLogic
+	}
+	if !opts.NoHooks {
+		if f, err := genvfile.Read(file); err == nil && f != nil && f.Hooks != nil {
+			filtered := host.FilterForHost(f, hostName)
+			profileName := ""
+			if lfBefore != nil {
+				profileName = lfBefore.ActiveProfile
+			}
+			errs := runHookPhase(context.Background(), hookPhaseRun{
+				Hooks:   filtered.Hooks.PostRemove,
+				Context: hookContext{Event: "remove", Phase: "post-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
+				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
+			})
+			if len(errs) > 0 {
+				fprintf(os.Stderr, "genv remove: %s\n", errs[0])
+				return exitLogic
+			}
+		}
 	}
 	return exitOK
 }
@@ -780,17 +894,20 @@ func hostForCommand(hostFlag string) string {
 // Reconciles the system against genv.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
 type applyOptions struct {
-	File     string
-	LockFile string
-	Host     string
-	DryRun   bool
-	Strict   bool
-	Yes      bool
-	Quiet    bool
-	JSONOut  bool
-	Force    bool
-	Timeout  time.Duration
-	Debug    bool
+	File          string
+	LockFile      string
+	Host          string
+	DryRun        bool
+	Strict        bool
+	Yes           bool
+	Quiet         bool
+	JSONOut       bool
+	Force         bool
+	Timeout       time.Duration
+	Debug         bool
+	TargetProfile string
+	NoHooks       bool
+	HookTimeout   time.Duration
 }
 
 func applyCmd(args []string) int {
@@ -812,10 +929,16 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress plan output (useful in scripts)")
 	fs.BoolVar(&opts.JSONOut, "json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	fs.DurationVar(&opts.Timeout, "timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
+	fs.DurationVar(&opts.HookTimeout, "hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
+	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 
 	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if opts.HookTimeout < 0 {
+		fPrintln(os.Stderr, "genv apply: --hook-timeout must be non-negative")
 		return exitUsage
 	}
 
@@ -834,7 +957,19 @@ func runApply(opts applyOptions) int {
 		defer cancel()
 	}
 
-	f, err := genvfile.Read(opts.File)
+	lockPath := lockPathForSpec(opts.File, opts.LockFile)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
+	activeProfile := lf.ActiveProfile
+	if opts.TargetProfile != "" {
+		activeProfile = opts.TargetProfile
+	}
+
+	f, err := profile.LoadMerged(opts.File, activeProfile)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
 			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", opts.File)
@@ -849,14 +984,22 @@ func runApply(opts applyOptions) int {
 	if f == nil {
 		return exitIO
 	}
-	f = host.FilterForHost(f, hostForCommand(opts.Host))
 
+	return runApplyWithSpecAndLock(ctx, opts, f, lf, lockPath)
+}
+
+func runApplyWithSpec(ctx context.Context, opts applyOptions, f *schema.GenvFile) int {
 	lockPath := lockPathForSpec(opts.File, opts.LockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
+	return runApplyWithSpecAndLock(ctx, opts, f, lf, lockPath)
+}
+
+func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
+	f = host.FilterForHost(f, hostForCommand(opts.Host))
 
 	available := resolver.Detect()
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
@@ -889,6 +1032,13 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		})
 	}
 
+	hostName := hostForCommand(opts.Host)
+	if !opts.NoHooks {
+		preErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, true)
+		if len(preErrs) > 0 {
+			return writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: false, Data: output.ApplyResult{FailedHooks: preErrs}, Errors: preErrs})
+		}
+	}
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
 	errs := errStrings(execResult.Errors)
 
@@ -907,12 +1057,13 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
 		if filePlanErr != nil {
 			errs = append(errs, filePlanErr.Error())
-		} else {
-			failedHooks = runPostApplyHooks(ctx, f, hostForCommand(opts.Host), false)
+		} else if !opts.NoHooks {
+			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
 			errs = append(errs, failedHooks...)
 		}
 	}
-	writeLockAfterApply(lockPath, lf, result, execResult)
+	success := len(errs) == 0
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
 
 	installed := make([]string, len(execResult.Installed))
 	for i, lp := range execResult.Installed {
@@ -979,6 +1130,20 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		if !opts.Quiet {
 			fPrintln(os.Stdout, "already up to date.")
 		}
+		if !opts.DryRun {
+			if !opts.NoHooks {
+				hostName := hostForCommand(opts.Host)
+				hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile}, opts.HookTimeout, false)
+				hookErrs = append(hookErrs, runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile}, opts.HookTimeout, false)...)
+				if len(hookErrs) > 0 {
+					for _, e := range hookErrs {
+						fprintf(os.Stderr, "genv apply: %s\n", e)
+					}
+					return exitLogic
+				}
+			}
+			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, true)
+		}
 		return exitOK
 	}
 
@@ -1023,6 +1188,17 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitOK
 	}
 
+	hostName := hostForCommand(opts.Host)
+	if !opts.NoHooks {
+		hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, false)
+		if len(hookErrs) > 0 {
+			for _, e := range hookErrs {
+				fprintf(os.Stderr, "genv apply: %s\n", e)
+			}
+			return exitLogic
+		}
+	}
+
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
 
 	// Apply env, shell and services (update lf in memory), then write lock once.
@@ -1037,12 +1213,13 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	var hookErrs []string
-	if len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 {
-		hookErrs = runPostApplyHooks(ctx, f, hostForCommand(opts.Host), false)
+	if len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && !opts.NoHooks {
+		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
-	writeLockAfterApply(lockPath, lf, result, execResult)
+	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
 
-	if len(execResult.Errors) > 0 || len(svcErrs) > 0 || len(fileErrs) > 0 || len(hookErrs) > 0 {
+	if !success {
 		for _, e := range execResult.Errors {
 			fprintf(os.Stderr, "genv apply: %v\n", e)
 		}
@@ -1063,7 +1240,14 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution) {
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile string, success bool) {
+	if success && targetProfile != "" {
+		if targetProfile == "base" {
+			lf.ActiveProfile = ""
+		} else {
+			lf.ActiveProfile = targetProfile
+		}
+	}
 	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
 	for _, id := range execResult.Uninstalled {
 		uninstalledSet[id] = true
@@ -1426,36 +1610,101 @@ func applyFiles(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *
 	return res, err
 }
 
-func runPostApplyHooks(ctx context.Context, f *schema.GenvFile, hostName string, dryRun bool) []string {
-	if f == nil || f.Hooks == nil || len(f.Hooks.PostApply) == 0 {
-		return nil
-	}
-	if err := hooks.NewExecutor(os.Stdout, os.Stderr).PostApply(ctx, f.Hooks.PostApply, hostName, dryRun); err != nil {
-		return []string{err.Error()}
-	}
-	return nil
+type upgradeHookOptions struct {
+	Phase    string
+	Host     string
+	Profile  string
+	DryRun   bool
+	Timeout  time.Duration
+	Plan     []resolver.UpgradeAction
+	Skipped  []resolver.SkippedPackage
+	Upgraded []genvfile.LockedPackage
+	Failed   []string
 }
 
-func runUpgradeHooks(ctx context.Context, phase string, f *schema.GenvFile, hostName string, dryRun bool) []string {
+func runUpgradeHooks(ctx context.Context, f *schema.GenvFile, opts upgradeHookOptions) []string {
 	if f == nil || f.Hooks == nil {
 		return nil
 	}
 	exec := hooks.NewExecutor(os.Stdout, os.Stderr)
+	runOpts := hooks.RunOptions{
+		Host:    opts.Host,
+		DryRun:  opts.DryRun,
+		Env:     upgradeHookEnv(opts),
+		Timeout: opts.Timeout,
+	}
 	var err error
-	switch phase {
+	switch opts.Phase {
 	case "pre":
 		if len(f.Hooks.PreUpgrade) > 0 {
-			err = exec.PreUpgrade(ctx, f.Hooks.PreUpgrade, hostName, dryRun)
+			err = exec.PreUpgradeWithOptions(ctx, f.Hooks.PreUpgrade, runOpts)
 		}
 	case "post":
 		if len(f.Hooks.PostUpgrade) > 0 {
-			err = exec.PostUpgrade(ctx, f.Hooks.PostUpgrade, hostName, dryRun)
+			err = exec.PostUpgradeWithOptions(ctx, f.Hooks.PostUpgrade, runOpts)
 		}
 	}
 	if err != nil {
 		return []string{err.Error()}
 	}
 	return nil
+}
+
+func upgradeHookEnv(opts upgradeHookOptions) []string {
+	phase := "pre-upgrade"
+	if opts.Phase == "post" {
+		phase = "post-upgrade"
+	}
+	return hookEnv(hookContext{Event: "upgrade", Phase: phase, Host: opts.Host, Profile: opts.Profile, DryRun: opts.DryRun, Upgraded: upgradePackageIDs(opts.Upgraded), Failed: opts.Failed, Skipped: upgradeSkippedIDs(opts.Skipped), UpgradeManagers: upgradePlanManagers(opts.Plan)})
+}
+
+func upgradePlanManagers(plan []resolver.UpgradeAction) []string {
+	seen := make(map[string]bool, len(plan))
+	var managers []string
+	for _, action := range plan {
+		if len(action.LPs) == 0 {
+			continue
+		}
+		manager := action.LPs[0].Manager
+		if seen[manager] {
+			continue
+		}
+		seen[manager] = true
+		managers = append(managers, manager)
+	}
+	return managers
+}
+
+func upgradePackageIDs(pkgs []genvfile.LockedPackage) []string {
+	ids := make([]string, len(pkgs))
+	for i, pkg := range pkgs {
+		ids[i] = pkg.ID
+	}
+	return ids
+}
+
+func upgradeSkippedIDs(skipped []resolver.SkippedPackage) []string {
+	ids := make([]string, len(skipped))
+	for i, item := range skipped {
+		ids[i] = item.ID
+	}
+	return ids
+}
+
+func upgradeFailedIDs(plan []resolver.UpgradeAction, errs []error) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	var ids []string
+	for _, action := range plan {
+		if upgradeActionError(action, errs) == "" {
+			continue
+		}
+		for _, pkg := range action.LPs {
+			ids = append(ids, pkg.ID)
+		}
+	}
+	return ids
 }
 
 // envCmd implements `genv env <subcommand>`.
@@ -2151,7 +2400,14 @@ func statusCmd(args []string) int {
 		logging.Init(true)
 	}
 
-	f, err := genvfile.Read(*file)
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lf, _ := genvfile.ReadLock(lockPath)
+	activeProfile := ""
+	if lf != nil {
+		activeProfile = lf.ActiveProfile
+	}
+
+	f, err := profile.LoadMerged(*file, activeProfile)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
 			fprintf(os.Stderr, "genv: %s not found — run 'genv add' to create it\n", *file)
@@ -2194,10 +2450,12 @@ func statusCmd(args []string) int {
 		return exitLogic
 	}
 
-	lf, err := genvfile.ReadLock(lockPathForSpec(*file, *lockFile))
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
+	if lf == nil {
+		lf, err = genvfile.ReadLock(lockPathForSpec(*file, *lockFile))
+		if err != nil {
+			fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+			return exitIO
+		}
 	}
 
 	entries := commands.Status(f, lf)
@@ -2243,8 +2501,12 @@ func statusCmd(args []string) int {
 			Version: output.SchemaVersion,
 			Command: "status",
 			OK:      !hasDrift,
-			Data:    output.StatusResult{Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries, ServiceEntries: jsonServiceEntries},
+			Data:    output.StatusResult{ActiveProfile: activeProfile, Entries: jsonEntries, EnvEntries: jsonEnvEntries, ShellEntries: jsonShellEntries, ServiceEntries: jsonServiceEntries},
 		})
+	}
+
+	if activeProfile != "" && activeProfile != profile.BaseProfileName {
+		fprintf(os.Stdout, "Active profile: %s\n\n", activeProfile)
 	}
 
 	if len(entries) == 0 && len(envEntries) == 0 && len(shellEntries) == 0 && len(serviceEntries) == 0 {
@@ -2816,7 +3078,7 @@ func validateCmd(args []string) int {
 	return exitOK
 }
 
-// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--debug]`.
+// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug]`.
 // Upgrades all packages tracked in the lock file using their recorded manager.
 func upgradeCmd(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
@@ -2830,8 +3092,15 @@ func upgradeCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	dryRun := fs.Bool("dry-run", false, "print the upgrade commands without executing")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	noHooks := fs.Bool("no-hooks", false, "skip pre-upgrade and post-upgrade hooks")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade")
+	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
+	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to upgrade")
+	skipManagerFlag := fs.String("skip-manager", "", "comma-separated list of managers to skip")
+	hookTimeoutFlag := fs.String("hook-timeout", "", "per-hook deadline, e.g. 5m or 30s (default: no hook timeout)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -2839,13 +3108,39 @@ func upgradeCmd(args []string) int {
 	if *debug {
 		logging.Init(true)
 	}
+	hookTimeout, err := parseOptionalDuration(*hookTimeoutFlag)
+	if err != nil {
+		fprintf(os.Stderr, "genv upgrade: invalid --hook-timeout %q: %v\n", *hookTimeoutFlag, err)
+		return exitUsage
+	}
 
 	hostName := hostForCommand(*hostFlag)
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
+			if *jsonOut {
+				return writeJSON(os.Stdout, output.Envelope{
+					Version: output.SchemaVersion,
+					Command: "upgrade",
+					OK:      false,
+					Errors:  []string{err.Error()},
+				})
+			}
 			fprintf(os.Stderr, "genv upgrade: %s not found — run 'genv init' to create one\n", *file)
 			return exitIO
+		}
+		if *jsonOut {
+			code := exitIO
+			if errors.Is(err, genvfile.ErrInvalidFile) {
+				code = exitValidation
+			}
+			_ = writeJSON(os.Stdout, output.Envelope{
+				Version: output.SchemaVersion,
+				Command: "upgrade",
+				OK:      false,
+				Errors:  []string{err.Error()},
+			})
+			return code
 		}
 		fprintf(os.Stderr, "genv upgrade: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
@@ -2858,38 +3153,99 @@ func upgradeCmd(args []string) int {
 	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
+		if *jsonOut {
+			_ = writeJSON(os.Stdout, output.Envelope{
+				Version: output.SchemaVersion,
+				Command: "upgrade",
+				OK:      false,
+				Errors:  []string{err.Error()},
+			})
+			return exitIO
+		}
 		fprintf(os.Stderr, "genv upgrade: reading lock: %v\n", err)
 		return exitIO
 	}
+	only := parseCommaList(*onlyFlag)
+	skip := parseCommaList(*skipFlag)
+	onlyManager := parseCommaList(*onlyManagerFlag)
+	skipManager := parseCommaList(*skipManagerFlag)
+
+	for _, m := range onlyManager {
+		if !schema.KnownManagers[m] {
+			fprintf(os.Stderr, "genv upgrade: unknown manager %q in --only-manager\n", m)
+			return exitUsage
+		}
+	}
+	for _, m := range skipManager {
+		if !schema.KnownManagers[m] {
+			fprintf(os.Stderr, "genv upgrade: unknown manager %q in --skip-manager\n", m)
+			return exitUsage
+		}
+	}
+
+	filters := output.UpgradeFilters{
+		Only:         only,
+		Skip:         skip,
+		OnlyManager:  onlyManager,
+		SkipManager:  skipManager,
+		HooksSkipped: *noHooks,
+	}
+
 	if len(lf.Packages) == 0 {
+		if *jsonOut {
+			return writeJSON(os.Stdout, output.Envelope{
+				Version: output.SchemaVersion,
+				Command: "upgrade",
+				OK:      true,
+				Data: output.UpgradeResult{
+					DryRun:  *dryRun,
+					Batches: []output.UpgradeBatch{},
+					Filters: filters,
+				},
+			})
+		}
 		fPrintln(os.Stdout, "no packages tracked — run 'genv add' or 'genv scan' first.")
 		return exitOK
 	}
 
-	allowedIDs := make(map[string]bool, len(f.Packages))
-	for _, p := range f.Packages {
-		allowedIDs[p.ID] = true
+	planResult, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{
+		Spec:    f,
+		Lock:    lf,
+		Filters: filters,
+	})
+	if err != nil {
+		fprintf(os.Stderr, "genv upgrade: %v\n", err)
+		return exitUsage
 	}
+	plan := planResult.Actions
+	skipped := planResult.Skipped
 
-	// Filter to packages still in the spec before planning so batching only
-	// groups packages genv is actually allowed to upgrade.
-	allowedPackages := make([]genvfile.LockedPackage, 0, len(lf.Packages))
-	for _, lp := range lf.Packages {
-		if allowedIDs[lp.ID] {
-			allowedPackages = append(allowedPackages, lp)
+	for _, w := range planResult.Warnings {
+		if *dryRun && !*jsonOut {
+			fprintf(os.Stderr, "genv upgrade: %s\n", w)
 		}
 	}
 
-	plan, skipped := resolver.PlanUpgrade(allowedPackages)
+	if *jsonOut {
+		return upgradeJSON(*dryRun, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters)
+	}
+
 	for _, s := range skipped {
-		fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", s.Manager, s.ID)
+		if s.Reason != "" {
+			fprintf(os.Stderr, "genv upgrade: %s for %s — skipping\n", s.Reason, s.ID)
+		} else {
+			fprintf(os.Stderr, "genv upgrade: adapter %q not registered for %s — skipping\n", s.Manager, s.ID)
+		}
 	}
 
 	if len(plan) == 0 {
-		if !*dryRun {
+		if !*dryRun && !*noHooks {
 			ctx := context.Background()
-			failedHooks := runUpgradeHooks(ctx, "pre", f, hostName, false)
-			failedHooks = append(failedHooks, runUpgradeHooks(ctx, "post", f, hostName, false)...)
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts.Phase = "pre"
+			failedHooks := runUpgradeHooks(ctx, f, hookOpts)
+			hookOpts.Phase = "post"
+			failedHooks = append(failedHooks, runUpgradeHooks(ctx, f, hookOpts)...)
 			if len(failedHooks) > 0 {
 				for _, e := range failedHooks {
 					fprintf(os.Stderr, "genv upgrade: %s\n", e)
@@ -2920,47 +3276,329 @@ func upgradeCmd(args []string) int {
 	}
 
 	ctx := context.Background()
-	failedHooks := runUpgradeHooks(ctx, "pre", f, hostName, false)
-	if len(failedHooks) > 0 {
-		for _, e := range failedHooks {
-			fprintf(os.Stderr, "genv upgrade: %s\n", e)
+	if !*noHooks {
+		preHookOpts := upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+		failedHooks := runUpgradeHooks(ctx, f, preHookOpts)
+		if len(failedHooks) > 0 {
+			for _, e := range failedHooks {
+				fprintf(os.Stderr, "genv upgrade: %s\n", e)
+			}
+			return exitLogic
 		}
-		return exitLogic
 	}
 
-	execResult := resolver.ExecuteUpgrade(ctx, plan, os.Stdin, os.Stdout, os.Stderr)
+	runResult := upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
+		Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped, Warnings: planResult.Warnings},
+		Lock:     lf,
+		LockPath: lockPath,
+		Stdin:    os.Stdin,
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
+	})
 
 	exitCode := exitOK
-	if len(execResult.Errors) > 0 {
-		for _, err := range execResult.Errors {
+	if len(runResult.Errors) > 0 {
+		for _, err := range runResult.Errors {
 			fprintf(os.Stderr, "genv upgrade: %v\n", err)
 		}
 		exitCode = exitLogic
 	}
-	postHookErrs := runUpgradeHooks(ctx, "post", f, hostName, false)
-	if len(postHookErrs) > 0 {
-		for _, e := range postHookErrs {
-			fprintf(os.Stderr, "genv upgrade: %s\n", e)
+	if !*noHooks {
+		postHookErrs := runUpgradeHooks(ctx, f, upgradeHookOptions{
+			Phase:    "post",
+			Host:     hostName,
+			Profile:  lf.ActiveProfile,
+			Timeout:  hookTimeout,
+			Plan:     plan,
+			Skipped:  skipped,
+			Upgraded: runResult.Upgraded,
+			Failed:   upgradeFailedIDs(plan, runResult.Errors),
+		})
+		if len(postHookErrs) > 0 {
+			for _, e := range postHookErrs {
+				fprintf(os.Stderr, "genv upgrade: %s\n", e)
+			}
+			exitCode = exitLogic
 		}
-		exitCode = exitLogic
 	}
 
-	// Build an ID→index map so each version update is O(1), not O(n).
-	lockIndex := make(map[string]int, len(lf.Packages))
-	for i, lp := range lf.Packages {
-		lockIndex[lp.ID] = i
-	}
-	for _, upgraded := range execResult.Upgraded {
-		if idx, ok := lockIndex[upgraded.ID]; ok {
-			lf.Packages[idx].InstalledVersion = upgraded.InstalledVersion
-		}
-	}
-
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv upgrade: writing lock: %v\n", err)
+	if runResult.LockWriteError != nil {
+		fprintf(os.Stderr, "genv upgrade: %v\n", runResult.LockWriteError)
 		return exitIO
 	}
 	return exitCode
+}
+
+// upgradeBatchFromAction builds a machine-readable batch descriptor from a
+// resolved upgrade action, with the given lifecycle status.
+func upgradeBatchFromAction(a resolver.UpgradeAction, status string) output.UpgradeBatch {
+	ids := make([]string, len(a.LPs))
+	pkgNames := make([]string, len(a.LPs))
+	for i, lp := range a.LPs {
+		ids[i] = lp.ID
+		pkgNames[i] = lp.PkgName
+	}
+	manager := ""
+	if len(a.LPs) > 0 {
+		manager = a.LPs[0].Manager
+	}
+	return output.UpgradeBatch{
+		Manager:  manager,
+		IDs:      ids,
+		PkgNames: pkgNames,
+		Cmd:      strings.Join(a.Cmd, " "),
+		Status:   status,
+	}
+}
+
+// upgradeSkippedEntries converts resolver skip records into JSON payload entries.
+func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSkipped {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]output.UpgradeSkipped, len(skipped))
+	for i, s := range skipped {
+		out[i] = output.UpgradeSkipped{
+			ID:      s.ID,
+			Manager: s.Manager,
+			Reason:  s.Reason,
+		}
+	}
+	return out
+}
+
+// upgradeJSON emits a single JSON envelope for `genv upgrade --json`. In dry-run
+// it plans only — no hooks, subprocesses, or lock write. In wet-run it routes
+// all subprocess and hook output to stderr so stdout stays one JSON object,
+// then reports executed batches, refreshed versions, and failed hooks while
+// preserving the human path's exit codes.
+func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters) int {
+	skippedEntries := upgradeSkippedEntries(skipped)
+
+	if dryRun {
+		batches := make([]output.UpgradeBatch, 0, len(plan))
+		for _, a := range plan {
+			batches = append(batches, upgradeBatchFromAction(a, "planned"))
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "upgrade",
+			OK:      true,
+			Data: output.UpgradeResult{
+				DryRun:  true,
+				Batches: batches,
+				Skipped: skippedEntries,
+				Filters: filters,
+			},
+		})
+	}
+
+	if len(plan) == 0 {
+		ctx := context.Background()
+		var failedHooks []output.UpgradeHookResult
+		if !filters.HooksSkipped {
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts.Phase = "pre"
+			failedHooks = runUpgradeHooksJSON(ctx, f, hookOpts)
+			hookOpts.Phase = "post"
+			failedHooks = append(failedHooks, runUpgradeHooksJSON(ctx, f, hookOpts)...)
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "upgrade",
+			OK:      len(failedHooks) == 0,
+			Data: output.UpgradeResult{
+				DryRun:      false,
+				Batches:     []output.UpgradeBatch{},
+				Skipped:     skippedEntries,
+				FailedHooks: failedHooks,
+				Filters:     filters,
+			},
+			Errors: upgradeHookErrorStrings(failedHooks),
+		})
+	}
+
+	ctx := context.Background()
+	var errs []string
+	var preHooks []output.UpgradeHookResult
+	if !filters.HooksSkipped {
+		preHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped})
+	}
+	if len(preHooks) > 0 {
+		errs = append(errs, upgradeHookErrorStrings(preHooks)...)
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "upgrade",
+			OK:      false,
+			Data: output.UpgradeResult{
+				DryRun:      false,
+				Batches:     []output.UpgradeBatch{},
+				Skipped:     skippedEntries,
+				FailedHooks: preHooks,
+				Filters:     filters,
+			},
+			Errors: errs,
+		})
+	}
+
+	// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
+	runResult := upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
+		Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped},
+		Lock:     lf,
+		LockPath: lockPath,
+		Stdin:    os.Stdin,
+		Stdout:   os.Stderr,
+		Stderr:   os.Stderr,
+	})
+	batches := make([]output.UpgradeBatch, 0, len(plan))
+	for _, a := range plan {
+		status := "ok"
+		if actionErr := upgradeActionError(a, runResult.Errors); actionErr != "" {
+			status = "failed"
+			batch := upgradeBatchFromAction(a, status)
+			batch.Error = actionErr
+			batches = append(batches, batch)
+			continue
+		}
+		batches = append(batches, upgradeBatchFromAction(a, status))
+	}
+	if len(runResult.Errors) > 0 {
+		errs = append(errs, errStrings(runResult.Errors)...)
+	}
+
+	var postHooks []output.UpgradeHookResult
+	if !filters.HooksSkipped {
+		postHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{
+			Phase:    "post",
+			Host:     hostName,
+			Profile:  lf.ActiveProfile,
+			Timeout:  hookTimeout,
+			Plan:     plan,
+			Skipped:  skipped,
+			Upgraded: runResult.Upgraded,
+			Failed:   upgradeFailedIDs(plan, runResult.Errors),
+		})
+	}
+	errs = append(errs, upgradeHookErrorStrings(postHooks)...)
+	if runResult.LockWriteError != nil {
+		errs = append(errs, runResult.LockWriteError.Error())
+	}
+
+	updated := make([]output.UpgradePackage, 0, len(runResult.Upgraded))
+	for _, u := range runResult.Upgraded {
+		updated = append(updated, output.UpgradePackage{
+			ID:         u.ID,
+			Manager:    u.Manager,
+			NewVersion: u.InstalledVersion,
+		})
+	}
+
+	return writeJSON(os.Stdout, output.Envelope{
+		Version: output.SchemaVersion,
+		Command: "upgrade",
+		OK:      len(errs) == 0,
+		Data: output.UpgradeResult{
+			DryRun:      false,
+			Batches:     batches,
+			Updated:     updated,
+			Skipped:     skippedEntries,
+			FailedHooks: postHooks,
+			Filters:     filters,
+		},
+		Errors: errs,
+	})
+}
+
+// runUpgradeHooksJSON runs upgrade hooks for one phase with all hook output
+// routed to stderr, returning a structured result per failed phase so the
+// caller can embed it in the JSON payload.
+func runUpgradeHooksJSON(ctx context.Context, f *schema.GenvFile, opts upgradeHookOptions) []output.UpgradeHookResult {
+	if f == nil || f.Hooks == nil {
+		return nil
+	}
+	exec := hooks.NewExecutor(os.Stderr, os.Stderr)
+	runOpts := hooks.RunOptions{
+		Host:    opts.Host,
+		Env:     upgradeHookEnv(opts),
+		Timeout: opts.Timeout,
+	}
+	var err error
+	switch opts.Phase {
+	case "pre":
+		if len(f.Hooks.PreUpgrade) > 0 {
+			err = exec.PreUpgradeWithOptions(ctx, f.Hooks.PreUpgrade, runOpts)
+		}
+	case "post":
+		if len(f.Hooks.PostUpgrade) > 0 {
+			err = exec.PostUpgradeWithOptions(ctx, f.Hooks.PostUpgrade, runOpts)
+		}
+	}
+	if err != nil {
+		return []output.UpgradeHookResult{{Phase: opts.Phase, Error: err.Error()}}
+	}
+	return nil
+}
+
+// upgradeHookErrorStrings flattens hook results to the envelope-level errors slice.
+func upgradeHookErrorStrings(results []output.UpgradeHookResult) []string {
+	if len(results) == 0 {
+		return nil
+	}
+	out := make([]string, len(results))
+	for i, r := range results {
+		out[i] = r.Error
+	}
+	return out
+}
+
+// upgradeActionError returns the first execution error naming this action.
+func upgradeActionError(a resolver.UpgradeAction, errs []error) string {
+	needle := upgradeActionIDKey(a)
+	for _, e := range errs {
+		if strings.Contains(e.Error(), needle) {
+			return e.Error()
+		}
+	}
+	return ""
+}
+
+// upgradeActionIDKey reproduces the %q-formatted id slice ExecuteUpgrade uses in
+// its wrapped errors, so a batch can be correlated to its failure.
+func upgradeActionIDKey(a resolver.UpgradeAction) string {
+	ids := make([]string, len(a.LPs))
+	for i, lp := range a.LPs {
+		ids[i] = lp.ID
+	}
+	return fmt.Sprintf("%q", ids)
+}
+
+func parseCommaList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func parseOptionalDuration(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("duration must be non-negative")
+	}
+	return d, nil
 }
 
 // initCmd implements `genv init`.
@@ -3035,7 +3673,7 @@ func extractPositional(args []string) (positional string, flagArgs []string) {
 		if strings.HasPrefix(arg, "-") {
 			flagArgs = append(flagArgs, arg)
 			// "--flag=value" carries its value inline; no extra arg to consume.
-			if !strings.Contains(arg, "=") && i+1 < len(args) {
+			if !strings.Contains(arg, "=") && !positionalBoolFlag(arg) && i+1 < len(args) {
 				i++
 				flagArgs = append(flagArgs, args[i])
 			}
@@ -3045,6 +3683,16 @@ func extractPositional(args []string) (positional string, flagArgs []string) {
 		i++
 	}
 	return
+}
+
+func positionalBoolFlag(arg string) bool {
+	name := strings.TrimLeft(arg, "-")
+	switch name {
+	case "no-search", "no-hooks", "dry-run", "force", "strict", "yes", "quiet", "json", "debug", "files", "sensitive":
+		return true
+	default:
+		return false
+	}
 }
 
 // parseManagerFlag parses a comma-separated "mgr:name" list into a map.
@@ -3095,6 +3743,7 @@ Commands:
   completion  Print or install the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
+  updates     Check for available updates to genv-tracked packages
   init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
@@ -3102,7 +3751,7 @@ Commands:
 Flags common to all commands:
   --file <path>   Path to genv.json (default: $XDG_CONFIG_HOME/genv/genv.json or ~/.config/genv/genv.json, falling back to ./genv.json)
 
-Host-specific flags (used by apply, status, upgrade, adopt):
+Host-specific flags (used by apply, status, upgrade, updates check/start, adopt):
   --host <name>   Host name for host-specific records (default: $GENV_HOST or os.Hostname())
 
 Add/Adopt-specific flags:
@@ -3110,6 +3759,8 @@ Add/Adopt-specific flags:
   --prefer <mgr>               Preferred manager, e.g. brew
   --manager <mgr:name,...>     Manager-specific package names, e.g.
                                snap:hello,brew:hello
+  --no-hooks                   Skip add lifecycle hooks without skipping install
+  --hook-timeout <duration>    Per-hook timeout, e.g. 5m or 30s
 
 Apply-specific flags:
   --dry-run            Print the reconcile plan without executing
@@ -3118,12 +3769,38 @@ Apply-specific flags:
   --quiet              Suppress plan output (useful in scripts)
   --json               Emit machine-readable JSON to stdout
   --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none)
+  --no-hooks           Skip apply lifecycle hooks without skipping apply
+  --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
 
+Remove-specific flags:
+  --no-hooks                Skip remove lifecycle hooks without skipping uninstall
+  --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
+
 Upgrade-specific flags:
-  --dry-run   Print the upgrade commands without executing
-  --yes       Skip the confirmation prompt
-  --debug     Emit debug-level structured logs to stderr
+  --dry-run                 Print the upgrade commands without executing
+  --yes                     Skip the confirmation prompt
+  --no-hooks                Skip pre-upgrade and post-upgrade hooks
+  --json                    Emit machine-readable JSON to stdout
+  --only <ids>              Comma-separated package IDs or names to upgrade
+  --skip <ids>              Comma-separated package IDs or names to skip
+  --only-manager <mgrs>     Comma-separated managers to upgrade
+  --skip-manager <mgrs>     Comma-separated managers to skip
+  --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
+  --debug                   Emit debug-level structured logs to stderr
+
+Updates-specific flags:
+  check                         Plan available updates for genv-tracked packages only
+  start                         Register the managed background checker (no auto-apply unless updates.autoApply:true)
+  stop                          Stop and unregister the managed background checker
+  status                        Show managed background checker status
+  check --json                  Emit machine-readable dry-run JSON to stdout
+  check --only <ids>            Comma-separated package IDs or names to check
+  check --skip <ids>            Comma-separated package IDs or names to skip
+  check --only-manager <mgrs>   Comma-separated managers to check
+  check --skip-manager <mgrs>   Comma-separated managers to skip
+  check --host <name>           Host name for host-specific records
+  check --lock-file <path>      Path to genv lock file
 
 Status-specific flags:
   --json    Emit machine-readable JSON to stdout

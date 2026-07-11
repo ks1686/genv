@@ -2,16 +2,23 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/service"
+	"github.com/ks1686/genv/internal/upgrade"
 )
 
 // TestMain disables interactive prompts (package search picker, remove fuzzy
@@ -952,6 +959,25 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	rp, wp, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = wp
+	fn()
+	_ = wp.Close()
+	os.Stderr = old
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, rp); err != nil {
+		t.Fatalf("io.Copy: %v", err)
+	}
+	_ = rp.Close()
+	return buf.String()
+}
+
 // ---- genv scan ---------------------------------------------------------------
 
 func TestScanCmd_NoCrash(t *testing.T) {
@@ -1319,6 +1345,885 @@ func TestUpgrade_RunsHooks(t *testing.T) {
 	}
 	if string(got) != "prepost" {
 		t.Fatalf("hook marker: got %q, want %q", string(got), "prepost")
+	}
+}
+
+type upgradeNoHooksAdapter struct {
+	marker string
+}
+
+func (a upgradeNoHooksAdapter) Name() string { return "test-upgrade-no-hooks" }
+func (a upgradeNoHooksAdapter) Available() bool {
+	return true
+}
+func (a upgradeNoHooksAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
+	return id, false
+}
+func (a upgradeNoHooksAdapter) PlanInstall(pkgName string) []string { return []string{"true"} }
+func (a upgradeNoHooksAdapter) PlanUninstall(pkgName string) []string {
+	return []string{"true"}
+}
+func (a upgradeNoHooksAdapter) PlanUpgrade(pkgName string) []string {
+	return []string{"sh", "-c", "printf upgrade >> " + a.marker}
+}
+func (a upgradeNoHooksAdapter) PlanClean() [][]string              { return nil }
+func (a upgradeNoHooksAdapter) Query(pkgName string) (bool, error) { return true, nil }
+func (a upgradeNoHooksAdapter) ListInstalled() ([]string, error) {
+	return []string{pkgNameForTest}, nil
+}
+func (a upgradeNoHooksAdapter) QueryVersion(pkgName string) (string, error) {
+	return "2.0.0", nil
+}
+
+const pkgNameForTest = "alpha"
+
+type lifecycleHookAdapter struct {
+	installMarker   string
+	uninstallMarker string
+	upgradeMarker   string
+}
+
+func (a lifecycleHookAdapter) Name() string    { return "test-hook-manager" }
+func (a lifecycleHookAdapter) Available() bool { return true }
+func (a lifecycleHookAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
+	return id, false
+}
+func (a lifecycleHookAdapter) PlanInstall(pkgName string) []string {
+	return []string{"sh", "-c", "printf install >> " + a.installMarker}
+}
+func (a lifecycleHookAdapter) PlanUninstall(pkgName string) []string {
+	return []string{"sh", "-c", "printf uninstall >> " + a.uninstallMarker}
+}
+func (a lifecycleHookAdapter) PlanUpgrade(pkgName string) []string {
+	return []string{"sh", "-c", "printf upgrade >> " + a.upgradeMarker}
+}
+func (a lifecycleHookAdapter) PlanClean() [][]string              { return nil }
+func (a lifecycleHookAdapter) Query(pkgName string) (bool, error) { return true, nil }
+func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return []string{pkgNameForTest}, nil }
+func (a lifecycleHookAdapter) QueryVersion(pkgName string) (string, error) {
+	return "2.0.0", nil
+}
+
+func registerLifecycleHookAdapter(t *testing.T, a lifecycleHookAdapter) {
+	t.Helper()
+	originalAll := adapter.All
+	originalKnown := schema.KnownManagers["test-hook-manager"]
+	adapter.All = append([]adapter.Adapter{a}, originalAll...)
+	schema.KnownManagers["test-hook-manager"] = true
+	t.Cleanup(func() {
+		adapter.All = originalAll
+		if originalKnown {
+			schema.KnownManagers["test-hook-manager"] = true
+		} else {
+			delete(schema.KnownManagers, "test-hook-manager")
+		}
+	})
+}
+
+func writeLockFile(t *testing.T, lockPath string, lf *genvfile.LockFile) {
+	t.Helper()
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+}
+
+func TestApply_LifecycleHooks_receive_env_context(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookLog := filepath.Join(dir, "hooks.log")
+	installLog := filepath.Join(dir, "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{"command":"printf '%s:%s:%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_HOST\" \"$GENV_INSTALLED\" \"$GENV_PROFILE\" >> ` + hookLog + `"}],"postApply":[{"command":"printf '%s:%s:%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_HOST\" \"$GENV_INSTALLED\" \"$GENV_PROFILE\" >> ` + hookLog + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	profileDir := filepath.Join(dir, "profiles")
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		t.Fatalf("create profile dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(profileDir, "work.json"), []byte(`{"schemaVersion":"6","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+	writeLockFile(t, lockPath, &genvfile.LockFile{SchemaVersion: "1", ActiveProfile: "work", Packages: nil})
+
+	// When
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "1s"})
+
+	// Then
+	if code != exitOK {
+		t.Fatalf("apply lifecycle hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	got, err := os.ReadFile(hookLog)
+	if err != nil {
+		t.Fatalf("read hook log: %v", err)
+	}
+	want := "apply:pre-apply:ci:alpha:work\napply:post-apply:ci:alpha:work\n"
+	if string(got) != want {
+		t.Fatalf("hook log = %q, want %q", string(got), want)
+	}
+}
+
+func TestAdd_NoHooks_skips_hooks_but_installs_package(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookLog := filepath.Join(dir, "hook.log")
+	installLog := filepath.Join(dir, "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
+	spec := `{"schemaVersion":"6","packages":[],"hooks":{"preAdd":[{"command":"printf pre >> ` + hookLog + `; exit 99"}],"postAdd":[{"command":"printf post >> ` + hookLog + `; exit 99"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	// When
+	code := run([]string{"add", "--file", specPath, "--lock-file", lockPath, "--prefer", "test-hook-manager", "--no-search", "--no-hooks", "--hook-timeout", "1s", "alpha"})
+
+	// Then
+	if code != exitOK {
+		t.Fatalf("add --no-hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if _, err := os.Stat(hookLog); !os.IsNotExist(err) {
+		t.Fatalf("hook log stat = %v, want not exist", err)
+	}
+	got, err := os.ReadFile(installLog)
+	if err != nil {
+		t.Fatalf("read install log: %v", err)
+	}
+	if string(got) != "install" {
+		t.Fatalf("install log = %q, want install", string(got))
+	}
+}
+
+func TestRemove_LifecycleHooks_receive_removed_env(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookLog := filepath.Join(dir, "hooks.log")
+	uninstallLog := filepath.Join(dir, "uninstall.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{uninstallMarker: uninstallLog})
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preRemove":[{"command":"printf '%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_REMOVED\" >> ` + hookLog + `"}],"postRemove":[{"command":"printf '%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_REMOVED\" >> ` + hookLog + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-hook-manager", PkgName: "alpha"}})
+
+	// When
+	code := run([]string{"remove", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--hook-timeout", "1s", "alpha"})
+
+	// Then
+	if code != exitOK {
+		t.Fatalf("remove lifecycle hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	got, err := os.ReadFile(hookLog)
+	if err != nil {
+		t.Fatalf("read hook log: %v", err)
+	}
+	want := "remove:pre-remove:alpha\nremove:post-remove:alpha\n"
+	if string(got) != want {
+		t.Fatalf("hook log = %q, want %q", string(got), want)
+	}
+}
+
+func TestUpgrade_NoHooks_executes_package_plan_without_running_hooks(t *testing.T) {
+	// Given: a tracked package with failing hooks and an adapter whose upgrade command records execution.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	upgradeMarker := filepath.Join(dir, "upgrade.log")
+	hookMarker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + hookMarker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + hookMarker + `; exit 99"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"}})
+	originalAll := adapter.All
+	adapter.All = append([]adapter.Adapter{upgradeNoHooksAdapter{marker: upgradeMarker}}, originalAll...)
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	// When: hooks are explicitly skipped.
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks"})
+
+	// Then: the package upgrade command ran and neither hook ran.
+	if code != exitOK {
+		t.Fatalf("upgrade --no-hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	got, err := os.ReadFile(upgradeMarker)
+	if err != nil {
+		t.Fatalf("read upgrade marker: %v", err)
+	}
+	if string(got) != "upgrade" {
+		t.Fatalf("upgrade marker = %q, want %q", string(got), "upgrade")
+	}
+	if _, err := os.Stat(hookMarker); !os.IsNotExist(err) {
+		t.Fatalf("hook marker stat = %v, want not exist", err)
+	}
+}
+
+func TestUpgrade_NoHooks_with_no_upgradeable_packages_does_not_run_hooks(t *testing.T) {
+	// Given: a tracked package whose manager is unavailable, so upgrade has no executable plan.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	marker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + marker + `; exit 99"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "missing-manager", PkgName: "git"}})
+
+	// When: no-hooks is used on the no-upgradeable-packages branch.
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks"})
+
+	// Then: the branch succeeds without executing either failing hook.
+	if code != exitOK {
+		t.Fatalf("upgrade --no-hooks with no plan: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("hook marker stat = %v, want not exist", err)
+	}
+}
+
+func TestUpgrade_NoHooks_JSON_reports_hooks_skipped(t *testing.T) {
+	// Given: a no-plan upgrade with hooks configured.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"exit 99"}]}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "missing-manager", PkgName: "git"}})
+
+	// When: JSON output is requested with hooks skipped.
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--json", "--no-hooks"})
+	})
+
+	// Then: the JSON filter context records that hooks were intentionally skipped.
+	if code != exitOK {
+		t.Fatalf("upgrade --json --no-hooks: expected exitOK (%d), got %d\noutput: %s", exitOK, code, out)
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("upgrade --json output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	data, ok := env["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("JSON data field missing or wrong type: %v", env["data"])
+	}
+	filters, ok := data["filters"].(map[string]any)
+	if !ok {
+		t.Fatalf("JSON filters field missing or wrong type: %v", data["filters"])
+	}
+	if got := filters["hooksSkipped"]; got != true {
+		t.Fatalf("filters.hooksSkipped = %v, want true", got)
+	}
+}
+
+func TestUpgrade_DryRun_does_not_run_hooks_or_write_lock(t *testing.T) {
+	// Given: a tracked package with upgrade hooks and an existing lock version.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	marker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `"}],"postUpgrade":[{"command":"printf post >> ` + marker + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "1.0.0"}})
+
+	// When: upgrade is planned in dry-run mode.
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--dry-run"})
+
+	// Then: no hook marker appears and the lock version remains untouched.
+	if code != exitOK {
+		t.Fatalf("upgrade dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("hook marker stat = %v, want not exist", err)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if got := lf.Packages[0].InstalledVersion; got != "1.0.0" {
+		t.Fatalf("lock version = %q, want %q", got, "1.0.0")
+	}
+}
+
+func TestUpgrade_HookTimeout_bad_duration_fails_usage(t *testing.T) {
+	// Given: a valid spec and lock so flag parsing reaches hook-timeout validation.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"git"}]}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}})
+
+	// When: the duration cannot be parsed.
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--hook-timeout", "nope"})
+
+	// Then: CLI treats it as usage rather than silently disabling the timeout.
+	if code != exitUsage {
+		t.Fatalf("upgrade bad --hook-timeout: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestUpgrade_HookTimeout_times_out_hung_hook(t *testing.T) {
+	// Given: a no-plan upgrade still runs hooks, and the pre hook blocks longer than the timeout.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"sleep 1"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "missing-manager", PkgName: "git"}})
+
+	// When: hook timeout is shorter than the hook command.
+	code := run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "1ms"})
+
+	// Then: the hook timeout is surfaced as a lifecycle failure.
+	if code != exitLogic {
+		t.Fatalf("upgrade timed-out hook: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestUpdatesCheck_plans_batches_without_mutating_lock_or_running_commands(t *testing.T) {
+	// Given: a tracked package with an upgrade command that would create a marker if executed.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	upgradeMarker := filepath.Join(dir, "upgrade.log")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"alpha"}]}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"}})
+	before, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock before: %v", err)
+	}
+	infoBefore, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat lock before: %v", err)
+	}
+	originalAll := adapter.All
+	adapter.All = append([]adapter.Adapter{upgradeNoHooksAdapter{marker: upgradeMarker}}, originalAll...)
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	// When: updates check is run through the public CLI surface.
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath})
+	})
+
+	// Then: the batch is reported, but no command ran and the lock file is byte-identical.
+	if code != exitOK {
+		t.Fatalf("updates check: expected exitOK (%d), got %d\noutput: %s", exitOK, code, out)
+	}
+	if !strings.Contains(out, "genv-tracked packages only") || !strings.Contains(out, "alpha") || !strings.Contains(out, "test-upgrade-no-hooks") {
+		t.Fatalf("updates check output = %q, want tracked-only plan with alpha batch", out)
+	}
+	after, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read lock after: %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("lock content changed\nbefore: %s\nafter: %s", before, after)
+	}
+	infoAfter, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat lock after: %v", err)
+	}
+	if !infoAfter.ModTime().Equal(infoBefore.ModTime()) {
+		t.Fatalf("lock mtime changed: before %s after %s", infoBefore.ModTime(), infoAfter.ModTime())
+	}
+	if _, err := os.Stat(upgradeMarker); !os.IsNotExist(err) {
+		t.Fatalf("upgrade marker stat = %v, want not exist", err)
+	}
+}
+
+func TestUpdatesCheck_JSON_is_deterministic_dry_run_success(t *testing.T) {
+	// Given: a lock entry whose manager can produce a dry-run upgrade plan.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"alpha"}]}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"}})
+	originalAll := adapter.All
+	adapter.All = append([]adapter.Adapter{upgradeNoHooksAdapter{marker: filepath.Join(dir, "upgrade.log")}}, originalAll...)
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	// When: machine-readable updates check output is requested twice.
+	var firstCode int
+	first := captureStdout(t, func() {
+		firstCode = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath, "--json"})
+	})
+	var secondCode int
+	second := captureStdout(t, func() {
+		secondCode = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath, "--json"})
+	})
+
+	// Then: both runs produce the same ok:true dry-run envelope.
+	if firstCode != exitOK || secondCode != exitOK {
+		t.Fatalf("updates check --json codes = %d/%d, want %d\nfirst: %s\nsecond: %s", firstCode, secondCode, exitOK, first, second)
+	}
+	if first != second {
+		t.Fatalf("updates check --json not deterministic\nfirst: %s\nsecond: %s", first, second)
+	}
+	var env struct {
+		Command string `json:"command"`
+		OK      bool   `json:"ok"`
+		Data    struct {
+			DryRun  bool `json:"dryRun"`
+			Batches []struct {
+				Manager string   `json:"manager"`
+				IDs     []string `json:"ids"`
+				Status  string   `json:"status"`
+			} `json:"batches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(first), &env); err != nil {
+		t.Fatalf("updates check --json output is not valid JSON: %v\noutput: %q", err, first)
+	}
+	if env.Command != "updates check" || !env.OK || !env.Data.DryRun {
+		t.Fatalf("envelope = %+v, want command updates check ok true dryRun true", env)
+	}
+	if len(env.Data.Batches) != 1 || env.Data.Batches[0].Manager != "test-upgrade-no-hooks" || !slices.Equal(env.Data.Batches[0].IDs, []string{"alpha"}) || env.Data.Batches[0].Status != "planned" {
+		t.Fatalf("batches = %+v, want one planned alpha batch", env.Data.Batches)
+	}
+}
+
+func TestUpdatesCheck_missing_spec_or_lock_returns_actionable_error_without_mutation(t *testing.T) {
+	tests := []struct {
+		name      string
+		writeSpec bool
+		writeLock bool
+		want      string
+	}{
+		{name: "missing spec", writeLock: true, want: "run 'genv init'"},
+		{name: "missing lock", writeSpec: true, want: "reading lock"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: either the spec or lock is absent.
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			specPath := filepath.Join(dir, "genv.json")
+			lockPath := filepath.Join(dir, "genv.lock.json")
+			if tt.writeSpec {
+				if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"alpha"}]}`), 0o644); err != nil {
+					t.Fatalf("write spec: %v", err)
+				}
+			}
+			if tt.writeLock {
+				writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "brew", PkgName: "alpha"}})
+			}
+
+			// When: updates check is invoked.
+			var code int
+			errOut := captureStderr(t, func() {
+				code = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath})
+			})
+
+			// Then: the error is actionable and no missing file is created as a side effect.
+			if code != exitIO {
+				t.Fatalf("updates check missing file: expected exitIO (%d), got %d\nstderr: %s", exitIO, code, errOut)
+			}
+			if !strings.Contains(errOut, tt.want) {
+				t.Fatalf("stderr = %q, want to contain %q", errOut, tt.want)
+			}
+			if !tt.writeSpec {
+				if _, err := os.Stat(specPath); !os.IsNotExist(err) {
+					t.Fatalf("spec stat = %v, want not exist", err)
+				}
+			}
+			if !tt.writeLock {
+				if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+					t.Fatalf("lock stat = %v, want not exist", err)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdatesCheck_JSON_missing_spec_or_lock_returns_error_envelope(t *testing.T) {
+	tests := []struct {
+		name      string
+		writeSpec bool
+		writeLock bool
+		wantCode  int
+	}{
+		{name: "missing spec", writeLock: true, wantCode: exitLogic},
+		{name: "missing lock", writeSpec: true, wantCode: exitIO},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: either the spec or lock is absent.
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			specPath := filepath.Join(dir, "genv.json")
+			lockPath := filepath.Join(dir, "genv.lock.json")
+			if tt.writeSpec {
+				if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","packages":[{"id":"alpha"}]}`), 0o644); err != nil {
+					t.Fatalf("write spec: %v", err)
+				}
+			}
+			if tt.writeLock {
+				writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "brew", PkgName: "alpha"}})
+			}
+
+			// When: JSON output is requested.
+			var code int
+			out := captureStdout(t, func() {
+				code = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath, "--json"})
+			})
+
+			// Then: stdout is a parseable ok:false envelope and no missing file is created.
+			if code != tt.wantCode {
+				t.Fatalf("updates check --json missing file: expected %d, got %d\nstdout: %s", tt.wantCode, code, out)
+			}
+			var env struct {
+				Command string   `json:"command"`
+				OK      bool     `json:"ok"`
+				Errors  []string `json:"errors"`
+			}
+			if err := json.Unmarshal([]byte(out), &env); err != nil {
+				t.Fatalf("updates check --json error output is not valid JSON: %v\noutput: %q", err, out)
+			}
+			if env.Command != "updates check" || env.OK || len(env.Errors) == 0 {
+				t.Fatalf("envelope = %+v, want command updates check ok false with errors", env)
+			}
+			if !tt.writeSpec {
+				if _, err := os.Stat(specPath); !os.IsNotExist(err) {
+					t.Fatalf("spec stat = %v, want not exist", err)
+				}
+			}
+			if !tt.writeLock {
+				if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+					t.Fatalf("lock stat = %v, want not exist", err)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdatesCheck_does_not_run_hooks(t *testing.T) {
+	// Given: a spec with failing upgrade hooks that would create a marker if executed.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookMarker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + hookMarker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + hookMarker + `; exit 99"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "missing-manager", PkgName: "alpha"}})
+
+	// When: updates check runs with no executable package plan.
+	code := run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath})
+
+	// Then: failing hooks are ignored because check only plans.
+	if code != exitOK {
+		t.Fatalf("updates check with failing hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if _, err := os.Stat(hookMarker); !os.IsNotExist(err) {
+		t.Fatalf("hook marker stat = %v, want not exist", err)
+	}
+}
+
+func TestUpdates_UsageErrors_are_actionable(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing subcommand", args: []string{"updates"}, want: "usage: genv updates <check|start|stop|status>"},
+		{name: "unknown subcommand", args: []string{"updates", "frobnicate"}, want: "unknown subcommand"},
+		{name: "bad flag", args: []string{"updates", "check", "--definitely-bad"}, want: "flag provided but not defined"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// When: malformed updates invocations are routed through the CLI.
+			var code int
+			errOut := captureStderr(t, func() { code = run(tt.args) })
+
+			// Then: they fail as usage errors with corrective text.
+			if code != exitUsage {
+				t.Fatalf("run(%v): expected exitUsage (%d), got %d", tt.args, exitUsage, code)
+			}
+			if !strings.Contains(errOut, tt.want) {
+				t.Fatalf("stderr = %q, want to contain %q", errOut, tt.want)
+			}
+		})
+	}
+}
+
+type fakeUpdatesSupervisor struct {
+	supported bool
+	running   bool
+	started   []service.ScheduledJob
+	stopped   []string
+}
+
+func (f *fakeUpdatesSupervisor) Supported() bool { return f.supported }
+
+func (f *fakeUpdatesSupervisor) Start(ctx context.Context, job service.ScheduledJob) error {
+	f.started = append(f.started, job)
+	return nil
+}
+
+func (f *fakeUpdatesSupervisor) Stop(ctx context.Context, name string) error {
+	f.stopped = append(f.stopped, name)
+	return nil
+}
+
+func (f *fakeUpdatesSupervisor) Status(ctx context.Context, name string) (service.ScheduledJobStatus, error) {
+	return service.ScheduledJobStatus{Supported: f.supported, Running: f.running, Detail: name}, nil
+}
+
+func withUpdatesSupervisor(t *testing.T, supervisor *fakeUpdatesSupervisor) {
+	t.Helper()
+	original := newUpdatesSupervisor
+	newUpdatesSupervisor = func() updatesSupervisor { return supervisor }
+	t.Cleanup(func() { newUpdatesSupervisor = original })
+}
+
+func TestUpdatesStart_rejects_missing_disabled_or_invalid_config(t *testing.T) {
+	tests := []struct {
+		name string
+		spec string
+		want string
+	}{
+		{name: "missing updates block", spec: `{"schemaVersion":"6","packages":[]}`, want: "updates block is missing"},
+		{name: "disabled updates block", spec: `{"schemaVersion":"6","packages":[],"updates":{"enabled":false,"interval":"24h"}}`, want: "updates.enabled is false"},
+		{name: "invalid interval", spec: `{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"0s"}}`, want: "updates.interval"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: a spec whose updates config cannot start a scheduler.
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			specPath := filepath.Join(dir, "genv.json")
+			if err := os.WriteFile(specPath, []byte(tt.spec), 0o644); err != nil {
+				t.Fatalf("write spec: %v", err)
+			}
+			supervisor := &fakeUpdatesSupervisor{supported: true}
+			withUpdatesSupervisor(t, supervisor)
+
+			// When: updates start is invoked.
+			var code int
+			errOut := captureStderr(t, func() { code = run([]string{"updates", "start", "--file", specPath}) })
+
+			// Then: it fails with a corrective hint and never creates a unit.
+			if code != exitValidation {
+				t.Fatalf("updates start: expected exitValidation (%d), got %d\nstderr: %s", exitValidation, code, errOut)
+			}
+			if !strings.Contains(errOut, tt.want) || !strings.Contains(errOut, "enabled updates block") {
+				t.Fatalf("stderr = %q, want %q and corrective hint", errOut, tt.want)
+			}
+			if len(supervisor.started) != 0 {
+				t.Fatalf("started jobs = %#v, want none", supervisor.started)
+			}
+		})
+	}
+}
+
+func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *testing.T) {
+	// Given: a valid check-only updates config and a fake scheduler backend.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"2h","notify":true}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	supervisor := &fakeUpdatesSupervisor{supported: true}
+	withUpdatesSupervisor(t, supervisor)
+	originalExecutable := updatesExecutable
+	updatesExecutable = func() (string, error) { return "/tmp/genv-test-bin", nil }
+	t.Cleanup(func() { updatesExecutable = originalExecutable })
+
+	// When: updates start is invoked.
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"updates", "start", "--file", specPath, "--lock-file", lockPath, "--host", "qa-host"})
+	})
+
+	// Then: one scheduled job is registered, its command is check-only by default, and start returns immediately.
+	if code != exitOK {
+		t.Fatalf("updates start: expected exitOK (%d), got %d\nstdout: %s", exitOK, code, out)
+	}
+	if len(supervisor.started) != 1 {
+		t.Fatalf("started jobs = %#v, want one", supervisor.started)
+	}
+	job := supervisor.started[0]
+	if job.Name != updatesServiceName || job.Interval != 2*time.Hour {
+		t.Fatalf("job = %#v, want updates interval 2h", job)
+	}
+	wantCommand := []string{"/tmp/genv-test-bin", "updates", "__run-once", "--file", specPath, "--lock-file", lockPath, "--host", "qa-host"}
+	if !slices.Equal(job.Command, wantCommand) {
+		t.Fatalf("job command = %v, want %v", job.Command, wantCommand)
+	}
+	if !strings.Contains(out, "check/log/notify only") || strings.Contains(out, "auto-apply enabled") {
+		t.Fatalf("stdout = %q, want explicit default check-only mode", out)
+	}
+}
+
+func TestUpdatesStatusAndStop_unsupported_platform_do_not_crash(t *testing.T) {
+	// Given: a fake backend that reports no systemd or launchd support.
+	supervisor := &fakeUpdatesSupervisor{supported: false}
+	withUpdatesSupervisor(t, supervisor)
+
+	// When: status and stop are invoked.
+	var statusCode int
+	statusOut := captureStdout(t, func() { statusCode = run([]string{"updates", "status"}) })
+	var stopCode int
+	stopOut := captureStdout(t, func() { stopCode = run([]string{"updates", "stop"}) })
+
+	// Then: both return cleanly with clear state and no stop call is required.
+	if statusCode != exitOK || stopCode != exitOK {
+		t.Fatalf("status/stop codes = %d/%d, want %d", statusCode, stopCode, exitOK)
+	}
+	if !strings.Contains(statusOut, "not supported") || !strings.Contains(statusOut, "not running") {
+		t.Fatalf("status output = %q, want unsupported not running", statusOut)
+	}
+	if !strings.Contains(stopOut, "not supported") || !strings.Contains(stopOut, "nothing to stop") {
+		t.Fatalf("stop output = %q, want unsupported nothing to stop", stopOut)
+	}
+}
+
+func TestUpdatesRunOnce_auto_apply_only_when_explicit(t *testing.T) {
+	tests := []struct {
+		name      string
+		autoApply bool
+		wantRuns  int
+	}{
+		{name: "default check only", autoApply: false, wantRuns: 0},
+		{name: "explicit auto apply", autoApply: true, wantRuns: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: a valid updates config and a tracked package with a fake adapter plan.
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			specPath := filepath.Join(dir, "genv.json")
+			lockPath := filepath.Join(dir, "genv.lock.json")
+			spec := fmt.Sprintf(`{"schemaVersion":"6","packages":[{"id":"alpha"}],"updates":{"enabled":true,"interval":"1h","autoApply":%t}}`, tt.autoApply)
+			if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+				t.Fatalf("write spec: %v", err)
+			}
+			writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"}})
+			originalAll := adapter.All
+			adapter.All = append([]adapter.Adapter{upgradeNoHooksAdapter{marker: filepath.Join(dir, "upgrade.log")}}, originalAll...)
+			t.Cleanup(func() { adapter.All = originalAll })
+			originalRun := updatesRunUpgrade
+			runCalls := 0
+			updatesRunUpgrade = func(ctx context.Context, opts upgrade.UpgradeRunOptions) upgrade.UpgradeRunResult {
+				runCalls++
+				return upgrade.UpgradeRunResult{Plan: opts.Plan}
+			}
+			t.Cleanup(func() { updatesRunUpgrade = originalRun })
+
+			// When: the hidden one-shot worker runs.
+			code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath})
+
+			// Then: the shared executor is called only for explicit autoApply:true.
+			if code != exitOK {
+				t.Fatalf("updates __run-once: expected exitOK (%d), got %d", exitOK, code)
+			}
+			if runCalls != tt.wantRuns {
+				t.Fatalf("RunUpgrade calls = %d, want %d", runCalls, tt.wantRuns)
+			}
+		})
+	}
+}
+
+func TestUpdatesRunOnce_unsupported_notifier_logs_warning_without_crashing(t *testing.T) {
+	// Given: notify is enabled but the notifier lookup fails.
+	dir := t.TempDir()
+	xdg := filepath.Join(dir, "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[{"id":"alpha"}],"updates":{"enabled":true,"interval":"1h","notify":true}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "missing-manager", PkgName: "alpha"}})
+	originalLookPath := updatesLookPath
+	updatesLookPath = func(file string) (string, error) { return "", os.ErrNotExist }
+	t.Cleanup(func() { updatesLookPath = originalLookPath })
+
+	// When: the check-only worker runs.
+	code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath})
+
+	// Then: it logs the notifier warning but does not fail the check.
+	if code != exitOK {
+		t.Fatalf("updates __run-once notify missing: expected exitOK (%d), got %d", exitOK, code)
+	}
+	logBytes, err := os.ReadFile(filepath.Join(xdg, "genv", "updates.log"))
+	if err != nil {
+		t.Fatalf("read updates log: %v", err)
+	}
+	if !strings.Contains(string(logBytes), "updates.notify.unavailable") {
+		t.Fatalf("updates log = %q, want notifier warning", string(logBytes))
+	}
+}
+
+func TestUpgradeHookEnv_builds_deterministic_context_in_plan_order(t *testing.T) {
+	// Given: plan, skipped, upgraded, and failed packages deliberately not sorted alphabetically.
+	plan := []resolver.UpgradeAction{
+		{LPs: []genvfile.LockedPackage{{ID: "zed", Manager: "brew", PkgName: "zed"}, {ID: "alpha", Manager: "brew", PkgName: "alpha"}}},
+		{LPs: []genvfile.LockedPackage{{ID: "bun-tool", Manager: "bun", PkgName: "bun-tool"}}},
+	}
+	skipped := []resolver.SkippedPackage{{ID: "skip-z", Manager: "missing"}, {ID: "skip-a", Manager: "missing"}}
+	upgraded := []genvfile.LockedPackage{{ID: "zed"}, {ID: "bun-tool"}}
+
+	// When: post-upgrade hook env is built.
+	env := upgradeHookEnv(upgradeHookOptions{
+		Phase:    "post",
+		Host:     "ci-host",
+		Plan:     plan,
+		Skipped:  skipped,
+		Upgraded: upgraded,
+		Failed:   []string{"alpha"},
+	})
+
+	// Then: comma-separated lists follow plan/result order, not map or lexical order.
+	want := []string{
+		"GENV_EVENT=upgrade",
+		"GENV_PHASE=post-upgrade",
+		"GENV_HOST=ci-host",
+		"GENV_PROFILE=",
+		"GENV_DRY_RUN=false",
+		"GENV_INSTALLED=",
+		"GENV_REMOVED=",
+		"GENV_UPGRADED=zed,bun-tool",
+		"GENV_FAILED=alpha",
+		"GENV_SKIPPED=skip-z,skip-a",
+		"GENV_UPGRADE_MANAGERS=brew,bun",
+	}
+	if !slices.Equal(env, want) {
+		t.Fatalf("upgradeHookEnv() = %v, want %v", env, want)
 	}
 }
 
