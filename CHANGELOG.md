@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v3.0.0 - 2026-07-11
+
+### Added
+
+- `genv upgrade` now supports machine-readable `--json` output plus tracked-only filters: `--only`, `--skip`, `--only-manager`, and `--skip-manager`.
+- `genv updates check/start/stop/status` adds a managed updates checker built on the same tracked-only upgrade planner. It defaults to check/log/notify behavior and only applies upgrades when `updates.autoApply` is explicitly enabled.
+- Schema v6 adds the `updates` block and expands lifecycle hooks to apply/add/remove/upgrade phases with `--no-hooks`, hook timeouts, deterministic hook context environment, and script-file hook references.
+- `genv profile list/create/switch` adds named profiles stored under `profiles/<name>.json`, merged over the base `genv.json`, with active profile state recorded in the lock file.
+- Added tracked-only language/tool/plugin adapters for global JS/TS, Python/data, Rust, Go, Ruby/PHP/.NET, Haskell/OCaml/Julia, universal version managers, Kubernetes plugins, Helm plugins, and VS Code extensions.
+
+### Changed
+
+- Resolver fallback is now restricted to system package managers. Ecosystem, toolchain, and plugin managers such as `npm`, `cargo`, `go`, `krew`, `helm`, and `vscode` remain selectable through `prefer` or `managers`, but are never blind fallback targets.
+- Public docs now explicitly distinguish genv's tracked-only upgrade model from topgrade-style system-wide update-all behavior.
+- macOS user-facing manager choices dedupe `brew`/`linuxbrew` while preserving existing `linuxbrew` specs and locks.
+
+### Documentation
+
+- README, SCHEMA, and ROADMAP now document schema v6, updates, profiles, lifecycle hooks, tracked-only adapter semantics, and the v3.0.0 closure of the currently committed roadmap backlog.
+
 ## v2.4.0 - 2026-07-07
 
 ### Changed
@@ -70,7 +90,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Native Windows support** (previously WSL2-only): a new `windows` host classification (`internal/host.Classify`), plus three new adapters — `winget`, `scoop`, and `choco`. `bun` and `uv` already worked cross-platform and now cover global installs on native Windows too. This is the Windows-support portion of the v3.0.0 milestone; the updates-daemon portion (M11) is separate and still unimplemented.
+- **Native Windows support** (previously WSL2-only): a new `windows` host classification (`internal/host.Classify`), plus three new adapters — `winget`, `scoop`, and `choco`. `bun` and `uv` already worked cross-platform and now cover global installs on native Windows too. This was the Windows-support portion of the v3.0.0 milestone; the later v3.0.0 line completes the updates checker as well.
 - `files.links[]` gains a third mode, `"merge-dir"`, alongside `"link"` and `"managed-link"`. Instead of symlinking an entire source directory as one unit, it symlinks each file under source individually into target. This lets multiple records target the *same* directory — e.g. one with no `host`, one `host`-filtered — and layer: a later record's same-named file wins over an earlier one without needing `--force`, so a shared base directory plus a small host-specific override directory can compose one target directory, instead of requiring a full separate source tree per host. `genv status --files` reports one entry per merged file for per-file drift detection.
 
 ### Fixed

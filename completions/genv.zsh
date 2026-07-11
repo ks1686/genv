@@ -20,11 +20,13 @@ _genv() {
 		'completion:Print shell completion script'
 		'validate:Validate genv.json against the schema'
 		'upgrade:Upgrade all tracked packages to their latest versions'
+		'updates:Check available updates for genv-tracked packages'
 		'pull:Fetch the spec from a git repository and update genv.json'
 		'init:Create a new genv.json interactively'
 		'env:Manage shell environment variables'
 		'shell:Manage shell aliases and config'
 		'service:Manage background services'
+		'profile:Manage named environment profiles'
 		'version:Show genv build version information'
 		'help:Show this help text'
 	)
@@ -51,7 +53,21 @@ _genv() {
 		done
 
 		case ${line[1]} in
-		remove | rm | disown)
+		remove | rm)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--no-hooks[Skip pre-remove and post-remove hooks]' \
+				'--hook-timeout=[Per-hook timeout]:timeout:' \
+				'--host=[Host name for host-specific records]:host:' \
+				'1: :->pkgid'
+			if [[ $state == pkgid ]]; then
+				local -a pkgs
+				pkgs=(${(f)"$(genv __complete packages ${file_arg} 2>/dev/null)"})
+				_describe -t packages 'tracked package' pkgs
+			fi
+			;;
+		disown)
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
@@ -70,7 +86,10 @@ _genv() {
 				'--version=[Version constraint]:version:' \
 				"--prefer=[Preferred manager]:manager:($(genv __complete managers 2>/dev/null))" \
 				'--manager=[Manager-specific names]:manager:' \
-				'--no-search[Skip interactive package search]'
+				'--no-search[Skip interactive package search]' \
+				'--no-hooks[Skip pre-add and post-add hooks]' \
+				'--hook-timeout=[Per-hook timeout]:timeout:' \
+				'--host=[Host name for host-specific records]:host:'
 			;;
 		adopt)
 			_arguments \
@@ -89,6 +108,13 @@ _genv() {
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--dry-run[Print the upgrade commands without executing]' \
 				'--yes[Skip the confirmation prompt]' \
+				'--no-hooks[Skip pre-upgrade and post-upgrade hooks]' \
+				'--json[Emit machine-readable JSON to stdout]' \
+				'--only=[Package IDs or names to upgrade]:packages:' \
+				'--skip=[Package IDs or names to skip]:packages:' \
+				'--only-manager=[Managers to upgrade]:managers:' \
+				'--skip-manager=[Managers to skip]:managers:' \
+				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:' \
 				'1: :->pkgid'
@@ -98,6 +124,44 @@ _genv() {
 				pkgs=(${(f)"$(genv __complete packages ${file_arg} 2>/dev/null)"})
 				_describe -t packages 'tracked package' pkgs
 			fi
+			;;
+		updates)
+			local -a updates_cmds
+			updates_cmds=(
+				'check:Plan available updates for genv-tracked packages only'
+				'start:Register the managed background updates checker'
+				'stop:Stop and unregister the managed background updates checker'
+				'status:Show managed background updates checker status'
+			)
+			_arguments \
+				'1: :->updatescmd' \
+				'*::arg:->updatesarg'
+			case $state in
+			updatescmd)
+				_describe -t commands 'updates subcommand' updates_cmds
+				;;
+			updatesarg)
+				case ${line[1]} in
+				check)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--lock-file=[Path to genv lock file]:path:_files' \
+						'--json[Emit machine-readable JSON to stdout]' \
+						'--only=[Package IDs or names to check]:packages:' \
+						'--skip=[Package IDs or names to skip]:packages:' \
+						'--only-manager=[Managers to check]:managers:' \
+						'--skip-manager=[Managers to skip]:managers:' \
+						'--host=[Host name for host-specific records]:host:'
+					;;
+				start)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--lock-file=[Path to genv lock file]:path:_files' \
+						'--host=[Host name for host-specific records]:host:'
+					;;
+				esac
+				;;
+			esac
 			;;
 		apply)
 			_arguments \
@@ -110,6 +174,8 @@ _genv() {
 				'--quiet[Suppress plan output]' \
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--timeout=[Per-subprocess timeout]:timeout:' \
+				'--no-hooks[Skip pre-apply and post-apply hooks]' \
+				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:'
 			;;
@@ -227,6 +293,52 @@ _genv() {
 				edit)
 					_arguments \
 						'--file=[Path to genv.json]:path:_files'
+					;;
+				esac
+				;;
+			esac
+			;;
+		profile)
+			local -a profile_cmds
+			profile_cmds=(
+				'list:List available profiles and mark the active one'
+				'ls:List available profiles and mark the active one'
+				'create:Scaffold a new profile file'
+				'switch:Switch to a named profile and reconcile the system'
+			)
+			_arguments \
+				'1: :->profilecmd' \
+				'*::arg:->profilearg'
+			case $state in
+			profilecmd)
+				_describe -t commands 'profile subcommand' profile_cmds
+				;;
+			profilearg)
+				case ${line[1]} in
+				list | ls)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--lock-file=[Path to genv lock file]:path:_files'
+					;;
+				create)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'1:profile name:'
+					;;
+				switch)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--lock-file=[Path to genv lock file]:path:_files' \
+						'--dry-run[Print the reconcile plan without executing]' \
+						'--force[Overwrite mismatched managed files]' \
+						'--strict[Exit with an error if any package cannot be resolved]' \
+						'--yes[Skip the confirmation prompt]' \
+						'--quiet[Suppress plan output]' \
+						'--json[Emit machine-readable JSON to stdout]' \
+						'--timeout=[Per-subprocess timeout]:duration:' \
+						'--debug[Emit debug-level structured logs to stderr]' \
+						'--host=[Host name for host-specific records]:host:' \
+						'1:profile name:'
 					;;
 				esac
 				;;

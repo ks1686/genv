@@ -97,7 +97,34 @@ var All = []Adapter{
 	Snap{},
 	Linuxbrew{},
 	Bun{},
+	Npm{},
+	Pnpm{},
+	Yarn{},
+	Deno{},
+	Volta{},
 	Uv{},
+	Pipx{},
+	PipUser{},
+	Poetry{},
+	Conda{},
+	Mamba{},
+	Pixi{},
+	Cargo{},
+	Go{},
+	Rustup{},
+	Gem{},
+	Composer{},
+	DotnetTool{},
+	Ghcup{},
+	Stack{},
+	Opam{},
+	Juliaup{},
+	Sdkman{},
+	Asdf{},
+	Mise{},
+	Krew{},
+	Helm{},
+	Vscode{},
 	Winget{},
 	Scoop{},
 	Choco{},
@@ -171,14 +198,7 @@ func runListOutput(cmd string, args ...string) ([]string, error) {
 		}
 		return nil, err
 	}
-	var result []string
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			result = append(result, line)
-		}
-	}
-	return result, nil
+	return trimmedNonEmptyLines(string(out)), nil
 }
 
 // runVersionOutput runs cmd and returns trimmed stdout as the version string.

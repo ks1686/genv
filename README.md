@@ -36,7 +36,7 @@ Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
 | macOS             | `brew` (formulae + casks), `mas` (Mac App Store)             |
 | Windows (native)  | `winget`, `scoop`, `choco`                                    |
 | WSL2              | Targets the Linux userland inside WSL2 (treated as `arch`)    |
-| Any of the above  | `bun` (global installs), `uv` (global tool installs)          |
+| Any of the above  | `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta` (global JS/TS tools), `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi` (global Python/data tools), `cargo` (global crates), `go` (`go install` binaries), `rustup` (explicit Rust toolchains/components/targets), `gem` (global Ruby gems), `composer` (global PHP packages), `dotnet-tool` (global .NET tools), `ghcup`/`stack` (Haskell toolchains/tools), `opam` (OCaml switch packages), `juliaup` (Julia channels), `sdkman`/`asdf`/`mise` (universal tool/version managers), `krew` (kubectl plugins), `helm` (Helm plugins), `vscode` (VS Code extensions) |
 
 `genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
 
@@ -181,7 +181,7 @@ When you run `genv apply`:
 
 ```json
 {
-  "schemaVersion": "5",
+  "schemaVersion": "6",
   "packages": [
     {
       "id": "git"
@@ -243,6 +243,11 @@ When you run `genv apply`:
     ]
   },
   "hooks": {
+    "preApply": [
+      {
+        "file": "~/.config/genv/hooks/pre-apply.sh"
+      }
+    ],
     "preUpgrade": [
       {
         "command": "brew upgrade",
@@ -255,6 +260,12 @@ When you run `genv apply`:
       }
     ]
   },
+  "updates": {
+    "enabled": true,
+    "interval": "24h",
+    "autoApply": false,
+    "notify": true
+  },
   "repo": {
     "url": "https://github.com/example/dotfiles",
     "ref": "main"
@@ -264,7 +275,7 @@ When you run `genv apply`:
 
 **Fields:**
 
-- `schemaVersion` — `"1"` through `"5"`; older versions still load
+- `schemaVersion` — `"1"` through `"6"`; older versions still load
 - `packages` — array of tracked packages
   - `id` — canonical name for the package (used by genv)
   - `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
@@ -282,8 +293,18 @@ When you run `genv apply`:
   - `templates` — files to copy after rendering `__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`
   - `dirs` — directories to ensure exist
   - per-record `host` and `backup` fields are supported
-- `hooks` — optional lifecycle shell commands (schema v5)
-  - `preUpgrade`, `postApply`, `postUpgrade` arrays of `{ command, host }`
+- `hooks` — optional lifecycle hooks
+  - Existing schema v5 hook arrays remain supported unchanged: `preUpgrade`, `postApply`, `postUpgrade`
+  - Schema v6 additionally supports `preApply`, `postApply`, `preAdd`, `postAdd`, `preRemove`, `postRemove`, `preUpgrade`, and `postUpgrade`
+  - Each hook is `{ "command": "inline shell command", "host": ... }` or `{ "file": "~/path/to/script.sh", "host": ... }`; set exactly one of `command` or `file`
+  - Hook environment includes `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, and `GENV_SKIPPED` as deterministic comma-separated lists
+  - Security: hooks run as the current user and can execute arbitrary shell/script code with the same filesystem and network access as `genv`; script-file hooks are arbitrary code execution by design. `genv` passes script paths as argv elements and does not interpolate package names into hook command strings beyond the explicit inline shell-command contract.
+- `updates` — optional managed background update checker settings (schema v6)
+  - `enabled` — set `true` before `genv updates start` will register a checker
+  - `interval` — positive Go duration such as `"24h"`, used as the systemd timer / launchd `StartInterval` cadence
+  - `autoApply` — default `false`; upgrades are only applied by the checker when explicitly set to `true`
+  - `notify` — send a best-effort desktop notification (`notify-send` on Linux, `osascript` on macOS) when available
+  - `onlyManagers`, `skipManagers`, `only`, `skip` — optional tracked-only filters matching `genv upgrade`
 - `repo` — optional source repository for `genv pull` (schema v5)
   - `url` — repository URL or local path
   - `ref` — optional branch/tag/ref
@@ -304,9 +325,16 @@ When you run `genv apply`:
 | `genv status --files [flags]`                     | Check the `files` block against the live filesystem only (does not touch the spec-vs-lock check above) |
 | `genv pull [flags]`                               | Fetch genv.json from the `repo.url`/`repo.ref` git remote configured in the spec |
 | `genv list`                                       | List packages currently tracked by genv (from lock file) (alias: `ls`) |
+| `genv profile list`                               | List available profiles and mark the active one                        |
+| `genv profile create <name>`                      | Scaffold a new profile file                                            |
+| `genv profile switch <name> [flags]`              | Switch to a named profile and reconcile the system                     |
 | `genv apply [flags]`                              | Reconcile system state with genv.json                                  |
 | `genv validate [flags]`                           | Validate genv.json without changing the system                         |
 | `genv upgrade [flags]`                            | Upgrade tracked packages in per-manager batches and refresh lock versions |
+| `genv updates check [flags]`                      | Check available updates for genv-tracked packages without mutating anything |
+| `genv updates start [flags]`                      | Register the managed background updates checker                             |
+| `genv updates stop`                               | Stop and unregister the managed background updates checker                   |
+| `genv updates status`                             | Show managed background updates checker status                              |
 | `genv init [flags]`                               | Interactive wizard to create a new genv.json                           |
 | `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
@@ -324,6 +352,16 @@ When you run `genv apply`:
 - `--prefer <mgr>` — preferred manager, e.g. `brew`
 - `--manager <mgr:name,...>` — manager-specific names, e.g. `winget:Mozilla.Firefox`
 - `--no-search` — skip the interactive package search and use the id as-is
+- `--no-hooks` — skip pre-add and post-add hooks without skipping the install
+- `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
+- `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+
+### `genv remove` flags
+
+- `--no-hooks` — skip pre-remove and post-remove hooks without skipping the uninstall
+- `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
+- `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
 - `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
 ### `genv adopt` flags
@@ -345,6 +383,8 @@ When you run `genv apply`:
 - `--quiet` — suppress plan output (useful in scripts)
 - `--json` — emit machine-readable JSON to stdout instead of human-readable text
 - `--timeout <duration>` — per-subprocess deadline, e.g. `5m` or `30s` (0 = no timeout)
+- `--no-hooks` — skip pre-apply and post-apply hooks without skipping the apply operation
+- `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
 - `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
@@ -373,7 +413,52 @@ When you run `genv apply`:
 
 - `--dry-run` — print the upgrade commands without executing
 - `--yes` — skip the confirmation prompt
+- `--no-hooks` — skip pre-upgrade and post-upgrade hooks without skipping package upgrades
+- `--json` — emit machine-readable JSON to stdout instead of human-readable text
+- `--only <id-or-pkg-name>[,...]` — upgrade only matching tracked packages
+- `--skip <id-or-pkg-name>[,...]` — skip matching tracked packages
+- `--only-manager <manager>[,...]` — upgrade only matching tracked managers
+- `--skip-manager <manager>[,...]` — skip matching tracked managers
+- `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+
+### `genv updates check` flags
+
+`genv updates check` uses the same shared dry-run planner as `genv upgrade --dry-run` and reports **genv-tracked packages only**. It never writes the lock file, never executes package-manager commands, and never runs upgrade hooks.
+
+- `--json` — emit machine-readable JSON to stdout instead of human-readable text
+- `--only <id-or-pkg-name>[,...]` — check only matching tracked packages
+- `--skip <id-or-pkg-name>[,...]` — skip matching tracked packages
+- `--only-manager <manager>[,...]` — check only matching tracked managers
+- `--skip-manager <manager>[,...]` — skip matching tracked managers
+- `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+
+### `genv updates start|stop|status`
+
+`genv updates start` registers a user-level scheduled job using `systemd --user` on Linux or `launchd` on macOS. The scheduled command is a one-shot `genv updates __run-once` inside the genv binary; the platform supervisor owns the interval and restart lifecycle. Unsupported platforms report a clear message instead of crashing.
+
+The managed checker logs to `~/.config/genv/updates.log` (respecting `$XDG_CONFIG_HOME`) and rotates that file to `updates.log.1` after roughly 1 MiB. On each interval it runs the shared upgrade planner against tracked packages only, logs the result, and sends a best-effort notification when `updates.notify:true` and a notifier binary is available.
+
+The default background behavior is **check/log/notify only**. It does not apply package upgrades unless the spec explicitly sets:
+
+```json
+{
+  "schemaVersion": "6",
+  "updates": {
+    "enabled": true,
+    "interval": "24h",
+    "autoApply": true
+  }
+}
+```
+
+`genv updates start` refuses a missing, disabled, or invalid `updates` block with a corrective hint. Use `genv updates status` to inspect the registered checker and `genv updates stop` to remove it.
+
+`genv updates start` flags:
+
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
 - `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
 
@@ -413,8 +498,9 @@ When `--json` is passed, the command writes a single JSON object to stdout and r
 # Parse the plan in CI
 genv apply --dry-run --json | jq '.data.toInstall[].id'
 
-# Check status in a script
+# Check status or tracked-only updates in a script
 genv status --json | jq '.ok'
+genv updates check --json | jq '.data.dryRun'
 
 # Non-interactive apply in a bootstrap script
 genv apply --yes --json 2>/dev/null
@@ -442,7 +528,9 @@ When genv needs to install a package it:
 1. Detects which package managers are available on the host.
 2. Honors the `prefer` hint if that manager is available.
 3. Falls back to the first available manager listed in the `managers` map.
-4. Falls back to the first available manager in the registry, using the package ID as the name.
+4. Falls back to the first available system package manager in the registry, using the package ID as the name.
+
+Language, toolchain, and plugin managers such as `npm`, `cargo`, `go`, `krew`, `helm`, and `vscode` are explicit-only during resolution: use `prefer` or `managers` when a package should be handled by one of them. This prevents a generic package such as `git` from accidentally resolving to an ecosystem manager just because that tool is installed.
 
 Unresolved packages (no compatible manager found) produce a warning. Use `--strict` to treat them as a hard error.
 
@@ -460,11 +548,27 @@ To minimize the number of subprocesses, genv groups tracked packages by their re
 - `scoop` — `scoop update pkg1 pkg2 ...`
 - `snap` — `snap refresh pkg1 pkg2 ...`
 
-Managers that do not provide a selective multi-package upgrade command (`uv`, `mas`, `bun`) still upgrade one package at a time.
+Managers that do not provide a selective multi-package upgrade command (`uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `mas`, `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`) still upgrade one package at a time. JavaScript, Python, Rust, and Go managers are tracked-only: `npm` upgrades with `npm install --global <pkg>`, `pnpm` with `pnpm add --global <pkg>`, Yarn Classic with `yarn global add <pkg>`, Volta with `volta install <pkg>`, and none of them run broad global update commands; `cargo` upgrades named crates with `cargo install <pkg>` and never runs broad install-update commands; `go` upgrades named module paths with `go install <module>@latest` (or the explicit `@version` you track) and never runs broad Go updaters; `rustup` upgrades only explicit IDs such as `toolchain:stable`, `component:rustfmt@stable`, or `target:aarch64-unknown-linux-gnu@stable`. Python managers are similarly scoped: `uv` upgrades with `uv tool install --upgrade <pkg>`, `pipx` upgrades with `pipx install --force <pkg>`, `pip-user` with `python3 -m pip install --user --upgrade <pkg>` (note: this shares the user site-packages directory), `poetry` with `poetry self add <pkg>`, `pixi` with `pixi global upgrade <pkg>`, and `conda`/`mamba` require explicit `<env>:<pkg>` targeting.
+
+Ruby, PHP, and .NET managers are tracked-only globals: `gem` installs/upgrades with `gem install <pkg>` and uninstalls with `gem uninstall -x -a <name>` (which removes every installed version of the tracked gem); `composer` uses `composer global require <pkg>`/`composer global remove <pkg>` and never runs a project-local `composer update`; `dotnet-tool` uses `dotnet tool install/uninstall/update --global` only, never a local tool manifest.
+
+Language-ecosystem toolchain managers use explicit, non-project targeting: `ghcup` tracks Haskell tool versions by a `<tool>:<version>` id where tool is `ghc`, `cabal`, `hls`, or `stack` (e.g. `ghc:9.4.8`); `stack` installs global executables with `stack install <pkg>` (it has no safe global uninstall, so removal is reported as unsupported rather than guessed); `opam` requires a `<switch>:<pkg>` id and pins every operation to that switch with `--switch`; `juliaup` tracks a single Julia channel id such as `release`, `lts`, or `1.10` via `juliaup add/remove/update <channel>`. Ambiguous or unsupported ids fail with an actionable, non-mutating command.
+
+Universal version managers require explicit tool/version ids and never run broad "update all" commands: `sdkman` uses `<candidate>:<version>` (e.g. `java:21.0.2-tem`) mapped to `sdk install/uninstall <candidate> <version>` and never `sdk selfupdate`; `asdf` uses `plugin:<name>` for plugins (`asdf plugin add/remove`) or `tool:<plugin>@<version>` for tool versions (`asdf install/uninstall <plugin> <version>`) and never `asdf plugin update --all`; `mise` uses `<tool>@<version>` (e.g. `node@22.11.0`) mapped to `mise use -g <tool>@<version>` / `mise uninstall <tool>@<version>`. Invalid formats fail with an actionable, non-mutating command.
+
+Kubernetes plugin managers are tracked per plugin: `krew` uses `kubectl krew install/uninstall/upgrade <plugin>` (never the broad `kubectl krew upgrade` that updates every plugin); `helm` manages Helm plugins only (`helm plugin install/uninstall/update <name>`), never Helm repositories or project chart dependencies. Helm plugin installs need a source URL, so track them with a `managers.helm` url override (or a `name=url` value); an id with no url fails with an actionable, non-mutating command.
+
+The `vscode` adapter tracks individual VS Code extensions by their `<publisher>.<name>` id via `code --install-extension`/`--uninstall-extension`, and upgrades a single tracked extension with `code --install-extension <id> --force` — never a broad "update all extensions" command. Extension ids are matched case-insensitively against `code --list-extensions --show-versions`.
+
+**Deferred plugin managers.** Editor/shell/tmux frameworks whose plugin lifecycle depends on an interactive shell session or a self-update-only model are intentionally **not** implemented as genv managers, because they cannot expose safe, non-interactive, per-plugin install/remove/upgrade commands that fit genv's tracked-only model. This includes shell frameworks (`oh-my-zsh`, `zinit`, `antidote`, `fisher`) and the tmux plugin manager (`tpm`). Manage these through genv `hooks` (e.g. a `postApply` script that runs the framework's own installer/updater) rather than as tracked packages. This keeps genv from sourcing interactive RC files or depending on an attached tmux session.
+
+Yarn support targets Yarn Classic's `yarn global` commands; Yarn Berry project-scoped package management is not modeled as global packages. Deno global scripts need both a command name and a module URL. Because genv package entries have a single manager override string, use either `"id":"serve","managers":{"deno":"https://deno.land/std/http/file_server.ts"}` or the explicit `"managers":{"deno":"serve=https://deno.land/std/http/file_server.ts"}` form; invalid or missing Deno URLs fail with an actionable command instead of running a partial install.
 
 After each command, genv refreshes the installed versions in the lock file. For managers that can list all installed versions in one call, that list is used instead of querying each package individually.
 
 Because batching means a single command may upgrade several packages at once, a failure is reported for the whole batch while still recording the versions of any packages that did upgrade.
+
+Lifecycle hooks run by default for non-dry-run add/remove/apply/upgrade commands. Pass `--no-hooks` to skip hooks without suppressing the primary package operation; upgrade JSON output records this as `data.filters.hooksSkipped`. Use `--hook-timeout` to bound each hook independently.
 
 ---
 
@@ -496,9 +600,11 @@ Current focus (v2.x):
 - [x] M8: global environment variable management (`genv env`)
 - [x] M9: shell configuration management (`genv shell`)
 - [x] M10: services management (`genv service`) + expanded packaging channels
-- [ ] M11: updates daemon
-- [ ] M12: named profiles
-- [ ] M13: hooks and lifecycle scripts
+- [x] M11: updates daemon/checker (`genv updates`)
+- [x] M12: named profiles (`genv profile`)
+- [x] M13: hooks and lifecycle scripts
+
+The v3.0.0 line closes the currently committed roadmap backlog. Future large ideas should be tracked as issues or non-committed proposals rather than open roadmap milestones.
 
 ## Releasing
 

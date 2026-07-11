@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
@@ -289,6 +290,27 @@ func TestLaunchdPlistContent_EscapesXML(t *testing.T) {
 	}
 	if !strings.Contains(content, `<string>genv.name&amp;&lt;&gt;</string>`) {
 		t.Fatalf("escaped plist label missing:\n%s", content)
+	}
+}
+
+func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
+	// Given: the managed updates checker command and cadence.
+	command := []string{"/usr/local/bin/genv", "updates", "__run-once", "--file", "/tmp/genv.json"}
+
+	// When: supervisor metadata is rendered for systemd and launchd.
+	unit := SystemdScheduledUnitContent("updates", command)
+	timer := SystemdScheduledTimerContent("updates", 2*time.Hour)
+	plist := LaunchdScheduledPlistContent("updates", command, 2*time.Hour)
+
+	// Then: both backends run the one-shot command on the configured interval.
+	if !strings.Contains(unit, "Type=oneshot") || !strings.Contains(unit, `ExecStart="/usr/local/bin/genv" "updates" "__run-once"`) {
+		t.Fatalf("systemd unit = %q, want one-shot genv updates command", unit)
+	}
+	if !strings.Contains(timer, "OnUnitActiveSec=7200s") || !strings.Contains(timer, "Unit=genv-updates.service") {
+		t.Fatalf("systemd timer = %q, want 7200s cadence for updates unit", timer)
+	}
+	if !strings.Contains(plist, "<key>StartInterval</key>") || !strings.Contains(plist, "<integer>7200</integer>") || !strings.Contains(plist, "<string>genv.updates</string>") {
+		t.Fatalf("launchd plist = %q, want StartInterval cadence for updates label", plist)
 	}
 }
 

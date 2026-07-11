@@ -106,17 +106,7 @@ func (Bun) listEntries() ([]bunEntry, error) {
 // canonical package name used for matching installed packages.
 // e.g. "cf@latest" -> "cf", "@scope/pkg@1.0.0" -> "@scope/pkg".
 func bunBaseName(pkgName string) string {
-	if strings.HasPrefix(pkgName, "@") {
-		// Scoped packages use the last @ as the version separator.
-		if idx := strings.LastIndex(pkgName, "@"); idx > 0 {
-			return pkgName[:idx]
-		}
-		return pkgName
-	}
-	if idx := strings.Index(pkgName, "@"); idx > 0 {
-		return pkgName[:idx]
-	}
-	return pkgName
+	return jsBasePackageName(pkgName)
 }
 
 func parseBunEntries(lines []string) []bunEntry {
@@ -148,9 +138,9 @@ func parseBunListLine(line string) (name, version string, ok bool) {
 	}
 
 	if strings.HasPrefix(body, "@") {
-		// Scoped package: @scope/name@version
-		if idx := strings.LastIndex(body, "@"); idx > 0 && strings.Contains(body[:idx], "/") {
-			return body[:idx], body[idx+1:], true
+		base := jsBasePackageName(body)
+		if base != body {
+			return base, body[len(base)+1:], true
 		}
 		return body, "", true
 	}

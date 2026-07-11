@@ -42,7 +42,7 @@ func TestByName(t *testing.T) {
 	}
 
 	// Test invalid names
-	invalidNames := []string{"yum", "chocolatey", "npm", "pip", ""}
+	invalidNames := []string{"yum", "chocolatey", "pip", ""}
 	for _, name := range invalidNames {
 		t.Run("invalid_"+name, func(t *testing.T) {
 			got := ByName(name)
@@ -69,6 +69,14 @@ func TestNormalizeID_ExplicitMapping(t *testing.T) {
 		{"brew", "neovim", map[string]string{"brew": "neovim"}, "neovim", true},
 		{"linuxbrew", "neovim", map[string]string{"linuxbrew": "neovim"}, "neovim", true},
 		{"bun", "cf", map[string]string{"bun": "cf@latest"}, "cf@latest", true},
+		{"npm", "codegraph", map[string]string{"npm": "@scope/codegraph@1.0.0"}, "@scope/codegraph@1.0.0", true},
+		{"pnpm", "codegraph", map[string]string{"pnpm": "@scope/codegraph@1.0.0"}, "@scope/codegraph@1.0.0", true},
+		{"yarn", "codegraph", map[string]string{"yarn": "@scope/codegraph@1.0.0"}, "@scope/codegraph@1.0.0", true},
+		{"deno", "serve", map[string]string{"deno": "https://deno.land/std/http/file_server.ts"}, "serve=https://deno.land/std/http/file_server.ts", true},
+		{"volta", "typescript", map[string]string{"volta": "typescript@5.9.2"}, "typescript@5.9.2", true},
+		{"cargo", "ripgrep", map[string]string{"cargo": "ripgrep@14.1.1"}, "ripgrep@14.1.1", true},
+		{"go", "hey", map[string]string{"go": "github.com/rakyll/hey"}, "github.com/rakyll/hey", true},
+		{"rustup", "rustfmt", map[string]string{"rustup": "component:rustfmt@stable"}, "component:rustfmt@stable", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgrName+"/explicit", func(t *testing.T) {
@@ -109,13 +117,18 @@ func TestNormalizeID_FallbackToID(t *testing.T) {
 func TestPlanInstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
-			args := a.PlanInstall("git")
+			pkg := planTestPackage(a.Name())
+			args := a.PlanInstall(pkg)
 			if len(args) == 0 {
 				t.Errorf("%s PlanInstall: returned empty slice", a.Name())
 				return
 			}
-			if !strings.HasSuffix(args[len(args)-1], "git") {
-				t.Errorf("%s PlanInstall: last arg = %q, want suffix \"git\"", a.Name(), args[len(args)-1])
+			wantSuffix := planTestPackageSuffix(a.Name(), pkg)
+			if a.Name() == "go" {
+				wantSuffix += "@latest"
+			}
+			if !strings.HasSuffix(args[len(args)-1], wantSuffix) {
+				t.Errorf("%s PlanInstall: last arg = %q, want suffix %q", a.Name(), args[len(args)-1], wantSuffix)
 			}
 		})
 	}
@@ -136,9 +149,21 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"npm", "npm"},
+		{"pnpm", "pnpm"},
+		{"yarn", "yarn"},
+		{"deno", "deno"},
+		{"volta", "volta"},
+		{"cargo", "cargo"},
+		{"go", "go"},
+		{"rustup", "rustup"},
 		{"winget", "winget"},
 		{"scoop", "scoop"},
 		{"choco", "choco"},
+		{"pip-user", "python3"},
+		{"poetry", "poetry"},
+		{"conda", "conda"},
+		{"mamba", "mamba"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -146,7 +171,7 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			args := a.PlanInstall("pkg")
+			args := a.PlanInstall(planTestPackage(tc.mgr))
 			if args[0] != tc.wantBin {
 				t.Errorf("%s PlanInstall: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
 			}
@@ -159,12 +184,13 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 func TestPlanUninstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
-			args := a.PlanUninstall("git")
+			pkg := planTestPackage(a.Name())
+			args := a.PlanUninstall(pkg)
 			if len(args) == 0 {
 				t.Errorf("%s PlanUninstall: returned empty slice", a.Name())
 				return
 			}
-			assertContainsArg(t, args, "git")
+			assertContainsArg(t, args, planTestUninstallSuffix(a.Name(), pkg))
 		})
 	}
 }
@@ -184,9 +210,21 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"npm", "npm"},
+		{"pnpm", "pnpm"},
+		{"yarn", "yarn"},
+		{"deno", "deno"},
+		{"volta", "volta"},
+		{"cargo", "cargo"},
+		{"go", "rm"},
+		{"rustup", "rustup"},
 		{"winget", "winget"},
 		{"scoop", "scoop"},
 		{"choco", "choco"},
+		{"pip-user", "python3"},
+		{"poetry", "poetry"},
+		{"conda", "conda"},
+		{"mamba", "mamba"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -194,7 +232,7 @@ func TestPlanUninstall_ExpectedBinaries(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			args := a.PlanUninstall("pkg")
+			args := a.PlanUninstall(planTestPackage(tc.mgr))
 			if args[0] != tc.wantBin {
 				t.Errorf("%s PlanUninstall: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
 			}
@@ -471,11 +509,50 @@ func installFakeBinary(t *testing.T, name, body string) {
 func assertContainsArg(t *testing.T, args []string, want string) {
 	t.Helper()
 	for _, arg := range args {
-		if arg == want {
+		if arg == want || strings.HasSuffix(arg, want) || strings.Contains(arg, want+"@") {
 			return
 		}
 	}
 	t.Errorf("expected %q in %v", want, args)
+}
+
+func planTestPackage(manager string) string {
+	if manager == "rustup" {
+		return "toolchain:stable"
+	}
+	if manager == "deno" {
+		return "serve=https://deno.land/std/http/file_server.ts"
+	}
+	if manager == "go" {
+		return "github.com/rakyll/hey"
+	}
+	if manager == "conda" || manager == "mamba" {
+		return "myenv:git"
+	}
+	return "git"
+}
+
+func planTestPackageSuffix(manager string, pkg string) string {
+	if manager == "rustup" {
+		return "stable"
+	}
+	if manager == "deno" {
+		return "https://deno.land/std/http/file_server.ts"
+	}
+	if manager == "go" {
+		return "hey"
+	}
+	if manager == "conda" || manager == "mamba" {
+		return "git"
+	}
+	return pkg
+}
+
+func planTestUninstallSuffix(manager string, pkg string) string {
+	if manager == "deno" {
+		return "serve"
+	}
+	return planTestPackageSuffix(manager, pkg)
 }
 
 // TestSnap_ListInstalled_ParsesHeader verifies that the first ("header") line
@@ -590,9 +667,21 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 		{"pacman", "sudo"},
 		{"linuxbrew", "brew"},
 		{"bun", "bun"},
+		{"npm", "npm"},
+		{"pnpm", "pnpm"},
+		{"yarn", "yarn"},
+		{"deno", "deno"},
+		{"volta", "volta"},
+		{"cargo", "cargo"},
+		{"go", "go"},
+		{"rustup", "rustup"},
 		{"winget", "winget"},
 		{"scoop", "scoop"},
 		{"choco", "choco"},
+		{"pip-user", "python3"},
+		{"poetry", "poetry"},
+		{"conda", "conda"},
+		{"mamba", "mamba"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -600,7 +689,7 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			args := a.PlanUpgrade("pkg")
+			args := a.PlanUpgrade(planTestPackage(tc.mgr))
 			if args[0] != tc.wantBin {
 				t.Errorf("%s PlanUpgrade: binary = %q, want %q", tc.mgr, args[0], tc.wantBin)
 			}
@@ -611,10 +700,10 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 // TestPlanUpgrade_PkgNamePresent verifies that the package name appears
 // somewhere in every adapter's PlanUpgrade command.
 func TestPlanUpgrade_PkgNamePresent(t *testing.T) {
-	const pkg = "neovim"
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
-			assertContainsArg(t, a.PlanUpgrade(pkg), pkg)
+			pkg := planTestPackage(a.Name())
+			assertContainsArg(t, a.PlanUpgrade(pkg), planTestPackageSuffix(a.Name(), pkg))
 		})
 	}
 }
@@ -634,6 +723,20 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"pacman", "-S"},
 		{"linuxbrew", "upgrade"},
 		{"bun", "update"},
+		{"npm", "install"},
+		{"pnpm", "add"},
+		{"yarn", "add"},
+		{"deno", "install"},
+		{"volta", "install"},
+		{"cargo", "install"},
+		{"go", "install"},
+		{"rustup", "update"},
+		{"pipx", "install"},
+		{"pip-user", "install"},
+		{"poetry", "add"},
+		{"conda", "update"},
+		{"mamba", "update"},
+		{"pixi", "upgrade"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -641,7 +744,7 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			assertContainsArg(t, a.PlanUpgrade("testpkg"), tc.verb)
+			assertContainsArg(t, a.PlanUpgrade(planTestPackage(tc.mgr)), tc.verb)
 		})
 	}
 }
@@ -751,6 +854,19 @@ func TestPlanClean_CommandCount(t *testing.T) {
 		{"pacman", 1},
 		{"linuxbrew", 1},
 		{"bun", 1},
+		{"npm", 0},
+		{"pnpm", 0},
+		{"yarn", 0},
+		{"deno", 0},
+		{"volta", 0},
+		{"cargo", 0},
+		{"rustup", 0},
+		{"pipx", 0},
+		{"pip-user", 1},
+		{"poetry", 1},
+		{"conda", 1},
+		{"mamba", 1},
+		{"pixi", 0},
 		{"winget", 0},
 		{"scoop", 1},
 		{"choco", 1},
@@ -785,6 +901,10 @@ func TestPlanClean_PerAdapterBinary(t *testing.T) {
 		{"uv", "uv"},
 		{"scoop", "scoop"},
 		{"choco", "choco"},
+		{"pip-user", "python3"},
+		{"poetry", "poetry"},
+		{"conda", "conda"},
+		{"mamba", "mamba"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
@@ -823,6 +943,19 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 		{"pacman", "-S"},
 		{"linuxbrew", "install"},
 		{"bun", "add"},
+		{"npm", "install"},
+		{"pnpm", "add"},
+		{"yarn", "add"},
+		{"deno", "install"},
+		{"volta", "install"},
+		{"cargo", "install"},
+		{"rustup", "install"},
+		{"pipx", "install"},
+		{"pip-user", "install"},
+		{"poetry", "add"},
+		{"conda", "install"},
+		{"mamba", "install"},
+		{"pixi", "install"},
 		{"winget", "install"},
 		{"scoop", "install"},
 		{"choco", "install"},
@@ -833,7 +966,7 @@ func TestPlanInstall_ContainsInstallVerb(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			assertContainsArg(t, a.PlanInstall("testpkg"), tc.verb)
+			assertContainsArg(t, a.PlanInstall(planTestPackage(tc.mgr)), tc.verb)
 		})
 	}
 }
@@ -881,6 +1014,19 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"pacman", "-Rcs"},
 		{"linuxbrew", "uninstall"},
 		{"bun", "remove"},
+		{"npm", "uninstall"},
+		{"pnpm", "remove"},
+		{"yarn", "remove"},
+		{"deno", "uninstall"},
+		{"volta", "uninstall"},
+		{"cargo", "uninstall"},
+		{"rustup", "uninstall"},
+		{"pipx", "uninstall"},
+		{"pip-user", "uninstall"},
+		{"poetry", "remove"},
+		{"conda", "remove"},
+		{"mamba", "remove"},
+		{"pixi", "remove"},
 		{"winget", "uninstall"},
 		{"scoop", "uninstall"},
 		{"choco", "uninstall"},
@@ -891,7 +1037,7 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 			if a == nil {
 				t.Fatalf("ByName(%q): no adapter", tc.mgr)
 			}
-			assertContainsArg(t, a.PlanUninstall("testpkg"), tc.verb)
+			assertContainsArg(t, a.PlanUninstall(planTestPackage(tc.mgr)), tc.verb)
 		})
 	}
 }

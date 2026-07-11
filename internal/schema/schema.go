@@ -21,6 +21,9 @@ const Version4 = "4"
 // Version5 is the accepted value for genv.json v5 (adds files, hooks, host, and repo).
 const Version5 = "5"
 
+// Version6 is the accepted value for genv.json v6 (adds the updates config block).
+const Version6 = "6"
+
 // KnownShellTargets is the set of valid per-shell targeting values for alias
 // and function entries. An empty string means "all supported shells".
 var KnownShellTargets = map[string]bool{
@@ -34,18 +37,45 @@ const ValidShellTargetsMsg = `"bash", "zsh", "fish", or omit for all`
 
 // KnownManagers is the set of package-manager IDs recognized in schema v1.
 var KnownManagers = map[string]bool{
-	"paru":      true,
-	"yay":       true,
-	"snap":      true,
-	"brew":      true,
-	"linuxbrew": true,
-	"mas":       true,
-	"pacman":    true,
-	"bun":       true,
-	"uv":        true,
-	"winget":    true,
-	"scoop":     true,
-	"choco":     true,
+	"paru":        true,
+	"yay":         true,
+	"snap":        true,
+	"brew":        true,
+	"linuxbrew":   true,
+	"mas":         true,
+	"pacman":      true,
+	"bun":         true,
+	"npm":         true,
+	"pnpm":        true,
+	"yarn":        true,
+	"deno":        true,
+	"volta":       true,
+	"uv":          true,
+	"pipx":        true,
+	"pip-user":    true,
+	"poetry":      true,
+	"conda":       true,
+	"mamba":       true,
+	"pixi":        true,
+	"cargo":       true,
+	"go":          true,
+	"rustup":      true,
+	"gem":         true,
+	"composer":    true,
+	"dotnet-tool": true,
+	"ghcup":       true,
+	"stack":       true,
+	"opam":        true,
+	"juliaup":     true,
+	"sdkman":      true,
+	"asdf":        true,
+	"mise":        true,
+	"krew":        true,
+	"helm":        true,
+	"vscode":      true,
+	"winget":      true,
+	"scoop":       true,
+	"choco":       true,
 }
 
 // HostPredicate selects which host(s) a record applies to. It unmarshals from
@@ -86,6 +116,7 @@ func (h HostPredicate) MarshalJSON() ([]byte, error) {
 // v3: schemaVersion "3", packages + optional env + optional shell block.
 // v4: schemaVersion "4", packages + optional env + optional shell + optional services block.
 // v5: schemaVersion "5", adds optional files, hooks, host selectors, and repo fields.
+// v6: schemaVersion "6", adds the optional updates config block.
 type GenvFile struct {
 	SchemaVersion string             `json:"schemaVersion"`
 	Packages      []Package          `json:"packages"`
@@ -95,6 +126,22 @@ type GenvFile struct {
 	Files         *FilesConfig       `json:"files,omitempty"`
 	Hooks         *HooksConfig       `json:"hooks,omitempty"`
 	Repo          *Repo              `json:"repo,omitempty"`
+	Updates       *UpdatesConfig     `json:"updates,omitempty"`
+}
+
+// UpdatesConfig declares settings for the background updates checker/daemon.
+// Interval is a Go duration string (e.g. "24h") that must parse to a strictly
+// positive duration when Enabled is true. OnlyManagers, SkipManagers, Only, and
+// Skip mirror the tracked-only upgrade filters accepted by `genv upgrade`.
+type UpdatesConfig struct {
+	Enabled      bool     `json:"enabled,omitempty"`
+	Interval     string   `json:"interval,omitempty"`
+	AutoApply    bool     `json:"autoApply,omitempty"`
+	Notify       bool     `json:"notify,omitempty"`
+	OnlyManagers []string `json:"onlyManagers,omitempty"`
+	SkipManagers []string `json:"skipManagers,omitempty"`
+	Only         []string `json:"only,omitempty"`
+	Skip         []string `json:"skip,omitempty"`
 }
 
 // Repo points to the spec repository used by `genv pull`.
@@ -137,14 +184,20 @@ type FileDir struct {
 
 // HooksConfig declares lifecycle shell commands.
 type HooksConfig struct {
-	PreUpgrade  []Hook `json:"preUpgrade,omitempty"`
+	PreApply    []Hook `json:"preApply,omitempty"`
 	PostApply   []Hook `json:"postApply,omitempty"`
+	PreAdd      []Hook `json:"preAdd,omitempty"`
+	PostAdd     []Hook `json:"postAdd,omitempty"`
+	PreRemove   []Hook `json:"preRemove,omitempty"`
+	PostRemove  []Hook `json:"postRemove,omitempty"`
+	PreUpgrade  []Hook `json:"preUpgrade,omitempty"`
 	PostUpgrade []Hook `json:"postUpgrade,omitempty"`
 }
 
-// Hook is a single lifecycle shell command.
+// Hook is a single lifecycle shell command or script-file reference.
 type Hook struct {
 	Command string        `json:"command"`
+	File    string        `json:"file,omitempty"`
 	Host    HostPredicate `json:"host,omitempty"`
 }
 

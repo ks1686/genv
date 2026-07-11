@@ -73,6 +73,7 @@ type LockedFile struct {
 // The Files field is added in M11 (schemaVersion "5") and is absent in v1-v4 lock files.
 type LockFile struct {
 	SchemaVersion string             `json:"schemaVersion"`
+	ActiveProfile string             `json:"activeProfile,omitempty"`
 	Packages      []LockedPackage    `json:"packages"`
 	Env           []LockedEnvVar     `json:"env,omitempty"`
 	Shell         *LockedShellConfig `json:"shell,omitempty"`
