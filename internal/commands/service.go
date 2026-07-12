@@ -37,8 +37,9 @@ func ServiceAdd(f *schema.GenvFile, name string, start, stop, restart, status []
 		Status:      status,
 		BrewFormula: brewFormula,
 	}
-	// Upgrade schema to v4 now that a services block is present.
-	f.SchemaVersion = schema.Version4
+	// Raise schema to at least v4 now that a services block is present, without
+	// downgrading a file that already declares a newer version.
+	f.SchemaVersion = schema.AtLeastVersion(f.SchemaVersion, schema.Version4)
 	return nil
 }
 

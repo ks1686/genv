@@ -24,6 +24,32 @@ const Version5 = "5"
 // Version6 is the accepted value for genv.json v6 (adds the updates config block).
 const Version6 = "6"
 
+// versionOrder lists known schemaVersion values from oldest to newest.
+var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6}
+
+// versionRank returns the ordinal of a schemaVersion string within versionOrder,
+// or -1 if the value is not a recognized version.
+func versionRank(v string) int {
+	for i, known := range versionOrder {
+		if v == known {
+			return i
+		}
+	}
+	return -1
+}
+
+// AtLeastVersion returns whichever of current or min represents the newer schema
+// version. It lets callers raise a spec to the minimum version a newly-added
+// block requires without ever downgrading a file that already declares a newer
+// version (e.g. adding an env block to a v5 file must not rewrite it as v2).
+// An unrecognized current value is treated as older than any known version.
+func AtLeastVersion(current, min string) string {
+	if versionRank(current) > versionRank(min) {
+		return current
+	}
+	return min
+}
+
 // KnownShellTargets is the set of valid per-shell targeting values for alias
 // and function entries. An empty string means "all supported shells".
 var KnownShellTargets = map[string]bool{
