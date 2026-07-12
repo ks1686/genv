@@ -24,8 +24,9 @@ func EnvSet(f *schema.GenvFile, name, value string, sensitive bool) error {
 		f.Env = make(map[string]schema.EnvVar)
 	}
 	f.Env[name] = schema.EnvVar{Value: value, Sensitive: sensitive}
-	// Upgrade schema to v2 now that an env block is present.
-	f.SchemaVersion = schema.Version2
+	// Raise schema to at least v2 now that an env block is present, without
+	// downgrading a file that already declares a newer version.
+	f.SchemaVersion = schema.AtLeastVersion(f.SchemaVersion, schema.Version2)
 	return nil
 }
 

@@ -15,7 +15,8 @@ func ensureShell(f *schema.GenvFile) {
 	if f.Shell == nil {
 		f.Shell = &schema.ShellConfig{}
 	}
-	f.SchemaVersion = schema.Version3
+	// Raise schema to at least v3 without downgrading a newer file.
+	f.SchemaVersion = schema.AtLeastVersion(f.SchemaVersion, schema.Version3)
 }
 
 // ShellAliasSet adds or updates the alias name in f's shell block.

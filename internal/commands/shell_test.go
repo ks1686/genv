@@ -21,6 +21,17 @@ func TestEnsureShell(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves newer schema", func(t *testing.T) {
+		// Regression: adding an alias to a v5/v6 file must not downgrade to v3.
+		for _, v := range []string{schema.Version5, schema.Version6} {
+			f := &schema.GenvFile{SchemaVersion: v}
+			ensureShell(f)
+			if f.SchemaVersion != v {
+				t.Errorf("ensureShell downgraded schemaVersion from %q to %q", v, f.SchemaVersion)
+			}
+		}
+	})
+
 	t.Run("existing shell", func(t *testing.T) {
 		f := &schema.GenvFile{
 			SchemaVersion: schema.Version,
