@@ -8,6 +8,19 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+func TestServiceAdd_PreservesNewerSchema(t *testing.T) {
+	// Regression: adding a service to a v5/v6 file must not downgrade to v4.
+	for _, v := range []string{schema.Version5, schema.Version6} {
+		f := &schema.GenvFile{SchemaVersion: v}
+		if err := ServiceAdd(f, "svc", []string{"echo", "start"}, nil, nil, nil, ""); err != nil {
+			t.Fatalf("ServiceAdd at %s: %v", v, err)
+		}
+		if f.SchemaVersion != v {
+			t.Errorf("ServiceAdd downgraded schemaVersion from %q to %q", v, f.SchemaVersion)
+		}
+	}
+}
+
 func TestServiceCommands(t *testing.T) {
 	f := &schema.GenvFile{
 		SchemaVersion: schema.Version3,

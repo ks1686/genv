@@ -31,6 +31,21 @@ func TestEnvSet_New(t *testing.T) {
 	}
 }
 
+func TestEnvSet_PreservesNewerSchema(t *testing.T) {
+	// Regression: adding an env var to a v5/v6 file must not downgrade the
+	// schemaVersion to v2 (which would drop support for files/hooks/updates
+	// blocks and fail validation on write).
+	for _, v := range []string{schema.Version5, schema.Version6} {
+		f := &schema.GenvFile{SchemaVersion: v, Packages: []schema.Package{}}
+		if err := EnvSet(f, "MY_VAR", "hello", false); err != nil {
+			t.Fatalf("EnvSet at %s: %v", v, err)
+		}
+		if f.SchemaVersion != v {
+			t.Errorf("EnvSet downgraded schemaVersion from %q to %q", v, f.SchemaVersion)
+		}
+	}
+}
+
 func TestEnvSet_Sensitive(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
 	if err := EnvSet(f, "SECRET", "s3cr3t", true); err != nil {

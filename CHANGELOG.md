@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v3.0.1 - 2026-07-11
+
+### Fixed
+
+- `genv env set`, `genv shell alias set`, and `genv service add` no longer downgrade `schemaVersion` when editing a spec that already declares a newer version. Previously they rewrote the version to the minimum required by the newly-added block (`2`, `3`, and `4` respectively), which corrupted v5/v6 files (dropping support for `files`, `hooks`, and `updates` blocks) and caused the very next validation to fail. They now raise the version to the required minimum only when the current version is older.
+
 ## v3.0.0 - 2026-07-11
 
 ### Added
