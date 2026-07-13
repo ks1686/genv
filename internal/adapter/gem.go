@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -90,6 +91,14 @@ type gemEntry struct {
 }
 
 func (Gem) listEntries() ([]gemEntry, error) {
+	// Skip gems entirely when their installation directory is not writable —
+	// e.g. macOS system Ruby at /Library/Ruby/Gems, whose gems are root-owned.
+	// genv cannot install, upgrade, or uninstall there, so reporting them only
+	// pollutes `scan` with unmanageable packages that fail every upgrade with
+	// Gem::FilePermissionError.
+	if !gemManageable() {
+		return nil, nil
+	}
 	out, err := exec.Command("gem", "list", "--local").Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -99,6 +108,40 @@ func (Gem) listEntries() ([]gemEntry, error) {
 		return nil, err
 	}
 	return parseGemListEntries(string(out)), nil
+}
+
+// gemManageable reports whether genv can manage gems in the active gem
+// installation directory. It is a package var so tests can override the probe.
+// When the directory cannot be determined it returns true, preserving the
+// default "list everything" behavior rather than hiding a writable install.
+var gemManageable = func() bool {
+	out, err := exec.Command("gem", "environment", "gemdir").Output()
+	if err != nil {
+		return true
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return true
+	}
+	return dirWritable(dir)
+}
+
+// dirWritable reports whether dir exists and the current user can create files
+// in it, probed by creating and removing a temporary file. This captures POSIX
+// permissions and ACLs that a mode-bit check would miss.
+func dirWritable(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	f, err := os.CreateTemp(dir, ".genv-writecheck-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	f.Close()
+	os.Remove(name)
+	return true
 }
 
 func findGemEntry(entries []gemEntry, pkgName string) (gemEntry, bool) {

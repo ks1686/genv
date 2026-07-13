@@ -55,6 +55,62 @@ fi`)
 	}
 }
 
+func TestGem_ListInstalled_whenInstallDirNotWritable_returnsNothing(t *testing.T) {
+	// Given: a gem install dir genv cannot manage (e.g. macOS system Ruby).
+	installFakeBinary(t, "gem", `if [ "$1" = "list" ] && [ "$2" = "--local" ]; then
+  echo 'rake (13.0.6)'
+  echo 'nokogiri (1.13.8)'
+fi`)
+	orig := gemManageable
+	gemManageable = func() bool { return false }
+	t.Cleanup(func() { gemManageable = orig })
+
+	// When
+	got, err := Gem{}.ListInstalled()
+
+	// Then: nothing is reported, so scan won't adopt unmanageable system gems.
+	if err != nil {
+		t.Fatalf("Gem.ListInstalled: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListInstalled = %v, want empty (non-writable install dir)", got)
+	}
+}
+
+func TestGem_ListInstalled_whenInstallDirWritable_listsGems(t *testing.T) {
+	// Given: a writable install dir — gems should be reported normally.
+	installFakeBinary(t, "gem", `if [ "$1" = "list" ] && [ "$2" = "--local" ]; then
+  echo 'rake (13.0.6)'
+  echo 'nokogiri (1.13.8)'
+fi`)
+	orig := gemManageable
+	gemManageable = func() bool { return true }
+	t.Cleanup(func() { gemManageable = orig })
+
+	// When
+	got, err := Gem{}.ListInstalled()
+
+	// Then
+	if err != nil {
+		t.Fatalf("Gem.ListInstalled: %v", err)
+	}
+	if want := []string{"rake", "nokogiri"}; !slices.Equal(got, want) {
+		t.Errorf("ListInstalled = %v, want %v", got, want)
+	}
+}
+
+func TestGem_DirWritable_whenDirMissing_returnsFalse(t *testing.T) {
+	if dirWritable(t.TempDir() + "/does-not-exist") {
+		t.Error("dirWritable = true for a missing directory, want false")
+	}
+}
+
+func TestGem_DirWritable_whenTempDir_returnsTrue(t *testing.T) {
+	if !dirWritable(t.TempDir()) {
+		t.Error("dirWritable = false for a writable temp directory, want true")
+	}
+}
+
 func TestComposer_ParseShowJSON_whenVendorPackagesInstalled(t *testing.T) {
 	// Given
 	data := []byte(`{"installed":[{"name":"laravel/installer","version":"5.7.0"},{"name":"friendsofphp/php-cs-fixer","version":"v3.52.1"}]}`)
