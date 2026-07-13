@@ -4,6 +4,7 @@
 package search
 
 import (
+	"runtime"
 	"sync"
 
 	"github.com/ks1686/genv/internal/adapter"
@@ -34,10 +35,14 @@ type searchResult struct {
 // priority (brew → pacman → paru → …). Adapters that are unavailable or do
 // not implement adapter.Searchable are silently skipped, as are search errors.
 func All(query string, available map[string]bool) []Candidate {
+	return allOnGOOS(query, available, runtime.GOOS)
+}
+
+func allOnGOOS(query string, available map[string]bool, goos string) []Candidate {
 	jobs := make([]searchJob, 0, len(adapter.All))
 	for _, a := range adapter.All {
 		manager := a.Name()
-		if !available[manager] {
+		if !available[manager] || !adapter.AutomaticOnGOOS(manager, goos) {
 			continue
 		}
 		s, ok := a.(adapter.Searchable)

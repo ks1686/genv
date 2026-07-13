@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Automatic manager discovery is now platform-native: macOS search, scan, and implicit resolution use `brew` without duplicate `linuxbrew` suggestions, while Linux uses `linuxbrew`. Explicit `prefer` and `managers` configuration remains authoritative when the selected manager is available.
+- Managed update jobs now receive a deterministic package-manager `PATH` under launchd and systemd, and `genv updates status` distinguishes registration, active execution, successful runs, and failed runs using real supervisor state.
+- `genv upgrade` and managed updates conservatively skip version-constrained packages when an adapter cannot guarantee a compatible target instead of issuing an unsafe latest-version upgrade.
+- Scheduled auto-apply now fails closed when its audit log cannot be opened, records each failed action with its tracked package IDs, and retains bounded, credential-redacted manager diagnostics.
+
 ## v3.0.1 - 2026-07-11
 
 ### Fixed

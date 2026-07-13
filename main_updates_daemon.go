@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ks1686/genv/internal/genvfile"
@@ -63,7 +65,10 @@ func updatesStartCmd(args []string) int {
 	}
 	lockPath := lockPathForSpec(*file, *lockFile)
 	command := []string{exe, "updates", "__run-once", "--file", absFile, "--lock-file", lockPath, "--host", hostForCommand(*hostFlag)}
-	if err := backend.Start(context.Background(), service.ScheduledJob{Name: updatesServiceName, Command: command, Interval: interval}); err != nil {
+	pathValue := os.Getenv("PATH")
+	goos := runtime.GOOS
+	environment := map[string]string{"PATH": service.ScheduledPath(pathValue, goos)}
+	if err := backend.Start(context.Background(), service.ScheduledJob{Name: updatesServiceName, Command: command, Interval: interval, Environment: environment}); err != nil {
 		fprintf(os.Stderr, "genv updates start: %v\n", err)
 		return exitIO
 	}
@@ -110,12 +115,39 @@ func updatesStatusCmd(args []string) int {
 		fPrintln(os.Stdout, "updates checker is not supported on this platform (requires systemd --user on Linux or launchd on macOS); not running.")
 		return exitOK
 	}
-	if status.Running {
-		fprintf(os.Stdout, "updates checker is running (%s).\n", status.Detail)
+	if !status.Registered {
+		fprintf(os.Stdout, "updates checker is not registered (%s).\n", status.Detail)
 		return exitOK
 	}
-	fprintf(os.Stdout, "updates checker is not running (%s).\n", status.Detail)
+	if status.Executing {
+		fprintf(os.Stdout, "updates checker is registered and executing (%s).\n", status.Detail)
+		return exitOK
+	}
+	switch status.LastRun {
+	case service.ScheduledRunSuccess:
+		fprintf(os.Stdout, "updates checker is registered and idle; last run succeeded%s (%s).\n", scheduledRunStatusDetail(status), status.Detail)
+	case service.ScheduledRunFailure:
+		fprintf(os.Stdout, "updates checker is registered and idle; last run failed%s (%s).\n", scheduledRunStatusDetail(status), status.Detail)
+	case service.ScheduledRunUnknown, "":
+		fprintf(os.Stdout, "updates checker is registered and idle; no completed run is known (%s).\n", status.Detail)
+	default:
+		fprintf(os.Stdout, "updates checker is registered and idle; last-run outcome is unknown (%s).\n", status.Detail)
+	}
 	return exitOK
+}
+
+func scheduledRunStatusDetail(status service.ScheduledJobStatus) string {
+	parts := make([]string, 0, 2)
+	if status.ExitCode != nil {
+		parts = append(parts, fmt.Sprintf("status %d", *status.ExitCode))
+	}
+	if status.LastRunDetail != "" {
+		parts = append(parts, "reason "+status.LastRunDetail)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
 }
 
 func readUpdatesConfigForLifecycle(file string) (*schema.UpdatesConfig, time.Duration, int) {

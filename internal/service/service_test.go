@@ -296,11 +296,15 @@ func TestLaunchdPlistContent_EscapesXML(t *testing.T) {
 func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	// Given: the managed updates checker command and cadence.
 	command := []string{"/usr/local/bin/genv", "updates", "__run-once", "--file", "/tmp/genv.json"}
+	environment := map[string]string{
+		"Z_VAR": "last",
+		"PATH":  `/custom/bin:/path with spaces:/quoted"path`,
+	}
 
 	// When: supervisor metadata is rendered for systemd and launchd.
-	unit := SystemdScheduledUnitContent("updates", command)
+	unit := SystemdScheduledUnitContent("updates", command, environment)
 	timer := SystemdScheduledTimerContent("updates", 2*time.Hour)
-	plist := LaunchdScheduledPlistContent("updates", command, 2*time.Hour)
+	plist := LaunchdScheduledPlistContent("updates", command, 2*time.Hour, environment)
 
 	// Then: both backends run the one-shot command on the configured interval.
 	if !strings.Contains(unit, "Type=oneshot") || !strings.Contains(unit, `ExecStart="/usr/local/bin/genv" "updates" "__run-once"`) {
@@ -311,6 +315,26 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	}
 	if !strings.Contains(plist, "<key>StartInterval</key>") || !strings.Contains(plist, "<integer>7200</integer>") || !strings.Contains(plist, "<string>genv.updates</string>") {
 		t.Fatalf("launchd plist = %q, want StartInterval cadence for updates label", plist)
+	}
+}
+
+func TestScheduledJobContent_Environment_is_deterministic_and_escaped(t *testing.T) {
+	command := []string{"/usr/local/bin/genv", "updates", "__run-once"}
+	environment := map[string]string{
+		"Z_VAR": "last",
+		"PATH":  "/custom&bin:/quoted\"path",
+	}
+
+	unit := SystemdScheduledUnitContent("updates", command, environment)
+	wantSystemd := "Environment=\"PATH=/custom&bin:/quoted\\\"path\"\nEnvironment=\"Z_VAR=last\""
+	if !strings.Contains(unit, wantSystemd) {
+		t.Fatalf("systemd unit = %q, want sorted escaped environment %q", unit, wantSystemd)
+	}
+
+	plist := LaunchdScheduledPlistContent("updates", command, time.Hour, environment)
+	wantLaunchd := "<key>EnvironmentVariables</key>\n    <dict>\n        <key>PATH</key>\n        <string>/custom&amp;bin:/quoted&#34;path</string>\n        <key>Z_VAR</key>\n        <string>last</string>\n    </dict>"
+	if !strings.Contains(plist, wantLaunchd) {
+		t.Fatalf("launchd plist = %q, want sorted escaped environment %q", plist, wantLaunchd)
 	}
 }
 
