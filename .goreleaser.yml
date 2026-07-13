@@ -68,6 +68,16 @@ homebrew_casks:
     description: "Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2."
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
+    # The release binaries are adhoc-signed, not Developer ID notarized, so macOS
+    # sets com.apple.quarantine on cask install. launchd (used by `genv updates
+    # start`) refuses to exec a quarantined adhoc binary (OS_REASON_EXEC), so
+    # strip the attribute on install to keep scheduled jobs working across upgrades.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/genv"]
+          end
 
 # ── Snap Store ────────────────────────────────────────────────────────────────
 # Publishes a snap to the Snap Store on every non-prerelease tag.
