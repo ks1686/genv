@@ -217,34 +217,10 @@ func TestProfileSwitchFailure(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	base := genvfile.New()
-	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg"})
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := profile.Create(specPath, "A"); err != nil {
-		t.Fatal(err)
-	}
-	profA, _ := profile.LoadMerged(specPath, "A")
-	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A"})
-	if err := genvfile.Write(profile.Path(specPath, "A"), profA); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := profile.Create(specPath, "B"); err != nil {
-		t.Fatal(err)
-	}
-	profB, _ := profile.LoadMerged(specPath, "B")
-	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B"})
-	if err := genvfile.Write(profile.Path(specPath, "B"), profB); err != nil {
-		t.Fatal(err)
-	}
-
-	// Switch to A successfully
-	run([]string{"profile", "switch", "A", "-file", specPath, "-lock-file", lockPath, "-yes"})
-
-	// Now mock a failure for pkg-B
+	// Install a fake brew that succeeds for every package except pkg-B, and put
+	// it first on PATH before any switch. Packages explicitly prefer brew so
+	// resolution is deterministic on every platform (the automatic brew/linuxbrew
+	// suggestion is platform-specific, but explicit selection is not).
 	fakeBin := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(fakeBin, 0755); err != nil {
 		t.Fatal(err)
@@ -255,7 +231,34 @@ func TestProfileSwitchFailure(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
 
-	// Switch to B should fail
+	base := genvfile.New()
+	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg", Prefer: "brew"})
+	if err := genvfile.Write(specPath, base); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := profile.Create(specPath, "A"); err != nil {
+		t.Fatal(err)
+	}
+	profA, _ := profile.LoadMerged(specPath, "A")
+	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A", Prefer: "brew"})
+	if err := genvfile.Write(profile.Path(specPath, "A"), profA); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := profile.Create(specPath, "B"); err != nil {
+		t.Fatal(err)
+	}
+	profB, _ := profile.LoadMerged(specPath, "B")
+	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B", Prefer: "brew"})
+	if err := genvfile.Write(profile.Path(specPath, "B"), profB); err != nil {
+		t.Fatal(err)
+	}
+
+	// Switch to A successfully
+	run([]string{"profile", "switch", "A", "-file", specPath, "-lock-file", lockPath, "-yes"})
+
+	// Switch to B should fail because installing pkg-B via the fake brew exits 1
 	out := captureStderr(t, func() {
 		code := run([]string{"profile", "switch", "B", "-file", specPath, "-lock-file", lockPath, "-yes"})
 		if code == exitOK {

@@ -58,9 +58,13 @@ func ResolveOne(pkg schema.Package, available map[string]bool) Action {
 // Plan resolves every package in f into an Action, using the provided set of
 // available manager names. Call Detect() to build the available map.
 func Plan(f *schema.GenvFile, available map[string]bool) []Action {
+	return planOnGOOS(f, available, runtime.GOOS)
+}
+
+func planOnGOOS(f *schema.GenvFile, available map[string]bool, goos string) []Action {
 	actions := make([]Action, 0, len(f.Packages))
 	for _, pkg := range f.Packages {
-		actions = append(actions, resolveOnGOOS(pkg, available, runtime.GOOS))
+		actions = append(actions, resolveOnGOOS(pkg, available, goos))
 	}
 	return actions
 }

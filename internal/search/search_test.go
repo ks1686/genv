@@ -193,7 +193,7 @@ func TestAll(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := All(tc.query, tc.available)
+			got := allOnGOOS(tc.query, tc.available, "darwin")
 
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %d candidates, want %d", len(got), len(tc.want))
@@ -241,7 +241,7 @@ func TestAll_preservesRegistryOrderAndDedupeWhenSearchesCompleteOutOfOrder(t *te
 
 	done := make(chan []Candidate, 1)
 	go func() {
-		done <- All("pkg", map[string]bool{"brew": true, "apt": true})
+		done <- allOnGOOS("pkg", map[string]bool{"brew": true, "apt": true}, "darwin")
 	}()
 
 	var got []Candidate

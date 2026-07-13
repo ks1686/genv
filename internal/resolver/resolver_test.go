@@ -179,7 +179,7 @@ func TestPrintPlan_ShowsInstallCommand(t *testing.T) {
 			{ID: "git"},
 		},
 	}
-	actions := Plan(f, map[string]bool{"brew": true})
+	actions := planOnGOOS(f, map[string]bool{"brew": true}, "darwin")
 	var sb strings.Builder
 	PrintPlan(actions, &sb)
 	out := sb.String()
@@ -635,7 +635,7 @@ func TestPrintPlan_ReturnsCorrectCounts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &schema.GenvFile{Packages: tc.pkgs}
-			actions := Plan(f, tc.available)
+			actions := planOnGOOS(f, tc.available, "darwin")
 			var sb strings.Builder
 			resolved, unresolved := PrintPlan(actions, &sb)
 			if resolved != tc.wantResolved {
@@ -672,7 +672,7 @@ func TestPlan_MultiplePackagesMixed(t *testing.T) {
 	// prefer is snap (unavailable) and its managers map has only snap
 	// (unavailable), so it falls back to the generic fallback at step 3 (brew).
 	available := map[string]bool{"brew": true}
-	actions := Plan(f, available)
+	actions := planOnGOOS(f, available, "darwin")
 	if len(actions) != 3 {
 		t.Fatalf("expected 3 actions, got %d", len(actions))
 	}
@@ -1156,7 +1156,7 @@ func TestExecuteApply_SkipsUnresolvedInstall(t *testing.T) {
 // TestResolveOne verifies that ResolveOne resolves a single package correctly.
 func TestResolveOne(t *testing.T) {
 	pkg := schema.Package{ID: "git"}
-	action := ResolveOne(pkg, map[string]bool{"brew": true})
+	action := resolveOnGOOS(pkg, map[string]bool{"brew": true}, "darwin")
 	if !action.Resolved() {
 		t.Fatal("ResolveOne: expected resolved action")
 	}
