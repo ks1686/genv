@@ -3,6 +3,7 @@ package resolver
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -360,8 +361,7 @@ func TestExecuteUpgrade_BatchUsesVersionLister(t *testing.T) {
 }
 
 func TestExecuteUpgrade_PartialFailureStillUpdatesChangedVersions(t *testing.T) {
-	// The command fails, but ListInstalledVersions reports that one package
-	// did upgrade anyway.
+	// Given: a failed batch command whose version query shows one package changed anyway.
 	mgr := &testBatchVersionListerMgr{versions: map[string]string{"git": "2.45.0", "neovim": "0.9.0"}}
 	plan := []UpgradeAction{
 		{
@@ -374,9 +374,21 @@ func TestExecuteUpgrade_PartialFailureStillUpdatesChangedVersions(t *testing.T) 
 		},
 	}
 
+	// When: the batch executes.
 	out := ExecuteUpgrade(context.Background(), plan, nil, &bytes.Buffer{}, &bytes.Buffer{})
+
+	// Then: the legacy error and typed action failure are both retained.
 	if len(out.Errors) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(out.Errors))
+	}
+	if len(out.Failures) != 1 {
+		t.Fatalf("expected 1 typed failure, got %d", len(out.Failures))
+	}
+	if !slices.Equal(out.Failures[0].IDs, []string{"git", "neovim"}) {
+		t.Fatalf("failure IDs = %v, want [git neovim]", out.Failures[0].IDs)
+	}
+	if out.Failures[0].Err == nil || out.Failures[0].Err.Error() != out.Errors[0].Error() {
+		t.Fatalf("typed failure error = %v, legacy error = %v", out.Failures[0].Err, out.Errors[0])
 	}
 	if len(out.Upgraded) != 1 {
 		t.Fatalf("expected 1 upgraded package (git), got %d", len(out.Upgraded))
@@ -1172,6 +1184,63 @@ func TestResolveOne_DefaultFallbackStillUsesSystemManagers(t *testing.T) {
 	}
 	if action.Manager != "paru" {
 		t.Errorf("Manager: got %q, want %q", action.Manager, "paru")
+	}
+}
+
+func TestResolveOneOnGOOS_PlatformFallbackUsesNativeHomebrew(t *testing.T) {
+	tests := []struct {
+		name string
+		goos string
+		want string
+	}{
+		{name: "Darwin uses Homebrew", goos: "darwin", want: "brew"},
+		{name: "Linux uses Linuxbrew", goos: "linux", want: "linuxbrew"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			action := resolveOnGOOS(
+				schema.Package{ID: "git"},
+				map[string]bool{"brew": true, "linuxbrew": true},
+				tt.goos,
+			)
+
+			if action.Manager != tt.want {
+				t.Errorf("manager = %q, want %q", action.Manager, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveOneOnGOOS_PlatformExplicitHomebrewSelectionRemainsAuthoritative(t *testing.T) {
+	tests := []struct {
+		name string
+		goos string
+		pkg  schema.Package
+		want string
+	}{
+		{
+			name: "Darwin prefer can select Linuxbrew",
+			goos: "darwin",
+			pkg:  schema.Package{ID: "git", Prefer: "linuxbrew"},
+			want: "linuxbrew",
+		},
+		{
+			name: "Linux managers map can select Homebrew",
+			goos: "linux",
+			pkg:  schema.Package{ID: "git", Managers: map[string]string{"brew": "git"}},
+			want: "brew",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			action := resolveOnGOOS(tt.pkg, map[string]bool{"brew": true, "linuxbrew": true}, tt.goos)
+
+			if action.Manager != tt.want {
+				t.Errorf("manager = %q, want %q", action.Manager, tt.want)
+			}
+		})
 	}
 }
 

@@ -440,7 +440,9 @@ When you run `genv apply`:
 
 `genv updates start` registers a user-level scheduled job using `systemd --user` on Linux or `launchd` on macOS. The scheduled command is a one-shot `genv updates __run-once` inside the genv binary; the platform supervisor owns the interval and restart lifecycle. Unsupported platforms report a clear message instead of crashing.
 
-The managed checker logs to `~/.config/genv/updates.log` (respecting `$XDG_CONFIG_HOME`) and rotates that file to `updates.log.1` after roughly 1 MiB. On each interval it runs the shared upgrade planner against tracked packages only, logs the result, and sends a best-effort notification when `updates.notify:true` and a notifier binary is available.
+The generated job carries a deterministic `PATH` built from the invoking shell plus platform defaults, including Homebrew locations on macOS and Linuxbrew locations on Linux. Rerun `genv updates start` after upgrading genv to regenerate an existing unit or plist with the current command and environment.
+
+The managed checker logs to `~/.config/genv/updates.log` (respecting `$XDG_CONFIG_HOME`) and rotates that file to `updates.log.1` after roughly 1 MiB. On each interval it runs the shared upgrade planner against tracked packages only, logs the result, and sends a best-effort notification when `updates.notify:true` and a notifier binary is available. Auto-apply refuses to run if the audit log cannot be opened. Failed actions include their tracked package IDs, and manager diagnostics are bounded and credential-redacted before logging.
 
 The default background behavior is **check/log/notify only**. It does not apply package upgrades unless the spec explicitly sets:
 
@@ -455,7 +457,7 @@ The default background behavior is **check/log/notify only**. It does not apply 
 }
 ```
 
-`genv updates start` refuses a missing, disabled, or invalid `updates` block with a corrective hint. Use `genv updates status` to inspect the registered checker and `genv updates stop` to remove it.
+`genv updates start` refuses a missing, disabled, or invalid `updates` block with a corrective hint. Use `genv updates status` to distinguish an unregistered checker, an executing job, an idle checker, and the last known success or failure. Use `genv updates stop` to remove it.
 
 `genv updates start` flags:
 
@@ -539,6 +541,8 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 ## How upgrades work
 
 `genv upgrade` updates the packages recorded in `genv.lock.json` without touching packages that are installed but not tracked by genv.
+
+Packages with a non-empty `version` constraint are skipped unless their adapter can guarantee an explicit compatible upgrade target. Current adapters do not expose that capability, so genv reports `version-constrained package requires an explicit compatible target` and continues with eligible unconstrained packages instead of upgrading the constrained package to an unsafe latest version. The same rule protects `genv updates` because both commands use the shared planner.
 
 To minimize the number of subprocesses, genv groups tracked packages by their recorded package manager and issues one batched upgrade command per manager when the underlying tool supports it:
 

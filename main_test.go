@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -1047,6 +1049,89 @@ func TestScanCmd_Debug_NoCrash(t *testing.T) {
 	}
 }
 
+func TestScanAdapters_HomebrewPlatform(t *testing.T) {
+	available := map[string]bool{"brew": true, "linuxbrew": true}
+
+	tests := []struct {
+		name    string
+		goos    string
+		include string
+		exclude string
+	}{
+		{name: "Darwin scans Homebrew only", goos: "darwin", include: "brew", exclude: "linuxbrew"},
+		{name: "Linux scans Linuxbrew only", goos: "linux", include: "linuxbrew", exclude: "brew"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			selected := scanAdaptersOnGOOS(available, tt.goos)
+			names := make([]string, 0, len(selected))
+			for _, a := range selected {
+				names = append(names, a.Name())
+			}
+
+			if !slices.Contains(names, tt.include) {
+				t.Errorf("selected managers %v do not include %q", names, tt.include)
+			}
+			if slices.Contains(names, tt.exclude) {
+				t.Errorf("selected managers %v include non-native %q", names, tt.exclude)
+			}
+		})
+	}
+}
+
+type scanCountingAdapter struct {
+	name      string
+	listCalls int
+}
+
+func (a *scanCountingAdapter) Name() string { return a.name }
+func (a *scanCountingAdapter) Available() bool {
+	return true
+}
+
+func (a *scanCountingAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
+	return id, false
+}
+func (a *scanCountingAdapter) PlanInstall(pkgName string) []string   { return []string{"true"} }
+func (a *scanCountingAdapter) PlanUninstall(pkgName string) []string { return []string{"true"} }
+func (a *scanCountingAdapter) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
+func (a *scanCountingAdapter) PlanClean() [][]string                 { return nil }
+func (a *scanCountingAdapter) Query(pkgName string) (bool, error)    { return true, nil }
+func (a *scanCountingAdapter) ListInstalled() ([]string, error) {
+	a.listCalls++
+	return nil, nil
+}
+func (a *scanCountingAdapter) QueryVersion(pkgName string) (string, error) { return "", nil }
+
+func TestScanCmd_DarwinDoesNotListLinuxbrew(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+	brew := &scanCountingAdapter{name: "brew"}
+	linuxbrew := &scanCountingAdapter{name: "linuxbrew"}
+
+	originalAll := adapter.All
+	originalGOOS := scanGOOS
+	adapter.All = []adapter.Adapter{brew, linuxbrew}
+	scanGOOS = "darwin"
+	t.Cleanup(func() {
+		adapter.All = originalAll
+		scanGOOS = originalGOOS
+	})
+
+	code := run([]string{"scan", "--file", path})
+
+	if code != exitOK {
+		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if brew.listCalls != 1 {
+		t.Errorf("Homebrew ListInstalled calls = %d, want 1", brew.listCalls)
+	}
+	if linuxbrew.listCalls != 0 {
+		t.Errorf("Linuxbrew ListInstalled calls = %d, want 0", linuxbrew.listCalls)
+	}
+}
+
 type scanVersionListerAdapter struct {
 	listCalls         int
 	versionListCalls  int
@@ -1057,22 +1142,28 @@ func (a *scanVersionListerAdapter) Name() string { return "batch" }
 func (a *scanVersionListerAdapter) Available() bool {
 	return true
 }
+
 func (a *scanVersionListerAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
 	return id, false
 }
-func (a *scanVersionListerAdapter) PlanInstall(pkgName string) []string   { return []string{"true"} }
+
+func (a *scanVersionListerAdapter) PlanInstall(pkgName string) []string { return []string{"true"} }
+
 func (a *scanVersionListerAdapter) PlanUninstall(pkgName string) []string { return []string{"true"} }
-func (a *scanVersionListerAdapter) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
-func (a *scanVersionListerAdapter) PlanClean() [][]string                 { return nil }
-func (a *scanVersionListerAdapter) Query(pkgName string) (bool, error)    { return true, nil }
+
+func (a *scanVersionListerAdapter) PlanUpgrade(pkgName string) []string { return []string{"true"} }
+func (a *scanVersionListerAdapter) PlanClean() [][]string               { return nil }
+func (a *scanVersionListerAdapter) Query(pkgName string) (bool, error)  { return true, nil }
 func (a *scanVersionListerAdapter) ListInstalled() ([]string, error) {
 	a.listCalls++
 	return []string{"alpha", "beta"}, nil
 }
+
 func (a *scanVersionListerAdapter) QueryVersion(pkgName string) (string, error) {
 	a.queryVersionCalls++
 	return "fallback", nil
 }
+
 func (a *scanVersionListerAdapter) ListInstalledVersions() (map[string]string, error) {
 	a.versionListCalls++
 	return map[string]string{"beta": "2.0.0", "alpha": "1.0.0"}, nil
@@ -1356,6 +1447,7 @@ func (a upgradeNoHooksAdapter) Name() string { return "test-upgrade-no-hooks" }
 func (a upgradeNoHooksAdapter) Available() bool {
 	return true
 }
+
 func (a upgradeNoHooksAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
 	return id, false
 }
@@ -1363,6 +1455,7 @@ func (a upgradeNoHooksAdapter) PlanInstall(pkgName string) []string { return []s
 func (a upgradeNoHooksAdapter) PlanUninstall(pkgName string) []string {
 	return []string{"true"}
 }
+
 func (a upgradeNoHooksAdapter) PlanUpgrade(pkgName string) []string {
 	return []string{"sh", "-c", "printf upgrade >> " + a.marker}
 }
@@ -1371,6 +1464,7 @@ func (a upgradeNoHooksAdapter) Query(pkgName string) (bool, error) { return true
 func (a upgradeNoHooksAdapter) ListInstalled() ([]string, error) {
 	return []string{pkgNameForTest}, nil
 }
+
 func (a upgradeNoHooksAdapter) QueryVersion(pkgName string) (string, error) {
 	return "2.0.0", nil
 }
@@ -1388,18 +1482,22 @@ func (a lifecycleHookAdapter) Available() bool { return true }
 func (a lifecycleHookAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
 	return id, false
 }
+
 func (a lifecycleHookAdapter) PlanInstall(pkgName string) []string {
 	return []string{"sh", "-c", "printf install >> " + a.installMarker}
 }
+
 func (a lifecycleHookAdapter) PlanUninstall(pkgName string) []string {
 	return []string{"sh", "-c", "printf uninstall >> " + a.uninstallMarker}
 }
+
 func (a lifecycleHookAdapter) PlanUpgrade(pkgName string) []string {
 	return []string{"sh", "-c", "printf upgrade >> " + a.upgradeMarker}
 }
 func (a lifecycleHookAdapter) PlanClean() [][]string              { return nil }
 func (a lifecycleHookAdapter) Query(pkgName string) (bool, error) { return true, nil }
 func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return []string{pkgNameForTest}, nil }
+
 func (a lifecycleHookAdapter) QueryVersion(pkgName string) (string, error) {
 	return "2.0.0", nil
 }
@@ -1980,7 +2078,8 @@ func TestUpdates_UsageErrors_are_actionable(t *testing.T) {
 
 type fakeUpdatesSupervisor struct {
 	supported bool
-	running   bool
+	status    service.ScheduledJobStatus
+	statusErr error
 	started   []service.ScheduledJob
 	stopped   []string
 }
@@ -1998,7 +2097,12 @@ func (f *fakeUpdatesSupervisor) Stop(ctx context.Context, name string) error {
 }
 
 func (f *fakeUpdatesSupervisor) Status(ctx context.Context, name string) (service.ScheduledJobStatus, error) {
-	return service.ScheduledJobStatus{Supported: f.supported, Running: f.running, Detail: name}, nil
+	status := f.status
+	status.Supported = f.supported
+	if status.Detail == "" {
+		status.Detail = name
+	}
+	return status, f.statusErr
 }
 
 func withUpdatesSupervisor(t *testing.T, supervisor *fakeUpdatesSupervisor) {
@@ -2062,6 +2166,8 @@ func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *tes
 	originalExecutable := updatesExecutable
 	updatesExecutable = func() (string, error) { return "/tmp/genv-test-bin", nil }
 	t.Cleanup(func() { updatesExecutable = originalExecutable })
+	invokingPath := "/custom/bin:relative:/usr/bin:/custom/bin"
+	t.Setenv("PATH", invokingPath)
 
 	// When: updates start is invoked.
 	var code int
@@ -2083,6 +2189,10 @@ func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *tes
 	wantCommand := []string{"/tmp/genv-test-bin", "updates", "__run-once", "--file", specPath, "--lock-file", lockPath, "--host", "qa-host"}
 	if !slices.Equal(job.Command, wantCommand) {
 		t.Fatalf("job command = %v, want %v", job.Command, wantCommand)
+	}
+	wantPath := service.ScheduledPath(invokingPath, runtime.GOOS)
+	if got := job.Environment["PATH"]; got != wantPath {
+		t.Fatalf("job PATH = %q, want sanitized augmented PATH %q", got, wantPath)
 	}
 	if !strings.Contains(out, "check/log/notify only") || strings.Contains(out, "auto-apply enabled") {
 		t.Fatalf("stdout = %q, want explicit default check-only mode", out)
@@ -2109,6 +2219,62 @@ func TestUpdatesStatusAndStop_unsupported_platform_do_not_crash(t *testing.T) {
 	}
 	if !strings.Contains(stopOut, "not supported") || !strings.Contains(stopOut, "nothing to stop") {
 		t.Fatalf("stop output = %q, want unsupported nothing to stop", stopOut)
+	}
+}
+
+func TestUpdatesStatus_prints_typed_scheduler_state(t *testing.T) {
+	exitZero := 0
+	exitSeven := 7
+	tests := []struct {
+		name     string
+		status   service.ScheduledJobStatus
+		want     []string
+		dontWant []string
+	}{
+		{name: "not registered", status: service.ScheduledJobStatus{Supported: true}, want: []string{"not registered"}},
+		{name: "registered and executing", status: service.ScheduledJobStatus{Supported: true, Registered: true, Executing: true}, want: []string{"registered and executing"}, dontWant: []string{"idle", "last run", "no completed run"}},
+		{name: "registered idle no known run", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunUnknown}, want: []string{"registered and idle", "no completed run is known"}},
+		{name: "registered idle last run succeeded", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunSuccess, ExitCode: &exitZero}, want: []string{"registered and idle", "last run succeeded", "status 0"}},
+		{name: "registered idle last run failed", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunFailure, ExitCode: &exitSeven, LastRunDetail: "exit-code"}, want: []string{"registered and idle", "last run failed", "status 7", "exit-code"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			supervisor := &fakeUpdatesSupervisor{supported: true, status: tt.status}
+			withUpdatesSupervisor(t, supervisor)
+
+			var code int
+			out := captureStdout(t, func() { code = run([]string{"updates", "status"}) })
+
+			if code != exitOK {
+				t.Fatalf("updates status code = %d, want %d", code, exitOK)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("stdout = %q, want %q", out, want)
+				}
+			}
+			for _, dontWant := range tt.dontWant {
+				if strings.Contains(out, dontWant) {
+					t.Fatalf("stdout = %q, do not want contradictory %q wording", out, dontWant)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdatesStatus_returns_io_error_when_inspection_fails(t *testing.T) {
+	supervisor := &fakeUpdatesSupervisor{supported: true, statusErr: errors.New("supervisor unavailable")}
+	withUpdatesSupervisor(t, supervisor)
+
+	var code int
+	errOut := captureStderr(t, func() { code = run([]string{"updates", "status"}) })
+
+	if code != exitIO {
+		t.Fatalf("updates status code = %d, want %d", code, exitIO)
+	}
+	if !strings.Contains(errOut, "supervisor unavailable") {
+		t.Fatalf("stderr = %q, want inspection error", errOut)
 	}
 }
 
@@ -2155,6 +2321,222 @@ func TestUpdatesRunOnce_auto_apply_only_when_explicit(t *testing.T) {
 				t.Fatalf("RunUpgrade calls = %d, want %d", runCalls, tt.wantRuns)
 			}
 		})
+	}
+}
+
+func TestUpdatesLogger_returns_error_for_unusable_log_path(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, xdg string)
+	}{
+		{
+			name: "directory creation failure",
+			setup: func(t *testing.T, xdg string) {
+				t.Helper()
+				if err := os.WriteFile(xdg, []byte("not a directory"), 0o600); err != nil {
+					t.Fatalf("write XDG_CONFIG_HOME file: %v", err)
+				}
+			},
+		},
+		{
+			name: "log open failure",
+			setup: func(t *testing.T, xdg string) {
+				t.Helper()
+				if err := os.MkdirAll(filepath.Join(xdg, "genv", "updates.log"), 0o700); err != nil {
+					t.Fatalf("mkdir updates.log directory: %v", err)
+				}
+			},
+		},
+		{
+			name: "log rotation failure",
+			setup: func(t *testing.T, xdg string) {
+				t.Helper()
+				dir := filepath.Join(xdg, "genv")
+				if err := os.MkdirAll(filepath.Join(dir, "updates.log.1", "occupied"), 0o700); err != nil {
+					t.Fatalf("mkdir rotation target: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "updates.log"), make([]byte, (1<<20)+1), 0o600); err != nil {
+					t.Fatalf("write oversized updates.log: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: the audit log path cannot be prepared for the named reason.
+			xdg := filepath.Join(t.TempDir(), "xdg")
+			tt.setup(t, xdg)
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+
+			// When: the scheduled audit logger is initialized.
+			logger, closeLog, err := updatesLogger()
+
+			// Then: initialization reports the I/O failure instead of discarding logs.
+			if err == nil {
+				if closeLog != nil {
+					closeLog()
+				}
+				t.Fatalf("updatesLogger returned logger %v without an error", logger)
+			}
+		})
+	}
+}
+
+func TestUpdatesRunOnce_LoggerFailure_stops_before_executor(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, xdg string)
+	}{
+		{
+			name: "directory creation failure",
+			setup: func(t *testing.T, xdg string) {
+				t.Helper()
+				if err := os.WriteFile(xdg, []byte("not a directory"), 0o600); err != nil {
+					t.Fatalf("write XDG_CONFIG_HOME file: %v", err)
+				}
+			},
+		},
+		{
+			name: "log open failure",
+			setup: func(t *testing.T, xdg string) {
+				t.Helper()
+				if err := os.MkdirAll(filepath.Join(xdg, "genv", "updates.log"), 0o700); err != nil {
+					t.Fatalf("mkdir updates.log directory: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: audit logger initialization fails and the executor is observable.
+			xdg := filepath.Join(t.TempDir(), "xdg")
+			tt.setup(t, xdg)
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+			originalRun := updatesRunUpgrade
+			runCalls := 0
+			updatesRunUpgrade = func(ctx context.Context, opts upgrade.UpgradeRunOptions) upgrade.UpgradeRunResult {
+				runCalls++
+				return upgrade.UpgradeRunResult{}
+			}
+			t.Cleanup(func() { updatesRunUpgrade = originalRun })
+
+			// When: the one-shot worker starts.
+			var code int
+			errOut := captureStderr(t, func() {
+				code = run([]string{"updates", "__run-once", "--file", "unused.json", "--lock-file", "unused.lock.json"})
+			})
+
+			// Then: it exits as I/O failure before any auto-apply execution.
+			if code != exitIO {
+				t.Fatalf("updates __run-once code = %d, want %d", code, exitIO)
+			}
+			if runCalls != 0 {
+				t.Fatalf("RunUpgrade calls = %d, want zero", runCalls)
+			}
+			if errOut != "genv updates: audit log unavailable\n" {
+				t.Fatalf("stderr = %q, want minimal audit log error", errOut)
+			}
+		})
+	}
+}
+
+func TestUpdatesRunOnce_UpgradeFailure_logs_typed_failures_and_unmatched_legacy_errors(t *testing.T) {
+	// Given: auto-apply has typed failures, one unmatched legacy error, and oversized diagnostics.
+	dir := t.TempDir()
+	xdg := filepath.Join(dir, "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[{"id":"alpha"},{"id":"beta"},{"id":"gamma"}],"updates":{"enabled":true,"interval":"1h","autoApply":true}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, nil)
+	plan := upgrade.UpgradePlan{Actions: []resolver.UpgradeAction{
+		{LPs: []genvfile.LockedPackage{{ID: "alpha"}, {ID: "beta"}}},
+		{LPs: []genvfile.LockedPackage{{ID: "gamma"}}},
+	}}
+	originalBuild := updatesBuildPlan
+	updatesBuildPlan = func(opts upgrade.UpgradeOptions) (upgrade.UpgradePlan, error) { return plan, nil }
+	t.Cleanup(func() { updatesBuildPlan = originalBuild })
+	originalRun := updatesRunUpgrade
+	updatesRunUpgrade = func(ctx context.Context, opts upgrade.UpgradeRunOptions) upgrade.UpgradeRunResult {
+		_, _ = io.WriteString(opts.Stderr, "TOKEN=synthetic-token\nAuthorization: Bearer synthetic-bearer\n"+strings.Repeat("diagnostic", 10_000))
+		firstErr := errors.New("first synthetic failure PASSWORD=synthetic-password")
+		secondErr := errors.New("second synthetic failure")
+		legacyErr := errors.New("legacy synthetic failure")
+		return upgrade.UpgradeRunResult{
+			Plan:   opts.Plan,
+			Errors: []error{secondErr, legacyErr, firstErr},
+			Failures: []resolver.UpgradeFailure{
+				{IDs: []string{"alpha", "beta", "pkg?auth=credential-id-secret"}, Err: firstErr},
+				{IDs: []string{"gamma"}, Err: secondErr},
+			},
+		}
+	}
+	t.Cleanup(func() { updatesRunUpgrade = originalRun })
+
+	// When: the scheduled worker executes the synthetic upgrade result.
+	code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath})
+
+	// Then: each action failure and one bounded sanitized diagnostic event are audited.
+	if code != exitLogic {
+		t.Fatalf("updates __run-once code = %d, want %d", code, exitLogic)
+	}
+	logBytes, err := os.ReadFile(filepath.Join(xdg, "genv", "updates.log"))
+	if err != nil {
+		t.Fatalf("read updates log: %v", err)
+	}
+	logText := string(logBytes)
+	if strings.Count(logText, "updates.apply.failed") != 3 {
+		t.Fatalf("updates log has %d failure events, want 3: %q", strings.Count(logText, "updates.apply.failed"), logText)
+	}
+	for _, want := range []string{"alpha", "beta", "gamma", "second synthetic failure", "legacy synthetic failure"} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("updates log missing %q: %q", want, logText)
+		}
+	}
+	for _, want := range []struct {
+		err string
+		ids []string
+	}{
+		{err: "second synthetic failure", ids: []string{"gamma"}},
+	} {
+		for _, line := range strings.Split(logText, "\n") {
+			if strings.Contains(line, want.err) {
+				for _, id := range want.ids {
+					if !strings.Contains(line, id) {
+						t.Fatalf("failure line %q missing correlated ID %q", line, id)
+					}
+				}
+			}
+		}
+	}
+	for _, line := range strings.Split(logText, "\n") {
+		if strings.Contains(line, "alpha") && strings.Contains(line, "beta") && strings.Count(line, updatesDiagnosticRedactionMarker) < 2 {
+			t.Fatalf("credential-bearing failure line is not fully redacted: %q", line)
+		}
+	}
+	for _, secret := range []string{"synthetic-token", "synthetic-bearer", "synthetic-password"} {
+		if strings.Contains(logText, secret) {
+			t.Fatalf("updates log contains synthetic secret %q", secret)
+		}
+	}
+	if strings.Contains(logText, "credential-id-secret") {
+		t.Fatalf("updates log contains credential-bearing package ID: %q", logText)
+	}
+	if !strings.Contains(logText, updatesDiagnosticRedactionMarker) {
+		t.Fatalf("updates log missing package ID redaction marker: %q", logText)
+	}
+	if strings.Count(logText, "updates.apply.diagnostics") != 1 {
+		t.Fatalf("updates log has %d diagnostic events, want 1", strings.Count(logText, "updates.apply.diagnostics"))
+	}
+	if !strings.Contains(logText, updatesDiagnosticTruncationMarker) {
+		t.Fatalf("updates log missing truncation marker")
+	}
+	if !strings.Contains(logText, "updates.apply.completed") {
+		t.Fatalf("updates log missing updates.apply.completed: %q", logText)
 	}
 }
 

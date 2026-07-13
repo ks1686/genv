@@ -3,11 +3,78 @@ package search
 import (
 	"errors"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
 )
+
+func TestAllOnGOOS_PlatformHomebrew(t *testing.T) {
+	originalAll := adapter.All
+	t.Cleanup(func() {
+		adapter.All = originalAll
+	})
+
+	var brewCalls atomic.Int32
+	var linuxbrewCalls atomic.Int32
+	adapter.All = []adapter.Adapter{
+		mockSearchableAdapter{
+			mockAdapter: mockAdapter{name: "brew"},
+			searchFunc: func(string) ([]string, error) {
+				brewCalls.Add(1)
+				return []string{"brew-result"}, nil
+			},
+		},
+		mockSearchableAdapter{
+			mockAdapter: mockAdapter{name: "linuxbrew"},
+			searchFunc: func(string) ([]string, error) {
+				linuxbrewCalls.Add(1)
+				return []string{"linuxbrew-result"}, nil
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		goos               string
+		want               []Candidate
+		wantBrewCalls      int32
+		wantLinuxbrewCalls int32
+	}{
+		{
+			name:          "Darwin queries Homebrew only",
+			goos:          "darwin",
+			want:          []Candidate{{Manager: "brew", PkgName: "brew-result"}},
+			wantBrewCalls: 1,
+		},
+		{
+			name:               "Linux queries Linuxbrew only",
+			goos:               "linux",
+			want:               []Candidate{{Manager: "linuxbrew", PkgName: "linuxbrew-result"}},
+			wantLinuxbrewCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			brewCalls.Store(0)
+			linuxbrewCalls.Store(0)
+
+			got := allOnGOOS("pkg", map[string]bool{"brew": true, "linuxbrew": true}, tt.goos)
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("candidates = %#v, want %#v", got, tt.want)
+			}
+			if got := brewCalls.Load(); got != tt.wantBrewCalls {
+				t.Errorf("brew search calls = %d, want %d", got, tt.wantBrewCalls)
+			}
+			if got := linuxbrewCalls.Load(); got != tt.wantLinuxbrewCalls {
+				t.Errorf("linuxbrew search calls = %d, want %d", got, tt.wantLinuxbrewCalls)
+			}
+		})
+	}
+}
 
 // mockAdapter implements adapter.Adapter but NOT adapter.Searchable
 type mockAdapter struct {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -2215,6 +2216,8 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 // bulk-adopts them into genv.json and the lock file. Packages already tracked
 // are skipped. Duplicate names discovered across multiple managers are
 // deduplicated — the first adapter in registry order wins.
+var scanGOOS = runtime.GOOS
+
 func scanCmd(args []string) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -2279,10 +2282,7 @@ func scanCmd(args []string) int {
 	var added int
 	var skipped int
 
-	for _, a := range adapter.All {
-		if !available[a.Name()] {
-			continue
-		}
+	for _, a := range scanAdaptersOnGOOS(available, scanGOOS) {
 		versions := map[string]string(nil)
 		var pkgs []string
 		if versionLister, ok := a.(adapter.VersionLister); ok {
@@ -2366,6 +2366,16 @@ func scanCmd(args []string) int {
 	}
 	fprintf(os.Stdout, "scan complete: %d added, %d already tracked\n", added, skipped)
 	return exitOK
+}
+
+func scanAdaptersOnGOOS(available map[string]bool, goos string) []adapter.Adapter {
+	selected := make([]adapter.Adapter, 0, len(adapter.All))
+	for _, a := range adapter.All {
+		if available[a.Name()] && adapter.AutomaticOnGOOS(a.Name(), goos) {
+			selected = append(selected, a)
+		}
+	}
+	return selected
 }
 
 // statusCmd implements `genv status [--json] [--debug]`.

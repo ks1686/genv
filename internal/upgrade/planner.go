@@ -39,6 +39,7 @@ type UpgradeRunResult struct {
 	Plan           UpgradePlan
 	Upgraded       []genvfile.LockedPackage
 	Errors         []error
+	Failures       []resolver.UpgradeFailure
 	LockWriteError error
 }
 
@@ -60,14 +61,14 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 		}
 	}
 
-	allowedIDs := make(map[string]bool, len(opts.Spec.Packages))
+	packagesByID := make(map[string]schema.Package, len(opts.Spec.Packages))
 	for _, p := range opts.Spec.Packages {
-		allowedIDs[p.ID] = true
+		packagesByID[p.ID] = p
 	}
 
 	var allowedPackages []genvfile.LockedPackage
 	for _, lp := range opts.Lock.Packages {
-		if allowedIDs[lp.ID] {
+		if _, ok := packagesByID[lp.ID]; ok {
 			allowedPackages = append(allowedPackages, lp)
 		}
 	}
@@ -164,9 +165,24 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 		}
 	}
 
-	actions, skipped := resolver.PlanUpgrade(filteredPackages)
+	var upgradeablePackages []genvfile.LockedPackage
+	var skippedByConstraint []resolver.SkippedPackage
+	for _, lp := range filteredPackages {
+		if packagesByID[lp.ID].Version != "" {
+			skippedByConstraint = append(skippedByConstraint, resolver.SkippedPackage{
+				ID:      lp.ID,
+				Manager: lp.Manager,
+				Reason:  "version-constrained package requires an explicit compatible target",
+			})
+			continue
+		}
+		upgradeablePackages = append(upgradeablePackages, lp)
+	}
+
+	actions, skipped := resolver.PlanUpgrade(upgradeablePackages)
 	plan.Actions = actions
 	plan.Skipped = append(skipped, skippedByFilter...)
+	plan.Skipped = append(plan.Skipped, skippedByConstraint...)
 
 	return plan, nil
 }
@@ -179,6 +195,7 @@ func RunUpgrade(ctx context.Context, opts UpgradeRunOptions) UpgradeRunResult {
 		Plan:     opts.Plan,
 		Upgraded: execResult.Upgraded,
 		Errors:   append([]error(nil), execResult.Errors...),
+		Failures: append([]resolver.UpgradeFailure(nil), execResult.Failures...),
 	}
 	if opts.LockPath != "" {
 		if err := genvfile.WriteLock(opts.LockPath, opts.Lock); err != nil {
