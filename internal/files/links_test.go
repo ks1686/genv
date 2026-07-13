@@ -14,6 +14,8 @@ import (
 
 // sentinelSymlinkErr stands in for the Windows os.Symlink privilege error
 // (Developer Mode off, unelevated); tests assert errors.Is reaches it.
+//
+//nolint:staticcheck // ST1005: intentional verbatim replica of the real Windows os.Symlink error string, which ends with a period.
 var sentinelSymlinkErr = errors.New("A required privilege is not held by the client.")
 
 func TestWindowsSymlinkHint_wrapsOnWindows(t *testing.T) {
