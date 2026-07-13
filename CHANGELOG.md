@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.3 - 2026-07-13
+
+### Fixed
+
+- The Homebrew cask now strips `com.apple.quarantine` on install. The release binaries are adhoc-signed (not notarized), so macOS quarantined them, and launchd refused to exec a quarantined adhoc binary (`OS_REASON_EXEC`) — breaking `genv updates` scheduled jobs after every cask install/upgrade.
+- `bun` global packages are now upgraded with `bun add --global` instead of `bun update --global`. The latter looks for a local `package.json` and no-ops for globally-installed packages ("No package.json, so nothing to update"), so scheduled upgrades never actually updated bun globals and reported failures.
+
 ## v3.0.2 - 2026-07-13
 
 ### Fixed
