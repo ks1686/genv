@@ -49,10 +49,10 @@ func TestBun_PlanUninstall(t *testing.T) {
 
 func TestBun_PlanUpgrade(t *testing.T) {
 	a := Bun{}
-	if got, want := a.PlanUpgrade("cf"), []string{"bun", "update", "--global", "cf"}; !slices.Equal(got, want) {
+	if got, want := a.PlanUpgrade("cf"), []string{"bun", "add", "--global", "cf"}; !slices.Equal(got, want) {
 		t.Errorf("PlanUpgrade(cf) = %v, want %v", got, want)
 	}
-	if got, want := a.PlanUpgrade("cf@latest"), []string{"bun", "update", "--global", "cf"}; !slices.Equal(got, want) {
+	if got, want := a.PlanUpgrade("cf@latest"), []string{"bun", "add", "--global", "cf"}; !slices.Equal(got, want) {
 		t.Errorf("PlanUpgrade(cf@latest) = %v, want %v", got, want)
 	}
 }
