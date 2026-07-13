@@ -722,7 +722,7 @@ func TestPlanUpgrade_ContainsUpgradeVerb(t *testing.T) {
 		{"uv", "--upgrade"},
 		{"pacman", "-S"},
 		{"linuxbrew", "upgrade"},
-		{"bun", "update"},
+		{"bun", "add"},
 		{"npm", "install"},
 		{"pnpm", "add"},
 		{"yarn", "add"},
