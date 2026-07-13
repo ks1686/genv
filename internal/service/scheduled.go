@@ -6,23 +6,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
 // ScheduledJob is a one-shot command managed by the host user supervisor on a fixed interval.
 type ScheduledJob struct {
-	Name     string
-	Command  []string
-	Interval time.Duration
+	Name        string
+	Command     []string
+	Interval    time.Duration
+	Environment map[string]string
 }
 
-// ScheduledJobStatus reports whether a managed scheduled job is supported and running.
+// ScheduledJobStatus reports supervisor registration, current activity, and the last known completed run.
 type ScheduledJobStatus struct {
-	Supported bool
-	Running   bool
-	Detail    string
+	Supported     bool
+	Registered    bool
+	Executing     bool
+	LastRun       ScheduledRunOutcome
+	ExitCode      *int
+	LastRunDetail string
+	Detail        string
 }
 
 // ScheduledBackend manages one-shot scheduled jobs via systemd --user or launchd.
@@ -69,27 +73,23 @@ func (hostScheduledBackend) Stop(ctx context.Context, name string) error {
 func (hostScheduledBackend) Status(ctx context.Context, name string) (ScheduledJobStatus, error) {
 	switch {
 	case IsSystemdAvailable():
-		timerName := systemdTimerName(name)
-		running := exec.CommandContext(ctx, "systemctl", "--user", "is-active", "--quiet", timerName).Run() == nil
-		return ScheduledJobStatus{Supported: true, Running: running, Detail: timerName}, nil
+		return systemdScheduledStatus(ctx, systemdTimerName(name), systemdScheduledUnitName(name))
 	case IsLaunchdAvailable():
-		label := launchdScheduledLabel(name)
-		running := exec.CommandContext(ctx, "launchctl", "print", "gui/"+strconv.Itoa(os.Getuid())+"/"+label).Run() == nil
-		return ScheduledJobStatus{Supported: true, Running: running, Detail: label}, nil
+		return launchdScheduledStatus(ctx, launchdScheduledLabel(name))
 	default:
-		return ScheduledJobStatus{Supported: false, Running: false, Detail: "systemd --user or launchd is required"}, nil
+		return ScheduledJobStatus{Supported: false, LastRun: ScheduledRunUnknown, Detail: "systemd --user or launchd is required"}, nil
 	}
 }
 
-func SystemdScheduledUnitContent(name string, command []string) string {
+func SystemdScheduledUnitContent(name string, command []string, environment map[string]string) string {
 	name = stripLineBreaks(name)
 	return fmt.Sprintf(`[Unit]
 Description=genv scheduled job: %s
 
 [Service]
 Type=oneshot
-ExecStart=%s
-`, name, renderSystemdCommand(command))
+%sExecStart=%s
+`, name, renderSystemdEnvironment(environment), renderSystemdCommand(command))
 }
 
 func SystemdScheduledTimerContent(name string, interval time.Duration) string {
@@ -108,7 +108,7 @@ WantedBy=timers.target
 `, name, seconds, systemdScheduledUnitName(name))
 }
 
-func LaunchdScheduledPlistContent(name string, command []string, interval time.Duration) string {
+func LaunchdScheduledPlistContent(name string, command []string, interval time.Duration, environment map[string]string) string {
 	name = stripLineBreaks(name)
 	seconds := max(int(interval.Seconds()), 1)
 	var b strings.Builder
@@ -124,13 +124,13 @@ func LaunchdScheduledPlistContent(name string, command []string, interval time.D
     <key>ProgramArguments</key>
     <array>
 %s    </array>
-    <key>RunAtLoad</key>
+%s    <key>RunAtLoad</key>
     <true/>
     <key>StartInterval</key>
     <integer>%d</integer>
 </dict>
 </plist>
-`, xmlEscape(launchdScheduledLabel(name)), b.String(), seconds)
+`, xmlEscape(launchdScheduledLabel(name)), b.String(), renderLaunchdEnvironment(environment), seconds)
 }
 
 func systemdScheduledUnitName(name string) string {
@@ -159,7 +159,7 @@ func startSystemdScheduledJob(ctx context.Context, job ScheduledJob) error {
 	timerName := systemdTimerName(job.Name)
 	unitPath := filepath.Join(unitDir, unitName)
 	timerPath := filepath.Join(unitDir, timerName)
-	if err := os.WriteFile(unitPath, []byte(SystemdScheduledUnitContent(job.Name, job.Command)), 0o644); err != nil {
+	if err := os.WriteFile(unitPath, []byte(SystemdScheduledUnitContent(job.Name, job.Command, job.Environment)), 0o644); err != nil {
 		return fmt.Errorf("writing systemd unit file %q: %w", unitPath, err)
 	}
 	if err := os.WriteFile(timerPath, []byte(SystemdScheduledTimerContent(job.Name, job.Interval)), 0o644); err != nil {
@@ -201,7 +201,7 @@ func startLaunchdScheduledJob(ctx context.Context, job ScheduledJob) error {
 		return fmt.Errorf("creating launchd agent directory: %w", err)
 	}
 	plistPath := filepath.Join(agentDir, launchdPlistName(job.Name))
-	if err := os.WriteFile(plistPath, []byte(LaunchdScheduledPlistContent(job.Name, job.Command, job.Interval)), 0o644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(LaunchdScheduledPlistContent(job.Name, job.Command, job.Interval, job.Environment)), 0o644); err != nil {
 		return fmt.Errorf("writing launchd plist file %q: %w", plistPath, err)
 	}
 	_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -51,20 +52,24 @@ func (a Action) Resolved() bool { return a.Manager != "" }
 // ResolveOne resolves a single package into an Action using the provided set of
 // available manager names. Used by addCmd to install one package immediately.
 func ResolveOne(pkg schema.Package, available map[string]bool) Action {
-	return resolve(pkg, available)
+	return resolveOnGOOS(pkg, available, runtime.GOOS)
 }
 
 // Plan resolves every package in f into an Action, using the provided set of
 // available manager names. Call Detect() to build the available map.
 func Plan(f *schema.GenvFile, available map[string]bool) []Action {
+	return planOnGOOS(f, available, runtime.GOOS)
+}
+
+func planOnGOOS(f *schema.GenvFile, available map[string]bool, goos string) []Action {
 	actions := make([]Action, 0, len(f.Packages))
 	for _, pkg := range f.Packages {
-		actions = append(actions, resolve(pkg, available))
+		actions = append(actions, resolveOnGOOS(pkg, available, goos))
 	}
 	return actions
 }
 
-func resolve(pkg schema.Package, available map[string]bool) Action {
+func resolveOnGOOS(pkg schema.Package, available map[string]bool, goos string) Action {
 	// 1. Honor the prefer hint if that manager is available.
 	// ByName is guaranteed non-nil here: available is built from adapter.All
 	// in Detect(), so any name present in available has a registered adapter.
@@ -91,7 +96,7 @@ func resolve(pkg schema.Package, available map[string]bool) Action {
 	//    never silently resolves to npm/cargo/go just because one happens to be
 	//    installed.
 	for _, a := range adapter.All {
-		if available[a.Name()] && adapter.IsDefaultFallbackEligible(a) {
+		if available[a.Name()] && adapter.IsDefaultFallbackEligible(a) && adapter.AutomaticOnGOOS(a.Name(), goos) {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
 			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}
 		}
@@ -255,6 +260,13 @@ func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipp
 type UpgradeExecution struct {
 	Upgraded []genvfile.LockedPackage
 	Errors   []error
+	Failures []UpgradeFailure
+}
+
+// UpgradeFailure identifies the tracked packages affected by one failed action.
+type UpgradeFailure struct {
+	IDs []string
+	Err error
 }
 
 // ExecuteUpgrade runs each resolved upgrade action sequentially, updating the
@@ -270,7 +282,9 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 
 		cmdErr := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr)
 		if cmdErr != nil {
-			out.Errors = append(out.Errors, fmt.Errorf("upgrade %q: %w", ids, cmdErr))
+			wrappedErr := fmt.Errorf("upgrade %q: %w", ids, cmdErr)
+			out.Errors = append(out.Errors, wrappedErr)
+			out.Failures = append(out.Failures, UpgradeFailure{IDs: ids, Err: wrappedErr})
 		}
 
 		// Collect current versions for every package in the action. Use a single
@@ -364,14 +378,14 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 	for _, pkg := range desired {
 		lp, alreadyManaged := managedByID[pkg.ID]
 		if !alreadyManaged {
-			toInstall = append(toInstall, resolve(pkg, available))
+			toInstall = append(toInstall, resolveOnGOOS(pkg, available, runtime.GOOS))
 			continue
 		}
 		// Package is already in the lock. Check version constraint: if the lock
 		// recorded an InstalledVersion and it no longer satisfies the spec
 		// constraint, queue for reinstallation.
 		if versionDrifted(pkg, lp) {
-			toInstall = append(toInstall, resolve(pkg, available))
+			toInstall = append(toInstall, resolveOnGOOS(pkg, available, runtime.GOOS))
 		}
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +33,11 @@ func updatesRunOnceCmd(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	logger, closeLog := updatesLogger()
+	logger, closeLog, err := updatesLogger()
+	if err != nil {
+		fPrintln(os.Stderr, "genv updates: audit log unavailable")
+		return exitIO
+	}
 	defer closeLog()
 	f, err := genvfile.Read(*file)
 	if err != nil {
@@ -62,7 +67,30 @@ func updatesRunOnceCmd(args []string) int {
 		notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("%d tracked update batch(es) planned", len(plan.Actions)), logger)
 		return exitOK
 	}
-	runResult := updatesRunUpgrade(context.Background(), upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard})
+	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
+	runResult := updatesRunUpgrade(context.Background(), upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics})
+	matchedErrors := make([]bool, len(runResult.Errors))
+	for _, failure := range runResult.Failures {
+		sanitizedIDs := make([]string, len(failure.IDs))
+		for i, id := range failure.IDs {
+			sanitizedIDs[i] = sanitizeAndBoundUpdatesDiagnostic(id, updatesDiagnosticLimit)
+		}
+		logger.Warn("updates.apply.failed", slog.Any("ids", sanitizedIDs), slog.String("err", sanitizeAndBoundUpdatesDiagnostic(failure.Err.Error(), updatesDiagnosticLimit)))
+		for i, runErr := range runResult.Errors {
+			if !matchedErrors[i] && errors.Is(runErr, failure.Err) {
+				matchedErrors[i] = true
+				break
+			}
+		}
+	}
+	for i, runErr := range runResult.Errors {
+		if !matchedErrors[i] {
+			logger.Warn("updates.apply.failed", slog.Any("ids", []string(nil)), slog.String("err", sanitizeAndBoundUpdatesDiagnostic(runErr.Error(), updatesDiagnosticLimit)))
+		}
+	}
+	if rendered := strings.TrimSpace(sanitizeAndBoundUpdatesDiagnostic(diagnostics.String(), updatesDiagnosticLimit)); rendered != "" {
+		logger.Warn("updates.apply.diagnostics", slog.String("diagnostics", rendered))
+	}
 	logger.Info("updates.apply.completed", slog.Int("upgraded", len(runResult.Upgraded)), slog.Int("errors", len(runResult.Errors)), slog.Bool("auto_apply", true))
 	notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("auto-apply completed: %d upgraded, %d error(s)", len(runResult.Upgraded), len(runResult.Errors)), logger)
 	if runResult.LockWriteError != nil {
@@ -75,24 +103,35 @@ func updatesRunOnceCmd(args []string) int {
 	return exitOK
 }
 
-func updatesLogger() (*slog.Logger, func()) {
-	path := updatesLogPathOrFallback()
+func updatesLogger() (*slog.Logger, func(), error) {
+	path, err := updatesLogPath()
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := rotateUpdatesLog(path); err != nil {
-		return slog.New(slog.NewTextHandler(io.Discard, nil)), func() {}
+		return nil, nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return slog.New(slog.NewTextHandler(io.Discard, nil)), func() {}
+		return nil, nil, fmt.Errorf("opening updates log: %w", err)
 	}
-	return slog.New(slog.NewTextHandler(f, nil)), func() { _ = f.Close() }
+	return slog.New(slog.NewTextHandler(f, nil)), func() { _ = f.Close() }, nil
+}
+
+func updatesLogPath() (string, error) {
+	dir, err := genvfile.DefaultDir()
+	if err != nil {
+		return "", fmt.Errorf("locating updates log directory: %w", err)
+	}
+	return filepath.Join(dir, "updates.log"), nil
 }
 
 func updatesLogPathOrFallback() string {
-	dir, err := genvfile.DefaultDir()
+	path, err := updatesLogPath()
 	if err != nil {
 		return "updates.log"
 	}
-	return filepath.Join(dir, "updates.log")
+	return path
 }
 
 func rotateUpdatesLog(path string) error {

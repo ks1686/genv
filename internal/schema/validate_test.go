@@ -472,6 +472,7 @@ func TestParseAndValidate_MultipleValidPackages(t *testing.T) {
 	}
 	if f == nil {
 		t.Fatal("ParseAndValidate returned nil")
+		return
 	}
 	if len(f.Packages) != 3 {
 		t.Fatalf("expected 3 packages, got %d", len(f.Packages))
@@ -1024,6 +1025,7 @@ func TestParseAndValidate_UpdatesInvalidInterval(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatalf("expected updates.interval validation error, got: %v", errs)
+		return
 	}
 	if !strings.Contains(found.Message, "24h") {
 		t.Errorf("expected corrective hint mentioning a valid duration, got: %q", found.Message)
