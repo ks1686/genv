@@ -1213,6 +1213,70 @@ func TestScanCmd_UsesVersionListerWithoutPerPackageVersionQueries(t *testing.T) 
 	}
 }
 
+// scanManagerNameAdapter mimics mas: ListInstalled reports the manager-specific
+// name (a numeric App Store product ID) rather than the friendly genv ID.
+type scanManagerNameAdapter struct {
+	name      string
+	installed []string
+}
+
+func (a *scanManagerNameAdapter) Name() string    { return a.name }
+func (a *scanManagerNameAdapter) Available() bool { return true }
+func (a *scanManagerNameAdapter) NormalizeID(id string, managers map[string]string) (string, bool) {
+	return id, false
+}
+func (a *scanManagerNameAdapter) PlanInstall(pkgName string) []string   { return []string{"true"} }
+func (a *scanManagerNameAdapter) PlanUninstall(pkgName string) []string { return []string{"true"} }
+func (a *scanManagerNameAdapter) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
+func (a *scanManagerNameAdapter) PlanClean() [][]string                 { return nil }
+func (a *scanManagerNameAdapter) Query(pkgName string) (bool, error)    { return true, nil }
+func (a *scanManagerNameAdapter) ListInstalled() ([]string, error)      { return a.installed, nil }
+func (a *scanManagerNameAdapter) QueryVersion(pkgName string) (string, error) {
+	return "", nil
+}
+
+// TestScanCmd_SkipsPackageTrackedByManagerName guards against re-adopting a
+// package whose friendly ID differs from its manager-specific name — the mas
+// case where {"id":"xcode","managers":{"mas":"497799835"}} was previously
+// duplicated as a second bare-numeric "497799835" entry on every scan.
+func TestScanCmd_SkipsPackageTrackedByManagerName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+
+	seed := &schema.GenvFile{
+		SchemaVersion: schema.Version,
+		Packages: []schema.Package{
+			{ID: "xcode", Managers: map[string]string{"mas": "497799835"}},
+		},
+	}
+	if err := genvfile.Write(path, seed); err != nil {
+		t.Fatalf("seeding spec: %v", err)
+	}
+
+	mas := &scanManagerNameAdapter{name: "mas", installed: []string{"497799835"}}
+	originalAll := adapter.All
+	adapter.All = []adapter.Adapter{mas}
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	code := run([]string{"scan", "--file", path})
+	if code != exitOK {
+		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+
+	f, _, err := genvfile.ReadOrNew(path)
+	if err != nil {
+		t.Fatalf("ReadOrNew: %v", err)
+	}
+	if len(f.Packages) != 1 {
+		t.Fatalf("packages = %d, want 1 (no duplicate adopted): %+v", len(f.Packages), f.Packages)
+	}
+	for _, p := range f.Packages {
+		if p.ID == "497799835" {
+			t.Fatalf("bare-numeric duplicate %q was re-adopted", p.ID)
+		}
+	}
+}
+
 // ---- genv status -------------------------------------------------------------
 
 func TestStatusCmd_FileNotFound(t *testing.T) {
