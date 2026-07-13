@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.4 - 2026-07-13
+
+### Fixed
+
+- `genv scan` no longer re-adopts packages whose friendly ID differs from their manager-specific name. Adapters like `mas` report installed apps by their manager name (a numeric App Store product ID), so an app already tracked as `{"id":"xcode","managers":{"mas":"497799835"}}` was adopted again on every scan as a duplicate bare-numeric `497799835` entry — doubling its App Store upgrade work. Scan now treats every `managers` value as already tracked.
+
 ## v3.0.3 - 2026-07-13
 
 ### Fixed

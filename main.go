@@ -2261,10 +2261,18 @@ func scanCmd(args []string) int {
 		return exitIO
 	}
 
-	// Build sets of already-tracked IDs so we can skip them.
+	// Build sets of already-tracked IDs so we can skip them. Besides the
+	// friendly p.ID, register every manager-specific name from p.Managers:
+	// adapters like mas report installed packages by their manager name
+	// (a numeric App Store product ID) rather than the friendly ID, so a
+	// package tracked as {"id":"xcode","managers":{"mas":"497799835"}} would
+	// otherwise be re-adopted as a duplicate bare-numeric entry.
 	trackedInSpec := make(map[string]bool, len(f.Packages))
 	for _, p := range f.Packages {
 		trackedInSpec[p.ID] = true
+		for _, managerName := range p.Managers {
+			trackedInSpec[managerName] = true
+		}
 	}
 
 	// Deduplicate across managers using a seen set.
