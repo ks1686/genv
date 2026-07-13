@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.5 - 2026-07-13
+
+### Fixed
+
+- The `gem` adapter no longer reports gems from an installation directory it cannot write to (e.g. macOS system Ruby at `/Library/Ruby/Gems`). Those gems are root-owned, so `genv scan` was adopting dozens of unmanageable packages that failed every `genv upgrade` with `Gem::FilePermissionError`. When the active gem install dir is not writable, the adapter now lists nothing.
+
 ## v3.0.4 - 2026-07-13
 
 ### Fixed
