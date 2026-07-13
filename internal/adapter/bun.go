@@ -30,7 +30,12 @@ func (Bun) PlanUninstall(pkgName string) []string {
 }
 
 func (Bun) PlanUpgrade(pkgName string) []string {
-	return []string{"bun", "update", "--global", bunBaseName(pkgName)}
+	// `bun update --global <pkg>` looks for a local package.json and is a no-op
+	// for globally-installed packages ("No package.json, so nothing to update"),
+	// which breaks scheduled upgrades that run without a project directory.
+	// `bun add --global <pkg>` reinstalls the latest version, which is the
+	// correct, package.json-independent way to upgrade a global package.
+	return []string{"bun", "add", "--global", bunBaseName(pkgName)}
 }
 
 func (Bun) PlanClean() [][]string {
