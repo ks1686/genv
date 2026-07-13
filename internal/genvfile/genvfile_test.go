@@ -50,6 +50,7 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("Read returned nil")
+		return
 	}
 
 	if got.SchemaVersion != original.SchemaVersion {
@@ -113,6 +114,7 @@ func TestReadOrNew_CreatesNew(t *testing.T) {
 	}
 	if f == nil {
 		t.Fatal("expected non-nil GenvFile")
+		return
 	}
 	if f.SchemaVersion != schema.Version {
 		t.Errorf("SchemaVersion = %q", f.SchemaVersion)
@@ -260,6 +262,7 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("Read returned nil")
+		return
 	}
 	if len(got.Packages) != 1 || got.Packages[0].ID != "git" {
 		t.Errorf("expected 1 package 'git' after overwrite, got: %+v", got.Packages)
@@ -342,6 +345,7 @@ func TestReadLock_MissingFile_ReturnsEmpty(t *testing.T) {
 	}
 	if lf == nil {
 		t.Fatal("ReadLock on missing file: expected non-nil LockFile")
+		return
 	}
 	if lf.SchemaVersion != schema.Version {
 		t.Errorf("SchemaVersion: got %q, want %q", lf.SchemaVersion, schema.Version)

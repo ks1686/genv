@@ -110,17 +110,21 @@ func TestProfileSwitch(t *testing.T) {
 	}
 	profA, _ := profile.Load(specPath, "A")
 	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A"})
-	genvfile.Write(profile.Path(specPath, "A"), profA)
+	if err := genvfile.Write(profile.Path(specPath, "A"), profA); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := profile.Create(specPath, "B"); err != nil {
 		t.Fatal(err)
 	}
 	profB, _ := profile.Load(specPath, "B")
 	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B"})
-	genvfile.Write(profile.Path(specPath, "B"), profB)
+	if err := genvfile.Write(profile.Path(specPath, "B"), profB); err != nil {
+		t.Fatal(err)
+	}
 
 	// Switch to A
-	out := captureStdout(t, func() {
+	_ = captureStdout(t, func() {
 		code := run([]string{"profile", "switch", "A", "-file", specPath, "-lock-file", lockPath, "-yes"})
 		if code != exitOK {
 			t.Errorf("expected exitOK, got %d", code)
@@ -136,7 +140,7 @@ func TestProfileSwitch(t *testing.T) {
 	}
 
 	// Switch to B
-	out = captureStdout(t, func() {
+	_ = captureStdout(t, func() {
 		code := run([]string{"profile", "switch", "B", "-file", specPath, "-lock-file", lockPath, "-yes"})
 		if code != exitOK {
 			t.Errorf("expected exitOK, got %d", code)
@@ -162,8 +166,6 @@ func TestProfileSwitch(t *testing.T) {
 	if pkgMap["pkg-A"] {
 		t.Error("pkg-A was not removed")
 	}
-
-	_ = out
 }
 
 func TestStatusJSONActiveProfile(t *testing.T) {
@@ -198,7 +200,9 @@ func TestStatusJSONActiveProfile(t *testing.T) {
 
 	dataBytes, _ := json.Marshal(env.Data)
 	var res output.StatusResult
-	json.Unmarshal(dataBytes, &res)
+	if err := json.Unmarshal(dataBytes, &res); err != nil {
+		t.Fatal(err)
+	}
 
 	if res.ActiveProfile != "work" {
 		t.Errorf("expected active profile 'work', got %q", res.ActiveProfile)
@@ -224,23 +228,31 @@ func TestProfileSwitchFailure(t *testing.T) {
 	}
 	profA, _ := profile.LoadMerged(specPath, "A")
 	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A"})
-	genvfile.Write(profile.Path(specPath, "A"), profA)
+	if err := genvfile.Write(profile.Path(specPath, "A"), profA); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := profile.Create(specPath, "B"); err != nil {
 		t.Fatal(err)
 	}
 	profB, _ := profile.LoadMerged(specPath, "B")
 	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B"})
-	genvfile.Write(profile.Path(specPath, "B"), profB)
+	if err := genvfile.Write(profile.Path(specPath, "B"), profB); err != nil {
+		t.Fatal(err)
+	}
 
 	// Switch to A successfully
 	run([]string{"profile", "switch", "A", "-file", specPath, "-lock-file", lockPath, "-yes"})
 
 	// Now mock a failure for pkg-B
 	fakeBin := filepath.Join(dir, "bin")
-	os.MkdirAll(fakeBin, 0755)
+	if err := os.MkdirAll(fakeBin, 0755); err != nil {
+		t.Fatal(err)
+	}
 	fakeBrew := filepath.Join(fakeBin, "brew")
-	os.WriteFile(fakeBrew, []byte("#!/bin/sh\nif [ \"$2\" = \"pkg-B\" ]; then echo 'mock install failure'; exit 1; fi\nexit 0\n"), 0755)
+	if err := os.WriteFile(fakeBrew, []byte("#!/bin/sh\nif [ \"$2\" = \"pkg-B\" ]; then echo 'mock install failure'; exit 1; fi\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
 
 	// Switch to B should fail
@@ -308,7 +320,9 @@ func TestProfileSwitchInvalidJSON(t *testing.T) {
 	if err := profile.Create(specPath, "bad"); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(profile.Path(specPath, "bad"), []byte("{bad json"), 0644)
+	if err := os.WriteFile(profile.Path(specPath, "bad"), []byte("{bad json"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	out := captureStderr(t, func() {
 		code := run([]string{"profile", "switch", "bad", "-file", specPath, "-lock-file", lockPath, "-yes"})

@@ -314,6 +314,7 @@ func TestSpecToLock_Roundtrip(t *testing.T) {
 	lsc := SpecToLock(spec)
 	if lsc == nil {
 		t.Fatal("expected non-nil LockedShellConfig")
+		return
 	}
 	if len(lsc.Aliases) != 1 || lsc.Aliases[0].Name != "ll" || lsc.Aliases[0].Value != "ls -la" {
 		t.Errorf("alias roundtrip failed: %+v", lsc.Aliases)

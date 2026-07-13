@@ -989,16 +989,6 @@ func runApply(opts applyOptions) int {
 	return runApplyWithSpecAndLock(ctx, opts, f, lf, lockPath)
 }
 
-func runApplyWithSpec(ctx context.Context, opts applyOptions, f *schema.GenvFile) int {
-	lockPath := lockPathForSpec(opts.File, opts.LockFile)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return exitIO
-	}
-	return runApplyWithSpecAndLock(ctx, opts, f, lf, lockPath)
-}
-
 func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
 	f = host.FilterForHost(f, hostForCommand(opts.Host))
 
@@ -1208,7 +1198,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	_, _, svcErrs := applyServices(ctx, f, lf, !opts.Quiet)
 	var fileErrs []error
 	if len(execResult.Errors) == 0 {
-		filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
+		_, filePlanErr = applyFiles(ctx, opts, f, lf)
 		if filePlanErr != nil {
 			fileErrs = append(fileErrs, filePlanErr)
 		}
