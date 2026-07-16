@@ -15,6 +15,11 @@ type UpgradeOptions struct {
 	Spec    *schema.GenvFile
 	Lock    *genvfile.LockFile
 	Filters output.UpgradeFilters
+	// DetectOutdated narrows the plan to packages that actually have an update
+	// available (via each manager's OutdatedLister). Used by the update-check
+	// and background-checker paths; left false by `genv upgrade`, which upgrades
+	// every tracked package and lets each manager skip already-current ones.
+	DetectOutdated bool
 }
 
 type UpgradePlan struct {
@@ -177,6 +182,12 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 			continue
 		}
 		upgradeablePackages = append(upgradeablePackages, lp)
+	}
+
+	if opts.DetectOutdated {
+		filtered, warnings := resolver.FilterOutdated(upgradeablePackages)
+		upgradeablePackages = filtered
+		plan.Warnings = append(plan.Warnings, warnings...)
 	}
 
 	actions, skipped := resolver.PlanUpgrade(upgradeablePackages)

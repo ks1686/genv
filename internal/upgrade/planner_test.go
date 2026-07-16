@@ -3,6 +3,8 @@ package upgrade
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -11,6 +13,40 @@ import (
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 )
+
+func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
+	// Given: two tracked brew packages, but a fake `brew outdated` reports only git.
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake brew: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	// When: the plan is built with outdated detection enabled.
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, DetectOutdated: true})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	// Then: only the outdated package remains in the plan.
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git"}) {
+		t.Fatalf("DetectOutdated plan packages = %v, want [git]", gotIDs)
+	}
+}
 
 func TestBuildUpgradePlan_Constraint_unconstrained_package_plans_normally(t *testing.T) {
 	// Given: an unconstrained package tracked by a registered manager.
