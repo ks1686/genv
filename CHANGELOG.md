@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.1.0 - 2026-07-15
+
+### Changed
+
+- `genv updates check` and the background updates checker now report only packages that actually have an update available, instead of planning an upgrade for every tracked package. The checker previously emitted one upgrade batch per manager unconditionally, so its notification count never reflected reality and never dropped after upgrading. Outdated status is now detected per manager — `brew outdated --json=v2` (formulae and casks), `mas outdated`, and, because bun has no reliable global-outdated command, an npm registry `latest` comparison for global bun packages. A manager whose query fails keeps all of its packages (so a real update is never silently missed), and managers without outdated detection are unchanged. The scheduled-check notification now counts outdated packages rather than batches and stays silent when nothing is outdated. `genv upgrade` is unchanged and still upgrades every tracked package, letting each manager skip already-current ones.
+
 ## v3.0.5 - 2026-07-13
 
 ### Fixed
