@@ -76,6 +76,26 @@ func (brewBase) ListOutdated(pkgNames []string) (map[string]string, error) {
 	return outdated, nil
 }
 
+// ListInstalledVersions returns name->version for all installed formulae and
+// casks (formulae only under Linuxbrew) via one `brew list --versions` call.
+// Satisfies the optional VersionLister so the resolver can collect versions
+// in bulk after batch upgrades instead of N QueryVersion calls.
+// Parsing splits only on the first space (SplitN(..., 2)) to robustly
+// preserve multi-token version strings after the separator.
+func (brewBase) ListInstalledVersions() (map[string]string, error) {
+	lines, err := runListOutput("brew", "list", "--versions")
+	if err != nil {
+		return nil, err
+	}
+	versions := make(map[string]string, len(lines))
+	for _, line := range lines {
+		if parts := strings.SplitN(line, " ", 2); len(parts) == 2 {
+			versions[parts[0]] = parts[1]
+		}
+	}
+	return versions, nil
+}
+
 func (brewBase) PlanClean() [][]string {
 	return [][]string{{"brew", "cleanup"}}
 }

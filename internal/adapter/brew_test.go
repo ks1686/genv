@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"maps"
 	"os"
 	"testing"
 )
@@ -210,5 +211,83 @@ func TestBrew_Available(t *testing.T) {
 	}
 	if (Brew{}).Available() {
 		t.Error("Available() = true when lookPath fails")
+	}
+}
+
+func TestBrew_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) {
+	// Given
+	counterPath := t.TempDir() + "/count"
+	t.Setenv("GENV_FAKE_COUNTER", counterPath)
+	installFakeBinary(t, "brew",
+		`if [ "$1" = "list" ] && [ "$2" = "--versions" ]; then
+  count=$(cat "$GENV_FAKE_COUNTER" 2>/dev/null || printf 0)
+  count=$((count + 1))
+  printf "%s" "$count" > "$GENV_FAKE_COUNTER"
+  cat <<'EOF'
+git 2.45.0
+foo 1.0.0 extra tokens here
+bar 3.0
+EOF
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	// When
+	versions, err := Brew{}.ListInstalledVersions()
+	// Then
+	if err != nil {
+		t.Fatalf("ListInstalledVersions: unexpected error: %v", err)
+	}
+	want := map[string]string{
+		"git": "2.45.0",
+		"foo": "1.0.0 extra tokens here",
+		"bar": "3.0",
+	}
+	if !maps.Equal(versions, want) {
+		t.Errorf("ListInstalledVersions: got %v, want %v", versions, want)
+	}
+	count, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("counter: %v", err)
+	}
+	if string(count) != "1" {
+		t.Errorf("brew list --versions exec count = %q, want 1", string(count))
+	}
+}
+
+func TestLinuxbrew_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) {
+	// Given
+	counterPath := t.TempDir() + "/count"
+	t.Setenv("GENV_FAKE_COUNTER", counterPath)
+	installFakeBinary(t, "brew",
+		`if [ "$1" = "list" ] && [ "$2" = "--versions" ]; then
+  count=$(cat "$GENV_FAKE_COUNTER" 2>/dev/null || printf 0)
+  count=$((count + 1))
+  printf "%s" "$count" > "$GENV_FAKE_COUNTER"
+  cat <<'EOF'
+node 20.12.0
+EOF
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	// When
+	versions, err := Linuxbrew{}.ListInstalledVersions()
+	// Then
+	if err != nil {
+		t.Fatalf("ListInstalledVersions: unexpected error: %v", err)
+	}
+	want := map[string]string{"node": "20.12.0"}
+	if !maps.Equal(versions, want) {
+		t.Errorf("ListInstalledVersions: got %v, want %v", versions, want)
+	}
+	count, err := os.ReadFile(counterPath)
+	if err != nil {
+		t.Fatalf("counter: %v", err)
+	}
+	if string(count) != "1" {
+		t.Errorf("brew list --versions exec count = %q, want 1", string(count))
 	}
 }
