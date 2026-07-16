@@ -2388,6 +2388,70 @@ func TestUpdatesRunOnce_auto_apply_only_when_explicit(t *testing.T) {
 	}
 }
 
+func TestUpdatesRunOnce_CheckOnly_notifies_only_when_packages_outdated(t *testing.T) {
+	tests := []struct {
+		name       string
+		plan       upgrade.UpgradePlan
+		wantNotify bool
+	}{
+		{
+			name:       "nothing outdated stays silent",
+			plan:       upgrade.UpgradePlan{},
+			wantNotify: false,
+		},
+		{
+			name: "outdated packages notify",
+			plan: upgrade.UpgradePlan{Actions: []resolver.UpgradeAction{
+				{LPs: []genvfile.LockedPackage{{ID: "alpha"}, {ID: "beta"}}},
+			}},
+			wantNotify: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given: a notify-enabled, check-only updates config.
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+			specPath := filepath.Join(dir, "genv.json")
+			lockPath := filepath.Join(dir, "genv.lock.json")
+			if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[{"id":"alpha"}],"updates":{"enabled":true,"interval":"1h","autoApply":false,"notify":true}}`), 0o644); err != nil {
+				t.Fatalf("write spec: %v", err)
+			}
+			writeLock(t, lockPath, nil)
+
+			originalBuild := updatesBuildPlan
+			updatesBuildPlan = func(opts upgrade.UpgradeOptions) (upgrade.UpgradePlan, error) {
+				if !opts.DetectOutdated {
+					t.Error("check worker built plan without DetectOutdated")
+				}
+				return tt.plan, nil
+			}
+			t.Cleanup(func() { updatesBuildPlan = originalBuild })
+
+			// updatesLookPath is consulted only when a notification is actually
+			// sent; make it fail so no real notifier runs, and count the calls.
+			lookCalls := 0
+			originalLookPath := updatesLookPath
+			updatesLookPath = func(string) (string, error) {
+				lookCalls++
+				return "", os.ErrNotExist
+			}
+			t.Cleanup(func() { updatesLookPath = originalLookPath })
+
+			// When: the hidden one-shot checker runs.
+			code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath})
+			if code != exitOK {
+				t.Fatalf("updates __run-once code = %d, want %d", code, exitOK)
+			}
+
+			// Then: a notification is attempted only when packages are outdated.
+			if gotNotify := lookCalls > 0; gotNotify != tt.wantNotify {
+				t.Fatalf("notification attempted = %v (lookCalls=%d), want %v", gotNotify, lookCalls, tt.wantNotify)
+			}
+		})
+	}
+}
+
 func TestUpdatesLogger_returns_error_for_unusable_log_path(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -2615,6 +2679,15 @@ func TestUpdatesRunOnce_unsupported_notifier_logs_warning_without_crashing(t *te
 		t.Fatalf("write spec: %v", err)
 	}
 	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "missing-manager", PkgName: "alpha"}})
+	// A notification is only attempted when packages are outdated, so inject a
+	// non-empty plan; the point of this test is the notifier-unavailable path.
+	originalBuild := updatesBuildPlan
+	updatesBuildPlan = func(opts upgrade.UpgradeOptions) (upgrade.UpgradePlan, error) {
+		return upgrade.UpgradePlan{Actions: []resolver.UpgradeAction{
+			{LPs: []genvfile.LockedPackage{{ID: "alpha"}}},
+		}}, nil
+	}
+	t.Cleanup(func() { updatesBuildPlan = originalBuild })
 	originalLookPath := updatesLookPath
 	updatesLookPath = func(file string) (string, error) { return "", os.ErrNotExist }
 	t.Cleanup(func() { updatesLookPath = originalLookPath })

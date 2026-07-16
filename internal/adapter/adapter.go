@@ -37,6 +37,17 @@ type BatchUpgrader interface {
 	PlanUpgradeBatch(pkgNames []string) []string
 }
 
+// OutdatedLister is an optional extension of Adapter for managers that can
+// report which installed packages have a newer version available. pkgNames are
+// the manager-native names genv is tracking; implementations MAY use them to
+// scope the query or ignore them and report every outdated package. Returns a
+// map of manager-native package name -> latest available version; a package is
+// considered up to date when it is absent from the map. Returns nil, nil when
+// nothing is outdated or the manager is unavailable.
+type OutdatedLister interface {
+	ListOutdated(pkgNames []string) (map[string]string, error)
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.

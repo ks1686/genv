@@ -94,6 +94,53 @@ func (Bun) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+// ListOutdated reports globally-installed bun packages with a newer version on
+// the npm registry, keyed by package base name -> latest version, restricted to
+// pkgNames when provided. bun has no reliable global "outdated" command, so genv
+// compares each installed version against the registry "latest" dist-tag. A
+// package whose latest version can't be resolved due to a transport error is
+// conservatively reported as outdated so a real update is never silently missed;
+// a 404 (unpublished) is treated as up to date.
+func (Bun) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := Bun{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	installed := make(map[string]string, len(entries))
+	for _, e := range entries {
+		installed[e.name] = e.version
+	}
+
+	names := pkgNames
+	if len(names) == 0 {
+		names = make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.name)
+		}
+	}
+
+	outdated := make(map[string]string)
+	for _, raw := range names {
+		base := bunBaseName(raw)
+		cur, ok := installed[base]
+		if !ok {
+			continue // not installed globally; nothing to compare
+		}
+		latest, err := npmLatestVersion(base)
+		if err != nil {
+			outdated[base] = cur // unknown due to transport error: flag conservatively
+			continue
+		}
+		if latest != "" && latest != cur {
+			outdated[base] = latest
+		}
+	}
+	if len(outdated) == 0 {
+		return nil, nil
+	}
+	return outdated, nil
+}
+
 type bunEntry struct {
 	name    string
 	version string

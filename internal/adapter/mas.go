@@ -91,6 +91,56 @@ func (Mas) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+// ListOutdated reports installed App Store apps with an update available, keyed
+// by numeric product ID -> target version, intersected with pkgNames. `mas
+// outdated` prints one app per line as "497799835 Xcode (14.0 -> 14.1)" or
+// "497799835 Xcode (14.1)".
+func (Mas) ListOutdated(pkgNames []string) (map[string]string, error) {
+	lines, err := runListOutput("mas", "outdated")
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(pkgNames))
+	for _, n := range pkgNames {
+		want[n] = true
+	}
+	outdated := make(map[string]string)
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		id := fields[0]
+		if len(pkgNames) > 0 && !want[id] {
+			continue
+		}
+		outdated[id] = masOutdatedTarget(line)
+	}
+	if len(outdated) == 0 {
+		return nil, nil
+	}
+	return outdated, nil
+}
+
+// masOutdatedTarget extracts the target version from a `mas outdated` line: the
+// version after "->" when present, otherwise the parenthesized version, or a
+// non-empty sentinel when neither parses (the value is only for display —
+// presence in the map is what marks the app outdated).
+func masOutdatedTarget(line string) string {
+	open := strings.LastIndex(line, "(")
+	closeIdx := strings.LastIndex(line, ")")
+	if open >= 0 && closeIdx > open {
+		inner := strings.TrimSpace(line[open+1 : closeIdx])
+		if _, after, ok := strings.Cut(inner, "->"); ok {
+			inner = strings.TrimSpace(after)
+		}
+		if inner != "" {
+			return inner
+		}
+	}
+	return "outdated"
+}
+
 // masListIDs runs "mas list" and returns the leading numeric product ID of each
 // line. An unavailable mas or an empty store yields nil.
 func masListIDs() ([]string, error) {

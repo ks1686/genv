@@ -57,14 +57,17 @@ func updatesRunOnceCmd(args []string) int {
 		return exitIO
 	}
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
-	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
+	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters, DetectOutdated: true})
 	if err != nil {
 		logger.Warn("updates.check.plan", slog.Any("err", err))
 		return exitUsage
 	}
 	if !cfg.AutoApply {
-		logger.Info("updates.check.planned", slog.Int("batches", len(plan.Actions)), slog.Int("skipped", len(plan.Skipped)), slog.Bool("auto_apply", false))
-		notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("%d tracked update batch(es) planned", len(plan.Actions)), logger)
+		outdated := countPlannedPackages(plan)
+		logger.Info("updates.check.planned", slog.Int("packages", outdated), slog.Int("batches", len(plan.Actions)), slog.Int("skipped", len(plan.Skipped)), slog.Bool("auto_apply", false))
+		if outdated > 0 {
+			notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("%d package(s) have updates available", outdated), logger)
+		}
 		return exitOK
 	}
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
@@ -152,6 +155,18 @@ func rotateUpdatesLog(path string) error {
 		return fmt.Errorf("rotate updates log: %w", err)
 	}
 	return nil
+}
+
+// countPlannedPackages returns the total number of packages across all planned
+// upgrade actions. A batched action (e.g. one `brew upgrade a b c`) holds many
+// packages, so counting actions would undercount; the notification reports
+// packages, not batches.
+func countPlannedPackages(plan upgrade.UpgradePlan) int {
+	n := 0
+	for _, action := range plan.Actions {
+		n += len(action.LPs)
+	}
+	return n
 }
 
 func notifyUpdates(enabled bool, title, message string, logger *slog.Logger) {

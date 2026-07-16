@@ -255,6 +255,68 @@ func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipp
 	return plan, skipped
 }
 
+// lookupAdapter resolves a manager name to its adapter. It is a var so tests
+// can inject fake adapters for FilterOutdated without touching the global
+// registry, mirroring the lookPath seam in the adapter package.
+var lookupAdapter = adapter.ByName
+
+// FilterOutdated narrows packages to those with an update actually available,
+// querying each manager's OutdatedLister capability. Packages whose manager does
+// not implement OutdatedLister are kept unchanged (no detection is possible, so
+// nothing is dropped). When a manager's outdated query fails, all of that
+// manager's packages are kept conservatively and a warning is recorded, so a
+// real update is never silently missed. Input order is preserved.
+func FilterOutdated(packages []genvfile.LockedPackage) (kept []genvfile.LockedPackage, warnings []string) {
+	// Group package names by manager so each manager is queried at most once,
+	// preserving first-seen order for stable, testable output.
+	type group struct {
+		mgr      adapter.Adapter
+		pkgNames []string
+	}
+	groups := make(map[string]*group)
+	var order []string
+	for _, lp := range packages {
+		if _, ok := groups[lp.Manager]; !ok {
+			groups[lp.Manager] = &group{mgr: lookupAdapter(lp.Manager)}
+			order = append(order, lp.Manager)
+		}
+		g := groups[lp.Manager]
+		g.pkgNames = append(g.pkgNames, lp.PkgName)
+	}
+
+	// For each manager, decide which of its packages to keep.
+	// keep[manager] == nil means "keep all" (no detection / query failed);
+	// otherwise it is the set of manager-native names that are outdated.
+	keep := make(map[string]map[string]bool, len(order))
+	for _, name := range order {
+		g := groups[name]
+		lister, ok := g.mgr.(adapter.OutdatedLister)
+		if !ok {
+			keep[name] = nil // no capability: keep all
+			continue
+		}
+		outdated, err := lister.ListOutdated(g.pkgNames)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not determine outdated packages for %s (%v) — keeping all", name, err))
+			keep[name] = nil // query failed: keep all conservatively
+			continue
+		}
+		set := make(map[string]bool, len(outdated))
+		for pkgName := range outdated {
+			set[pkgName] = true
+		}
+		keep[name] = set
+	}
+
+	for _, lp := range packages {
+		set := keep[lp.Manager]
+		if set == nil || set[lp.PkgName] {
+			kept = append(kept, lp)
+		}
+	}
+	return kept, warnings
+}
+
 // UpgradeExecution records the outcome of ExecuteUpgrade so the caller can update
 // the lock file with new versions.
 type UpgradeExecution struct {
