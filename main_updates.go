@@ -88,7 +88,7 @@ func updatesCheckCmd(args []string) int {
 		SkipManager:  parseCommaList(*skipManagerFlag),
 		HooksSkipped: true,
 	}
-	plan, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
+	plan, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters, DetectOutdated: true})
 	if err != nil {
 		if *jsonOut {
 			_ = writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "updates check", OK: false, Errors: []string{err.Error()}})
