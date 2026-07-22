@@ -412,6 +412,7 @@ When you run `genv apply`:
 ### `genv upgrade` flags
 
 - `--dry-run` — print the upgrade commands without executing
+- `--all` — upgrade every unconstrained tracked package (skip outdated detection)
 - `--yes` — skip the confirmation prompt
 - `--no-hooks` — skip pre-upgrade and post-upgrade hooks without skipping package upgrades
 - `--json` — emit machine-readable JSON to stdout instead of human-readable text
@@ -426,7 +427,7 @@ When you run `genv apply`:
 
 ### `genv updates check` flags
 
-`genv updates check` uses the same shared dry-run planner as `genv upgrade --dry-run` and reports **genv-tracked packages only**. It never writes the lock file, never executes package-manager commands, and never runs upgrade hooks.
+`genv updates check` uses the same shared upgrade planner as `genv upgrade --dry-run`. Both default to outdated-only filtering (only packages with available updates). Use `genv upgrade --all` to plan every unconstrained tracked package without outdated detection. Updates check reports **genv-tracked packages only**. It never writes the lock file, never executes package-manager commands, and never runs upgrade hooks.
 
 - `--json` — emit machine-readable JSON to stdout instead of human-readable text
 - `--only <id-or-pkg-name>[,...]` — check only matching tracked packages

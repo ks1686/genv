@@ -3088,6 +3088,8 @@ func validateCmd(args []string) int {
 
 // upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug]`.
 // Upgrades all packages tracked in the lock file using their recorded manager.
+func upgradeDetectOutdated(all bool) bool { return !all }
+
 func upgradeCmd(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -3108,6 +3110,7 @@ func upgradeCmd(args []string) int {
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to upgrade")
 	skipManagerFlag := fs.String("skip-manager", "", "comma-separated list of managers to skip")
+	all := fs.Bool("all", false, "upgrade every unconstrained tracked package (skip outdated detection)")
 	hookTimeoutFlag := fs.String("hook-timeout", "", "per-hook deadline, e.g. 5m or 30s (default: no hook timeout)")
 
 	if err := fs.Parse(args); err != nil {
@@ -3197,6 +3200,7 @@ func upgradeCmd(args []string) int {
 		OnlyManager:  onlyManager,
 		SkipManager:  skipManager,
 		HooksSkipped: *noHooks,
+		All:          *all,
 	}
 
 	if len(lf.Packages) == 0 {
@@ -3217,9 +3221,10 @@ func upgradeCmd(args []string) int {
 	}
 
 	planResult, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{
-		Spec:    f,
-		Lock:    lf,
-		Filters: filters,
+		Spec:           f,
+		Lock:           lf,
+		Filters:        filters,
+		DetectOutdated: upgradeDetectOutdated(*all),
 	})
 	if err != nil {
 		fprintf(os.Stderr, "genv upgrade: %v\n", err)

@@ -16,9 +16,9 @@ type UpgradeOptions struct {
 	Lock    *genvfile.LockFile
 	Filters output.UpgradeFilters
 	// DetectOutdated narrows the plan to packages that actually have an update
-	// available (via each manager's OutdatedLister). Used by the update-check
-	// and background-checker paths; left false by `genv upgrade`, which upgrades
-	// every tracked package and lets each manager skip already-current ones.
+	// available (via each manager's OutdatedLister). Default for `genv upgrade`
+	// and for updates check / background worker. `genv upgrade --all` sets this
+	// false to restore brute-force planning of every unconstrained tracked package.
 	DetectOutdated bool
 }
 
