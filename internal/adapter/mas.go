@@ -41,6 +41,12 @@ func (Mas) PlanUpgrade(pkgName string) []string {
 	return []string{"mas", "upgrade", pkgName}
 }
 
+// PlanUpgradeBatch upgrades multiple App Store apps in one mas invocation.
+func (Mas) PlanUpgradeBatch(pkgNames []string) []string {
+	args := []string{"mas", "upgrade"}
+	return append(args, pkgNames...)
+}
+
 // PlanClean is a no-op: mas keeps no local cache to purge.
 func (Mas) PlanClean() [][]string { return nil }
 

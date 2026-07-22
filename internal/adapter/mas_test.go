@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -52,6 +53,14 @@ func TestMas_PlanUpgrade(t *testing.T) {
 	args := Mas{}.PlanUpgrade("497799835")
 	assertContainsArg(t, args, "upgrade")
 	assertContainsArg(t, args, "497799835")
+}
+
+func TestMas_PlanUpgradeBatch(t *testing.T) {
+	args := Mas{}.PlanUpgradeBatch([]string{"497799835", "409201541"})
+	want := []string{"mas", "upgrade", "497799835", "409201541"}
+	if !slices.Equal(args, want) {
+		t.Fatalf("PlanUpgradeBatch = %v, want %v", args, want)
+	}
 }
 
 func TestMas_PlanClean_IsNoOp(t *testing.T) {
