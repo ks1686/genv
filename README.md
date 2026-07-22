@@ -330,7 +330,7 @@ When you run `genv apply`:
 | `genv profile switch <name> [flags]`              | Switch to a named profile and reconcile the system                     |
 | `genv apply [flags]`                              | Reconcile system state with genv.json                                  |
 | `genv validate [flags]`                           | Validate genv.json without changing the system                         |
-| `genv upgrade [flags]`                            | Upgrade tracked packages in per-manager batches and refresh lock versions |
+| `genv upgrade [flags]`                            | Upgrade outdated tracked packages in per-manager batches (use `--all` for every unconstrained package) and refresh lock versions |
 | `genv updates check [flags]`                      | Check available updates for genv-tracked packages without mutating anything |
 | `genv updates start [flags]`                      | Register the managed background updates checker                             |
 | `genv updates stop`                               | Stop and unregister the managed background updates checker                   |
@@ -541,7 +541,7 @@ Unresolved packages (no compatible manager found) produce a warning. Use `--stri
 
 ## How upgrades work
 
-`genv upgrade` updates the packages recorded in `genv.lock.json` without touching packages that are installed but not tracked by genv.
+`genv upgrade` updates the packages recorded in `genv.lock.json` without touching packages that are installed but not tracked by genv. By default it plans only packages with a detected update (same outdated filtering as `genv updates check`); pass `--all` to plan every unconstrained tracked package.
 
 Packages with a non-empty `version` constraint are skipped unless their adapter can guarantee an explicit compatible upgrade target. Current adapters do not expose that capability, so genv reports `version-constrained package requires an explicit compatible target` and continues with eligible unconstrained packages instead of upgrading the constrained package to an unsafe latest version. The same rule protects `genv updates` because both commands use the shared planner.
 
@@ -552,8 +552,9 @@ To minimize the number of subprocesses, genv groups tracked packages by their re
 - `choco` — `choco upgrade -y pkg1 pkg2 ...`
 - `scoop` — `scoop update pkg1 pkg2 ...`
 - `snap` — `snap refresh pkg1 pkg2 ...`
+- `mas` — `mas upgrade id1 id2 ...` (macOS only)
 
-Managers that do not provide a selective multi-package upgrade command (`uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `mas`, `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`) still upgrade one package at a time. JavaScript, Python, Rust, and Go managers are tracked-only: `npm` upgrades with `npm install --global <pkg>`, `pnpm` with `pnpm add --global <pkg>`, Yarn Classic with `yarn global add <pkg>`, Volta with `volta install <pkg>`, and none of them run broad global update commands; `cargo` upgrades named crates with `cargo install <pkg>` and never runs broad install-update commands; `go` upgrades named module paths with `go install <module>@latest` (or the explicit `@version` you track) and never runs broad Go updaters; `rustup` upgrades only explicit IDs such as `toolchain:stable`, `component:rustfmt@stable`, or `target:aarch64-unknown-linux-gnu@stable`. Python managers are similarly scoped: `uv` upgrades with `uv tool install --upgrade <pkg>`, `pipx` upgrades with `pipx install --force <pkg>`, `pip-user` with `python3 -m pip install --user --upgrade <pkg>` (note: this shares the user site-packages directory), `poetry` with `poetry self add <pkg>`, `pixi` with `pixi global upgrade <pkg>`, and `conda`/`mamba` require explicit `<env>:<pkg>` targeting.
+Managers that do not provide a selective multi-package upgrade command (`uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`) still upgrade one package at a time. JavaScript, Python, Rust, and Go managers are tracked-only: `npm` upgrades with `npm install --global <pkg>`, `pnpm` with `pnpm add --global <pkg>`, Yarn Classic with `yarn global add <pkg>`, Volta with `volta install <pkg>`, and none of them run broad global update commands; `cargo` upgrades named crates with `cargo install <pkg>` and never runs broad install-update commands; `go` upgrades named module paths with `go install <module>@latest` (or the explicit `@version` you track) and never runs broad Go updaters; `rustup` upgrades only explicit IDs such as `toolchain:stable`, `component:rustfmt@stable`, or `target:aarch64-unknown-linux-gnu@stable`. Python managers are similarly scoped: `uv` upgrades with `uv tool install --upgrade <pkg>`, `pipx` upgrades with `pipx install --force <pkg>`, `pip-user` with `python3 -m pip install --user --upgrade <pkg>` (note: this shares the user site-packages directory), `poetry` with `poetry self add <pkg>`, `pixi` with `pixi global upgrade <pkg>`, and `conda`/`mamba` require explicit `<env>:<pkg>` targeting.
 
 Ruby, PHP, and .NET managers are tracked-only globals: `gem` installs/upgrades with `gem install <pkg>` and uninstalls with `gem uninstall -x -a <name>` (which removes every installed version of the tracked gem); `composer` uses `composer global require <pkg>`/`composer global remove <pkg>` and never runs a project-local `composer update`; `dotnet-tool` uses `dotnet tool install/uninstall/update --global` only, never a local tool manifest.
 

@@ -3086,8 +3086,9 @@ func validateCmd(args []string) int {
 	return exitOK
 }
 
-// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug]`.
-// Upgrades all packages tracked in the lock file using their recorded manager.
+// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug] [--all]`.
+// By default plans only packages with a detected update; pass --all to plan every
+// unconstrained tracked package without outdated filtering.
 func upgradeDetectOutdated(all bool) bool { return !all }
 
 func upgradeCmd(args []string) int {
