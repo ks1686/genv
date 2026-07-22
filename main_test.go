@@ -1824,15 +1824,6 @@ func TestUpgrade_DryRun_does_not_run_hooks_or_write_lock(t *testing.T) {
 	}
 }
 
-func TestUpgradeFlagAll_disablesDetectOutdated(t *testing.T) {
-	if upgradeDetectOutdated(false) != true {
-		t.Fatal("want DetectOutdated true when --all unset")
-	}
-	if upgradeDetectOutdated(true) != false {
-		t.Fatal("want DetectOutdated false when --all set")
-	}
-}
-
 func TestUpgrade_HookTimeout_bad_duration_fails_usage(t *testing.T) {
 	// Given: a valid spec and lock so flag parsing reaches hook-timeout validation.
 	dir := t.TempDir()
@@ -2430,8 +2421,8 @@ func TestUpdatesRunOnce_CheckOnly_notifies_only_when_packages_outdated(t *testin
 
 			originalBuild := updatesBuildPlan
 			updatesBuildPlan = func(opts upgrade.UpgradeOptions) (upgrade.UpgradePlan, error) {
-				if !opts.DetectOutdated {
-					t.Error("check worker built plan without DetectOutdated")
+				if opts.Filters.All {
+					t.Error("check worker built plan with Filters.All (should filter outdated)")
 				}
 				return tt.plan, nil
 			}

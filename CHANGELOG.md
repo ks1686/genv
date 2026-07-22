@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v3.2.1 - 2026-07-21
+
+### Changed
+
+- Internal cleanup for outdated detection: shared registry HTTP helper, `Filters.All` as the single `--all` / outdated-filter switch (removed redundant `DetectOutdated`), co-located outdated helpers, and table-driven outdated adapter tests.
+
 ## v3.2.0 - 2026-07-21
 
 ### Changed
