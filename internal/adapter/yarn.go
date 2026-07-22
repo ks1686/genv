@@ -68,6 +68,14 @@ func (y Yarn) ListInstalledVersions() (map[string]string, error) {
 	return entriesVersions(entries), nil
 }
 
+func (y Yarn) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := y.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	return listJSOutdated(entriesVersions(entries), pkgNames)
+}
+
 func (Yarn) listEntries() ([]jsPackageEntry, error) {
 	lines, err := runListOutput("yarn", "global", "list", "--depth=0")
 	if err != nil {
