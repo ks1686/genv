@@ -7,386 +7,422 @@ import (
 	"testing"
 )
 
-func TestWinget_ListOutdated_ParsesUpgradeTable(t *testing.T) {
-	installFakeBinary(t, "winget", `if [ "$1" = "upgrade" ]; then
-cat <<'EOF'
-Name                  Id                      Version     Available    Source
+type nativeOutdatedCase struct {
+	name      string
+	bin       string
+	script    string
+	pkgNames  []string
+	want      map[string]string
+	wantNil   bool
+	wantError bool
+	list      func(pkgNames []string) (map[string]string, error)
+}
+
+func TestNativeListOutdated(t *testing.T) {
+	wingetTable := `Name                  Id                      Version     Available    Source
 --------------------------------------------------------------------------
 Git                   Git.Git                 2.47.0      2.48.0       winget
 Neovim                Neovim.Neovim           0.10.0      0.11.0       winget
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Winget{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"Git.Git": "2.48.0", "Neovim.Neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestWinget_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "winget", `cat <<'EOF'
-Name                  Id                      Version     Available    Source
---------------------------------------------------------------------------
-Git                   Git.Git                 2.47.0      2.48.0       winget
-Neovim                Neovim.Neovim           0.10.0      0.11.0       winget
-EOF`)
-
-	got, err := (Winget{}).ListOutdated([]string{"Neovim.Neovim"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"Neovim.Neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestWinget_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "winget", `printf "No installed package has an available upgrade.\n"`)
-
-	got, err := (Winget{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestWinget_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "winget", `echo "boom" >&2; exit 1`)
-
-	if _, err := (Winget{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestScoop_ListOutdated_ParsesStatus(t *testing.T) {
-	installFakeBinary(t, "scoop", `if [ "$1" = "status" ]; then
-cat <<'EOF'
-Name    Version  Available  Info
+`
+	scoopStatus := `Name    Version  Available  Info
 ----    -------  ---------  ----
 git     2.47.0   2.48.0
 neovim  0.10.0   0.11.0
-EOF
+`
+	quLines := "git 2.47.0 -> 2.48.0\nneovim 0.10.0 -> 0.11.0\n"
+	snapList := `Name           Version  Rev   Publisher     Notes
+firefox        139.0-1  1235  mozilla       -
+code           1.95.0   200   vscode        classic
+`
+
+	cases := []nativeOutdatedCase{
+		{
+			name: "winget/parse", bin: "winget",
+			script: `if [ "$1" = "upgrade" ]; then cat <<'EOF'
+` + wingetTable + `EOF
 exit 0
 fi
-exit 1`)
-
-	got, err := (Scoop{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestScoop_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "scoop", `cat <<'EOF'
-Name    Version  Available  Info
-----    -------  ---------  ----
-git     2.47.0   2.48.0
-neovim  0.10.0   0.11.0
-EOF`)
-
-	got, err := (Scoop{}).ListOutdated([]string{"git"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestScoop_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "scoop", `printf "Scoop is up to date.\n"`)
-
-	got, err := (Scoop{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestScoop_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "scoop", `echo "boom" >&2; exit 1`)
-
-	if _, err := (Scoop{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestChoco_ListOutdated_ParsesRemoteOutput(t *testing.T) {
-	installFakeBinary(t, "choco", `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
+exit 1`,
+			want: map[string]string{"Git.Git": "2.48.0", "Neovim.Neovim": "0.11.0"},
+			list: (Winget{}).ListOutdated,
+		},
+		{
+			name: "winget/intersect", bin: "winget", script: "cat <<'EOF'\n" + wingetTable + "EOF\n",
+			pkgNames: []string{"Neovim.Neovim"},
+			want:     map[string]string{"Neovim.Neovim": "0.11.0"},
+			list:     (Winget{}).ListOutdated,
+		},
+		{
+			name: "winget/empty", bin: "winget", script: `printf "No installed package has an available upgrade.\n"`,
+			wantNil: true, list: (Winget{}).ListOutdated,
+		},
+		{
+			name: "winget/error", bin: "winget", script: `echo "boom" >&2; exit 1`,
+			wantError: true, list: (Winget{}).ListOutdated,
+		},
+		{
+			name: "scoop/parse", bin: "scoop",
+			script: `if [ "$1" = "status" ]; then cat <<'EOF'
+` + scoopStatus + `EOF
+exit 0
+fi
+exit 1`,
+			want: map[string]string{"git": "2.48.0", "neovim": "0.11.0"},
+			list: (Scoop{}).ListOutdated,
+		},
+		{
+			name: "scoop/intersect", bin: "scoop", script: "cat <<'EOF'\n" + scoopStatus + "EOF\n",
+			pkgNames: []string{"git"}, want: map[string]string{"git": "2.48.0"},
+			list: (Scoop{}).ListOutdated,
+		},
+		{
+			name: "scoop/empty", bin: "scoop", script: `printf "Scoop is up to date.\n"`,
+			wantNil: true, list: (Scoop{}).ListOutdated,
+		},
+		{
+			name: "scoop/error", bin: "scoop", script: `echo "boom" >&2; exit 1`,
+			wantError: true, list: (Scoop{}).ListOutdated,
+		},
+		{
+			name: "choco/parse", bin: "choco",
+			script: `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
 echo "git|2.47.0|2.48.0|false"
 echo "nodejs|22.0.0|22.0.0|false"
 exit 0
 fi
-exit 1`)
-
-	got, err := (Choco{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestChoco_ListOutdated_ParsesRemoteOutputOnExitCode2(t *testing.T) {
-	installFakeBinary(t, "choco", `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
+exit 1`,
+			want: map[string]string{"git": "2.48.0"}, list: (Choco{}).ListOutdated,
+		},
+		{
+			name: "choco/exit2", bin: "choco",
+			script: `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
 echo "git|2.47.0|2.48.0|false"
 echo "nodejs|22.0.0|22.0.0|false"
 exit 2
 fi
-exit 1`)
-
-	got, err := (Choco{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestChoco_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "choco", `cat <<'EOF'
-git|2.47.0|2.48.0|false
-neovim|0.10.0|0.11.0|false
-EOF`)
-
-	got, err := (Choco{}).ListOutdated([]string{"neovim"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestChoco_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "choco", `printf ""`)
-
-	got, err := (Choco{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestChoco_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "choco", `echo "boom" >&2; exit 1`)
-
-	if _, err := (Choco{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestBrew_ListOutdated_ParsesFormulaeAndCasks(t *testing.T) {
-	installFakeBinary(t, "brew",
-		`if [ "$1" = "outdated" ] && [ "$2" = "--json=v2" ]; then
+exit 1`,
+			want: map[string]string{"git": "2.48.0"}, list: (Choco{}).ListOutdated,
+		},
+		{
+			name: "choco/intersect", bin: "choco",
+			script:   "cat <<'EOF'\ngit|2.47.0|2.48.0|false\nneovim|0.10.0|0.11.0|false\nEOF\n",
+			pkgNames: []string{"neovim"}, want: map[string]string{"neovim": "0.11.0"},
+			list: (Choco{}).ListOutdated,
+		},
+		{
+			name: "choco/empty", bin: "choco", script: `printf ""`,
+			wantNil: true, list: (Choco{}).ListOutdated,
+		},
+		{
+			name: "choco/error", bin: "choco", script: `echo "boom" >&2; exit 1`,
+			wantError: true, list: (Choco{}).ListOutdated,
+		},
+		{
+			name: "brew/parse", bin: "brew",
+			script: `if [ "$1" = "outdated" ] && [ "$2" = "--json=v2" ]; then
 	cat <<'JSON'
-{
-  "formulae": [
-    {"name": "wget", "installed_versions": ["1.21.3"], "current_version": "1.21.4"},
-    {"name": "jq", "installed_versions": ["1.6"], "current_version": "1.7"}
-  ],
-  "casks": [
-    {"name": "firefox", "installed_versions": ["120.0"], "current_version": "121.0"}
-  ]
-}
+{"formulae":[{"name":"wget","current_version":"1.21.4"},{"name":"jq","current_version":"1.7"}],"casks":[{"name":"firefox","current_version":"121.0"}]}
 JSON
 	exit 0
 fi
 echo "unexpected args: $*" >&2
-exit 1`)
-
-	got, err := Brew{}.ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"wget": "1.21.4", "jq": "1.7", "firefox": "121.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestBrew_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "brew",
-		`cat <<'JSON'
-{"formulae": [{"name": "wget", "current_version": "1.21.4"}, {"name": "jq", "current_version": "1.7"}], "casks": []}
-JSON`)
-
-	got, err := Brew{}.ListOutdated([]string{"jq"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"jq": "1.7"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestBrew_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "brew", `echo '{"formulae": [], "casks": []}'`)
-	got, err := Brew{}.ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestBrew_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "brew", `echo "boom" >&2; exit 1`)
-	if _, err := (Brew{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestMas_ListOutdated_ParsesArrowAndPlainForms(t *testing.T) {
-	installFakeBinary(t, "mas",
-		`if [ "$1" = "outdated" ]; then
+exit 1`,
+			want: map[string]string{"wget": "1.21.4", "jq": "1.7", "firefox": "121.0"},
+			list: Brew{}.ListOutdated,
+		},
+		{
+			name: "brew/intersect", bin: "brew",
+			script: `cat <<'JSON'
+{"formulae":[{"name":"wget","current_version":"1.21.4"},{"name":"jq","current_version":"1.7"}],"casks":[]}
+JSON`,
+			pkgNames: []string{"jq"}, want: map[string]string{"jq": "1.7"},
+			list: Brew{}.ListOutdated,
+		},
+		{
+			name: "brew/empty", bin: "brew", script: `echo '{"formulae": [], "casks": []}'`,
+			wantNil: true, list: Brew{}.ListOutdated,
+		},
+		{
+			name: "brew/error", bin: "brew", script: `echo "boom" >&2; exit 1`,
+			wantError: true, list: Brew{}.ListOutdated,
+		},
+		{
+			name: "mas/parse", bin: "mas",
+			script: `if [ "$1" = "outdated" ]; then
 	echo "497799835 Xcode (14.0 -> 14.1)"
 	echo "409201541 Pages (13.1)"
 	exit 0
 fi
 echo "unexpected args: $*" >&2
-exit 1`)
-
-	got, err := Mas{}.ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
+exit 1`,
+			want: map[string]string{"497799835": "14.1", "409201541": "13.1"},
+			list: Mas{}.ListOutdated,
+		},
+		{
+			name: "mas/intersect", bin: "mas",
+			script:   "echo \"497799835 Xcode (14.1)\"\necho \"409201541 Pages (13.1)\"\n",
+			pkgNames: []string{"497799835"}, want: map[string]string{"497799835": "14.1"},
+			list: Mas{}.ListOutdated,
+		},
+		{
+			name: "pacman/parse", bin: "pacman",
+			script: `if [ "$1" = "-Qu" ]; then cat <<'EOF'
+` + quLines + `EOF
+exit 0
+fi
+exit 1`,
+			want: map[string]string{"git": "2.48.0", "neovim": "0.11.0"},
+			list: (Pacman{}).ListOutdated,
+		},
+		{
+			name: "pacman/intersect", bin: "pacman", script: "cat <<'EOF'\n" + quLines + "EOF\n",
+			pkgNames: []string{"neovim"}, want: map[string]string{"neovim": "0.11.0"},
+			list: (Pacman{}).ListOutdated,
+		},
+		{
+			name: "pacman/empty", bin: "pacman", script: `exit 1`,
+			wantNil: true, list: (Pacman{}).ListOutdated,
+		},
+		{
+			name: "pacman/error", bin: "pacman", script: `echo "boom" >&2; exit 2`,
+			wantError: true, list: (Pacman{}).ListOutdated,
+		},
+		{
+			name: "paru/parse", bin: "paru",
+			script: `if [ "$1" = "-Qu" ]; then cat <<'EOF'
+` + quLines + `EOF
+exit 0
+fi
+exit 1`,
+			want: map[string]string{"git": "2.48.0", "neovim": "0.11.0"},
+			list: (Paru{}).ListOutdated,
+		},
+		{
+			name: "paru/intersect", bin: "paru", script: "cat <<'EOF'\n" + quLines + "EOF\n",
+			pkgNames: []string{"git"}, want: map[string]string{"git": "2.48.0"},
+			list: (Paru{}).ListOutdated,
+		},
+		{
+			name: "paru/empty", bin: "paru", script: `exit 1`,
+			wantNil: true, list: (Paru{}).ListOutdated,
+		},
+		{
+			name: "paru/error", bin: "paru", script: `echo "boom" >&2; exit 2`,
+			wantError: true, list: (Paru{}).ListOutdated,
+		},
+		{
+			name: "yay/parse", bin: "yay",
+			script: `if [ "$1" = "-Qu" ]; then cat <<'EOF'
+` + quLines + `EOF
+exit 0
+fi
+exit 1`,
+			want: map[string]string{"git": "2.48.0", "neovim": "0.11.0"},
+			list: (Yay{}).ListOutdated,
+		},
+		{
+			name: "yay/intersect", bin: "yay", script: "cat <<'EOF'\n" + quLines + "EOF\n",
+			pkgNames: []string{"neovim"}, want: map[string]string{"neovim": "0.11.0"},
+			list: (Yay{}).ListOutdated,
+		},
+		{
+			name: "yay/empty", bin: "yay", script: `exit 1`,
+			wantNil: true, list: (Yay{}).ListOutdated,
+		},
+		{
+			name: "yay/error", bin: "yay", script: `echo "boom" >&2; exit 2`,
+			wantError: true, list: (Yay{}).ListOutdated,
+		},
+		{
+			name: "snap/parse", bin: "snap",
+			script: `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then cat <<'EOF'
+` + snapList + `EOF
+exit 0
+fi
+exit 1`,
+			want: map[string]string{"firefox": "139.0-1", "code": "1.95.0"},
+			list: (Snap{}).ListOutdated,
+		},
+		{
+			name: "snap/intersect", bin: "snap",
+			script: `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then cat <<'EOF'
+` + snapList + `EOF
+exit 0
+fi
+exit 1`,
+			pkgNames: []string{"code"}, want: map[string]string{"code": "1.95.0"},
+			list: (Snap{}).ListOutdated,
+		},
+		{
+			name: "snap/empty", bin: "snap",
+			script:  `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then printf ""; exit 0; fi; exit 1`,
+			wantNil: true, list: (Snap{}).ListOutdated,
+		},
+		{
+			name: "snap/error", bin: "snap", script: `echo "boom" >&2; exit 2`,
+			wantError: true, list: (Snap{}).ListOutdated,
+		},
 	}
-	want := map[string]string{"497799835": "14.1", "409201541": "13.1"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			installFakeBinary(t, tc.bin, tc.script)
+			got, err := tc.list(tc.pkgNames)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("got %v, want nil", got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestMas_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "mas",
-		`echo "497799835 Xcode (14.1)"
-echo "409201541 Pages (13.1)"`)
-
-	got, err := Mas{}.ListOutdated([]string{"497799835"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"497799835": "14.1"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestBun_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "bun",
-		`if [ "$1" = "pm" ] && [ "$2" = "ls" ] && [ "$3" = "--global" ]; then
+func TestRegistryListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	cases := []struct {
+		name     string
+		bin      string
+		script   string
+		swap     func(*testing.T) func()
+		pkgNames []string
+		want     map[string]string
+		list     func([]string) (map[string]string, error)
+	}{
+		{
+			name: "bun", bin: "bun",
+			script: `if [ "$1" = "pm" ] && [ "$2" = "ls" ] && [ "$3" = "--global" ]; then
 	echo "/Users/x/.bun/install/global node_modules"
 	echo "├── cf@1.2.0"
 	echo "└── typescript@5.0.0"
 	exit 0
 fi
 echo "unexpected args: $*" >&2
-exit 1`)
-
-	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
-	defer restore()
-
-	got, err := Bun{}.ListOutdated([]string{"cf", "typescript"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"cf": "1.3.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestNpm_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "npm",
-		`if [ "$1" = "list" ]; then
+exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+			},
+			pkgNames: []string{"cf", "typescript"}, want: map[string]string{"cf": "1.3.0"},
+			list: Bun{}.ListOutdated,
+		},
+		{
+			name: "npm", bin: "npm",
+			script: `if [ "$1" = "list" ]; then
 	cat <<'JSON'
 {"dependencies":{"cf":{"version":"1.2.0"},"typescript":{"version":"5.0.0"}}}
 JSON
 	exit 0
 fi
-echo "unexpected: $*" >&2; exit 1`)
-
-	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
-	defer restore()
-
-	got, err := Npm{}.ListOutdated([]string{"cf", "typescript"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
-	}
-	want := map[string]string{"cf": "1.3.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
-func TestPnpm_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "pnpm",
-		`if [ "$1" = "list" ]; then
+echo "unexpected: $*" >&2; exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+			},
+			pkgNames: []string{"cf", "typescript"}, want: map[string]string{"cf": "1.3.0"},
+			list: Npm{}.ListOutdated,
+		},
+		{
+			name: "pnpm", bin: "pnpm",
+			script: `if [ "$1" = "list" ]; then
 	cat <<'JSON'
 [{"dependencies":{"cf":{"version":"1.2.0"},"typescript":{"version":"5.0.0"}}}]
 JSON
 	exit 0
 fi
-echo "unexpected: $*" >&2; exit 1`)
-
-	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
-	defer restore()
-
-	got, err := Pnpm{}.ListOutdated([]string{"cf", "typescript"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
-	}
-	want := map[string]string{"cf": "1.3.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
-func TestYarn_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "yarn",
-		`if [ "$1" = "global" ] && [ "$2" = "list" ]; then
+echo "unexpected: $*" >&2; exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+			},
+			pkgNames: []string{"cf", "typescript"}, want: map[string]string{"cf": "1.3.0"},
+			list: Pnpm{}.ListOutdated,
+		},
+		{
+			name: "yarn", bin: "yarn",
+			script: `if [ "$1" = "global" ] && [ "$2" = "list" ]; then
 	echo 'yarn global v1.22.22'
 	echo 'info "cf@1.2.0" has binaries:'
 	echo 'info "typescript@5.0.0" has binaries:'
 	exit 0
 fi
-echo "unexpected: $*" >&2; exit 1`)
-
-	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
-	defer restore()
-
-	got, err := Yarn{}.ListOutdated([]string{"cf", "typescript"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
+echo "unexpected: $*" >&2; exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+			},
+			pkgNames: []string{"cf", "typescript"}, want: map[string]string{"cf": "1.3.0"},
+			list: Yarn{}.ListOutdated,
+		},
+		{
+			name: "uv", bin: "uv",
+			script: `if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
+	echo "ruff v0.6.0"
+	echo "black v24.0.0"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
+			},
+			pkgNames: []string{"ruff", "black"}, want: map[string]string{"ruff": "0.7.0"},
+			list: Uv{}.ListOutdated,
+		},
+		{
+			name: "pipx", bin: "pipx",
+			script: `if [ "$1" = "list" ] && [ "$2" = "--json" ]; then
+	cat <<'JSON'
+{"venvs":{"ruff":{"metadata":{"main_package":{"package":"ruff","package_version":"0.6.0"}}},"black":{"metadata":{"main_package":{"package":"black","package_version":"24.0.0"}}}}}
+JSON
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
+			},
+			pkgNames: []string{"ruff", "black"}, want: map[string]string{"ruff": "0.7.0"},
+			list: Pipx{}.ListOutdated,
+		},
+		{
+			name: "cargo", bin: "cargo",
+			script: `if [ "$1" = "install" ] && [ "$2" = "--list" ]; then
+	echo "ripgrep v14.0.0:"
+	echo "    rg"
+	echo "fd-find v9.0.0:"
+	echo "    fd"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`,
+			swap: func(t *testing.T) func() {
+				return swapCratesLatest(t, map[string]string{"ripgrep": "14.1.0", "fd-find": "9.0.0"}, nil)
+			},
+			pkgNames: []string{"ripgrep", "fd-find"}, want: map[string]string{"ripgrep": "14.1.0"},
+			list: Cargo{}.ListOutdated,
+		},
 	}
-	want := map[string]string{"cf": "1.3.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			installFakeBinary(t, tc.bin, tc.script)
+			defer tc.swap(t)()
+			got, err := tc.list(tc.pkgNames)
+			if err != nil {
+				t.Fatalf("ListOutdated: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -402,58 +438,9 @@ echo "└── cf@1.2.0"`)
 	if err != nil {
 		t.Fatalf("ListOutdated: unexpected error: %v", err)
 	}
-	// Unknown latest (transport error) => keep the installed version so the
-	// package is still flagged as potentially outdated.
 	want := map[string]string{"cf": "1.2.0"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestUv_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "uv",
-		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
-	echo "ruff v0.6.0"
-	echo "black v24.0.0"
-	exit 0
-fi
-echo "unexpected args: $*" >&2
-exit 1`)
-
-	restore := swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
-	defer restore()
-
-	got, err := Uv{}.ListOutdated([]string{"ruff", "black"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
-	}
-	want := map[string]string{"ruff": "0.7.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
-func TestPipx_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "pipx",
-		`if [ "$1" = "list" ] && [ "$2" = "--json" ]; then
-	cat <<'JSON'
-{"venvs":{"ruff":{"metadata":{"main_package":{"package":"ruff","package_version":"0.6.0"}}},"black":{"metadata":{"main_package":{"package":"black","package_version":"24.0.0"}}}}}
-JSON
-	exit 0
-fi
-echo "unexpected args: $*" >&2
-exit 1`)
-
-	restore := swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
-	defer restore()
-
-	got, err := Pipx{}.ListOutdated([]string{"ruff", "black"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
-	}
-	want := map[string]string{"ruff": "0.7.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
@@ -526,294 +513,6 @@ func TestFetchPypiLatest_DecodesVersionAndEscapesName(t *testing.T) {
 	}
 }
 
-// swapNpmLatest replaces the npmLatestVersion seam with a fake returning canned
-// versions (or a transport error for names in errNames). It returns a restore
-// function.
-func swapNpmLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
-	t.Helper()
-	orig := npmLatestVersion
-	npmLatestVersion = func(name string) (string, error) {
-		if errNames[name] {
-			return "", http.ErrHandlerTimeout
-		}
-		return versions[name], nil
-	}
-	return func() { npmLatestVersion = orig }
-}
-
-// swapPypiLatest replaces the pypiLatestVersion seam with a fake returning
-// canned versions (or a transport error for names in errNames).
-func swapPypiLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
-	t.Helper()
-	orig := pypiLatestVersion
-	pypiLatestVersion = func(name string) (string, error) {
-		if errNames[name] {
-			return "", http.ErrHandlerTimeout
-		}
-		return versions[name], nil
-	}
-	return func() { pypiLatestVersion = orig }
-}
-
-func TestPacman_ListOutdated_ParsesQuOutput(t *testing.T) {
-	installFakeBinary(t, "pacman", `if [ "$1" = "-Qu" ]; then
-cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Pacman{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestPacman_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "pacman", `cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF`)
-
-	got, err := (Pacman{}).ListOutdated([]string{"neovim"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestPacman_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "pacman", `exit 1`)
-
-	got, err := (Pacman{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestPacman_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "pacman", `echo "boom" >&2; exit 2`)
-
-	if _, err := (Pacman{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestParu_ListOutdated_ParsesQuOutput(t *testing.T) {
-	installFakeBinary(t, "paru", `if [ "$1" = "-Qu" ]; then
-cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Paru{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestParu_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "paru", `cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF`)
-
-	got, err := (Paru{}).ListOutdated([]string{"git"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestParu_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "paru", `exit 1`)
-
-	got, err := (Paru{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestParu_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "paru", `echo "boom" >&2; exit 2`)
-
-	if _, err := (Paru{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestYay_ListOutdated_ParsesQuOutput(t *testing.T) {
-	installFakeBinary(t, "yay", `if [ "$1" = "-Qu" ]; then
-cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Yay{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestYay_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "yay", `cat <<'EOF'
-git 2.47.0 -> 2.48.0
-neovim 0.10.0 -> 0.11.0
-EOF`)
-
-	got, err := (Yay{}).ListOutdated([]string{"neovim"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"neovim": "0.11.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestYay_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "yay", `exit 1`)
-
-	got, err := (Yay{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestYay_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "yay", `echo "boom" >&2; exit 2`)
-
-	if _, err := (Yay{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestSnap_ListOutdated_ParsesRefreshList(t *testing.T) {
-	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
-cat <<'EOF'
-Name           Version  Rev   Publisher     Notes
-firefox        139.0-1  1235  mozilla       -
-code           1.95.0   200   vscode        classic
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Snap{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"firefox": "139.0-1", "code": "1.95.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestSnap_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
-	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
-cat <<'EOF'
-Name           Version  Rev   Publisher     Notes
-firefox        139.0-1  1235  mozilla       -
-code           1.95.0   200   vscode        classic
-EOF
-exit 0
-fi
-exit 1`)
-
-	got, err := (Snap{}).ListOutdated([]string{"code"})
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	want := map[string]string{"code": "1.95.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("ListOutdated: got %v, want %v", got, want)
-	}
-}
-
-func TestSnap_ListOutdated_NothingOutdated(t *testing.T) {
-	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
-printf ""
-exit 0
-fi
-exit 1`)
-
-	got, err := (Snap{}).ListOutdated(nil)
-	if err != nil {
-		t.Fatalf("ListOutdated: unexpected error: %v", err)
-	}
-	if got != nil {
-		t.Fatalf("ListOutdated: got %v, want nil", got)
-	}
-}
-
-func TestSnap_ListOutdated_CommandFailureIsError(t *testing.T) {
-	installFakeBinary(t, "snap", `echo "boom" >&2; exit 2`)
-
-	if _, err := (Snap{}).ListOutdated(nil); err == nil {
-		t.Fatal("ListOutdated: expected error on command failure, got nil")
-	}
-}
-
-func TestCargo_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
-	installFakeBinary(t, "cargo",
-		`if [ "$1" = "install" ] && [ "$2" = "--list" ]; then
-	echo "ripgrep v14.0.0:"
-	echo "    rg"
-	echo "fd-find v9.0.0:"
-	echo "    fd"
-	exit 0
-fi
-echo "unexpected args: $*" >&2
-exit 1`)
-
-	restore := swapCratesLatest(t, map[string]string{"ripgrep": "14.1.0", "fd-find": "9.0.0"}, nil)
-	defer restore()
-
-	got, err := Cargo{}.ListOutdated([]string{"ripgrep", "fd-find"})
-	if err != nil {
-		t.Fatalf("ListOutdated: %v", err)
-	}
-	want := map[string]string{"ripgrep": "14.1.0"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-}
-
 func TestFetchCratesLatest_DecodesVersionAndSetsUserAgent(t *testing.T) {
 	var gotPath, gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -839,8 +538,8 @@ func TestFetchCratesLatest_DecodesVersionAndSetsUserAgent(t *testing.T) {
 	if gotPath != "/api/v1/crates/ripgrep" {
 		t.Fatalf("request path = %q, want /api/v1/crates/ripgrep", gotPath)
 	}
-	if gotUA != "genv (https://github.com/ks1686/genv)" {
-		t.Fatalf("User-Agent = %q, want genv (https://github.com/ks1686/genv)", gotUA)
+	if gotUA != cratesUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, cratesUserAgent)
 	}
 
 	v, err = fetchCratesLatest("does-not-exist")
@@ -849,8 +548,30 @@ func TestFetchCratesLatest_DecodesVersionAndSetsUserAgent(t *testing.T) {
 	}
 }
 
-// swapCratesLatest replaces the cratesLatestVersion seam with a fake returning
-// canned versions (or a transport error for names in errNames).
+func swapNpmLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
+	t.Helper()
+	orig := npmLatestVersion
+	npmLatestVersion = func(name string) (string, error) {
+		if errNames[name] {
+			return "", http.ErrHandlerTimeout
+		}
+		return versions[name], nil
+	}
+	return func() { npmLatestVersion = orig }
+}
+
+func swapPypiLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
+	t.Helper()
+	orig := pypiLatestVersion
+	pypiLatestVersion = func(name string) (string, error) {
+		if errNames[name] {
+			return "", http.ErrHandlerTimeout
+		}
+		return versions[name], nil
+	}
+	return func() { pypiLatestVersion = orig }
+}
+
 func swapCratesLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
 	t.Helper()
 	orig := cratesLatestVersion

@@ -105,11 +105,9 @@ func (Uv) ListOutdated(pkgNames []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	installed := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		installed[entry.name] = entry.version
-	}
-	return listRegistryOutdated(installed, pkgNames, uvToolName, pypiLatestVersion)
+	return listRegistryOutdated(versionMapOf(entries, func(e uvEntry) (string, string) {
+		return e.name, e.version
+	}), pkgNames, uvToolName, pypiLatestVersion)
 }
 
 type uvEntry struct {
