@@ -723,6 +723,72 @@ func TestYay_ListOutdated_CommandFailureIsError(t *testing.T) {
 	}
 }
 
+func TestSnap_ListOutdated_ParsesRefreshList(t *testing.T) {
+	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
+cat <<'EOF'
+Name           Version  Rev   Publisher     Notes
+firefox        139.0-1  1235  mozilla       -
+code           1.95.0   200   vscode        classic
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Snap{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"firefox": "139.0-1", "code": "1.95.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestSnap_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
+cat <<'EOF'
+Name           Version  Rev   Publisher     Notes
+firefox        139.0-1  1235  mozilla       -
+code           1.95.0   200   vscode        classic
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Snap{}).ListOutdated([]string{"code"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"code": "1.95.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestSnap_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "snap", `if [ "$1" = "refresh" ] && [ "$2" = "--list" ]; then
+printf ""
+exit 0
+fi
+exit 1`)
+
+	got, err := (Snap{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestSnap_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "snap", `echo "boom" >&2; exit 2`)
+
+	if _, err := (Snap{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
 func TestCargo_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
 	installFakeBinary(t, "cargo",
 		`if [ "$1" = "install" ] && [ "$2" = "--list" ]; then
