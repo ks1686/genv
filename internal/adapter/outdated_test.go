@@ -145,6 +145,24 @@ exit 1`)
 	}
 }
 
+func TestChoco_ListOutdated_ParsesRemoteOutputOnExitCode2(t *testing.T) {
+	installFakeBinary(t, "choco", `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
+echo "git|2.47.0|2.48.0|false"
+echo "nodejs|22.0.0|22.0.0|false"
+exit 2
+fi
+exit 1`)
+
+	got, err := (Choco{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
 func TestChoco_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
 	installFakeBinary(t, "choco", `cat <<'EOF'
 git|2.47.0|2.48.0|false
