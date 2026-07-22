@@ -110,35 +110,7 @@ func (Bun) ListOutdated(pkgNames []string) (map[string]string, error) {
 	for _, e := range entries {
 		installed[e.name] = e.version
 	}
-
-	names := pkgNames
-	if len(names) == 0 {
-		names = make([]string, 0, len(entries))
-		for _, e := range entries {
-			names = append(names, e.name)
-		}
-	}
-
-	outdated := make(map[string]string)
-	for _, raw := range names {
-		base := bunBaseName(raw)
-		cur, ok := installed[base]
-		if !ok {
-			continue // not installed globally; nothing to compare
-		}
-		latest, err := npmLatestVersion(base)
-		if err != nil {
-			outdated[base] = cur // unknown due to transport error: flag conservatively
-			continue
-		}
-		if latest != "" && latest != cur {
-			outdated[base] = latest
-		}
-	}
-	if len(outdated) == 0 {
-		return nil, nil
-	}
-	return outdated, nil
+	return listJSOutdated(installed, pkgNames)
 }
 
 type bunEntry struct {
