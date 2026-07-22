@@ -765,6 +765,7 @@ func TestBatchUpgrader_ExpectedAdapters(t *testing.T) {
 		"choco":     true,
 		"scoop":     true,
 		"snap":      true,
+		"mas":       true,
 	}
 	for _, a := range All {
 		_, got := a.(BatchUpgrader)
@@ -810,6 +811,7 @@ func TestPlanUpgradeBatch_ExpectedBinaries(t *testing.T) {
 		{"linuxbrew", "brew"},
 		{"scoop", "scoop"},
 		{"choco", "choco"},
+		{"mas", "mas"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.mgr, func(t *testing.T) {
