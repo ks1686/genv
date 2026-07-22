@@ -1,6 +1,10 @@
 package adapter
 
-import "strings"
+import (
+	"errors"
+	"os/exec"
+	"strings"
+)
 
 // Pacman is the adapter for pacman, the Arch Linux official-repository package
 // manager. It supports only packages from Arch official repositories; AUR
@@ -85,4 +89,50 @@ func (Pacman) QueryVersion(pkgName string) (string, error) {
 		return out, err
 	}
 	return parseMgrQueryVersion(out), nil
+}
+
+// ListOutdated reports installed pacman packages with a newer version in the
+// repos, keyed by package name -> target version, intersected with pkgNames.
+func (Pacman) ListOutdated(pkgNames []string) (map[string]string, error) {
+	return listPacmanQuOutdated("pacman", pkgNames)
+}
+
+// parsePacmanQuLines parses `pacman -Qu` / `paru -Qu` / `yay -Qu` lines such as
+// "git 2.47.0 -> 2.48.0" or "somepkg 1.2.3".
+func parsePacmanQuLines(lines []string) map[string]string {
+	out := map[string]string{}
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[0]
+		latest := "outdated"
+		if len(fields) >= 2 {
+			latest = fields[len(fields)-1]
+		}
+		out[name] = latest
+	}
+	return out
+}
+
+func listPacmanQuOutdated(cmd string, pkgNames []string) (map[string]string, error) {
+	lines, err := runPacmanQuOutput(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return intersectNameMap(parsePacmanQuLines(lines), pkgNames), nil
+}
+
+// runPacmanQuOutput runs cmd -Qu. Exit code 1 means the system is up to date.
+func runPacmanQuOutput(cmd string) ([]string, error) {
+	out, err := exec.Command(cmd, "-Qu").Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return trimmedNonEmptyLines(string(out)), nil
 }

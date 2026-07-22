@@ -82,3 +82,9 @@ func (Paru) QueryVersion(pkgName string) (string, error) {
 	}
 	return parseMgrQueryVersion(out), nil
 }
+
+// ListOutdated reports installed packages with a newer version available via
+// paru, keyed by package name -> target version, intersected with pkgNames.
+func (Paru) ListOutdated(pkgNames []string) (map[string]string, error) {
+	return listPacmanQuOutdated("paru", pkgNames)
+}
