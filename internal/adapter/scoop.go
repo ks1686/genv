@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"os/exec"
+	"strings"
+)
 
 // Scoop is the adapter for scoop, a CLI-focused Windows package manager that
 // installs into the user profile (no admin/UAC required for most packages).
@@ -112,6 +115,20 @@ func (Scoop) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+// ListOutdated reports Scoop apps with an available update, keyed by app name
+// -> target version, intersected with pkgNames.
+func (Scoop) ListOutdated(pkgNames []string) (map[string]string, error) {
+	out, err := exec.Command("scoop", "status").Output()
+	if err != nil {
+		return nil, err
+	}
+	outdated := make(map[string]string)
+	for _, entry := range parseScoopStatus(trimmedNonEmptyLines(string(out))) {
+		outdated[entry.name] = entry.version
+	}
+	return intersectNameMap(outdated, pkgNames), nil
+}
+
 func (Scoop) listEntries() ([]scoopEntry, error) {
 	lines, err := runListOutput("scoop", "list")
 	if err != nil {
@@ -141,6 +158,23 @@ func parseScoopList(lines []string) []scoopEntry {
 			continue
 		}
 		entries = append(entries, scoopEntry{name: fields[0], version: fields[1]})
+	}
+	return entries
+}
+
+// parseScoopStatus returns the package name and available version from Scoop's
+// "scoop status" table, skipping its header, separator, and no-update banner.
+func parseScoopStatus(lines []string) []scoopEntry {
+	var entries []scoopEntry
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(stripANSI(line))
+		if trimmed == "" || strings.HasPrefix(trimmed, "Name") || strings.HasPrefix(trimmed, "----") || strings.HasPrefix(trimmed, "Scoop is up to date") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) >= 3 {
+			entries = append(entries, scoopEntry{name: fields[0], version: fields[2]})
+		}
 	}
 	return entries
 }
