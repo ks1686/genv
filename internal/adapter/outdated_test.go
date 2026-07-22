@@ -362,3 +362,77 @@ func swapPypiLatest(t *testing.T, versions map[string]string, errNames map[strin
 	}
 	return func() { pypiLatestVersion = orig }
 }
+
+func TestCargo_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "cargo",
+		`if [ "$1" = "install" ] && [ "$2" = "--list" ]; then
+	echo "ripgrep v14.0.0:"
+	echo "    rg"
+	echo "fd-find v9.0.0:"
+	echo "    fd"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	restore := swapCratesLatest(t, map[string]string{"ripgrep": "14.1.0", "fd-find": "9.0.0"}, nil)
+	defer restore()
+
+	got, err := Cargo{}.ListOutdated([]string{"ripgrep", "fd-find"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"ripgrep": "14.1.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestFetchCratesLatest_DecodesVersionAndSetsUserAgent(t *testing.T) {
+	var gotPath, gotUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotUA = r.Header.Get("User-Agent")
+		switch r.URL.Path {
+		case "/api/v1/crates/ripgrep":
+			w.Write([]byte(`{"crate":{"max_version":"14.1.0"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	orig := cratesRegistryBase
+	cratesRegistryBase = srv.URL
+	defer func() { cratesRegistryBase = orig }()
+
+	v, err := fetchCratesLatest("ripgrep")
+	if err != nil || v != "14.1.0" {
+		t.Fatalf("fetchCratesLatest(ripgrep) = %q, %v; want 14.1.0, nil", v, err)
+	}
+	if gotPath != "/api/v1/crates/ripgrep" {
+		t.Fatalf("request path = %q, want /api/v1/crates/ripgrep", gotPath)
+	}
+	if gotUA != "genv (https://github.com/ks1686/genv)" {
+		t.Fatalf("User-Agent = %q, want genv (https://github.com/ks1686/genv)", gotUA)
+	}
+
+	v, err = fetchCratesLatest("does-not-exist")
+	if err != nil || v != "" {
+		t.Fatalf("fetchCratesLatest(does-not-exist) = %q, %v; want \"\", nil (404)", v, err)
+	}
+}
+
+// swapCratesLatest replaces the cratesLatestVersion seam with a fake returning
+// canned versions (or a transport error for names in errNames).
+func swapCratesLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
+	t.Helper()
+	orig := cratesLatestVersion
+	cratesLatestVersion = func(name string) (string, error) {
+		if errNames[name] {
+			return "", http.ErrHandlerTimeout
+		}
+		return versions[name], nil
+	}
+	return func() { cratesLatestVersion = orig }
+}
