@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"os/exec"
+	"strings"
+)
 
 // Snap is the adapter for the Snap package manager (Ubuntu/Canonical).
 type Snap struct{}
@@ -120,4 +123,29 @@ func (Snap) QueryVersion(pkgName string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// ListOutdated reports snaps with an available refresh, keyed by snap name
+// -> target version, intersected with pkgNames.
+func (Snap) ListOutdated(pkgNames []string) (map[string]string, error) {
+	out, err := exec.Command("snap", "refresh", "--list").Output()
+	if err != nil {
+		return nil, err
+	}
+	return intersectNameMap(parseSnapRefreshList(trimmedNonEmptyLines(string(out))), pkgNames), nil
+}
+
+// parseSnapRefreshList parses "snap refresh --list" output, skipping the header
+// line. The first field is the snap name; the second is the target version.
+func parseSnapRefreshList(lines []string) map[string]string {
+	out := map[string]string{}
+	for i, line := range lines {
+		if i == 0 {
+			continue // skip header
+		}
+		if fields := strings.Fields(line); len(fields) >= 2 {
+			out[fields[0]] = fields[1]
+		}
+	}
+	return out
 }
