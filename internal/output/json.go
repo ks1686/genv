@@ -146,6 +146,7 @@ type UpgradeFilters struct {
 	OnlyManager  []string `json:"onlyManager,omitempty"`
 	SkipManager  []string `json:"skipManager,omitempty"`
 	HooksSkipped bool     `json:"hooksSkipped,omitempty"`
+	All          bool     `json:"all,omitempty"`
 }
 
 // UpgradeBatch represents a single batched command in the upgrade plan.
