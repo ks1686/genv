@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 )
@@ -119,7 +120,11 @@ func (Choco) ListInstalledVersions() (map[string]string, error) {
 func (Choco) ListOutdated(pkgNames []string) (map[string]string, error) {
 	out, err := exec.Command("choco", "outdated", "-r").Output()
 	if err != nil {
-		return nil, err
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+			return nil, err
+		}
+		// Chocolatey enhanced exit code 2 means outdated packages were found.
 	}
 	outdated := make(map[string]string)
 	for _, line := range trimmedNonEmptyLines(string(out)) {
