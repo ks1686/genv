@@ -218,6 +218,53 @@ echo "└── cf@1.2.0"`)
 	}
 }
 
+func TestUv_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "uv",
+		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
+	echo "ruff v0.6.0"
+	echo "black v24.0.0"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	restore := swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
+	defer restore()
+
+	got, err := Uv{}.ListOutdated([]string{"ruff", "black"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"ruff": "0.7.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestPipx_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "pipx",
+		`if [ "$1" = "list" ] && [ "$2" = "--json" ]; then
+	cat <<'JSON'
+{"venvs":{"ruff":{"metadata":{"main_package":{"package":"ruff","package_version":"0.6.0"}}},"black":{"metadata":{"main_package":{"package":"black","package_version":"24.0.0"}}}}}
+JSON
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	restore := swapPypiLatest(t, map[string]string{"ruff": "0.7.0", "black": "24.0.0"}, nil)
+	defer restore()
+
+	got, err := Pipx{}.ListOutdated([]string{"ruff", "black"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"ruff": "0.7.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestFetchNpmLatest_DecodesVersionAndEncodesScopedName(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,6 +303,37 @@ func TestFetchNpmLatest_DecodesVersionAndEncodesScopedName(t *testing.T) {
 	}
 }
 
+func TestFetchPypiLatest_DecodesVersionAndEscapesName(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		switch r.URL.Path {
+		case "/pypi/ruff/json":
+			w.Write([]byte(`{"info":{"version":"0.7.0"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	orig := pypiRegistryBase
+	pypiRegistryBase = srv.URL
+	defer func() { pypiRegistryBase = orig }()
+
+	v, err := fetchPypiLatest("ruff")
+	if err != nil || v != "0.7.0" {
+		t.Fatalf("fetchPypiLatest(ruff) = %q, %v; want 0.7.0, nil", v, err)
+	}
+	if gotPath != "/pypi/ruff/json" {
+		t.Fatalf("request path = %q, want /pypi/ruff/json", gotPath)
+	}
+
+	v, err = fetchPypiLatest("does-not-exist")
+	if err != nil || v != "" {
+		t.Fatalf("fetchPypiLatest(does-not-exist) = %q, %v; want \"\", nil (404)", v, err)
+	}
+}
+
 // swapNpmLatest replaces the npmLatestVersion seam with a fake returning canned
 // versions (or a transport error for names in errNames). It returns a restore
 // function.
@@ -269,4 +347,18 @@ func swapNpmLatest(t *testing.T, versions map[string]string, errNames map[string
 		return versions[name], nil
 	}
 	return func() { npmLatestVersion = orig }
+}
+
+// swapPypiLatest replaces the pypiLatestVersion seam with a fake returning
+// canned versions (or a transport error for names in errNames).
+func swapPypiLatest(t *testing.T, versions map[string]string, errNames map[string]bool) func() {
+	t.Helper()
+	orig := pypiLatestVersion
+	pypiLatestVersion = func(name string) (string, error) {
+		if errNames[name] {
+			return "", http.ErrHandlerTimeout
+		}
+		return versions[name], nil
+	}
+	return func() { pypiLatestVersion = orig }
 }

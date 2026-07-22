@@ -98,6 +98,20 @@ func (Uv) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+// ListOutdated reports installed uv tools with a newer version on PyPI, keyed
+// by bare tool name -> latest version, restricted to pkgNames when provided.
+func (Uv) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := Uv{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	installed := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		installed[entry.name] = entry.version
+	}
+	return listRegistryOutdated(installed, pkgNames, uvToolName, pypiLatestVersion)
+}
+
 type uvEntry struct {
 	name    string
 	version string
