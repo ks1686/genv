@@ -57,7 +57,7 @@ func updatesRunOnceCmd(args []string) int {
 		return exitIO
 	}
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
-	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters, DetectOutdated: true})
+	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
 	if err != nil {
 		logger.Warn("updates.check.plan", slog.Any("err", err))
 		return exitUsage

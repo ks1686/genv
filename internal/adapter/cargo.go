@@ -87,11 +87,9 @@ func (c Cargo) ListOutdated(pkgNames []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	installed := make(map[string]string, len(entries))
-	for _, e := range entries {
-		installed[e.name] = e.version
-	}
-	return listRegistryOutdated(installed, pkgNames, cargoBaseName, cratesLatestVersion)
+	return listRegistryOutdated(versionMapOf(entries, func(e cargoEntry) (string, string) {
+		return e.name, e.version
+	}), pkgNames, cargoBaseName, cratesLatestVersion)
 }
 
 type cargoEntry struct {
