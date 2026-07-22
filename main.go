@@ -3089,8 +3089,6 @@ func validateCmd(args []string) int {
 // upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug] [--all]`.
 // By default plans only packages with a detected update; pass --all to plan every
 // unconstrained tracked package without outdated filtering.
-func upgradeDetectOutdated(all bool) bool { return !all }
-
 func upgradeCmd(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -3222,10 +3220,9 @@ func upgradeCmd(args []string) int {
 	}
 
 	planResult, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{
-		Spec:           f,
-		Lock:           lf,
-		Filters:        filters,
-		DetectOutdated: upgradeDetectOutdated(*all),
+		Spec:    f,
+		Lock:    lf,
+		Filters: filters,
 	})
 	if err != nil {
 		fprintf(os.Stderr, "genv upgrade: %v\n", err)
