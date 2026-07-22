@@ -129,6 +129,75 @@ exit 1`)
 	}
 }
 
+func TestNpm_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "npm",
+		`if [ "$1" = "list" ]; then
+	cat <<'JSON'
+{"dependencies":{"cf":{"version":"1.2.0"},"typescript":{"version":"5.0.0"}}}
+JSON
+	exit 0
+fi
+echo "unexpected: $*" >&2; exit 1`)
+
+	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+	defer restore()
+
+	got, err := Npm{}.ListOutdated([]string{"cf", "typescript"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"cf": "1.3.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestPnpm_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "pnpm",
+		`if [ "$1" = "list" ]; then
+	cat <<'JSON'
+[{"dependencies":{"cf":{"version":"1.2.0"},"typescript":{"version":"5.0.0"}}}]
+JSON
+	exit 0
+fi
+echo "unexpected: $*" >&2; exit 1`)
+
+	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+	defer restore()
+
+	got, err := Pnpm{}.ListOutdated([]string{"cf", "typescript"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"cf": "1.3.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestYarn_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
+	installFakeBinary(t, "yarn",
+		`if [ "$1" = "global" ] && [ "$2" = "list" ]; then
+	echo 'yarn global v1.22.22'
+	echo 'info "cf@1.2.0" has binaries:'
+	echo 'info "typescript@5.0.0" has binaries:'
+	exit 0
+fi
+echo "unexpected: $*" >&2; exit 1`)
+
+	restore := swapNpmLatest(t, map[string]string{"cf": "1.3.0", "typescript": "5.0.0"}, nil)
+	defer restore()
+
+	got, err := Yarn{}.ListOutdated([]string{"cf", "typescript"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"cf": "1.3.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestBun_ListOutdated_TransportErrorFlagsConservatively(t *testing.T) {
 	installFakeBinary(t, "bun",
 		`echo "/Users/x/.bun/install/global node_modules"

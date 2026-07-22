@@ -65,6 +65,14 @@ func (p Pnpm) ListInstalledVersions() (map[string]string, error) {
 	return entriesVersions(entries), nil
 }
 
+func (p Pnpm) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := p.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	return listJSOutdated(entriesVersions(entries), pkgNames)
+}
+
 func (Pnpm) listEntries() ([]jsPackageEntry, error) {
 	return runJSONPackageList("pnpm", "list", "--global", "--depth=0", "--json")
 }
