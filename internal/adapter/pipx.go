@@ -87,6 +87,21 @@ func (Pipx) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+// ListOutdated reports installed pipx tools with a newer version on PyPI,
+// keyed by bare package name -> latest version, restricted to pkgNames when
+// provided.
+func (Pipx) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := Pipx{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	installed := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		installed[entry.name] = entry.version
+	}
+	return listRegistryOutdated(installed, pkgNames, PythonBasePackageName, pypiLatestVersion)
+}
+
 func (Pipx) listEntries() ([]pythonEntry, error) {
 	out, err := exec.Command("pipx", "list", "--json").Output()
 	if err != nil {
