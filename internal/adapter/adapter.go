@@ -48,6 +48,31 @@ type OutdatedLister interface {
 	ListOutdated(pkgNames []string) (map[string]string, error)
 }
 
+// intersectNameMap limits all to the manager-native package names genv tracks.
+// An empty pkgNames means every outdated package should be returned.
+func intersectNameMap(all map[string]string, pkgNames []string) map[string]string {
+	if len(all) == 0 {
+		return nil
+	}
+	if len(pkgNames) == 0 {
+		return all
+	}
+	want := make(map[string]bool, len(pkgNames))
+	for _, name := range pkgNames {
+		want[name] = true
+	}
+	out := make(map[string]string)
+	for name, version := range all {
+		if want[name] {
+			out[name] = version
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.

@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"os/exec"
+	"strings"
+)
 
 // Choco is the adapter for Chocolatey, a Windows package manager that
 // typically requires an elevated (admin) shell for install/uninstall/upgrade.
@@ -109,6 +112,23 @@ func (Choco) ListInstalledVersions() (map[string]string, error) {
 		versions[entry.name] = entry.version
 	}
 	return versions, nil
+}
+
+// ListOutdated reports Chocolatey packages whose available version differs
+// from the installed one, keyed by package name -> target version.
+func (Choco) ListOutdated(pkgNames []string) (map[string]string, error) {
+	out, err := exec.Command("choco", "outdated", "-r").Output()
+	if err != nil {
+		return nil, err
+	}
+	outdated := make(map[string]string)
+	for _, line := range trimmedNonEmptyLines(string(out)) {
+		fields := strings.Split(line, "|")
+		if len(fields) >= 3 && fields[0] != "" && fields[1] != fields[2] {
+			outdated[fields[0]] = fields[2]
+		}
+	}
+	return intersectNameMap(outdated, pkgNames), nil
 }
 
 func (Choco) listEntries() ([]chocoEntry, error) {
