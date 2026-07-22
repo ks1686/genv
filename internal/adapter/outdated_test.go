@@ -7,6 +7,180 @@ import (
 	"testing"
 )
 
+func TestWinget_ListOutdated_ParsesUpgradeTable(t *testing.T) {
+	installFakeBinary(t, "winget", `if [ "$1" = "upgrade" ]; then
+cat <<'EOF'
+Name                  Id                      Version     Available    Source
+--------------------------------------------------------------------------
+Git                   Git.Git                 2.47.0      2.48.0       winget
+Neovim                Neovim.Neovim           0.10.0      0.11.0       winget
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Winget{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"Git.Git": "2.48.0", "Neovim.Neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestWinget_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "winget", `cat <<'EOF'
+Name                  Id                      Version     Available    Source
+--------------------------------------------------------------------------
+Git                   Git.Git                 2.47.0      2.48.0       winget
+Neovim                Neovim.Neovim           0.10.0      0.11.0       winget
+EOF`)
+
+	got, err := (Winget{}).ListOutdated([]string{"Neovim.Neovim"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"Neovim.Neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestWinget_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "winget", `printf "No installed package has an available upgrade.\n"`)
+
+	got, err := (Winget{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestWinget_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "winget", `echo "boom" >&2; exit 1`)
+
+	if _, err := (Winget{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
+func TestScoop_ListOutdated_ParsesStatus(t *testing.T) {
+	installFakeBinary(t, "scoop", `if [ "$1" = "status" ]; then
+cat <<'EOF'
+Name    Version  Available  Info
+----    -------  ---------  ----
+git     2.47.0   2.48.0
+neovim  0.10.0   0.11.0
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Scoop{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestScoop_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "scoop", `cat <<'EOF'
+Name    Version  Available  Info
+----    -------  ---------  ----
+git     2.47.0   2.48.0
+neovim  0.10.0   0.11.0
+EOF`)
+
+	got, err := (Scoop{}).ListOutdated([]string{"git"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestScoop_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "scoop", `printf "Scoop is up to date.\n"`)
+
+	got, err := (Scoop{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestScoop_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "scoop", `echo "boom" >&2; exit 1`)
+
+	if _, err := (Scoop{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
+func TestChoco_ListOutdated_ParsesRemoteOutput(t *testing.T) {
+	installFakeBinary(t, "choco", `if [ "$1" = "outdated" ] && [ "$2" = "-r" ]; then
+echo "git|2.47.0|2.48.0|false"
+echo "nodejs|22.0.0|22.0.0|false"
+exit 0
+fi
+exit 1`)
+
+	got, err := (Choco{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestChoco_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "choco", `cat <<'EOF'
+git|2.47.0|2.48.0|false
+neovim|0.10.0|0.11.0|false
+EOF`)
+
+	got, err := (Choco{}).ListOutdated([]string{"neovim"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestChoco_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "choco", `printf ""`)
+
+	got, err := (Choco{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestChoco_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "choco", `echo "boom" >&2; exit 1`)
+
+	if _, err := (Choco{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
 func TestBrew_ListOutdated_ParsesFormulaeAndCasks(t *testing.T) {
 	installFakeBinary(t, "brew",
 		`if [ "$1" = "outdated" ] && [ "$2" = "--json=v2" ]; then

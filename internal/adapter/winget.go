@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"os/exec"
 	"strings"
 )
 
@@ -91,10 +92,27 @@ func (Winget) QueryVersion(pkgName string) (string, error) {
 	return rows[0].version, nil
 }
 
+// ListOutdated reports winget package IDs with an available upgrade, keyed by
+// ID -> target version, intersected with pkgNames.
+func (Winget) ListOutdated(pkgNames []string) (map[string]string, error) {
+	out, err := exec.Command("winget", "upgrade").Output()
+	if err != nil {
+		return nil, err
+	}
+	outdated := make(map[string]string)
+	for _, row := range parseWingetTable(trimmedNonEmptyLines(string(out))) {
+		if row.id != "" && row.available != "" {
+			outdated[row.id] = row.available
+		}
+	}
+	return intersectNameMap(outdated, pkgNames), nil
+}
+
 type wingetRow struct {
-	id      string
-	version string
-	source  string
+	id        string
+	version   string
+	available string
+	source    string
 }
 
 // parseWingetTable parses winget's fixed-width table output (used by both
@@ -111,6 +129,7 @@ func parseWingetTable(lines []string) []wingetRow {
 	if idStart < 0 || versionStart < 0 || versionStart <= idStart {
 		return nil
 	}
+	availableStart := strings.Index(header, "Available")
 	// The optional "Available" column (only present in bare "list" output)
 	// sits between Version and Source; either way, Source is the last
 	// column we care about and everything after Version up to it (or end
@@ -133,10 +152,20 @@ func parseWingetTable(lines []string) []wingetRow {
 		}
 		if versionStart < len(line) {
 			verEnd := len(line)
+			if availableStart > versionStart && availableStart < len(line) {
+				verEnd = availableStart
+			}
 			if sourceStart > versionStart && sourceStart < len(line) {
-				verEnd = sourceStart
+				verEnd = min(verEnd, sourceStart)
 			}
 			row.version = strings.TrimSpace(firstField(line[versionStart:verEnd]))
+		}
+		if availableStart > versionStart && availableStart < len(line) {
+			availableEnd := len(line)
+			if sourceStart > availableStart && sourceStart < len(line) {
+				availableEnd = sourceStart
+			}
+			row.available = strings.TrimSpace(firstField(line[availableStart:availableEnd]))
 		}
 		if sourceStart > 0 && sourceStart < len(line) {
 			row.source = strings.TrimSpace(line[sourceStart:])
