@@ -555,6 +555,174 @@ func swapPypiLatest(t *testing.T, versions map[string]string, errNames map[strin
 	return func() { pypiLatestVersion = orig }
 }
 
+func TestPacman_ListOutdated_ParsesQuOutput(t *testing.T) {
+	installFakeBinary(t, "pacman", `if [ "$1" = "-Qu" ]; then
+cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Pacman{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestPacman_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "pacman", `cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF`)
+
+	got, err := (Pacman{}).ListOutdated([]string{"neovim"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestPacman_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "pacman", `exit 1`)
+
+	got, err := (Pacman{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestPacman_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "pacman", `echo "boom" >&2; exit 2`)
+
+	if _, err := (Pacman{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
+func TestParu_ListOutdated_ParsesQuOutput(t *testing.T) {
+	installFakeBinary(t, "paru", `if [ "$1" = "-Qu" ]; then
+cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Paru{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestParu_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "paru", `cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF`)
+
+	got, err := (Paru{}).ListOutdated([]string{"git"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestParu_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "paru", `exit 1`)
+
+	got, err := (Paru{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestParu_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "paru", `echo "boom" >&2; exit 2`)
+
+	if _, err := (Paru{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
+func TestYay_ListOutdated_ParsesQuOutput(t *testing.T) {
+	installFakeBinary(t, "yay", `if [ "$1" = "-Qu" ]; then
+cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF
+exit 0
+fi
+exit 1`)
+
+	got, err := (Yay{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"git": "2.48.0", "neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestYay_ListOutdated_IntersectsWithPkgNames(t *testing.T) {
+	installFakeBinary(t, "yay", `cat <<'EOF'
+git 2.47.0 -> 2.48.0
+neovim 0.10.0 -> 0.11.0
+EOF`)
+
+	got, err := (Yay{}).ListOutdated([]string{"neovim"})
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	want := map[string]string{"neovim": "0.11.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated: got %v, want %v", got, want)
+	}
+}
+
+func TestYay_ListOutdated_NothingOutdated(t *testing.T) {
+	installFakeBinary(t, "yay", `exit 1`)
+
+	got, err := (Yay{}).ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: unexpected error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated: got %v, want nil", got)
+	}
+}
+
+func TestYay_ListOutdated_CommandFailureIsError(t *testing.T) {
+	installFakeBinary(t, "yay", `echo "boom" >&2; exit 2`)
+
+	if _, err := (Yay{}).ListOutdated(nil); err == nil {
+		t.Fatal("ListOutdated: expected error on command failure, got nil")
+	}
+}
+
 func TestCargo_ListOutdated_ReportsOnlyDiffering(t *testing.T) {
 	installFakeBinary(t, "cargo",
 		`if [ "$1" = "install" ] && [ "$2" = "--list" ]; then
