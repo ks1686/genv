@@ -95,11 +95,9 @@ func (Pipx) ListOutdated(pkgNames []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	installed := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		installed[entry.name] = entry.version
-	}
-	return listRegistryOutdated(installed, pkgNames, PythonBasePackageName, pypiLatestVersion)
+	return listRegistryOutdated(versionMapOf(entries, func(e pythonEntry) (string, string) {
+		return e.name, e.version
+	}), pkgNames, PythonBasePackageName, pypiLatestVersion)
 }
 
 func (Pipx) listEntries() ([]pythonEntry, error) {

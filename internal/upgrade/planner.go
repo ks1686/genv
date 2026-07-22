@@ -12,14 +12,13 @@ import (
 )
 
 type UpgradeOptions struct {
-	Spec    *schema.GenvFile
-	Lock    *genvfile.LockFile
+	Spec *schema.GenvFile
+	Lock *genvfile.LockFile
+	// Filters control which packages are planned. When Filters.All is false
+	// (the default), the plan is narrowed to packages with an update available
+	// via each manager's OutdatedLister. Filters.All true restores brute-force
+	// planning of every unconstrained tracked package (`genv upgrade --all`).
 	Filters output.UpgradeFilters
-	// DetectOutdated narrows the plan to packages that actually have an update
-	// available (via each manager's OutdatedLister). Default for `genv upgrade`
-	// and for updates check / background worker. `genv upgrade --all` sets this
-	// false to restore brute-force planning of every unconstrained tracked package.
-	DetectOutdated bool
 }
 
 type UpgradePlan struct {
@@ -184,7 +183,7 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 		upgradeablePackages = append(upgradeablePackages, lp)
 	}
 
-	if opts.DetectOutdated {
+	if !opts.Filters.All {
 		filtered, warnings := resolver.FilterOutdated(upgradeablePackages)
 		upgradeablePackages = filtered
 		plan.Warnings = append(plan.Warnings, warnings...)

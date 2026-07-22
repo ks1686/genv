@@ -14,6 +14,45 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+// planAll skips outdated detection so planner unit tests exercise filter/constraint
+// logic without requiring fake outdated CLIs.
+var planAll = output.UpgradeFilters{All: true}
+
+func TestBuildUpgradePlan_FiltersAll_skipsOutdatedDetection(t *testing.T) {
+	// Given: brew outdated reports only git, but --all requests every package.
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" +
+		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake brew: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{
+		Spec:    spec,
+		Lock:    lock,
+		Filters: output.UpgradeFilters{All: true},
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git", "jq"}) {
+		t.Fatalf("Filters.All plan packages = %v, want [git jq]", gotIDs)
+	}
+}
+
 func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
 	// Given: two tracked brew packages, but a fake `brew outdated` reports only git.
 	dir := t.TempDir()
@@ -30,8 +69,8 @@ func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
 		{ID: "jq", Manager: "brew", PkgName: "jq"},
 	}}
 
-	// When: the plan is built with outdated detection enabled.
-	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, DetectOutdated: true})
+	// When: the plan is built with default outdated detection (Filters.All false).
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
 	if err != nil {
 		t.Fatalf("BuildUpgradePlan: %v", err)
 	}
@@ -44,7 +83,7 @@ func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
 		}
 	}
 	if !slices.Equal(gotIDs, []string{"git"}) {
-		t.Fatalf("DetectOutdated plan packages = %v, want [git]", gotIDs)
+		t.Fatalf("outdated plan packages = %v, want [git]", gotIDs)
 	}
 }
 
@@ -54,7 +93,7 @@ func TestBuildUpgradePlan_Constraint_unconstrained_package_plans_normally(t *tes
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}}}
 
 	// When: the shared upgrade plan is built.
-	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, Filters: planAll})
 
 	// Then: the package retains the existing upgrade behavior.
 	if err != nil {
@@ -82,7 +121,7 @@ func TestBuildUpgradePlan_Constraint_constrained_packages_are_skipped_in_lock_or
 	}}
 
 	// When: the shared upgrade plan is built.
-	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, Filters: planAll})
 
 	// Then: only the unconstrained package is planned and constraint skips retain lock order and identity.
 	if err != nil {
@@ -123,7 +162,7 @@ func TestBuildUpgradePlan_Constraint_mixed_batch_excludes_only_constrained_packa
 	}}
 
 	// When: the shared upgrade plan is built.
-	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, Filters: planAll})
 
 	// Then: the remaining unconstrained packages still form one batch.
 	if err != nil {
@@ -155,12 +194,12 @@ func TestBuildUpgradePlan_Constraint_existing_package_filters_run_first(t *testi
 	}{
 		{
 			name:       "skip excludes before constraint evaluation",
-			filters:    output.UpgradeFilters{Skip: []string{"jq"}},
+			filters:    output.UpgradeFilters{All: true, Skip: []string{"jq"}},
 			wantReason: "excluded by --skip",
 		},
 		{
 			name:       "only takes precedence over skip before constraint evaluation",
-			filters:    output.UpgradeFilters{Only: []string{"jq"}, Skip: []string{"jq"}},
+			filters:    output.UpgradeFilters{All: true, Only: []string{"jq"}, Skip: []string{"jq"}},
 			wantReason: "version-constrained package requires an explicit compatible target",
 		},
 	}
@@ -209,13 +248,14 @@ func TestBuildPlan(t *testing.T) {
 	}{
 		{
 			name:        "no filters",
-			filters:     output.UpgradeFilters{},
+			filters:     output.UpgradeFilters{All: true},
 			wantActions: 2, // brew (batch), npm
 			wantSkipped: 0,
 		},
 		{
 			name: "only pkg1",
 			filters: output.UpgradeFilters{
+				All:  true,
 				Only: []string{"pkg1"},
 			},
 			wantActions: 1,
@@ -224,6 +264,7 @@ func TestBuildPlan(t *testing.T) {
 		{
 			name: "skip pkg3",
 			filters: output.UpgradeFilters{
+				All:  true,
 				Skip: []string{"pkg3"},
 			},
 			wantActions: 1, // brew batch
@@ -232,6 +273,7 @@ func TestBuildPlan(t *testing.T) {
 		{
 			name: "only manager brew",
 			filters: output.UpgradeFilters{
+				All:         true,
 				OnlyManager: []string{"brew"},
 			},
 			wantActions: 1,
@@ -240,6 +282,7 @@ func TestBuildPlan(t *testing.T) {
 		{
 			name: "skip manager brew",
 			filters: output.UpgradeFilters{
+				All:         true,
 				SkipManager: []string{"brew"},
 			},
 			wantActions: 1,
@@ -248,6 +291,7 @@ func TestBuildPlan(t *testing.T) {
 		{
 			name: "unknown manager",
 			filters: output.UpgradeFilters{
+				All:         true,
 				OnlyManager: []string{"unknown"},
 			},
 			wantErr: true,
@@ -285,7 +329,7 @@ func TestBuildUpgradePlan_is_callable_without_cli_side_effects(t *testing.T) {
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "1.0.0"}}}
 
 	// When: the reusable planner is called directly, outside main.go flag parsing.
-	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock, Filters: planAll})
 
 	// Then: planning produces a reusable UpgradePlan and leaves execution results absent.
 	if err != nil {
