@@ -82,3 +82,9 @@ func (Yay) QueryVersion(pkgName string) (string, error) {
 	}
 	return parseMgrQueryVersion(out), nil
 }
+
+// ListOutdated reports installed packages with a newer version available via
+// yay, keyed by package name -> target version, intersected with pkgNames.
+func (Yay) ListOutdated(pkgNames []string) (map[string]string, error) {
+	return listPacmanQuOutdated("yay", pkgNames)
+}
