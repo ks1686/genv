@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+
+- `genv upgrade` now plans only packages with a detected update by default (same outdated filtering as `genv updates check`). Pass `--all` to restore the previous brute-force plan of every unconstrained tracked package. Outdated detection now also covers npm/pnpm/yarn, uv/pipx, cargo, winget/scoop/choco, pacman/paru/yay, and snap. Multiple Mac App Store upgrades are batched into one `mas upgrade` invocation.
+
 ## v3.1.0 - 2026-07-15
 
 ### Changed
