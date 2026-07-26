@@ -1004,6 +1004,7 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	if lf == nil {
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
+	activeTarget := ""
 	if f.SchemaVersion == schema.Version8 {
 		targetID, err := target.Resolve(opts.Target)
 		if err != nil {
@@ -1033,10 +1034,11 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
 		}
 		f = effective
-		opts.Target = targetID
+		activeTarget = targetID
 	} else {
 		f = host.FilterForHost(f, hostForCommand(opts.Host))
 	}
+	opts.Target = activeTarget
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
 
 	if opts.JSONOut {
