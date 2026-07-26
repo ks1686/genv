@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Native Windows PowerShell parity (schema **v7**): `env`/`shell` profile backends write `env.ps1` / `shell.ps1` and inject the CurrentUser CurrentHost profile when `pwsh` or Windows PowerShell is on `PATH` (prefer `pwsh`). Aliases/functions may set `"shell": "powershell"`; omitted `shell` stays POSIX-only. Hooks on Windows use the detected PowerShell engine (`-NoProfile -Command` / `-File`), with `cmd /C` fallback. `genv completion powershell` embeds and installs `completions/genv.ps1`.
+
 ### Changed
 
 - CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the cold-start budget (`BENCH_MAX_MS`; local default 200ms, CI uses 400ms for shared-runner noise). Previously claimed but not wired into GitHub Actions.

@@ -165,3 +165,23 @@ codegraph impact "Adapter.Available"    # blast radius of a change
 
 If you wire up a post-commit hook to auto-sync the index, that too is a local,
 opt-in convenience and is not configured in this repository.
+
+## Learned User Preferences
+
+- Prefer `genv upgrade` to plan only packages with detected updates by default, with `--all` as the escape hatch for the old brute-force “touch everything” path.
+- Keep successful upgrade output visible; filtering should drop non-outdated plan noise, not hide upgrades that actually run.
+- When choosing implementation scope, often asks for a recommendation first; if wanting maximum coverage, prefers the most thorough option that still keeps outdated detection honest.
+- Prefers subagent-driven execution for multi-step implementation plans when that option is offered.
+- Prefers agent guidance as a global baseline under `~/.config/genv/` (and Cursor User Rules when configured); add project-specific rules only when explicitly requested.
+- For cross-platform shell/env work (including PowerShell), do not assume PowerShell exists on every host; gate apply/write on availability.
+
+## Learned Workspace Facts
+
+- `genv upgrade` and `genv updates check` share the upgrade planner; default planning uses outdated detection (`Filters.All` false / `OutdatedLister`), and managers without a lister (or on lister error) keep packages rather than silently skipping them.
+- `OutdatedLister` coverage includes brew/linuxbrew, mas, bun, npm/pnpm/yarn, uv/pipx, cargo, winget/scoop/choco, pacman/paru/yay, and snap; mas also implements `BatchUpgrader` so multiple App Store upgrades batch into one `mas upgrade` invocation.
+- Design specs and plans live under `docs/superpowers/`; completed items (e.g. outdated-aware upgrade, scheduler handoff) are marked COMPLETED/RESOLVED in-place in those docs.
+- Runtime user config, lock files, and a separate global `AGENTS.md`/agent baseline live under `~/.config/genv/`.
+- Project agent guidance is primarily this `AGENTS.md`; `.cursor/` is gitignored and there is no project `.cursor/rules` pack yet.
+- `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`.
+- Schema versions `"1"`–`"7"` are accepted; v7 adds `"shell": "powershell"` targeting for aliases/functions. On Windows, `genv apply` uses a profile-backend abstraction (`POSIXBackend` + `PowerShellBackend`): prefer `pwsh`, else `powershell.exe`; omit PowerShell writes on non-Windows. Shared `env` maps emit both `env.sh` and `env.ps1` when the corresponding backend runs.
+- Publishing the `genv` binary to winget/scoop/choco remains deferred; adapters already manage packages through those managers when present.

@@ -20,7 +20,7 @@ func ensureShell(f *schema.GenvFile) {
 }
 
 // ShellAliasSet adds or updates the alias name in f's shell block.
-// Shell target may be "bash", "zsh", "fish", or "" (all).
+// Shell target may be "bash", "zsh", "fish", "powershell", or "" (POSIX).
 func ShellAliasSet(f *schema.GenvFile, name, value, shell string) error {
 	if name == "" {
 		return fmt.Errorf("alias name must not be empty\nTip: provide a valid shell identifier as NAME")
@@ -29,6 +29,9 @@ func ShellAliasSet(f *schema.GenvFile, name, value, shell string) error {
 		return fmt.Errorf("unknown shell %q; expected %s", shell, schema.ValidShellTargetsMsg)
 	}
 	ensureShell(f)
+	if shell == "powershell" {
+		f.SchemaVersion = schema.AtLeastVersion(f.SchemaVersion, schema.Version7)
+	}
 	if f.Shell.Aliases == nil {
 		f.Shell.Aliases = make(map[string]schema.ShellAlias)
 	}
