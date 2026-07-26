@@ -174,6 +174,10 @@ opt-in convenience and is not configured in this repository.
 - Prefers subagent-driven execution for multi-step implementation plans when that option is offered.
 - Prefers agent guidance as a global baseline under `~/.config/genv/` (and Cursor User Rules when configured); add project-specific rules only when explicitly requested.
 - For cross-platform shell/env work (including PowerShell), do not assume PowerShell exists on every host; gate apply/write on availability.
+- Prefer `genv add` to persist into `genv.json` only after a successful install/verification (fail nonzero and leave the spec unchanged on unresolved/install failure).
+- Want richer tab completions with package-manager repo autofill for `add`, not only tracked package IDs and detected managers.
+- Treat multi-machine / cross-OS config portability (export-to-target / migration without sharing locks) as a first-class product goal.
+- For public Linux support, focus on major distros whose packaging channels do not require separate human review gates known to reject AI-assisted tooling.
 
 ## Learned Workspace Facts
 
@@ -185,3 +189,6 @@ opt-in convenience and is not configured in this repository.
 - `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`.
 - Schema versions `"1"`–`"7"` are accepted; v7 adds `"shell": "powershell"` targeting for aliases/functions. On Windows, `genv apply` uses a profile-backend abstraction (`POSIXBackend` + `PowerShellBackend`): prefer `pwsh`, else `powershell.exe`; omit PowerShell writes on non-Windows. Shared `env` maps emit both `env.sh` and `env.ps1` when the corresponding backend runs.
 - Publishing the `genv` binary to winget/scoop/choco remains deferred; adapters already manage packages through those managers when present.
+- Host classification currently recognizes `macos` / native `windows` / `wsl2` / `arch` only; other Linux distros get an empty host (host-scoped packages skipped) unless `GENV_HOST`/`--host` is set, and there are no `apt`/`dnf`/`apk` adapters yet.
+- Lock files are machine-local and must not travel with the spec; applying a foreign lock across OS/machines causes wrong uninstalls and false “up to date” results.
+- Today `genv add` can still write the spec before install succeeds and exit 0 on failure; fixing that ordering is a known v4 correctness goal.
