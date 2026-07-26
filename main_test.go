@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -3080,6 +3081,42 @@ func TestPullCmd_DryRun(t *testing.T) {
 	}
 }
 
+func TestPullCmd_DryRunListsLocalFileAssets(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	spec := `{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": "https://example.com/spec.git", "ref": "main"},
+  "files": {
+    "links": [
+      {"source": "assets/profile", "target": "~/.profile"},
+      {"source": "secrets/token", "target": "~/.token"}
+    ]
+  }
+}`
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", path, "--dry-run"})
+	})
+
+	if code != exitOK {
+		t.Fatalf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "would copy assets:") || !strings.Contains(out, "assets/profile") {
+		t.Errorf("dry-run output missing asset list: %q", out)
+	}
+	if strings.Contains(out, "secrets/token") {
+		t.Errorf("dry-run output included skipped secret asset: %q", out)
+	}
+}
+
 func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -3102,5 +3139,106 @@ func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
 	}
 	if !strings.Contains(out, "dev") {
 		t.Errorf("dry-run output missing override ref: %q", out)
+	}
+}
+
+func TestPull_CopiesRelativeFileAssets(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "remote")
+	destDir := filepath.Join(dir, "dest")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(repo): %v", err)
+	}
+	runGitForTest(t, repoDir, "init", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(repoDir, "assets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(assets): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, "templates"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(templates): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, "secrets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(secrets): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "assets", "profile"), []byte("profile"), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "templates", "app.tmpl"), []byte("template"), 0o644); err != nil {
+		t.Fatalf("WriteFile(template): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "secrets", "token"), []byte("secret"), 0o644); err != nil {
+		t.Fatalf("WriteFile(secret): %v", err)
+	}
+	remoteSpec := fmt.Sprintf(`{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": %q, "ref": "main"},
+  "files": {
+    "links": [
+      {"source": "assets/profile", "target": "~/.profile"},
+      {"source": "secrets/token", "target": "~/.token"}
+    ],
+    "templates": [
+      {"source": "templates/app.tmpl", "target": "~/.config/app/config"}
+    ]
+  }
+}`, repoDir)
+	if err := os.WriteFile(filepath.Join(repoDir, "genv.json"), []byte(remoteSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote spec): %v", err)
+	}
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=genv test", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+
+	specPath := filepath.Join(destDir, "genv.json")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest): %v", err)
+	}
+	localSpec := fmt.Sprintf(`{"schemaVersion":"7","packages":[],"repo":{"url":%q,"ref":"main"}}`, repoDir)
+	if err := os.WriteFile(specPath, []byte(localSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(local spec): %v", err)
+	}
+
+	code := run([]string{"pull", "--file", specPath})
+	if code != exitOK {
+		t.Fatalf("pull: expected exitOK (%d), got %d", exitOK, code)
+	}
+	assertPulledFileContent(t, filepath.Join(destDir, "assets", "profile"), "profile")
+	assertPulledFileContent(t, filepath.Join(destDir, "templates", "app.tmpl"), "template")
+	assertPulledPathNotExists(t, filepath.Join(destDir, "secrets", "token"))
+}
+
+func runGitForTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+func assertPulledFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s = %q, want %q", path, got, want)
+	}
+}
+
+func assertPulledPathNotExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("%s exists, want absent", path)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Stat(%s): %v", path, err)
 	}
 }
