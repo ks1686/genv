@@ -361,6 +361,8 @@ func TestReadLock_ValidFile_RoundTrip(t *testing.T) {
 
 	original := &LockFile{
 		SchemaVersion: schema.Version,
+		Target:        "arch",
+		GOOS:          "linux",
 		Packages: []LockedPackage{
 			{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "2.43.0"},
 			{ID: "neovim", Manager: "paru", PkgName: "neovim"},
@@ -379,6 +381,12 @@ func TestReadLock_ValidFile_RoundTrip(t *testing.T) {
 	}
 	if got.Packages[0].ID != "git" {
 		t.Errorf("Packages[0].ID: got %q, want \"git\"", got.Packages[0].ID)
+	}
+	if got.Target != "arch" {
+		t.Errorf("Target: got %q, want \"arch\"", got.Target)
+	}
+	if got.GOOS != "linux" {
+		t.Errorf("GOOS: got %q, want \"linux\"", got.GOOS)
 	}
 	if got.Packages[0].InstalledVersion != "2.43.0" {
 		t.Errorf("InstalledVersion: got %q, want \"2.43.0\"", got.Packages[0].InstalledVersion)
