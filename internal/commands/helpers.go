@@ -60,6 +60,55 @@ func ActiveBundle(f *schema.GenvFile, targetID string) (*schema.TargetBundle, er
 	return bundle, nil
 }
 
+func activePackageSlice(f *schema.GenvFile, targetID string) (*[]schema.Package, error) {
+	bundle, err := ActiveBundle(f, targetID)
+	if err != nil {
+		return nil, err
+	}
+	seedTargetPackagesFromDefaults(f, bundle)
+	return &bundle.Packages, nil
+}
+
+func seedTargetPackagesFromDefaults(f *schema.GenvFile, bundle *schema.TargetBundle) {
+	if bundle == nil || bundle.Packages != nil || f == nil || f.Defaults == nil || len(f.Defaults.Packages) == 0 {
+		return
+	}
+	bundle.Packages = copyPackages(f.Defaults.Packages)
+}
+
+func copyPackages(in []schema.Package) []schema.Package {
+	if in == nil {
+		return nil
+	}
+	out := make([]schema.Package, len(in))
+	for i, pkg := range in {
+		out[i] = pkg
+		out[i].Managers = copyStringMap(pkg.Managers)
+		out[i].Host = copyHostPredicate(pkg.Host)
+	}
+	return out
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func copyHostPredicate(in schema.HostPredicate) schema.HostPredicate {
+	if in == nil {
+		return nil
+	}
+	out := make(schema.HostPredicate, len(in))
+	copy(out, in)
+	return out
+}
+
 func defaultEnvExists(defaults *schema.TargetBundle, name string) bool {
 	return defaults != nil && defaults.Env[name] != nil
 }
