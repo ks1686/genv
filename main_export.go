@@ -18,7 +18,7 @@ func exportCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv export --target <id> --out <dir> [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Build a portable schemaVersion 8 snapshot for one target plus report.json.")
+		fPrintln(os.Stderr, "Build a portable schemaVersion 8 snapshot for one target plus report.json/report.md.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -26,7 +26,7 @@ func exportCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	targetID := fs.String("target", "", "target id to export")
-	outDir := fs.String("out", "", "directory to write genv.json and report.json")
+	outDir := fs.String("out", "", "directory to write genv.json, report.json, and report.md")
 	strict := fs.Bool("strict", false, "exit nonzero when the report contains error-class items")
 	fromV7 := fs.Bool("from-v7", false, "migrate a v1-v7 spec to schemaVersion 8 in memory before exporting")
 

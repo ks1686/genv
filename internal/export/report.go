@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 const (
@@ -75,4 +76,42 @@ func writeReport(path string, report Report) error {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil
+}
+
+func writeReportMarkdown(path string, report Report) error {
+	var b strings.Builder
+	items := report.sorted()
+	b.WriteString("# genv export report\n\n")
+	if len(items) == 0 {
+		b.WriteString("No findings.\n")
+	} else {
+		b.WriteString("| Class | Code | Package | Message |\n")
+		b.WriteString("|---|---|---|---|\n")
+		for _, item := range items {
+			packageID := item.PackageID
+			if packageID == "" {
+				packageID = "-"
+			}
+			fmt.Fprintf(
+				&b,
+				"| %s | %s | %s | %s |\n",
+				markdownCell(item.Class),
+				markdownCell(item.Code),
+				markdownCell(packageID),
+				markdownCell(item.Message),
+			)
+		}
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
+}
+
+func markdownCell(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.ReplaceAll(s, "\n", "<br>")
+	s = strings.ReplaceAll(s, "|", `\|`)
+	return s
 }
