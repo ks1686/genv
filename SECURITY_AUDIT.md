@@ -7,9 +7,35 @@
 
 ---
 
+## Remediation Status (2026-07-25)
+
+**Current verdict: HISTORICAL / PARTIALLY REMEDIATED.** The original BLOCK verdict below is retained as the audit record. Several critical and high findings were fixed after 2026-07-05; remaining items are tracked here rather than as an open release blocker.
+
+| # | Status | Notes |
+|---|---|---|
+| 1 | PARTIAL | Function bodies reject shell metacharacters (`internal/schema/validate.go`); function **names** still lack POSIX identifier checks |
+| 2 | FIXED | Shell `source` entries are single-quoted; schema rejects metacharacters |
+| 3 | SUPERSEDED | `shellQuote`/`singleQuote` use POSIX `'\''` escaping; original quote-injection premise was incorrect |
+| 4 | FIXED | `InjectSourceLine` quotes `fragmentPath` via `shellQuote` |
+| 5 | FIXED | `genvfile.Write` re-validates via `schema.ParseAndValidate` before persist |
+| 6 | FIXED | Service CLI uses `parseCommandWords` instead of `strings.Fields` |
+| 7 | OPEN (by design) | `--file` accepts an explicit filesystem path; not a hidden traversal bypass |
+| 8 | OPEN | Published `schema/v1/genv.json` is still v1-only while code accepts schema versions 1–6 |
+| 9 | OPEN | Package IDs: empty/duplicate checks only |
+| 10 | OPEN | Manager map *values* not content-validated (keys checked against `KnownManagers`) |
+| 11 | OPEN | Version constraint strings lack format/length validation |
+| 12 | OPEN | `runSubcmd` still assumes non-empty argv |
+| 13 | OPEN | No collection-size bounds in `ParseAndValidate` |
+| 14 | OPEN | Alias (and function) names are not restricted to POSIX identifiers |
+| 15 | SUPERSEDED | Docs/code agree on numeric schema versions `"1"`–`"6"`; finding 8 remains for the published JSON Schema file |
+
+Follow-ups that would close residual risk: POSIX identifier validation for alias/function names, collection bounds, published JSON Schema for current schema versions, and an empty-argv guard in `runSubcmd`.
+
+---
+
 ## Executive Summary
 
-**VERDICT: BLOCK — Multiple critical and high-severity findings require fixes before this codebase is safe for production use.**
+**VERDICT (2026-07-05): BLOCK — Multiple critical and high-severity findings require fixes before this codebase is safe for production use.**
 
 The project claims *"All user input goes through `schema.Validate()` before touching the filesystem or subprocesses"* (AGENTS.md line 74). This claim is **demonstrably false**. `schema.ParseAndValidate()` validates structural correctness (schema version, required fields, duplicate IDs, known manager names) but **does not validate the semantic content** of strings that are later:
 

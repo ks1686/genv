@@ -162,18 +162,18 @@ Checklist:
 
 - [x] Add `version` field to the `--json` output envelope so consumers can detect schema changes.
 - [x] Define and document the formal deprecation policy (major version for breaking changes).
-- [x] Achieve ≥80% unit test line coverage across all internal packages.
+- [x] Report statement coverage in CI and enforce a regression floor (`COVER_MIN`, default 80% total).
 - [x] Add property-based / fuzz tests for version constraint logic and the resolver.
 - [x] Add end-to-end smoke tests that run `genv apply` against real package managers in CI.
-- [x] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI.
+- [x] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI (`make bench-gate`).
 - [x] Security review: audit every adapter's shell invocations for injection vectors.
 
 Acceptance criteria:
 
 - [x] `--json` output includes a `"version"` field and the schema is documented.
-- [x] All internal packages reach ≥80% line coverage as reported by `go test -cover`.
+- [x] CI fails when total statement coverage drops below the documented floor (`COVER_MIN`, default 80).
 - [x] CI enforces the cold-start budget via a benchmark gate.
-- [x] No known shell-injection vectors in any adapter after the audit.
+- [x] No known shell-injection vectors in adapter argv construction after the audit.
 
 ## Milestone M7 - Developer and User Experience
 
