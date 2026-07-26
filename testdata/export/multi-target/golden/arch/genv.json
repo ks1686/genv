@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "8",
+  "targets": {
+    "arch": {
+      "packages": [
+        {
+          "id": "git",
+          "prefer": "pacman"
+        },
+        {
+          "id": "windows-terminal",
+          "prefer": "winget"
+        },
+        {
+          "id": "ruff",
+          "managers": {
+            "uv": "ruff"
+          }
+        }
+      ],
+      "env": {
+        "ARCH_ONLY": {
+          "value": "1"
+        },
+        "EDITOR": {
+          "value": "nvim"
+        }
+      },
+      "shell": {
+        "aliases": {
+          "gs": {
+            "value": "git status"
+          },
+          "ll": {
+            "value": "ls -la"
+          }
+        }
+      },
+      "services": {
+        "agent": {
+          "start": [
+            "sleep",
+            "60"
+          ]
+        }
+      },
+      "files": {
+        "links": [
+          {
+            "source": "files/assets/gitconfig",
+            "target": "~/.gitconfig"
+          }
+        ],
+        "templates": [
+          {
+            "source": "files/assets/config.tmpl",
+            "target": "~/.config/demo/config"
+          },
+          {
+            "source": "/etc/genv/secret.tmpl",
+            "target": "~/.config/demo/secret"
+          }
+        ],
+        "dirs": [
+          {
+            "target": "~/.config/demo"
+          }
+        ]
+      },
+      "hooks": {
+        "postApply": [
+          {
+            "command": "echo exported"
+          }
+        ]
+      }
+    }
+  }
+}
