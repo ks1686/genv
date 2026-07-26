@@ -2349,6 +2349,7 @@ func scanCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	targetFlag := fs.String("target", "", "target ID for schemaVersion 8 (default: $GENV_TARGET or detected host target)")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
@@ -2366,6 +2367,10 @@ func scanCmd(args []string) int {
 			return exitValidation
 		}
 		return exitIO
+	}
+	targetID, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
 	}
 
 	available := resolver.Detect()
@@ -2395,8 +2400,17 @@ func scanCmd(args []string) int {
 	// (a numeric App Store product ID) rather than the friendly ID, so a
 	// package tracked as {"id":"xcode","managers":{"mas":"497799835"}} would
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
-	trackedInSpec := make(map[string]bool, len(f.Packages))
-	for _, p := range f.Packages {
+	trackedPackages := f.Packages
+	if f.SchemaVersion == schema.Version8 {
+		active, err := schema.MergeTarget(f, targetID)
+		if err != nil {
+			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
+			return exitValidation
+		}
+		trackedPackages = active.Packages
+	}
+	trackedInSpec := make(map[string]bool, len(trackedPackages))
+	for _, p := range trackedPackages {
 		trackedInSpec[p.ID] = true
 		for _, managerName := range p.Managers {
 			trackedInSpec[managerName] = true
@@ -2440,7 +2454,7 @@ func scanCmd(args []string) int {
 			}
 
 			// Add to spec.
-			if err := commands.Add(f, pkgName, "", "", nil, ""); err != nil {
+			if err := commands.Add(f, pkgName, "", "", nil, targetID); err != nil {
 				// ErrAlreadyTracked can race with trackedInSpec; skip silently.
 				skipped++
 				continue
