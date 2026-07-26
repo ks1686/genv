@@ -3875,7 +3875,7 @@ Apply-specific flags:
 
 Export-specific flags:
   --target <id>        Target id to export
-  --out <dir>          Directory to write genv.json and report.json
+  --out <dir>          Directory to write genv.json, report.json, and report.md
   --strict             Exit nonzero if the report contains errors
   --from-v7            Migrate v1-v7 input to schemaVersion 8 in memory first
 

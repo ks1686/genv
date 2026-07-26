@@ -442,7 +442,7 @@ When you run `genv apply`:
 ### `genv export` flags
 
 - `--target <id>` — target bucket to materialize into the exported snapshot
-- `--out <dir>` — directory to write `genv.json`, `report.json`, and bundled relative file assets
+- `--out <dir>` — directory to write `genv.json`, `report.json`, `report.md`, and bundled relative file assets
 - `--strict` — exit nonzero when the report contains error-class items
 - `--from-v7` — migrate a v1-v7 spec to schemaVersion 8 in memory before exporting
 

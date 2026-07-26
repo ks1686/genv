@@ -18,13 +18,14 @@ type Options struct {
 	BaseDir string
 }
 
-// Build materializes targetID into outDir as genv.json plus report.json.
+// Build materializes targetID into outDir as genv.json plus report artifacts.
 func Build(f *schema.GenvFile, targetID string, outDir string) (Report, error) {
 	return BuildWithOptions(f, targetID, outDir, Options{})
 }
 
 // BuildWithOptions materializes targetID into outDir as genv.json plus
-// report.json. The snapshot is schemaVersion 8 with exactly one target bucket.
+// report.json and report.md. The snapshot is schemaVersion 8 with exactly one
+// target bucket.
 func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts Options) (Report, error) {
 	if targetID == "" {
 		return nil, fmt.Errorf("export target: target id is required")
@@ -51,6 +52,9 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 		return report.sorted(), err
 	}
 	if err := writeReport(filepath.Join(outDir, "report.json"), report); err != nil {
+		return report.sorted(), err
+	}
+	if err := writeReportMarkdown(filepath.Join(outDir, "report.md"), report); err != nil {
 		return report.sorted(), err
 	}
 	return report.sorted(), nil
@@ -181,12 +185,12 @@ func buildReport(packages []schema.Package, files *schema.FilesConfig, targetID 
 	}
 	if files != nil {
 		for i, link := range files.Links {
-			if filepath.IsAbs(link.Source) {
+			if isAbsolutePath(link.Source) {
 				report = append(report, absoluteSourceItem(fmt.Sprintf("files.links[%d].source", i), link.Source))
 			}
 		}
 		for i, tpl := range files.Templates {
-			if filepath.IsAbs(tpl.Source) {
+			if isAbsolutePath(tpl.Source) {
 				report = append(report, absoluteSourceItem(fmt.Sprintf("files.templates[%d].source", i), tpl.Source))
 			}
 		}
@@ -278,7 +282,7 @@ func rewriteAndCopyFileAssets(files *schema.FilesConfig, baseDir, outDir string)
 	}
 	for i := range files.Links {
 		source := files.Links[i].Source
-		if source == "" || filepath.IsAbs(source) {
+		if source == "" || isAbsolutePath(source) {
 			continue
 		}
 		rel, err := copyAsset(baseDir, outDir, source, "link", i)
@@ -289,7 +293,7 @@ func rewriteAndCopyFileAssets(files *schema.FilesConfig, baseDir, outDir string)
 	}
 	for i := range files.Templates {
 		source := files.Templates[i].Source
-		if source == "" || filepath.IsAbs(source) {
+		if source == "" || isAbsolutePath(source) {
 			continue
 		}
 		rel, err := copyAsset(baseDir, outDir, source, "template", i)
@@ -299,6 +303,27 @@ func rewriteAndCopyFileAssets(files *schema.FilesConfig, baseDir, outDir string)
 		files.Templates[i].Source = rel
 	}
 	return nil
+}
+
+func isAbsolutePath(path string) bool {
+	if filepath.IsAbs(path) {
+		return true
+	}
+	if strings.HasPrefix(path, "/") {
+		return true
+	}
+	if len(path) >= 3 && isASCIIAlpha(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
+		return true
+	}
+	if strings.HasPrefix(path, `\\`) {
+		parts := strings.FieldsFunc(path[2:], func(r rune) bool { return r == '\\' || r == '/' })
+		return len(parts) >= 2 && parts[0] != "" && parts[1] != ""
+	}
+	return false
+}
+
+func isASCIIAlpha(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
 func copyAsset(baseDir, outDir, source, kind string, index int) (string, error) {
