@@ -22,6 +22,7 @@ _genv() {
 		'upgrade:Upgrade all tracked packages to their latest versions'
 		'updates:Check available updates for genv-tracked packages'
 		'export:Build a single-target portable snapshot and report'
+		'map:Print assist-only manager mapping suggestions for a target'
 		'pull:Fetch the spec from a git repository and update genv.json'
 		'init:Create a new genv.json interactively'
 		'env:Manage shell environment variables'
@@ -189,6 +190,11 @@ _genv() {
 				'--out=[Directory to write genv.json and report.json]:path:_files -/' \
 				'--strict[Exit nonzero if the report contains errors]' \
 				'--from-v7[Migrate v1-v7 input to schemaVersion 8 in memory first]'
+			;;
+		map)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--target=[Destination target id]:target:'
 			;;
 		status)
 			_arguments \
