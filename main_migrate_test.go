@@ -67,3 +67,19 @@ func TestMigrateCmdWriteOverwritesSpec(t *testing.T) {
 		t.Fatalf("linux fallback target not written: %+v", f.Targets)
 	}
 }
+
+func TestMigrateCmdUsageFailures(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/genv.json"
+	writeTestFile(t, path, `{"schemaVersion":"7","packages":[]}`)
+
+	if code := run([]string{"migrate", "--file", "-", "--write"}); code != exitUsage {
+		t.Fatalf("migrate --file - --write = %d, want %d", code, exitUsage)
+	}
+	if code := run([]string{"migrate", "--file", path, "extra"}); code != exitUsage {
+		t.Fatalf("migrate extra arg = %d, want %d", code, exitUsage)
+	}
+	if code := run([]string{"migrate", "--file", dir + "/missing.json"}); code != exitIO {
+		t.Fatalf("migrate missing file = %d, want %d", code, exitIO)
+	}
+}
