@@ -56,7 +56,7 @@ func TestEnsureShell(t *testing.T) {
 
 func TestShellAliasSet_New(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "ll", "ls -la", ""); err != nil {
+	if err := ShellAliasSet(f, "ll", "ls -la", "", ""); err != nil {
 		t.Fatalf("ShellAliasSet: %v", err)
 	}
 	if f.SchemaVersion != schema.Version3 {
@@ -76,7 +76,7 @@ func TestShellAliasSet_New(t *testing.T) {
 
 func TestShellAliasSet_WithShellTarget(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "gs", "git status", "zsh"); err != nil {
+	if err := ShellAliasSet(f, "gs", "git status", "zsh", ""); err != nil {
 		t.Fatalf("ShellAliasSet: %v", err)
 	}
 	a := f.Shell.Aliases["gs"]
@@ -93,7 +93,7 @@ func TestShellAliasSet_Update(t *testing.T) {
 			Aliases: map[string]schema.ShellAlias{"ll": {Value: "ls -l"}},
 		},
 	}
-	if err := ShellAliasSet(f, "ll", "ls -la", ""); err != nil {
+	if err := ShellAliasSet(f, "ll", "ls -la", "", ""); err != nil {
 		t.Fatalf("ShellAliasSet update: %v", err)
 	}
 	if f.Shell.Aliases["ll"].Value != "ls -la" {
@@ -103,21 +103,21 @@ func TestShellAliasSet_Update(t *testing.T) {
 
 func TestShellAliasSet_EmptyName(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "", "ls -la", ""); err == nil {
+	if err := ShellAliasSet(f, "", "ls -la", "", ""); err == nil {
 		t.Error("expected error for empty name")
 	}
 }
 
 func TestShellAliasSet_InvalidShellTarget(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "ll", "ls -la", "cmd"); err == nil {
+	if err := ShellAliasSet(f, "ll", "ls -la", "cmd", ""); err == nil {
 		t.Error("expected error for unknown shell target")
 	}
 }
 
 func TestShellAliasSet_PowerShellRaisesV7(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version3, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "ll", "Get-ChildItem", "powershell"); err != nil {
+	if err := ShellAliasSet(f, "ll", "Get-ChildItem", "powershell", ""); err != nil {
 		t.Fatalf("ShellAliasSet powershell: %v", err)
 	}
 	if f.SchemaVersion != schema.Version7 {
@@ -131,7 +131,7 @@ func TestShellAliasSet_PowerShellRaisesV7(t *testing.T) {
 func TestShellAliasSet_AllShellTargets(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish", "powershell", ""} {
 		f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-		if err := ShellAliasSet(f, "foo", "bar", shell); err != nil {
+		if err := ShellAliasSet(f, "foo", "bar", shell, ""); err != nil {
 			t.Errorf("ShellAliasSet with shell=%q: unexpected error: %v", shell, err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestShellAliasUnset_OK(t *testing.T) {
 			Aliases: map[string]schema.ShellAlias{"ll": {Value: "ls -la"}},
 		},
 	}
-	if err := ShellAliasUnset(f, "ll"); err != nil {
+	if err := ShellAliasUnset(f, "ll", ""); err != nil {
 		t.Fatalf("ShellAliasUnset: %v", err)
 	}
 	if _, ok := f.Shell.Aliases["ll"]; ok {
@@ -161,7 +161,7 @@ func TestShellAliasUnset_NotFound(t *testing.T) {
 		Packages:      []schema.Package{},
 		Shell:         &schema.ShellConfig{},
 	}
-	err := ShellAliasUnset(f, "missing")
+	err := ShellAliasUnset(f, "missing", "")
 	if err == nil {
 		t.Fatal("expected error for missing alias")
 	}
@@ -172,7 +172,7 @@ func TestShellAliasUnset_NotFound(t *testing.T) {
 
 func TestShellAliasUnset_NoShellBlock(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	err := ShellAliasUnset(f, "ll")
+	err := ShellAliasUnset(f, "ll", "")
 	if err == nil {
 		t.Fatal("expected error when shell block is nil")
 	}

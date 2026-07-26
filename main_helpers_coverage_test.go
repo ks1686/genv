@@ -212,6 +212,27 @@ func TestXDGHelpersAndCompleteInternal(t *testing.T) {
 	}
 }
 
+func TestCompletionCmdIncludesPortabilityEntries(t *testing.T) {
+	var code int
+	out := captureStdout(t, func() {
+		code = completionCmd([]string{"bash"})
+	})
+	if code != exitOK {
+		t.Fatalf("completion bash = %d, want %d", code, exitOK)
+	}
+	for _, want := range []string{"migrate", "--target", "--force-new-lock"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("completion output missing %q", want)
+		}
+	}
+	if code := completionCmd(nil); code != exitUsage {
+		t.Fatalf("completion missing shell = %d, want %d", code, exitUsage)
+	}
+	if code := completionCmd([]string{"unknown"}); code != exitUsage {
+		t.Fatalf("completion unknown shell = %d, want %d", code, exitUsage)
+	}
+}
+
 func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

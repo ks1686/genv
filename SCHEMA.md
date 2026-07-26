@@ -14,6 +14,8 @@ structs live in `internal/schema/schema.go`; validation is performed by
 | v4      | `"4"`                 | `services` block |
 | v5      | `"5"`                 | `files`, `hooks`, per-record `host`, `repo` |
 | v6      | `"6"`                 | expanded lifecycle `hooks`, `updates` block |
+| v7      | `"7"`                 | PowerShell shell/env profile targeting |
+| v8      | `"8"`                 | multi-target portability via `defaults` and `targets.*` |
 
 Older versions are loaded and validated without error.
 
@@ -21,9 +23,10 @@ Older versions are loaded and validated without error.
 
 - All JSON field names are `lowerCamelCase`.
 - Optional objects/arrays are omitted when empty (`omitempty`).
-- `host` is a per-record selector. It can be a single string (`"macos"`) or an
-  array of strings (`["arch", "wsl2"]`). An empty/absent selector matches every
-  host.
+- In schema v1-v7, `host` is a per-record selector. It can be a single string
+  (`"macos"`) or an array of strings (`["arch", "wsl2"]`). An empty/absent
+  selector matches every host. Schema v8 does not allow `host`; use
+  `targets.<id>` buckets instead.
 - Path fields support leading `~` expansion to the user's home directory and
   `$VAR`/`${VAR}` expansion from the process environment.
 
@@ -106,6 +109,92 @@ Configures the managed background updates checker:
 
 The updates checker only plans genv-tracked packages. It does not perform a
 topgrade-style system-wide update-all pass.
+
+## v7 fields
+
+Schema v7 keeps the v6 shape and adds PowerShell targeting for shell/env profile
+generation. Shell aliases and functions may set `"shell": "powershell"`; omitted
+`shell` remains POSIX-oriented. On native Windows, genv prefers `pwsh` and falls
+back to Windows PowerShell when writing profile snippets.
+
+## v8 fields
+
+Schema v8 replaces top-level desired-state blocks with a portable target model:
+
+- `defaults` — optional shared desired state.
+- `targets` — required non-empty object keyed by target ID.
+
+Known target IDs are:
+
+| Target | Meaning |
+| ------ | ------- |
+| `macos` | macOS |
+| `windows` | native Windows |
+| `arch` | native Arch or Arch-like Linux |
+| `ubuntu` | Ubuntu, Ubuntu-like Linux, and Ubuntu-like WSL2 |
+| `wsl-arch` | Arch-like WSL2 |
+| `linux` | optional catch-all Linux target |
+
+Inside `defaults` and each `targets.<id>` bundle, the supported blocks mirror the
+flat schema: `packages`, `env`, `shell`, `files`, `services`, and `hooks`.
+Top-level `packages`, `env`, `shell`, `files`, `services`, and `hooks` are not
+valid in a schema v8 file; place them under `defaults` or a target bucket.
+
+`host` predicates are not valid inside schema v8 bundles. Use target buckets
+instead. For example:
+
+```json
+{
+  "schemaVersion": "8",
+  "defaults": {
+    "env": {
+      "EDITOR": { "value": "nvim" }
+    }
+  },
+  "targets": {
+    "macos": {
+      "packages": [{ "id": "ripgrep", "prefer": "brew" }]
+    },
+    "ubuntu": {
+      "packages": [{ "id": "ripgrep", "prefer": "snap" }]
+    },
+    "wsl-arch": {
+      "packages": [{ "id": "ripgrep", "prefer": "pacman" }]
+    }
+  }
+}
+```
+
+### Merging and tombstones
+
+`genv apply` selects one active target from `--target`, then `GENV_TARGET`, then
+host classification. It merges `defaults` first and overlays `targets.<id>`.
+If the selected target is missing, apply fails instead of falling back to another
+bucket.
+
+Map entries in `targets.<id>.env`, `targets.<id>.shell.aliases`,
+`targets.<id>.shell.functions`, and `targets.<id>.services` may be `null`
+tombstones to remove a non-null entry inherited from `defaults`. Tombstones are
+only valid under `targets.*`, not under `defaults`.
+
+### Portability commands
+
+- `genv migrate [--file <path>] [--write]` converts v1-v7 host predicates to
+  schema v8 target buckets. Without `--write`, migrated JSON is printed to
+  stdout.
+- `genv map --target <id> [--file <path>]` prints assist-only manager mapping
+  suggestions and never edits the spec.
+- `genv export --target <id> --out <dir> [--strict] [--from-v7]` writes a
+  single-target schema v8 snapshot plus `report.json` and `report.md`, copies
+  relative file assets, and omits lock files and sensitive env values.
+
+### Lock files in v8
+
+`genv.lock.json` remains machine-local. For schema v8 applies, locks can record
+the active `target`, `goos`, and manager set. A lock from a different target,
+OS, or unavailable manager set is refused as foreign. Use
+`genv apply --force-new-lock` to rename the foreign lock aside and start a fresh
+local lock after reviewing the situation.
 
 ## Manager resolution and adapter scope
 

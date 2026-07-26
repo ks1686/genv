@@ -12,7 +12,7 @@ func TestServiceAdd_PreservesNewerSchema(t *testing.T) {
 	// Regression: adding a service to a v5/v6 file must not downgrade to v4.
 	for _, v := range []string{schema.Version5, schema.Version6} {
 		f := &schema.GenvFile{SchemaVersion: v}
-		if err := ServiceAdd(f, "svc", []string{"echo", "start"}, nil, nil, nil, ""); err != nil {
+		if err := ServiceAdd(f, "svc", []string{"echo", "start"}, nil, nil, nil, "", ""); err != nil {
 			t.Fatalf("ServiceAdd at %s: %v", v, err)
 		}
 		if f.SchemaVersion != v {
@@ -27,7 +27,7 @@ func TestServiceCommands(t *testing.T) {
 	}
 
 	// Test ServiceAdd
-	err := ServiceAdd(f, "test-svc", []string{"echo", "start"}, []string{"echo", "stop"}, nil, []string{"true"}, "")
+	err := ServiceAdd(f, "test-svc", []string{"echo", "start"}, []string{"echo", "stop"}, nil, []string{"true"}, "", "")
 	if err != nil {
 		t.Fatalf("ServiceAdd failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestServiceCommands(t *testing.T) {
 	}
 
 	// Test ServiceRemove
-	err = ServiceRemove(f, "test-svc")
+	err = ServiceRemove(f, "test-svc", "")
 	if err != nil {
 		t.Fatalf("ServiceRemove failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestServiceCommands(t *testing.T) {
 	}
 
 	// Test ServiceRemove not found
-	err = ServiceRemove(f, "missing-svc")
+	err = ServiceRemove(f, "missing-svc", "")
 	if err == nil || !strings.Contains(err.Error(), "service not found") {
 		t.Errorf("expected 'service not found' error, got %v", err)
 	}

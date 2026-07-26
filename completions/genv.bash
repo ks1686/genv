@@ -10,7 +10,7 @@ _genv() {
 
 	for i in "${COMP_WORDS[@]}"; do
 		case "${i}" in
-		add | remove | rm | adopt | disown | list | ls | apply | edit | clean | scan | status | completion | validate | upgrade | updates | pull | init | env | shell | service | profile | version | help)
+		add | remove | rm | adopt | disown | list | ls | apply | edit | clean | scan | status | completion | validate | upgrade | updates | migrate | export | map | pull | init | env | shell | service | profile | version | help)
 			cmd="${i}"
 			break
 			;;
@@ -22,7 +22,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "--file" -- "${cur}")
 			return 0
 		fi
-		cmds="add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates pull init env shell service profile version help"
+		cmds="add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service profile version help"
 		mapfile -t COMPREPLY < <(compgen -W "${cmds}" -- "${cur}")
 		return 0
 	fi
@@ -45,14 +45,14 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --no-hooks --hook-timeout --host"
+		opts="--file --lock-file --no-hooks --hook-timeout --host --target"
 		;;
 	disown)
 		if [[ "${cur}" != -* ]]; then
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file"
+		opts="--file --lock-file --target"
 		;;
 	add)
 		# Complete --prefer value with available managers.
@@ -60,7 +60,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host"
+		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host --target"
 		;;
 	adopt)
 		# Complete --prefer value with available managers.
@@ -68,7 +68,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --host --files --json"
+		opts="--file --lock-file --version --prefer --manager --host --target --files --json"
 		;;
 	upgrade)
 		# Complete positional arg (if any) with tracked package IDs.
@@ -105,13 +105,22 @@ _genv() {
 		fi
 		;;
 	apply)
-		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host"
+		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host --target --force-new-lock"
+		;;
+	migrate)
+		opts="--file --write"
+		;;
+	export)
+		opts="--file --target --out --strict --from-v7"
+		;;
+	map)
+		opts="--file --target"
 		;;
 	status)
 		opts="--file --lock-file --json --debug --files --host"
 		;;
 	scan)
-		opts="--file --lock-file --json --debug"
+		opts="--file --lock-file --json --debug --target"
 		;;
 	clean)
 		opts="--dry-run"
@@ -139,8 +148,8 @@ _genv() {
 			fi
 		else
 			case "${env_sub}" in
-			set) opts="--file --sensitive" ;;
-			unset) opts="--file" ;;
+			set) opts="--file --sensitive --target" ;;
+			unset) opts="--file --target" ;;
 			list | ls) opts="--file --json" ;;
 			esac
 		fi
@@ -190,8 +199,8 @@ _genv() {
 					fi
 				else
 					case "${shell_sub2}" in
-					set) opts="--file --shell" ;;
-					unset) opts="--file" ;;
+					set) opts="--file --shell --target" ;;
+					unset) opts="--file --target" ;;
 					esac
 				fi
 				;;
@@ -245,7 +254,8 @@ _genv() {
 			fi
 		else
 			case "${svc_sub}" in
-			add) opts="--file --start --stop --restart --status --brew-formula" ;;
+			add) opts="--file --start --stop --restart --status --brew-formula --target" ;;
+			remove | rm) opts="--file --target" ;;
 			*) opts="--file" ;;
 			esac
 		fi

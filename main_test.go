@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -55,6 +56,25 @@ func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {
 	}
 }
 
+func withInstalledBrew(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+install|uninstall|upgrade|cleanup|list)
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake brew: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // ---- basic routing ----------------------------------------------------------
 
 func TestRun_NoArgs(t *testing.T) {
@@ -86,6 +106,135 @@ func TestRun_Version(t *testing.T) {
 		if code != exitOK {
 			t.Errorf("run(%q): expected exitOK, got %d", cmd, code)
 		}
+	}
+}
+
+func TestMutationCommands_V8WriteActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{},"macos":{}}}`)
+	writeLock(t, lockPath, nil)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"add", []string{"add", "--file", path, "--lock-file", lockPath, "--target", "arch", "--no-hooks", "--no-search", "git"}},
+		{"env set", []string{"env", "set", "--file", path, "--target", "arch", "EDITOR", "nvim"}},
+		{"shell alias set", []string{"shell", "alias", "set", "--file", path, "--target", "arch", "ll", "ls -la"}},
+		{"service add", []string{"service", "add", "--file", path, "--target", "arch", "worker", "--start", "worker"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := run(tc.args); code != exitOK {
+				t.Fatalf("run(%v) = %d, want %d", tc.args, code, exitOK)
+			}
+		})
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 0 || f.Env != nil || f.Shell != nil || f.Services != nil {
+		t.Fatalf("v8 mutation wrote top-level fields: %+v", f)
+	}
+	arch := f.Targets["arch"]
+	if arch == nil {
+		t.Fatal("targets.arch missing")
+	}
+	if len(arch.Packages) != 1 || arch.Packages[0].ID != "git" {
+		t.Fatalf("targets.arch packages = %+v, want git", arch.Packages)
+	}
+	if arch.Env["EDITOR"] == nil || arch.Env["EDITOR"].Value != "nvim" {
+		t.Fatalf("targets.arch env = %+v, want EDITOR=nvim", arch.Env)
+	}
+	if arch.Shell == nil || arch.Shell.Aliases["ll"] == nil || arch.Shell.Aliases["ll"].Value != "ls -la" {
+		t.Fatalf("targets.arch shell = %+v, want ll alias", arch.Shell)
+	}
+	if arch.Services["worker"] == nil || len(arch.Services["worker"].Start) != 1 || arch.Services["worker"].Start[0] != "worker" {
+		t.Fatalf("targets.arch services = %+v, want worker", arch.Services)
+	}
+	if macos := f.Targets["macos"]; macos == nil || len(macos.Packages) != 0 || macos.Env != nil || macos.Shell != nil || macos.Services != nil {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
+	}
+}
+
+func TestMutationCommands_V8MissingTargetFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{}}}`)
+
+	code := run([]string{"env", "set", "--file", path, "--target", "ubuntu", "EDITOR", "nvim"})
+	if code != exitValidation {
+		t.Fatalf("missing v8 target exit = %d, want %d", code, exitValidation)
+	}
+}
+
+func TestMutationRemoveCommands_V8UseActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+		"schemaVersion":"8",
+		"targets":{
+			"arch":{
+				"packages":[{"id":"git"}],
+				"env":{"EDITOR":{"value":"nvim"}},
+				"shell":{"aliases":{"ll":{"value":"ls -la"}}},
+				"services":{"worker":{"start":["worker"]}}
+			},
+			"macos":{
+				"packages":[{"id":"git"}],
+				"env":{"EDITOR":{"value":"vim"}},
+				"shell":{"aliases":{"ll":{"value":"ls -l"}}},
+				"services":{"worker":{"start":["worker"]}}
+			}
+		}
+	}`)
+	writeLock(t, lockPath, nil)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"remove", []string{"remove", "--file", path, "--lock-file", lockPath, "--target", "arch", "--no-hooks", "git"}},
+		{"env unset", []string{"env", "unset", "--file", path, "--target", "arch", "EDITOR"}},
+		{"shell alias unset", []string{"shell", "alias", "unset", "--file", path, "--target", "arch", "ll"}},
+		{"service remove", []string{"service", "remove", "--file", path, "--target", "arch", "worker"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := run(tc.args); code != exitOK {
+				t.Fatalf("run(%v) = %d, want %d", tc.args, code, exitOK)
+			}
+		})
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	arch := f.Targets["arch"]
+	if len(arch.Packages) != 0 {
+		t.Fatalf("targets.arch packages not removed: %+v", arch.Packages)
+	}
+	if _, ok := arch.Env["EDITOR"]; ok {
+		t.Fatalf("targets.arch env not removed: %+v", arch.Env)
+	}
+	if _, ok := arch.Shell.Aliases["ll"]; ok {
+		t.Fatalf("targets.arch alias not removed: %+v", arch.Shell.Aliases)
+	}
+	if _, ok := arch.Services["worker"]; ok {
+		t.Fatalf("targets.arch service not removed: %+v", arch.Services)
+	}
+	macos := f.Targets["macos"]
+	if len(macos.Packages) != 1 || macos.Env["EDITOR"] == nil || macos.Shell.Aliases["ll"] == nil || macos.Services["worker"] == nil {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
 	}
 }
 
@@ -513,6 +662,31 @@ func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_V8TargetFlagWritesSelectedTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	withInstalledBrew(t)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{},"macos":{}}}`)
+	writeLock(t, lockPath, nil)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "arch", "--prefer", "brew", "git"})
+	if code != exitOK {
+		t.Fatalf("adopt v8 target: expected exitOK (%d), got %d", exitOK, code)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Targets["arch"].Packages) != 1 || f.Targets["arch"].Packages[0].ID != "git" {
+		t.Fatalf("targets.arch packages = %+v, want git", f.Targets["arch"].Packages)
+	}
+	if len(f.Targets["macos"].Packages) != 0 {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", f.Targets["macos"].Packages)
+	}
+}
+
 // ---- genv disown -------------------------------------------------------------
 // disown removes the package from genv.json and the lock file without uninstalling.
 
@@ -556,6 +730,43 @@ func TestDisownCmd_Basic(t *testing.T) {
 		if p.ID == "git" {
 			t.Error("git should have been removed from lock")
 		}
+	}
+}
+
+func TestDisownCmd_V8TargetFlagRemovesSelectedTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+		"schemaVersion":"8",
+		"targets":{
+			"arch":{"packages":[{"id":"git"}]},
+			"macos":{"packages":[{"id":"git"}]}
+		}
+	}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}})
+
+	code := run([]string{"disown", "--file", path, "--lock-file", lockPath, "--target", "arch", "git"})
+	if code != exitOK {
+		t.Fatalf("disown v8 target: expected exitOK (%d), got %d", exitOK, code)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Targets["arch"].Packages) != 0 {
+		t.Fatalf("targets.arch packages not removed: %+v", f.Targets["arch"].Packages)
+	}
+	if len(f.Targets["macos"].Packages) != 1 || f.Targets["macos"].Packages[0].ID != "git" {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", f.Targets["macos"].Packages)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	if len(lf.Packages) != 0 {
+		t.Fatalf("lock packages = %+v, want empty", lf.Packages)
 	}
 }
 
@@ -1013,6 +1224,48 @@ func TestScanCmd_InvalidFile(t *testing.T) {
 	code := run([]string{"scan", "--file", path})
 	if code != exitValidation {
 		t.Errorf("invalid file: expected exitValidation (%d), got %d", exitValidation, code)
+	}
+}
+
+func TestScanCmd_V8WritesActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	seed := &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Targets: map[string]*schema.TargetBundle{
+			"arch":  {},
+			"macos": {Packages: []schema.Package{{ID: "existing"}}},
+		},
+	}
+	if err := genvfile.Write(path, seed); err != nil {
+		t.Fatalf("seeding spec: %v", err)
+	}
+
+	snap := &scanManagerNameAdapter{name: "snap", installed: []string{"jq"}}
+	originalAll := adapter.All
+	adapter.All = []adapter.Adapter{snap}
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	code := run([]string{"scan", "--file", path, "--lock-file", lockPath, "--target", "arch"})
+	if code != exitOK {
+		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 0 {
+		t.Fatalf("v8 scan wrote top-level packages: %+v", f.Packages)
+	}
+	arch := f.Targets["arch"]
+	if arch == nil || len(arch.Packages) != 1 || arch.Packages[0].ID != "jq" {
+		t.Fatalf("targets.arch packages = %+v, want jq", arch)
+	}
+	macos := f.Targets["macos"]
+	if macos == nil || len(macos.Packages) != 1 || macos.Packages[0].ID != "existing" {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
 	}
 }
 
@@ -3080,6 +3333,42 @@ func TestPullCmd_DryRun(t *testing.T) {
 	}
 }
 
+func TestPullCmd_DryRunListsLocalFileAssets(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+
+	spec := `{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": "https://example.com/spec.git", "ref": "main"},
+  "files": {
+    "links": [
+      {"source": "assets/profile", "target": "~/.profile"},
+      {"source": "secrets/token", "target": "~/.token"}
+    ]
+  }
+}`
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", path, "--dry-run"})
+	})
+
+	if code != exitOK {
+		t.Fatalf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "would copy assets:") || !strings.Contains(out, "assets/profile") {
+		t.Errorf("dry-run output missing asset list: %q", out)
+	}
+	if strings.Contains(out, "secrets/token") {
+		t.Errorf("dry-run output included skipped secret asset: %q", out)
+	}
+}
+
 func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
@@ -3102,5 +3391,158 @@ func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
 	}
 	if !strings.Contains(out, "dev") {
 		t.Errorf("dry-run output missing override ref: %q", out)
+	}
+}
+
+func TestPullCmd_DryRunListsRemoteFileAssets(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "remote")
+	destDir := filepath.Join(dir, "dest")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+
+	if err := os.MkdirAll(filepath.Join(repoDir, "assets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(remote assets): %v", err)
+	}
+	runGitForTest(t, repoDir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoDir, "assets", "profile"), []byte("profile"), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote asset): %v", err)
+	}
+	remoteSpec := fmt.Sprintf(`{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": %q, "ref": "main"},
+  "files": {"links": [{"source": "assets/profile", "target": "~/.profile"}]}
+}`, repoDir)
+	if err := os.WriteFile(filepath.Join(repoDir, "genv.json"), []byte(remoteSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote spec): %v", err)
+	}
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=genv test", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest): %v", err)
+	}
+	specPath := filepath.Join(destDir, "genv.json")
+	localSpec := fmt.Sprintf(`{"schemaVersion":"7","packages":[],"repo":{"url":%q,"ref":"main"}}`, repoDir)
+	if err := os.WriteFile(specPath, []byte(localSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(local spec): %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", specPath, "--dry-run"})
+	})
+	if code != exitOK {
+		t.Fatalf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "would copy assets:") || !strings.Contains(out, "assets/profile") {
+		t.Fatalf("dry-run output missing remote asset list: %q", out)
+	}
+	assertPulledPathNotExists(t, filepath.Join(destDir, "assets", "profile"))
+}
+
+func TestPull_CopiesRelativeFileAssets(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "remote")
+	destDir := filepath.Join(dir, "dest")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(repo): %v", err)
+	}
+	runGitForTest(t, repoDir, "init", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(repoDir, "assets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(assets): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, "templates"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(templates): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, "secrets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(secrets): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "assets", "profile"), []byte("profile"), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "templates", "app.tmpl"), []byte("template"), 0o644); err != nil {
+		t.Fatalf("WriteFile(template): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "secrets", "token"), []byte("secret"), 0o644); err != nil {
+		t.Fatalf("WriteFile(secret): %v", err)
+	}
+	remoteSpec := fmt.Sprintf(`{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": %q, "ref": "main"},
+  "files": {
+    "links": [
+      {"source": "assets/profile", "target": "~/.profile"},
+      {"source": "secrets/token", "target": "~/.token"}
+    ],
+    "templates": [
+      {"source": "templates/app.tmpl", "target": "~/.config/app/config"}
+    ]
+  }
+}`, repoDir)
+	if err := os.WriteFile(filepath.Join(repoDir, "genv.json"), []byte(remoteSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote spec): %v", err)
+	}
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=genv test", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+
+	specPath := filepath.Join(destDir, "genv.json")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest): %v", err)
+	}
+	localSpec := fmt.Sprintf(`{"schemaVersion":"7","packages":[],"repo":{"url":%q,"ref":"main"}}`, repoDir)
+	if err := os.WriteFile(specPath, []byte(localSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(local spec): %v", err)
+	}
+
+	code := run([]string{"pull", "--file", specPath})
+	if code != exitOK {
+		t.Fatalf("pull: expected exitOK (%d), got %d", exitOK, code)
+	}
+	assertPulledFileContent(t, filepath.Join(destDir, "assets", "profile"), "profile")
+	assertPulledFileContent(t, filepath.Join(destDir, "templates", "app.tmpl"), "template")
+	assertPulledPathNotExists(t, filepath.Join(destDir, "secrets", "token"))
+}
+
+func runGitForTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
+func assertPulledFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s = %q, want %q", path, got, want)
+	}
+}
+
+func assertPulledPathNotExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("%s exists, want absent", path)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Stat(%s): %v", path, err)
 	}
 }
