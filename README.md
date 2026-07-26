@@ -14,6 +14,7 @@ genv apply --dry-run               # preview what will change
 genv apply --yes                   # apply without a confirmation prompt (CI-safe)
 genv apply --dry-run --json        # machine-readable plan output
 genv export --target arch --out ./bundle  # write a portable target snapshot + report
+genv map --target ubuntu           # print manager mapping suggestions without editing
 ```
 
 ---
@@ -337,6 +338,7 @@ When you run `genv apply`:
 | `genv updates stop`                               | Stop and unregister the managed background updates checker                   |
 | `genv updates status`                             | Show managed background updates checker status                              |
 | `genv export --target <id> --out <dir> [flags]`   | Build a single-target schema v8 snapshot plus compatibility report          |
+| `genv map --target <id> [flags]`                  | Print assist-only manager mapping suggestions for a target                  |
 | `genv init [flags]`                               | Interactive wizard to create a new genv.json                           |
 | `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
@@ -445,6 +447,11 @@ When you run `genv apply`:
 - `--out <dir>` — directory to write `genv.json`, `report.json`, `report.md`, and bundled relative file assets
 - `--strict` — exit nonzero when the report contains error-class items
 - `--from-v7` — migrate a v1-v7 spec to schemaVersion 8 in memory before exporting
+
+### `genv map` flags
+
+- `--target <id>` — destination target to inspect for manager mapping suggestions
+- `--file <path>` — path to `genv.json`
 
 ### `genv updates start|stop|status`
 
