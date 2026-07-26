@@ -4,18 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.0 - 2026-07-26
+
 ### Added
 
 - Native Windows PowerShell parity (schema **v7**): `env`/`shell` profile backends write `env.ps1` / `shell.ps1` and inject the CurrentUser CurrentHost profile when `pwsh` or Windows PowerShell is on `PATH` (prefer `pwsh`). Aliases/functions may set `"shell": "powershell"`; omitted `shell` stays POSIX-only. Hooks on Windows use the detected PowerShell engine (`-NoProfile -Command` / `-File`), with `cmd /C` fallback. `genv completion powershell` embeds and installs `completions/genv.ps1`.
+- Multi-machine portability (schema **v8**): `defaults` plus `targets.*` let one git-tracked `genv.json` carry macOS, Windows, native Arch, Ubuntu-like Linux, Ubuntu WSL2, and Arch WSL2 desired state without sharing lock files. `genv migrate` converts legacy host predicates to target buckets, `genv map --target` prints assist-only manager mapping suggestions, and `genv export --target --out` writes single-target snapshots plus reports while omitting locks and sensitive env values. `genv apply --target` selects the active bucket and refuses foreign locks unless `--force-new-lock` backs them up first.
 
 ### Changed
 
 - CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the cold-start budget (`BENCH_MAX_MS`; local default 200ms, CI uses 400ms for shared-runner noise). Previously claimed but not wired into GitHub Actions.
-- Documentation cleanup: roadmap/release/security wording aligned with the v3.x line; winget/Scoop/Chocolatey install channels explicitly deferred; outdated-upgrade plan and scheduler handoff marked completed/historical; `SECURITY_AUDIT.md` annotated with 2026-07-25 remediation status.
+- Documentation cleanup: roadmap/release/security wording aligned with the v3.x/v4.x line; winget/Scoop/Chocolatey install channels explicitly deferred; outdated-upgrade plan and scheduler handoff marked completed/historical; `SECURITY_AUDIT.md` annotated with 2026-07-25 remediation status.
+- Host classification no longer treats WSL2 as a blanket Arch match. Targets are `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, and optional `linux`.
 
 ### Fixed
 
 - README `--lock-file` help text now correctly defaults to the genv config directory (not “next to the resolved spec”).
+- `genv pull` copies relative `files` assets with the spec (not only `genv.json`), and refuses to ship locks/secrets in pull/export bundles.
 
 ## v3.2.1 - 2026-07-21
 

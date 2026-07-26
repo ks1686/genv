@@ -12,7 +12,7 @@ func TestRemove_Basic(t *testing.T) {
 		schema.Package{ID: "git"},
 		schema.Package{ID: "neovim"},
 	)
-	if err := Remove(f, "git"); err != nil {
+	if err := Remove(f, "git", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(f.Packages) != 1 {
@@ -29,7 +29,7 @@ func TestRemove_PreservesOrder(t *testing.T) {
 		schema.Package{ID: "b"},
 		schema.Package{ID: "c"},
 	)
-	if err := Remove(f, "b"); err != nil {
+	if err := Remove(f, "b", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := []string{"a", "c"}
@@ -42,7 +42,7 @@ func TestRemove_PreservesOrder(t *testing.T) {
 
 func TestRemove_NotFound(t *testing.T) {
 	f := newFile(schema.Package{ID: "git"})
-	err := Remove(f, "neovim")
+	err := Remove(f, "neovim", "")
 	if err == nil {
 		t.Fatal("expected ErrNotTracked")
 	}
@@ -53,14 +53,14 @@ func TestRemove_NotFound(t *testing.T) {
 
 func TestRemove_EmptyID(t *testing.T) {
 	f := newFile()
-	if err := Remove(f, ""); err == nil {
+	if err := Remove(f, "", ""); err == nil {
 		t.Fatal("expected error for empty id")
 	}
 }
 
 func TestRemove_LastPackage(t *testing.T) {
 	f := newFile(schema.Package{ID: "git"})
-	if err := Remove(f, "git"); err != nil {
+	if err := Remove(f, "git", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(f.Packages) != 0 {
@@ -76,7 +76,7 @@ func TestRemove_FromFront(t *testing.T) {
 		schema.Package{ID: "b"},
 		schema.Package{ID: "c"},
 	)
-	if err := Remove(f, "a"); err != nil {
+	if err := Remove(f, "a", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := []string{"b", "c"}
@@ -94,7 +94,7 @@ func TestRemove_FromFront(t *testing.T) {
 // package list is empty.
 func TestRemove_EmptyList(t *testing.T) {
 	f := newFile() // no packages
-	err := Remove(f, "git")
+	err := Remove(f, "git", "")
 	if err == nil {
 		t.Fatal("expected ErrNotTracked for empty list")
 	}
@@ -110,7 +110,7 @@ func TestRemove_LeavesOtherFieldsIntact(t *testing.T) {
 		schema.Package{ID: "keep", Version: "1.0", Prefer: "brew", Managers: map[string]string{"brew": "keep-pkg"}},
 		schema.Package{ID: "remove-me"},
 	)
-	if err := Remove(f, "remove-me"); err != nil {
+	if err := Remove(f, "remove-me", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(f.Packages) != 1 {

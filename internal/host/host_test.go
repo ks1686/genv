@@ -34,6 +34,78 @@ func TestIsWSLAndIsArchDetectors(t *testing.T) {
 	}
 }
 
+func TestClassifyLinux(t *testing.T) {
+	cases := []struct {
+		name        string
+		osRelease   string
+		procVersion string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:      "arch",
+			osRelease: "ID=arch\n",
+			want:      "arch",
+		},
+		{
+			name:      "arch like",
+			osRelease: "ID=endeavouros\nID_LIKE=\"arch\"\n",
+			want:      "arch",
+		},
+		{
+			name:      "ubuntu",
+			osRelease: "ID=ubuntu\n",
+			want:      "ubuntu",
+		},
+		{
+			name:      "ubuntu like case insensitive",
+			osRelease: "ID=pop\nID_LIKE=\"Debian Ubuntu\"\n",
+			want:      "ubuntu",
+		},
+		{
+			name:        "wsl arch",
+			osRelease:   "ID=arch\n",
+			procVersion: "Linux version 5.15.90.1-microsoft-standard-WSL2",
+			want:        "wsl-arch",
+		},
+		{
+			name:        "wsl ubuntu remains ubuntu",
+			osRelease:   "ID=ubuntu\n",
+			procVersion: "Linux version 5.15.90.1-microsoft-standard-WSL2",
+			want:        "ubuntu",
+		},
+		{
+			name:        "wsl unsupported",
+			osRelease:   "ID=debian\n",
+			procVersion: "Linux version 5.15.90.1-microsoft-standard-WSL2",
+			wantErr:     true,
+		},
+		{
+			name:      "unsupported native linux",
+			osRelease: "ID=debian\n",
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := classifyLinux(tc.osRelease, tc.procVersion)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("classifyLinux() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("classifyLinux() error = %v, want nil", err)
+			}
+			if got != tc.want {
+				t.Fatalf("classifyLinux() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCurrent_FallsBackToHostname(t *testing.T) {
 	t.Setenv("GENV_HOST", "")
 
@@ -79,31 +151,31 @@ func TestMatch_EmptyHostWithNonEmptyPredicateIsFalse(t *testing.T) {
 	}
 }
 
-func TestMatch_WslInheritsArch(t *testing.T) {
+func TestMatch_WslArchDoesNotInheritBareArch(t *testing.T) {
 	pred := schema.HostPredicate{"arch"}
 
-	if !Match(pred, "wsl2") {
-		t.Fatalf("Match(%v, %q) = false, want true", pred, "wsl2")
+	if Match(pred, "wsl-arch") {
+		t.Fatalf("Match(%v, %q) = true, want false", pred, "wsl-arch")
+	}
+	if !Match(schema.HostPredicate{"wsl-arch"}, "wsl-arch") {
+		t.Fatalf("Match(%v, %q) = false, want true", schema.HostPredicate{"wsl-arch"}, "wsl-arch")
 	}
 }
 
 func TestMatch_ArchDoesNotInheritWsl(t *testing.T) {
-	pred := schema.HostPredicate{"wsl2"}
+	pred := schema.HostPredicate{"wsl-arch"}
 
 	if Match(pred, "arch") {
 		t.Fatalf("Match(%v, %q) = true, want false", pred, "arch")
 	}
 }
 
-func TestClassify_UsesGenvHost(t *testing.T) {
+func TestClassify_DoesNotUseGenvHost(t *testing.T) {
 	t.Setenv("GENV_HOST", "testbox")
 
 	h, err := Classify()
-	if err != nil {
-		t.Fatalf("Classify() error = %v, want nil", err)
-	}
-	if h != "testbox" {
-		t.Fatalf("Classify() = %q, want %q", h, "testbox")
+	if err == nil && h == "testbox" {
+		t.Fatalf("Classify() = %q from GENV_HOST, want detected target class", h)
 	}
 }
 
@@ -113,7 +185,7 @@ func TestClassify_ReturnsKnownClassForCurrentPlatform(t *testing.T) {
 	h, err := Classify()
 	if err != nil {
 		if runtime.GOOS == "linux" {
-			t.Skipf("Classify() error = %v; host is neither Arch nor WSL2 (e.g. a generic CI runner) — skipping", err)
+			t.Skipf("Classify() error = %v; host is not a supported Linux target — skipping", err)
 		}
 		t.Fatalf("Classify() error = %v, want nil", err)
 	}
@@ -123,8 +195,8 @@ func TestClassify_ReturnsKnownClassForCurrentPlatform(t *testing.T) {
 			t.Fatalf("Classify() = %q, want %q", h, "macos")
 		}
 	case "linux":
-		if h != "arch" && h != "wsl2" {
-			t.Fatalf("Classify() = %q, want arch or wsl2", h)
+		if h != "arch" && h != "ubuntu" && h != "wsl-arch" {
+			t.Fatalf("Classify() = %q, want arch, ubuntu, or wsl-arch", h)
 		}
 	case "windows":
 		if h != "windows" {

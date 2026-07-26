@@ -2,6 +2,8 @@ package schema
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -891,6 +893,139 @@ func TestParseAndValidate_PowerShellRequiresV7(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected powershell target rejected on v3, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V8RejectsTopLevelPackages(t *testing.T) {
+	raw := `{"schemaVersion":"8","packages":[{"id":"git"}],"targets":{"arch":{"packages":[]}}}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for top-level packages on v8")
+	}
+}
+
+func TestParseAndValidate_V8AcceptsDefaultsAndTargets(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"env":{"EDITOR":{"value":"nvim"}}},
+	  "targets":{
+	    "arch":{"packages":[{"id":"git","prefer":"pacman"}],"env":{"EDITOR":null}},
+	    "macos":{"packages":[{"id":"git","prefer":"brew"}]}
+	  }
+	}`
+	f, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil || len(errs) > 0 {
+		t.Fatalf("unexpected: err=%v errs=%v", err, errs)
+	}
+	if f.Targets["arch"].Env["EDITOR"] != nil {
+		t.Fatal("expected tombstone nil pointer for EDITOR on arch")
+	}
+}
+
+func TestParseAndValidate_V8RejectsUnknownEnvTombstone(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"env":{"EDITOR":{"value":"nvim"}}},
+	  "targets":{"arch":{"env":{"EDTIOR":null}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "targets.arch.env.EDTIOR") {
+		t.Fatalf("expected unknown env tombstone validation error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V8RejectsUnknownAliasTombstone(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"shell":{"aliases":{"ll":{"value":"ls -la"}}}},
+	  "targets":{"arch":{"shell":{"aliases":{"sl":null}}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "targets.arch.shell.aliases.sl") {
+		t.Fatalf("expected unknown alias tombstone validation error, got: %v", errs)
+	}
+}
+
+func TestV8JSONSchemaSeparatesDefaultAndTargetTombstones(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "schema", "v8", "genv.json"))
+	if err != nil {
+		t.Fatalf("ReadFile schema: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("Unmarshal schema: %v", err)
+	}
+	properties := doc["properties"].(map[string]any)
+	defaults := properties["defaults"].(map[string]any)
+	if defaults["$ref"] != "#/$defs/defaultBundle" {
+		t.Fatalf("defaults ref = %v, want defaultBundle", defaults["$ref"])
+	}
+	targets := properties["targets"].(map[string]any)
+	targetAdditional := targets["additionalProperties"].(map[string]any)
+	if targetAdditional["$ref"] != "#/$defs/targetBundle" {
+		t.Fatalf("targets additionalProperties ref = %v, want targetBundle", targetAdditional["$ref"])
+	}
+
+	defs := doc["$defs"].(map[string]any)
+	defaultBundle := defs["defaultBundle"].(map[string]any)
+	defaultProps := defaultBundle["properties"].(map[string]any)
+	for _, field := range []string{"env", "services"} {
+		cfg := defaultProps[field].(map[string]any)
+		additional := cfg["additionalProperties"].(map[string]any)
+		if schemaContainsNull(additional) {
+			t.Fatalf("defaults.%s allows null tombstones: %#v", field, additional)
+		}
+	}
+
+	targetBundle := defs["targetBundle"].(map[string]any)
+	targetProps := targetBundle["properties"].(map[string]any)
+	for _, field := range []string{"env", "services"} {
+		cfg := targetProps[field].(map[string]any)
+		additional := cfg["additionalProperties"].(map[string]any)
+		if !schemaContainsNull(additional) {
+			t.Fatalf("targets.*.%s should allow null tombstones: %#v", field, additional)
+		}
+	}
+}
+
+func schemaContainsNull(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if x["type"] == "null" {
+			return true
+		}
+		for _, child := range x {
+			if schemaContainsNull(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if schemaContainsNull(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestParseAndValidate_V8RejectsHostOnPackage(t *testing.T) {
+	raw := `{"schemaVersion":"8","targets":{"arch":{"packages":[{"id":"git","host":["arch"]}]}}}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected error for host on v8 package")
 	}
 }
 

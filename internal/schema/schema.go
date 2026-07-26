@@ -1,4 +1,4 @@
-// Package schema defines the genv.json v1–v7 data model and validation logic.
+// Package schema defines the genv.json v1–v8 data model and validation logic.
 package schema
 
 import (
@@ -27,8 +27,11 @@ const Version6 = "6"
 // Version7 is the accepted value for genv.json v7 (adds PowerShell shell targeting).
 const Version7 = "7"
 
+// Version8 is the accepted value for genv.json v8 (adds portable defaults/targets).
+const Version8 = "8"
+
 // versionOrder lists known schemaVersion values from oldest to newest.
-var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7}
+var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8}
 
 // versionRank returns the ordinal of a schemaVersion string within versionOrder,
 // or -1 if the value is not a recognized version.
@@ -108,6 +111,16 @@ var KnownManagers = map[string]bool{
 	"choco":       true,
 }
 
+// KnownTargets is the set of canonical portable target IDs accepted in v8 specs.
+var KnownTargets = map[string]bool{
+	"macos":    true,
+	"windows":  true,
+	"arch":     true,
+	"ubuntu":   true,
+	"wsl-arch": true,
+	"linux":    true,
+}
+
 // HostPredicate selects which host(s) a record applies to. It unmarshals from
 // either a single string ("macos") or a JSON array (["arch","wsl2"]). An empty
 // predicate matches every host.
@@ -147,16 +160,69 @@ func (h HostPredicate) MarshalJSON() ([]byte, error) {
 // v4: schemaVersion "4", packages + optional env + optional shell + optional services block.
 // v5: schemaVersion "5", adds optional files, hooks, host selectors, and repo fields.
 // v6: schemaVersion "6", adds the optional updates config block.
+// v7: schemaVersion "7", adds PowerShell shell targeting.
+// v8: schemaVersion "8", moves portable config into defaults and targets.
 type GenvFile struct {
-	SchemaVersion string             `json:"schemaVersion"`
-	Packages      []Package          `json:"packages"`
-	Env           map[string]EnvVar  `json:"env,omitempty"`
-	Shell         *ShellConfig       `json:"shell,omitempty"`
-	Services      map[string]Service `json:"services,omitempty"`
-	Files         *FilesConfig       `json:"files,omitempty"`
-	Hooks         *HooksConfig       `json:"hooks,omitempty"`
-	Repo          *Repo              `json:"repo,omitempty"`
-	Updates       *UpdatesConfig     `json:"updates,omitempty"`
+	SchemaVersion string                   `json:"schemaVersion"`
+	Packages      []Package                `json:"packages"`
+	Env           map[string]EnvVar        `json:"env,omitempty"`
+	Shell         *ShellConfig             `json:"shell,omitempty"`
+	Services      map[string]Service       `json:"services,omitempty"`
+	Files         *FilesConfig             `json:"files,omitempty"`
+	Hooks         *HooksConfig             `json:"hooks,omitempty"`
+	Repo          *Repo                    `json:"repo,omitempty"`
+	Updates       *UpdatesConfig           `json:"updates,omitempty"`
+	Defaults      *TargetBundle            `json:"defaults,omitempty"`
+	Targets       map[string]*TargetBundle `json:"targets,omitempty"`
+}
+
+// MarshalJSON preserves the legacy v1-v7 top-level shape while letting v8 omit
+// empty legacy top-level blocks. In particular, nil/empty Packages must not
+// serialize as "packages": null in portable target files.
+func (f GenvFile) MarshalJSON() ([]byte, error) {
+	type alias GenvFile
+	if f.SchemaVersion != Version8 {
+		return json.Marshal(alias(f))
+	}
+	type v8File struct {
+		SchemaVersion string                   `json:"schemaVersion"`
+		Packages      []Package                `json:"packages,omitempty"`
+		Env           map[string]EnvVar        `json:"env,omitempty"`
+		Shell         *ShellConfig             `json:"shell,omitempty"`
+		Services      map[string]Service       `json:"services,omitempty"`
+		Files         *FilesConfig             `json:"files,omitempty"`
+		Hooks         *HooksConfig             `json:"hooks,omitempty"`
+		Repo          *Repo                    `json:"repo,omitempty"`
+		Updates       *UpdatesConfig           `json:"updates,omitempty"`
+		Defaults      *TargetBundle            `json:"defaults,omitempty"`
+		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
+	}
+	return json.Marshal(v8File{
+		SchemaVersion: f.SchemaVersion,
+		Packages:      f.Packages,
+		Env:           f.Env,
+		Shell:         f.Shell,
+		Services:      f.Services,
+		Files:         f.Files,
+		Hooks:         f.Hooks,
+		Repo:          f.Repo,
+		Updates:       f.Updates,
+		Defaults:      f.Defaults,
+		Targets:       f.Targets,
+	})
+}
+
+// TargetBundle is a v8 defaults or target-scoped config block.
+//
+// Env and Services use pointer map values so target entries can unmarshal JSON
+// null as tombstones. Defaults must not contain tombstones.
+type TargetBundle struct {
+	Packages []Package           `json:"packages,omitempty"`
+	Env      map[string]*EnvVar  `json:"env,omitempty"`
+	Shell    *TargetShellConfig  `json:"shell,omitempty"`
+	Services map[string]*Service `json:"services,omitempty"`
+	Files    *FilesConfig        `json:"files,omitempty"`
+	Hooks    *HooksConfig        `json:"hooks,omitempty"`
 }
 
 // UpdatesConfig declares settings for the background updates checker/daemon.
@@ -248,6 +314,14 @@ type ShellConfig struct {
 	Aliases   map[string]ShellAlias    `json:"aliases,omitempty"`
 	Functions map[string]ShellFunction `json:"functions,omitempty"`
 	Source    []string                 `json:"source,omitempty"`
+}
+
+// TargetShellConfig is the v8 defaults/targets shell block. Alias and function
+// entries are pointers so target JSON null values can delete defaults.
+type TargetShellConfig struct {
+	Aliases   map[string]*ShellAlias    `json:"aliases,omitempty"`
+	Functions map[string]*ShellFunction `json:"functions,omitempty"`
+	Source    []string                  `json:"source,omitempty"`
 }
 
 // ShellAlias is a single shell alias declaration.

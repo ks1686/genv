@@ -25,6 +25,7 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/hooks"
 	"github.com/ks1686/genv/internal/host"
+	"github.com/ks1686/genv/internal/lockgate"
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/profile"
@@ -34,6 +35,7 @@ import (
 	"github.com/ks1686/genv/internal/search"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/shellcfg"
+	"github.com/ks1686/genv/internal/target"
 	"github.com/ks1686/genv/internal/upgrade"
 )
 
@@ -131,6 +133,12 @@ func run(args []string) int {
 		return updatesCmd(args[1:])
 	case "pull":
 		return pullCmd(args[1:])
+	case "migrate":
+		return migrateCmd(args[1:])
+	case "export":
+		return exportCmd(args[1:])
+	case "map":
+		return mapCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
 	case "env":
@@ -230,10 +238,26 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 	return &c
 }
 
+func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, int) {
+	if f.SchemaVersion != schema.Version8 {
+		return "", exitOK
+	}
+	targetID, err := target.Resolve(targetFlag)
+	if err != nil {
+		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
+		return "", exitUsage
+	}
+	if _, err := commands.ActiveBundle(f, targetID); err != nil {
+		fprintf(os.Stderr, "genv %s: %v in %s\n", commandName, err, file)
+		return "", exitValidation
+	}
+	return targetID, exitOK
+}
+
 // addToSpec reads or creates the spec at file, records the package, and writes
 // it back. Prints "created <file>" when the file is brand-new. Returns an exit
 // code; exitOK means success.
-func addToSpec(file, id, version, prefer string, managers map[string]string) int {
+func addToSpec(file, id, version, prefer string, managers map[string]string, targetFlag string) int {
 	f, isNew, err := genvfile.ReadOrNew(file)
 	if err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
@@ -242,7 +266,11 @@ func addToSpec(file, id, version, prefer string, managers map[string]string) int
 		}
 		return exitIO
 	}
-	if err := commands.Add(f, id, version, prefer, managers); err != nil {
+	targetID, exit := resolveMutationTarget("add", file, f, targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.Add(f, id, version, prefer, managers, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
 			return exitLogic
@@ -285,7 +313,7 @@ func appendLockEntry(lockPath string, lp genvfile.LockedPackage) int {
 // removeFromSpecAndReadLock reads the spec at file, removes id from it, writes
 // it back, then reads and returns the lock file. Returns the lock, the lock
 // path, and an exit code. exitOK means all steps succeeded.
-func removeFromSpecAndReadLock(file, id, lockFile string) (*genvfile.LockFile, string, int) {
+func removeFromSpecAndReadLock(file, id, lockFile, targetFlag string) (*genvfile.LockFile, string, int) {
 	f, err := genvfile.Read(file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
@@ -298,7 +326,11 @@ func removeFromSpecAndReadLock(file, id, lockFile string) (*genvfile.LockFile, s
 		}
 		return nil, "", exitIO
 	}
-	if err := commands.Remove(f, id); err != nil {
+	targetID, exit := resolveMutationTarget("remove", file, f, targetFlag)
+	if exit != exitOK {
+		return nil, "", exit
+	}
+	if err := commands.Remove(f, id, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return nil, "", exitLogic
 	}
@@ -335,6 +367,7 @@ func addCmd(args []string) int {
 	noHooks := fs.Bool("no-hooks", false, "skip pre-add and post-add hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -406,7 +439,7 @@ func addCmd(args []string) int {
 	}
 
 	// 1. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
 		return exit
 	}
 
@@ -474,6 +507,7 @@ func removeCmd(args []string) int {
 	noHooks := fs.Bool("no-hooks", false, "skip pre-remove and post-remove hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -489,7 +523,7 @@ func removeCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	return runRemove(removeOptions{File: *file, ID: id, LockFile: *lockFile, NoHooks: *noHooks, HookTimeout: *hookTimeout, Host: *hostFlag})
+	return runRemove(removeOptions{File: *file, ID: id, LockFile: *lockFile, NoHooks: *noHooks, HookTimeout: *hookTimeout, Host: *hostFlag, Target: *targetFlag})
 }
 
 type removeOptions struct {
@@ -497,6 +531,7 @@ type removeOptions struct {
 	ID          string
 	LockFile    string
 	Host        string
+	Target      string
 	NoHooks     bool
 	HookTimeout time.Duration
 }
@@ -509,10 +544,18 @@ func runRemove(opts removeOptions) int {
 	//    (e.g. "firefox" resolving to a tracked id like "org.mozilla.firefox").
 	if isTerminal() {
 		if f, err := genvfile.Read(file); err == nil {
+			packages := f.Packages
+			if f.SchemaVersion == schema.Version8 {
+				targetID, exit := resolveMutationTarget("remove", file, f, opts.Target)
+				if exit != exitOK {
+					return exit
+				}
+				packages = f.Targets[targetID].Packages
+			}
 			idLower := strings.ToLower(id)
 			exact := false
 			var matches []string
-			for _, p := range f.Packages {
+			for _, p := range packages {
 				if p.ID == id {
 					exact = true
 					break
@@ -563,7 +606,7 @@ func runRemove(opts removeOptions) int {
 	}
 
 	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(file, id, opts.LockFile)
+	lf, lockPath, exit := removeFromSpecAndReadLock(file, id, opts.LockFile, opts.Target)
 	if exit != exitOK {
 		return exit
 	}
@@ -658,6 +701,7 @@ func adoptCmd(args []string) int {
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 	filesOnly := fs.Bool("files", false, "adopt matching files block entries into the lock without changing targets")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 
@@ -713,7 +757,7 @@ func adoptCmd(args []string) int {
 	}
 
 	// 3. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers); exit != exitOK {
+	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
 		return exit
 	}
 
@@ -800,6 +844,7 @@ func disownCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -812,7 +857,7 @@ func disownCmd(args []string) int {
 	id := fs.Arg(0)
 
 	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id, *lockFile)
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id, *lockFile, *targetFlag)
 	if exit != exitOK {
 		return exit
 	}
@@ -911,6 +956,8 @@ type applyOptions struct {
 	Timeout       time.Duration
 	Debug         bool
 	TargetProfile string
+	Target        string
+	ForceNewLock  bool
 	NoHooks       bool
 	HookTimeout   time.Duration
 }
@@ -938,6 +985,8 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -994,9 +1043,45 @@ func runApply(opts applyOptions) int {
 }
 
 func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
-	f = host.FilterForHost(f, hostForCommand(opts.Host))
-
 	available := resolver.Detect()
+	if lf == nil {
+		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
+	}
+	activeTarget := ""
+	if f.SchemaVersion == schema.Version8 {
+		targetID, err := target.Resolve(opts.Target)
+		if err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitUsage
+		}
+		if f.Targets[targetID] == nil {
+			fprintf(os.Stderr, "genv apply: no matching targets.%s in %s\n", targetID, opts.File)
+			return exitValidation
+		}
+		effective, err := schema.MergeTarget(f, targetID)
+		if err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitValidation
+		}
+		decision := lockgate.Check(lf, targetID, runtime.GOOS, available)
+		if decision.Foreign {
+			if !opts.ForceNewLock {
+				fprintf(os.Stderr, "genv apply: foreign lock refused: %s\n", decision.Reason)
+				fprintf(os.Stderr, "Back up or remove %s, or rerun with --force-new-lock to move it aside and create a new local lock.\n", lockPath)
+				return exitLogic
+			}
+			backupPath := lockPath + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+			if err := os.Rename(lockPath, backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				fprintf(os.Stderr, "genv apply: warning: could not back up foreign lock %s: %v\n", lockPath, err)
+			}
+			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
+		}
+		f = effective
+		activeTarget = targetID
+	} else {
+		f = host.FilterForHost(f, hostForCommand(opts.Host))
+	}
+	opts.Target = activeTarget
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
 
 	if opts.JSONOut {
@@ -1058,7 +1143,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	success := len(errs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
 
 	installed := make([]string, len(execResult.Installed))
 	for i, lp := range execResult.Installed {
@@ -1137,7 +1222,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 					return exitLogic
 				}
 			}
-			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, true)
+			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, true)
 		}
 		return exitOK
 	}
@@ -1212,7 +1297,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
 
 	if !success {
 		for _, e := range execResult.Errors {
@@ -1235,13 +1320,17 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile string, success bool) {
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, success bool) {
 	if success && targetProfile != "" {
 		if targetProfile == "base" {
 			lf.ActiveProfile = ""
 		} else {
 			lf.ActiveProfile = targetProfile
 		}
+	}
+	if success && activeTarget != "" {
+		lf.Target = activeTarget
+		lf.GOOS = runtime.GOOS
 	}
 	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
 	for _, id := range execResult.Uninstalled {
@@ -1747,6 +1836,7 @@ func envSetCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	sensitive := fs.Bool("sensitive", false, "mark value as sensitive (redacted in output and logs)")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -1768,7 +1858,11 @@ func envSetCmd(args []string) int {
 		return exitIO
 	}
 
-	if err := commands.EnvSet(f, name, value, *sensitive); err != nil {
+	targetID, exit := resolveMutationTarget("env set", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.EnvSet(f, name, value, *sensitive, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitUsage
 	}
@@ -1795,6 +1889,7 @@ func envUnsetCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -1819,7 +1914,11 @@ func envUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	if err := commands.EnvUnset(f, name); err != nil {
+	targetID, exit := resolveMutationTarget("env unset", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.EnvUnset(f, name, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrEnvNotFound) {
 			return exitLogic
@@ -1949,6 +2048,7 @@ func shellAliasSetCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	shell := fs.String("shell", "", "target shell: "+schema.ValidShellTargetsMsg)
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -1969,7 +2069,11 @@ func shellAliasSetCmd(args []string) int {
 		return exitIO
 	}
 
-	if err := commands.ShellAliasSet(f, name, value, *shell); err != nil {
+	targetID, exit := resolveMutationTarget("shell alias set", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.ShellAliasSet(f, name, value, *shell, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitUsage
 	}
@@ -2000,6 +2104,7 @@ func shellAliasUnsetCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -2024,7 +2129,11 @@ func shellAliasUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	if err := commands.ShellAliasUnset(f, name); err != nil {
+	targetID, exit := resolveMutationTarget("shell alias unset", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.ShellAliasUnset(f, name, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrShellAliasNotFound) {
 			return exitLogic
@@ -2242,6 +2351,7 @@ func scanCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	targetFlag := fs.String("target", "", "target ID for schemaVersion 8 (default: $GENV_TARGET or detected host target)")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
@@ -2259,6 +2369,10 @@ func scanCmd(args []string) int {
 			return exitValidation
 		}
 		return exitIO
+	}
+	targetID, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
 	}
 
 	available := resolver.Detect()
@@ -2288,8 +2402,17 @@ func scanCmd(args []string) int {
 	// (a numeric App Store product ID) rather than the friendly ID, so a
 	// package tracked as {"id":"xcode","managers":{"mas":"497799835"}} would
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
-	trackedInSpec := make(map[string]bool, len(f.Packages))
-	for _, p := range f.Packages {
+	trackedPackages := f.Packages
+	if f.SchemaVersion == schema.Version8 {
+		active, err := schema.MergeTarget(f, targetID)
+		if err != nil {
+			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
+			return exitValidation
+		}
+		trackedPackages = active.Packages
+	}
+	trackedInSpec := make(map[string]bool, len(trackedPackages))
+	for _, p := range trackedPackages {
 		trackedInSpec[p.ID] = true
 		for _, managerName := range p.Managers {
 			trackedInSpec[managerName] = true
@@ -2333,7 +2456,7 @@ func scanCmd(args []string) int {
 			}
 
 			// Add to spec.
-			if err := commands.Add(f, pkgName, "", "", nil); err != nil {
+			if err := commands.Add(f, pkgName, "", "", nil, targetID); err != nil {
 				// ErrAlreadyTracked can race with trackedInSpec; skip silently.
 				skipped++
 				continue
@@ -3682,7 +3805,7 @@ func initCmd(args []string) int {
 		if id == "" {
 			break
 		}
-		if err := commands.Add(f, id, "", "", nil); err != nil {
+		if err := commands.Add(f, id, "", "", nil, ""); err != nil {
 			if errors.Is(err, commands.ErrAlreadyTracked) {
 				fprintf(os.Stdout, "  (skipping %q — already added)\n", id)
 				continue
@@ -3786,10 +3909,13 @@ Commands:
   shell       Manage shell aliases and shell config drift
   service     Manage user-space services
   pull        Fetch genv.json from the configured spec repository
+  migrate     Convert legacy host predicates to schemaVersion 8 targets
   completion  Print or install the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
   updates     Check for available updates to genv-tracked packages
+  export      Build a single-target portable snapshot and report
+  map         Print assist-only manager mapping suggestions for a target
   init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
@@ -3807,6 +3933,7 @@ Add/Adopt-specific flags:
                                snap:hello,brew:hello
   --no-hooks                   Skip add lifecycle hooks without skipping install
   --hook-timeout <duration>    Per-hook timeout, e.g. 5m or 30s
+  --target <id>                Portable target id for schemaVersion 8 specs
 
 Apply-specific flags:
   --dry-run            Print the reconcile plan without executing
@@ -3818,10 +3945,22 @@ Apply-specific flags:
   --no-hooks           Skip apply lifecycle hooks without skipping apply
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
+  --target <id>        Portable target id for schemaVersion 8 specs
+  --force-new-lock     Back up a foreign lock and start a new local lock
+
+Export-specific flags:
+  --target <id>        Target id to export
+  --out <dir>          Directory to write genv.json, report.json, and report.md
+  --strict             Exit nonzero if the report contains errors
+  --from-v7            Migrate v1-v7 input to schemaVersion 8 in memory first
+
+Map-specific flags:
+  --target <id>        Destination target id for suggestions
 
 Remove-specific flags:
   --no-hooks                Skip remove lifecycle hooks without skipping uninstall
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
+  --target <id>             Portable target id for schemaVersion 8 specs
 
 Upgrade-specific flags:
   --dry-run                 Print the upgrade commands without executing
@@ -3926,6 +4065,7 @@ func serviceAddCmd(args []string) int {
 	restart := fs.String("restart", "", "command to restart the service")
 	status := fs.String("status", "", "command to check service status")
 	brewFormula := fs.String("brew-formula", "", "homebrew formula to manage via `brew services` (macOS only)")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -3982,7 +4122,11 @@ func serviceAddCmd(args []string) int {
 		}
 	}
 
-	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd, *brewFormula); err != nil {
+	targetID, exit := resolveMutationTarget("service add", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd, *brewFormula, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitUsage
 	}
@@ -4009,6 +4153,7 @@ func serviceRemoveCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -4033,7 +4178,11 @@ func serviceRemoveCmd(args []string) int {
 		return exitIO
 	}
 
-	if err := commands.ServiceRemove(f, name); err != nil {
+	targetID, exit := resolveMutationTarget("service remove", *file, f, *targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	if err := commands.ServiceRemove(f, name, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrServiceNotFound) {
 			return exitLogic
