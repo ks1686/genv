@@ -31,37 +31,19 @@
 
 ## CLI Dispatch
 
-The CLI is dispatched by a manual `switch` on `args[0]` in `main.go:81-127`, not by Cobra. Each command is implemented by a function named `<command>Cmd` in `main.go` that creates its own `flag.FlagSet`, parses arguments, and returns a structured exit code.
+The CLI is dispatched by a manual `switch` on `args[0]` in `main.go` (see the `switch args[0]` block near the top of `main()`), not by Cobra. Each command is implemented by a function named `<command>Cmd` that creates its own `flag.FlagSet`, parses arguments, and returns a structured exit code.
 
-Current top-level commands (see `main.go:81-127`):
+Current top-level commands:
 
-- `add` — add a package to the spec and install it
-- `remove` / `rm` — remove a package from the spec and uninstall it
-- `adopt` — verify a package is already installed, then track it without reinstalling
-- `disown` — stop tracking a package without uninstalling it
-- `list` / `ls` — list packages installed by genv (reads lock file)
-- `apply` — reconcile the system against the spec
-- `edit` — open `genv.json` in `$EDITOR`
-- `clean` — clean adapter caches
-- `scan` — bulk-adopt currently installed packages into the spec
-- `status` — diff between spec, lock, and live system
-- `completion` — print shell completion scripts
-- `validate` — validate `genv.json` without installing anything
-- `upgrade` — re-resolve and upgrade pinned packages
-- `pull` — fetch the spec from the git repository declared in `repo.url`
-- `migrate` — convert legacy host predicates to schemaVersion 8 target buckets
-- `export` — build a single-target schemaVersion 8 snapshot plus report
-- `map` — print assist-only manager mapping suggestions for a target
-- `init` — interactive wizard to create a new `genv.json`
-- `env` — manage global environment variables (`set`, `unset`, `list`)
-- `shell` — manage shell config (`alias set/unset`, `status`, `edit`)
-- `service` — manage user-space services
-- `version` / `--version` — print version
-- `help` / `--help` / `-h` — print usage
+- `add` / `remove` (`rm`) / `adopt` / `disown` / `scan` / `list` (`ls`)
+- `apply` / `validate` / `status` / `upgrade` / `updates` / `profile`
+- `pull` / `migrate` / `export` / `map` / `init` / `edit` / `clean`
+- `env` / `shell` / `service` / `completion`
+- `version` / `--version` / `help` / `--help` / `-h`
 
 ### Adding a New Subcommand
 
-1. Add a new `case "<name>":` to the dispatch switch in `main.go:81-127` that calls `<name>Cmd(args[1:])`.
+1. Add a new `case "<name>":` to the dispatch switch in `main.go` that calls `<name>Cmd(args[1:])`.
 2. Implement `<name>Cmd(args []string) int` in `main.go` (or a new `main_<name>.go` file). Use `flag.NewFlagSet` for flags and return the appropriate exit code.
 3. If the command mutates the spec, add a pure helper in `internal/commands/<area>.go` and call it from the command function.
 4. Add unit tests in `main_test.go` or `internal/commands/<area>_test.go`.
@@ -106,7 +88,7 @@ Adapters are registered in priority order in `internal/adapter/adapter.go:76-82`
 | `main.go` | CLI entry point and manual command dispatch (`main.go:81-127`) |
 | `go.mod` | Module: `github.com/ks1686/genv`, Go 1.24.3 |
 | `Makefile` | Build, test, CI, lint, benchmark targets |
-| `schema/v1/genv.json` | JSON Schema for `genv.json` validation |
+| `schema/v8/genv.json` | JSON Schema mirror for v8 (Go `ParseAndValidate` is authoritative) |
 | `.goreleaser.yml` | Release build configuration |
 | `e2e/e2e_test.go` | End-to-end integration tests |
 

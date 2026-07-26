@@ -5,39 +5,42 @@
 Only the latest stable release receives security fixes.
 
 | Version | Supported |
-| --- | --- |
-| latest (`v3.x`) | Yes |
+| ------- | --------- |
+| latest (`v4.x`) | Yes |
 | older majors / previous minors | No |
 
 ## Reporting a Vulnerability
 
-Please **do not** open a public GitHub issue for security vulnerabilities.
+Do **not** open a public GitHub issue for security vulnerabilities.
 
-Use GitHub's [private vulnerability reporting](https://github.com/ks1686/genv/security/advisories/new) to submit a report. This keeps the details confidential until a fix is released.
+Use GitHub's [private vulnerability reporting](https://github.com/ks1686/genv/security/advisories/new). Include:
 
-Include as much of the following as you can:
+- Description and potential impact
+- Steps to reproduce or a minimal proof of concept
+- Output of `genv version`
+- OS and package-manager combination
 
-- A description of the vulnerability and its potential impact
-- Steps to reproduce, or a minimal proof-of-concept
-- The `genv version` output from the affected build
-- Your operating system and package manager combination
-
-You can expect an acknowledgement within **72 hours** and a status update at least every **7 days** while the issue is being investigated. If a fix is warranted, a patched release and a public advisory will be published together.
+Expect acknowledgement within **72 hours** and a status update at least every **7 days** while investigating. Fixes ship with a patched release and public advisory when warranted.
 
 ## Verifying Release Integrity
 
-Every release binary is signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. The signature and certificate are attached to each GitHub release alongside `checksums.txt`. Verify a downloaded archive before use:
+Every release binary is signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. Sigstore bundles and `checksums.txt` attach to each GitHub release.
 
 ```bash
+# Example for the linux/amd64 archive of tag v4.0.0
 cosign verify-blob \
-  --certificate-identity "https://github.com/ks1686/genv/.github/workflows/release.yml@refs/tags/<tag>" \
+  --certificate-identity "https://github.com/ks1686/genv/.github/workflows/release.yml@refs/tags/v4.0.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  --bundle genv_<version>_<os>_<arch>.tar.gz.bundle \
-  genv_<version>_<os>_<arch>.tar.gz
-```
+  --bundle checksums.txt.sigstore.json \
+  checksums.txt
 
-You can also cross-check the downloaded archive against `checksums.txt`:
-
-```bash
 sha256sum --check --ignore-missing checksums.txt
 ```
+
+Adjust the tag and archive names for the asset you downloaded. See the release assets list for exact filenames (`genv_<version>_<os>_<arch>.tar.gz` or `.zip`).
+
+## Trust boundaries
+
+- `genv.json` is trusted configuration. Lifecycle `hooks` and shell fragments run as the current user with the same privileges as the `genv` process.
+- Lock files and secrets must stay machine-local; export/pull omit locks and sensitive env values by design.
+- Package-manager subprocesses inherit your user privileges — treat manager availability and foreign locks carefully when applying a portable spec.
