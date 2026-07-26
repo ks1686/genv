@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "8",
+  "defaults": {
+    "env": {
+      "EDITOR": {
+        "value": "nvim"
+      },
+      "SECRET": {
+        "value": "do-not-export",
+        "sensitive": true
+      }
+    },
+    "shell": {
+      "aliases": {
+        "ll": {
+          "value": "ls -la"
+        }
+      }
+    },
+    "files": {
+      "links": [
+        {
+          "source": "assets/gitconfig",
+          "target": "~/.gitconfig"
+        }
+      ]
+    },
+    "hooks": {
+      "postApply": [
+        {
+          "command": "echo exported"
+        }
+      ]
+    }
+  },
+  "targets": {
+    "arch": {
+      "packages": [
+        {
+          "id": "git",
+          "prefer": "pacman"
+        },
+        {
+          "id": "windows-terminal",
+          "prefer": "winget"
+        },
+        {
+          "id": "ruff",
+          "managers": {
+            "uv": "ruff"
+          }
+        }
+      ],
+      "env": {
+        "ARCH_ONLY": {
+          "value": "1"
+        }
+      },
+      "shell": {
+        "aliases": {
+          "gs": {
+            "value": "git status"
+          }
+        }
+      },
+      "services": {
+        "agent": {
+          "start": [
+            "sleep",
+            "60"
+          ]
+        }
+      },
+      "files": {
+        "templates": [
+          {
+            "source": "assets/config.tmpl",
+            "target": "~/.config/demo/config"
+          },
+          {
+            "source": "/etc/genv/secret.tmpl",
+            "target": "~/.config/demo/secret"
+          }
+        ],
+        "dirs": [
+          {
+            "target": "~/.config/demo"
+          }
+        ]
+      }
+    },
+    "macos": {
+      "packages": [
+        {
+          "id": "mas",
+          "prefer": "mas"
+        }
+      ]
+    }
+  }
+}

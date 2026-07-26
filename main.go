@@ -135,6 +135,8 @@ func run(args []string) int {
 		return pullCmd(args[1:])
 	case "migrate":
 		return migrateCmd(args[1:])
+	case "export":
+		return exportCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
 	case "env":
@@ -3839,6 +3841,7 @@ Commands:
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
   updates     Check for available updates to genv-tracked packages
+  export      Build a single-target portable snapshot and report
   init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
@@ -3869,6 +3872,12 @@ Apply-specific flags:
   --debug              Emit debug-level structured logs to stderr
   --target <id>        Portable target id for schemaVersion 8 specs
   --force-new-lock     Back up a foreign lock and start a new local lock
+
+Export-specific flags:
+  --target <id>        Target id to export
+  --out <dir>          Directory to write genv.json and report.json
+  --strict             Exit nonzero if the report contains errors
+  --from-v7            Migrate v1-v7 input to schemaVersion 8 in memory first
 
 Remove-specific flags:
   --no-hooks                Skip remove lifecycle hooks without skipping uninstall
