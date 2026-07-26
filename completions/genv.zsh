@@ -62,6 +62,7 @@ _genv() {
 				'--no-hooks[Skip pre-remove and post-remove hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'1: :->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
@@ -91,7 +92,8 @@ _genv() {
 				'--no-search[Skip interactive package search]' \
 				'--no-hooks[Skip pre-add and post-add hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
-				'--host=[Host name for host-specific records]:host:'
+				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
 		adopt)
 			_arguments \
@@ -243,11 +245,13 @@ _genv() {
 				set)
 					_arguments \
 						'--file=[Path to genv.json]:path:_files' \
-						'--sensitive[Mark value as sensitive (redacted in output and logs)]'
+						'--sensitive[Mark value as sensitive (redacted in output and logs)]' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				unset)
 					_arguments \
-						'--file=[Path to genv.json]:path:_files'
+						'--file=[Path to genv.json]:path:_files' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				list | ls)
 					_arguments \
@@ -292,11 +296,13 @@ _genv() {
 						set)
 							_arguments \
 								'--file=[Path to genv.json]:path:_files' \
-								'--shell=[Target shell]:shell:(bash zsh fish)'
+								'--shell=[Target shell]:shell:(bash zsh fish)' \
+								'--target=[Portable target id for schemaVersion 8 specs]:target:'
 							;;
 						unset)
 							_arguments \
-								'--file=[Path to genv.json]:path:_files'
+								'--file=[Path to genv.json]:path:_files' \
+								'--target=[Portable target id for schemaVersion 8 specs]:target:'
 							;;
 						esac
 						;;
@@ -389,7 +395,13 @@ _genv() {
 						'--stop=[Command to stop the service]:command:' \
 						'--restart=[Command to restart the service]:command:' \
 						'--status=[Command to check service status]:command:' \
-						'--brew-formula=[Homebrew formula to manage via brew services (macOS only)]:formula:'
+						'--brew-formula=[Homebrew formula to manage via brew services (macOS only)]:formula:' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
+					;;
+				remove | rm)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				*)
 					_arguments \

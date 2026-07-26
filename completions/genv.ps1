@@ -40,52 +40,121 @@ function script:Get-GenvCompletions {
 			}
 	}
 
+	$completeCandidates = {
+		param(
+			[string[]]$Candidates,
+			[string]$ResultType = 'ParameterName'
+		)
+		$Candidates |
+			Where-Object { $_ -like "$WordToComplete*" } |
+			ForEach-Object {
+				[System.Management.Automation.CompletionResult]::new($_, $_, $ResultType, $_)
+			}
+	}
+	$completePackages = {
+		try {
+			$pkgs = & genv __complete packages 2>$null
+			if ($pkgs) {
+				($pkgs -split '\s+') |
+					Where-Object { $_ -and ($_ -like "$WordToComplete*") } |
+					ForEach-Object {
+						[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+					}
+			}
+		} catch {}
+	}
+	$cmdIndex = [array]::IndexOf($tokens, $cmd)
+	$after = @()
+	if ($cmdIndex -ge 0 -and ($cmdIndex + 1) -lt $tokens.Count) {
+		$after = $tokens[($cmdIndex + 1)..($tokens.Count - 1)]
+	}
+
 	switch ($cmd) {
 		{ $_ -in 'apply' } {
 			$flags = @('--file', '--lock-file', '--dry-run', '--force', '--strict', '--yes',
 				'--quiet', '--json', '--timeout', '--no-hooks', '--hook-timeout', '--debug',
 				'--host', '--target', '--force-new-lock')
-			return $flags |
-				Where-Object { $_ -like "$WordToComplete*" } |
-				ForEach-Object {
-					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterName', $_)
-				}
+			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'export' } {
 			$flags = @('--file', '--target', '--out', '--strict', '--from-v7')
-			return $flags |
-				Where-Object { $_ -like "$WordToComplete*" } |
-				ForEach-Object {
-					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterName', $_)
-				}
+			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'map' } {
 			$flags = @('--file', '--target')
-			return $flags |
-				Where-Object { $_ -like "$WordToComplete*" } |
-				ForEach-Object {
-					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterName', $_)
-				}
+			return (& $completeCandidates -Candidates $flags)
 		}
-		{ $_ -in 'remove', 'rm', 'disown', 'upgrade' } {
-			try {
-				$pkgs = & genv __complete packages 2>$null
-				if ($pkgs) {
-					return ($pkgs -split '\s+') |
-						Where-Object { $_ -and ($_ -like "$WordToComplete*") } |
-						ForEach-Object {
-							[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-						}
+		{ $_ -in 'add' } {
+			$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
+				'--no-search', '--no-hooks', '--hook-timeout', '--host', '--target')
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'remove', 'rm' } {
+			if ($WordToComplete -like '-*') {
+				$flags = @('--file', '--lock-file', '--no-hooks', '--hook-timeout', '--host', '--target')
+				return (& $completeCandidates -Candidates $flags)
+			}
+			return (& $completePackages)
+		}
+		{ $_ -in 'disown', 'upgrade' } {
+			return (& $completePackages)
+		}
+		{ $_ -in 'env' } {
+			$envSubs = @('set', 'unset', 'list', 'ls')
+			$envSub = $after | Where-Object { $envSubs -contains $_ } | Select-Object -First 1
+			if (-not $envSub -and $WordToComplete -notlike '-*') {
+				return (& $completeCandidates -Candidates $envSubs -ResultType 'ParameterValue')
+			}
+			switch ($envSub) {
+				'set' { $flags = @('--file', '--sensitive', '--target') }
+				'unset' { $flags = @('--file', '--target') }
+				{ $_ -in 'list', 'ls' } { $flags = @('--file', '--json') }
+				default { $flags = @('--file') }
+			}
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'shell' } {
+			$shellSubs = @('alias', 'status', 'edit')
+			$shellSub = $after | Where-Object { $shellSubs -contains $_ } | Select-Object -First 1
+			if (-not $shellSub -and $WordToComplete -notlike '-*') {
+				return (& $completeCandidates -Candidates $shellSubs -ResultType 'ParameterValue')
+			}
+			if ($shellSub -eq 'alias') {
+				$aliasSubs = @('set', 'unset')
+				$aliasSub = $after | Where-Object { $aliasSubs -contains $_ } | Select-Object -First 1
+				if (-not $aliasSub -and $WordToComplete -notlike '-*') {
+					return (& $completeCandidates -Candidates $aliasSubs -ResultType 'ParameterValue')
 				}
-			} catch {}
+				switch ($aliasSub) {
+					'set' { $flags = @('--file', '--shell', '--target') }
+					'unset' { $flags = @('--file', '--target') }
+					default { $flags = @('--file') }
+				}
+				return (& $completeCandidates -Candidates $flags)
+			}
+			switch ($shellSub) {
+				'status' { $flags = @('--file', '--json') }
+				'edit' { $flags = @('--file') }
+				default { $flags = @('--file') }
+			}
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'service' } {
+			$serviceSubs = @('add', 'remove', 'rm', 'list', 'ls', 'start', 'stop', 'status')
+			$serviceSub = $after | Where-Object { $serviceSubs -contains $_ } | Select-Object -First 1
+			if (-not $serviceSub -and $WordToComplete -notlike '-*') {
+				return (& $completeCandidates -Candidates $serviceSubs -ResultType 'ParameterValue')
+			}
+			switch ($serviceSub) {
+				'add' { $flags = @('--file', '--start', '--stop', '--restart', '--status', '--brew-formula', '--target') }
+				{ $_ -in 'remove', 'rm' } { $flags = @('--file', '--target') }
+				default { $flags = @('--file') }
+			}
+			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'completion' } {
 			$shells = @('bash', 'zsh', 'fish', 'powershell', 'install')
-			return $shells |
-				Where-Object { $_ -like "$WordToComplete*" } |
-				ForEach-Object {
-					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-				}
+			return (& $completeCandidates -Candidates $shells -ResultType 'ParameterValue')
 		}
 	}
 }
