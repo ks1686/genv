@@ -105,7 +105,7 @@ _genv() {
 		fi
 		;;
 	apply)
-		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host"
+		opts="--file --lock-file --dry-run --force --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host --target --force-new-lock"
 		;;
 	status)
 		opts="--file --lock-file --json --debug --files --host"
