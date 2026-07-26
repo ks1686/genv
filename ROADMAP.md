@@ -165,14 +165,14 @@ Checklist:
 - [x] Report statement coverage in CI and enforce a regression floor (`COVER_MIN`, default 80% total).
 - [x] Add property-based / fuzz tests for version constraint logic and the resolver.
 - [x] Add end-to-end smoke tests that run `genv apply` against real package managers in CI.
-- [x] Benchmark resolver + manager detection; enforce a <200ms cold-start budget in CI (`make bench-gate`).
+- [x] Benchmark resolver + manager detection; enforce a cold-start budget in CI (`make bench-gate`, `BENCH_MAX_MS`; local default 200ms, CI uses a higher shared-runner budget).
 - [x] Security review: audit every adapter's shell invocations for injection vectors.
 
 Acceptance criteria:
 
 - [x] `--json` output includes a `"version"` field and the schema is documented.
 - [x] CI fails when total statement coverage drops below the documented floor (`COVER_MIN`, default 80).
-- [x] CI enforces the cold-start budget via a benchmark gate.
+- [x] CI enforces the cold-start budget via a benchmark gate (`BENCH_MAX_MS`).
 - [x] No known shell-injection vectors in adapter argv construction after the audit.
 
 ## Milestone M7 - Developer and User Experience

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the <200ms cold-start budget (previously claimed but not wired into GitHub Actions).
+- CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the cold-start budget (`BENCH_MAX_MS`; local default 200ms, CI uses 400ms for shared-runner noise). Previously claimed but not wired into GitHub Actions.
 - Documentation cleanup: roadmap/release/security wording aligned with the v3.x line; winget/Scoop/Chocolatey install channels explicitly deferred; outdated-upgrade plan and scheduler handoff marked completed/historical; `SECURITY_AUDIT.md` annotated with 2026-07-25 remediation status.
 
 ### Fixed
