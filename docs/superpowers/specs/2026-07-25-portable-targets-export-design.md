@@ -1,7 +1,7 @@
 # Portable Targets + Export Design
 
 Date: 2026-07-25  
-Status: Proposed
+Status: Approved
 
 ## 1. Goal
 
