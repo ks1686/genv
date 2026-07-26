@@ -355,14 +355,14 @@ When you run `genv apply`:
 - `--no-hooks` — skip pre-add and post-add hooks without skipping the install
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv remove` flags
 
 - `--no-hooks` — skip pre-remove and post-remove hooks without skipping the uninstall
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv adopt` flags
 
@@ -372,7 +372,7 @@ When you run `genv apply`:
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
 - `--files` — adopt matching `files` block entries into the lock without changing targets
 - `--json` — emit machine-readable JSON to stdout instead of human-readable text
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv apply` flags
 
@@ -387,7 +387,7 @@ When you run `genv apply`:
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv status` flags
 
@@ -395,7 +395,7 @@ When you run `genv apply`:
 - `--debug` — emit debug-level structured logs to stderr
 - `--files` — check the `files` block against the live filesystem instead of the spec-vs-lock diff
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv pull` flags
 
@@ -407,7 +407,7 @@ When you run `genv apply`:
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv upgrade` flags
 
@@ -423,7 +423,7 @@ When you run `genv apply`:
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv updates check` flags
 
@@ -435,7 +435,7 @@ When you run `genv apply`:
 - `--only-manager <manager>[,...]` — check only matching tracked managers
 - `--skip-manager <manager>[,...]` — skip matching tracked managers
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv updates start|stop|status`
 
@@ -463,7 +463,7 @@ The default background behavior is **check/log/notify only**. It does not apply 
 `genv updates start` flags:
 
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
-- `--lock-file <path>` — path to the lock file (defaults next to the resolved spec)
+- `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv clean` flags
 
@@ -594,7 +594,7 @@ Lifecycle hooks run by default for non-dry-run add/remove/apply/upgrade commands
 
 Implementation milestones and detailed checklists are tracked in [ROADMAP.md](ROADMAP.md).
 
-Current focus (v2.x):
+Current milestones (all complete through the v3.0.0 line):
 
 - [x] M1: Core CLI and `genv.json` spec validation
 - [x] M2: Resolver + adapter layer, declarative apply, adopt/disown, cache clean
