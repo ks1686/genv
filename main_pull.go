@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	pullassets "github.com/ks1686/genv/internal/pull"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -63,6 +65,16 @@ func pullCmd(args []string) int {
 
 	if *dryRun {
 		fprintf(os.Stdout, "would pull %s @ %s into %s\n", url, ref, *file)
+		assetSpec, remoteAssets := dryRunAssetSpec(f, url, ref)
+		if !remoteAssets {
+			fPrintln(os.Stdout, "remote spec not cached; listing local asset references")
+		}
+		if assets := pullassets.BundleAssetSources(assetSpec); len(assets) > 0 {
+			fPrintln(os.Stdout, "would copy assets:")
+			for _, asset := range assets {
+				fprintf(os.Stdout, "  %s\n", asset)
+			}
+		}
 		return exitOK
 	}
 
@@ -88,7 +100,27 @@ func pullCmd(args []string) int {
 		return exitIO
 	}
 
+	remote, err := genvfile.Read(src)
+	if err != nil {
+		fprintf(os.Stderr, "genv pull: reading remote spec: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+	copiedAssets, err := pullassets.CopyBundleAssets(cacheDir, filepath.Dir(*file), remote)
+	if err != nil {
+		fprintf(os.Stderr, "genv pull: copying assets: %v\n", err)
+		return exitIO
+	}
+
 	fprintf(os.Stdout, "pulled %s @ %s into %s\n", url, ref, *file)
+	if len(copiedAssets) > 0 {
+		fPrintln(os.Stdout, "copied assets:")
+		for _, asset := range copiedAssets {
+			fprintf(os.Stdout, "  %s\n", asset)
+		}
+	}
 	return exitOK
 }
 
@@ -113,6 +145,40 @@ func resolvePullSource(repo *schema.Repo, urlFlag, refFlag string) (url, ref str
 	}
 
 	return url, ref, nil
+}
+
+func dryRunAssetSpec(local *schema.GenvFile, url, ref string) (*schema.GenvFile, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return local, false
+	}
+	cacheDir, err := pullCacheDir()
+	if err != nil {
+		return local, false
+	}
+	if !dryRunShouldUpdateCache(cacheDir, url) {
+		return local, false
+	}
+	if err := updateRepoCache(cacheDir, url, ref); err != nil {
+		return local, false
+	}
+	remote, err := genvfile.Read(filepath.Join(cacheDir, "genv.json"))
+	if err != nil {
+		return local, false
+	}
+	return remote, true
+}
+
+func dryRunShouldUpdateCache(cacheDir, url string) bool {
+	if _, err := os.Stat(cacheDir); err == nil {
+		return true
+	}
+	if strings.HasPrefix(url, "file://") || filepath.IsAbs(url) {
+		return true
+	}
+	if _, err := os.Stat(url); err == nil {
+		return true
+	}
+	return false
 }
 
 // pullCacheDir returns the deterministic local cache path for the spec repo.

@@ -21,6 +21,9 @@ _genv() {
 		'validate:Validate genv.json against the schema'
 		'upgrade:Upgrade all tracked packages to their latest versions'
 		'updates:Check available updates for genv-tracked packages'
+		'migrate:Convert legacy host predicates to schemaVersion 8 targets'
+		'export:Build a single-target portable snapshot and report'
+		'map:Print assist-only manager mapping suggestions for a target'
 		'pull:Fetch the spec from a git repository and update genv.json'
 		'init:Create a new genv.json interactively'
 		'env:Manage shell environment variables'
@@ -60,6 +63,7 @@ _genv() {
 				'--no-hooks[Skip pre-remove and post-remove hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'1: :->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
@@ -71,6 +75,7 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'1: :->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
@@ -89,7 +94,8 @@ _genv() {
 				'--no-search[Skip interactive package search]' \
 				'--no-hooks[Skip pre-add and post-add hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
-				'--host=[Host name for host-specific records]:host:'
+				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
 		adopt)
 			_arguments \
@@ -99,6 +105,7 @@ _genv() {
 				"--prefer=[Preferred manager]:manager:($(genv __complete managers 2>/dev/null))" \
 				'--manager=[Manager-specific names]:manager:' \
 				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'--files[Adopt matching files block entries into the lock without changing targets]' \
 				'--json[Emit machine-readable JSON to stdout]'
 			;;
@@ -177,7 +184,27 @@ _genv() {
 				'--no-hooks[Skip pre-apply and post-apply hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
-				'--host=[Host name for host-specific records]:host:'
+				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
+				'--force-new-lock[Back up a foreign lock and start a new local lock]'
+			;;
+		migrate)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--write[Overwrite genv.json with the migrated schemaVersion 8 spec]'
+			;;
+		export)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--target=[Target id to export]:target:' \
+				'--out=[Directory to write genv.json and report.json]:path:_files -/' \
+				'--strict[Exit nonzero if the report contains errors]' \
+				'--from-v7[Migrate v1-v7 input to schemaVersion 8 in memory first]'
+			;;
+		map)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--target=[Destination target id]:target:'
 			;;
 		status)
 			_arguments \
@@ -193,7 +220,8 @@ _genv() {
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--json[Emit machine-readable JSON to stdout]' \
-				'--debug[Emit debug-level structured logs to stderr]'
+				'--debug[Emit debug-level structured logs to stderr]' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
 		clean)
 			_arguments \
@@ -226,11 +254,13 @@ _genv() {
 				set)
 					_arguments \
 						'--file=[Path to genv.json]:path:_files' \
-						'--sensitive[Mark value as sensitive (redacted in output and logs)]'
+						'--sensitive[Mark value as sensitive (redacted in output and logs)]' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				unset)
 					_arguments \
-						'--file=[Path to genv.json]:path:_files'
+						'--file=[Path to genv.json]:path:_files' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				list | ls)
 					_arguments \
@@ -275,11 +305,13 @@ _genv() {
 						set)
 							_arguments \
 								'--file=[Path to genv.json]:path:_files' \
-								'--shell=[Target shell]:shell:(bash zsh fish)'
+								'--shell=[Target shell]:shell:(bash zsh fish)' \
+								'--target=[Portable target id for schemaVersion 8 specs]:target:'
 							;;
 						unset)
 							_arguments \
-								'--file=[Path to genv.json]:path:_files'
+								'--file=[Path to genv.json]:path:_files' \
+								'--target=[Portable target id for schemaVersion 8 specs]:target:'
 							;;
 						esac
 						;;
@@ -372,7 +404,13 @@ _genv() {
 						'--stop=[Command to stop the service]:command:' \
 						'--restart=[Command to restart the service]:command:' \
 						'--status=[Command to check service status]:command:' \
-						'--brew-formula=[Homebrew formula to manage via brew services (macOS only)]:formula:'
+						'--brew-formula=[Homebrew formula to manage via brew services (macOS only)]:formula:' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
+					;;
+				remove | rm)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				*)
 					_arguments \
