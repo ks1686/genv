@@ -75,16 +75,41 @@ func TestPreUpgrade_RunsMatchingHooks(t *testing.T) {
 func TestExecutor_ShellArgvPerOS(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
-		name string
-		goos string
-		bin  string
-		flag string
+		name     string
+		goos     string
+		lookPath func(string) (string, error)
+		want     []string
 	}{
-		{name: "windows uses cmd /C", goos: "windows", bin: "cmd", flag: "/C"},
-		{name: "linux uses sh -c", goos: "linux", bin: "sh", flag: "-c"},
+		{
+			name:     "windows uses cmd /C when no PowerShell",
+			goos:     "windows",
+			lookPath: func(string) (string, error) { return "", os.ErrNotExist },
+			want:     []string{"cmd", "/C", "echo hi"},
+		},
+		{
+			name: "windows uses pwsh when available",
+			goos: "windows",
+			lookPath: func(file string) (string, error) {
+				if file == "pwsh" {
+					return "/usr/bin/pwsh", nil
+				}
+				return "", os.ErrNotExist
+			},
+			want: []string{"/usr/bin/pwsh", "-NoProfile", "-Command", "echo hi"},
+		},
+		{
+			name:     "linux uses sh -c",
+			goos:     "linux",
+			lookPath: nil, // unused for non-windows
+			want:     []string{"sh", "-c", "echo hi"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.lookPath != nil {
+				restore := profilebackend.SetLookPathForTest(tc.lookPath)
+				t.Cleanup(restore)
+			}
 			e, fr := newTestExecutor(nil, nil)
 			e.goos = tc.goos
 			hooks := []schema.Hook{{Command: "echo hi"}}
@@ -96,9 +121,8 @@ func TestExecutor_ShellArgvPerOS(t *testing.T) {
 			if len(fr.calls) != 1 {
 				t.Fatalf("got %d calls, want 1", len(fr.calls))
 			}
-			want := []string{tc.bin, tc.flag, "echo hi"}
-			if !slicesEqual(fr.calls[0], want) {
-				t.Errorf("call 0 = %v, want %v", fr.calls[0], want)
+			if !slicesEqual(fr.calls[0], tc.want) {
+				t.Errorf("call 0 = %v, want %v", fr.calls[0], tc.want)
 			}
 		})
 	}
