@@ -117,7 +117,7 @@ _genv() {
 		opts="--file --lock-file --json --debug --files --host"
 		;;
 	scan)
-		opts="--file --lock-file --json --debug"
+		opts="--file --lock-file --json --debug --target"
 		;;
 	clean)
 		opts="--dry-run"

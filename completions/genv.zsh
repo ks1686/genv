@@ -212,7 +212,8 @@ _genv() {
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--json[Emit machine-readable JSON to stdout]' \
-				'--debug[Emit debug-level structured logs to stderr]'
+				'--debug[Emit debug-level structured logs to stderr]' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
 		clean)
 			_arguments \
