@@ -30,6 +30,7 @@ func TestBuildGoldenSnapshotAndReport(t *testing.T) {
 
 	assertGoldenFile(t, filepath.Join(outDir, "genv.json"), filepath.Join(fixtureDir, "golden", "arch", "genv.json"))
 	assertGoldenFile(t, filepath.Join(outDir, "report.json"), filepath.Join(fixtureDir, "golden", "arch", "report.json"))
+	assertGoldenFile(t, filepath.Join(outDir, "report.md"), filepath.Join(fixtureDir, "golden", "arch", "report.md"))
 	assertGoldenFile(t, filepath.Join(outDir, "files", "assets", "gitconfig"), filepath.Join(fixtureDir, "assets", "gitconfig"))
 	assertGoldenFile(t, filepath.Join(outDir, "files", "assets", "config.tmpl"), filepath.Join(fixtureDir, "assets", "config.tmpl"))
 
@@ -46,6 +47,34 @@ func TestBuildGoldenSnapshotAndReport(t *testing.T) {
 	}
 	if strings.Contains(string(data), "SECRET") || strings.Contains(string(data), "do-not-export") {
 		t.Fatalf("snapshot leaked sensitive env data:\n%s", data)
+	}
+}
+
+func TestIsAbsolutePathRecognizesTargetPlatformPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "posix", path: "/etc/genv/config", want: true},
+		{name: "windows drive backslash", path: `C:\Users\me\.gitconfig`, want: true},
+		{name: "windows drive slash", path: "D:/Users/me/.gitconfig", want: true},
+		{name: "windows drive root", path: `z:\`, want: true},
+		{name: "unc backslash", path: `\\server\share\dir\file`, want: true},
+		{name: "unc mixed separators", path: `\\server/share/dir/file`, want: true},
+		{name: "drive relative", path: `C:Users\me\.gitconfig`, want: false},
+		{name: "non drive letter", path: `1:\Users\me`, want: false},
+		{name: "incomplete unc", path: `\\server`, want: false},
+		{name: "relative", path: "assets/gitconfig", want: false},
+		{name: "parent relative", path: "../assets/gitconfig", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAbsolutePath(tt.path); got != tt.want {
+				t.Fatalf("isAbsolutePath(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
 	}
 }
 
