@@ -1,108 +1,66 @@
-# macOS Install and Bootstrap Guide
+# macOS install and bootstrap
 
----
-
-## Step 1 — Install Homebrew (if not already installed)
-
-Open **Terminal** and run:
+## 1. Homebrew
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-- Follow the prompts — it may ask for your password
-- If Homebrew is already installed, skip this step
-
-Verify:
-
-```bash
 brew --version
 ```
 
----
+Skip if Homebrew is already installed.
 
-## Step 2 — Install genv
+## 2. Install genv
 
 ```bash
 brew tap ks1686/tap
 brew install genv
-```
-
-Verify:
-
-```bash
 genv version
 ```
 
----
-
-## Step 3 — Create your config
+## 3. Create a schema v8 config
 
 ```bash
-mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
+mkdir -p ~/.config/genv
+cat > ~/.config/genv/genv.json << 'EOF'
 {
-  "schemaVersion": "5",
-  "packages": []
+  "schemaVersion": "8",
+  "defaults": {
+    "env": {
+      "EDITOR": { "value": "nvim" }
+    }
+  },
+  "targets": {
+    "macos": {
+      "packages": []
+    }
+  }
 }
 EOF
 ```
 
----
+On this Mac, classification selects `macos` automatically. Use `--target macos` when you want to be explicit.
 
-## Step 4 — Add your first package
+## 4. Add packages
 
 ```bash
 genv add jq
-```
-
-- This adds `jq` to your `genv.json` and installs it immediately via `brew`
-
-Verify:
-
-```bash
-jq --version
 genv list
-```
-
-- `jq --version` should print a version number ✅
-- `genv list` should show `jq` as a tracked package ✅
-
----
-
-## Step 5 — Preview and apply a full spec
-
-Edit your spec to add more packages:
-
-```bash
-genv edit
-```
-
-Then preview what will change before applying:
-
-```bash
 genv apply --dry-run
+genv apply --yes
 ```
 
-When ready:
+`genv add` installs immediately via `brew` when available and writes into `targets.macos` on a v8 spec.
 
-```bash
-genv apply
-```
+## 5. Dotfiles / other machines
 
----
+Commit `~/.config/genv/genv.json` (and any relative `files` assets). **Do not** commit `genv.lock.json`.
 
-## Step 6 — Done!
+On another Mac: clone, then `genv apply --target macos --yes`.
 
-Your `genv.json` lives at `~/.config/genv/genv.json`. Commit it to your dotfiles repo and run `genv apply` on any new Mac to reproduce your environment.
+For Linux/Windows siblings of the same repo, see [multi-machine.md](multi-machine.md).
 
----
+## Notes
 
-## Known limitations on macOS
-
-- **Homebrew install time** — `brew install` for large packages (e.g. gcc, llvm) can take several minutes. This is a Homebrew limitation, not genv's.
-- **Cask vs formula resolution** — Some packages exist as both a cask and a formula (e.g. `firefox`). genv currently treats Homebrew as a single `brew` manager and defaults to formulae, relying on Homebrew's own resolution rules. If you specifically need the cask variant, install it manually with `brew install --cask <name>` or manage that application outside of genv for now.
-
-- **Apple Silicon vs Intel** — Homebrew installs to `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel. genv handles both automatically via PATH detection.
----
-
-**Focus tip:** Steps 1–2 are one-time setup. Steps 3–5 are what you repeat on each new machine.
+- Large formulae can take minutes — that is Homebrew, not genv.
+- Some names exist as both formula and cask; genv uses Homebrew’s own resolution. Prefer explicit `managers` / manual cask install when you need a specific variant.
+- Apple Silicon (`/opt/homebrew`) and Intel (`/usr/local`) are both detected via `PATH`.
