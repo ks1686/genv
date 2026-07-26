@@ -5,7 +5,7 @@
 $script:GenvCommands = @(
 	'add', 'remove', 'rm', 'adopt', 'disown', 'list', 'ls', 'apply', 'edit',
 	'clean', 'scan', 'status', 'completion', 'validate', 'upgrade', 'updates',
-	'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'profile', 'version', 'help'
+	'migrate', 'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'profile', 'version', 'help'
 )
 
 function script:Get-GenvCompletions {
@@ -74,6 +74,10 @@ function script:Get-GenvCompletions {
 			$flags = @('--file', '--lock-file', '--dry-run', '--force', '--strict', '--yes',
 				'--quiet', '--json', '--timeout', '--no-hooks', '--hook-timeout', '--debug',
 				'--host', '--target', '--force-new-lock')
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'migrate' } {
+			$flags = @('--file', '--write')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'export' } {

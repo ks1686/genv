@@ -25,22 +25,31 @@ genv map --target ubuntu           # print manager mapping suggestions without e
 
 It follows a declarative model: **you edit the spec file, and `genv apply` makes reality match it** — installing packages that were added and uninstalling ones that were removed. A `genv.lock.json` file records what genv last applied, so it only acts on the delta.
 
-Move to a new machine? Clone your dotfiles, run `genv apply`, and you're done.
+Move to a new machine? Clone your dotfiles, pick the right target, run
+`genv apply`, and you're done. See the
+[multi-machine guide](docs/multi-machine.md) for schema v8 targets, exports, and
+lock-file recovery.
 
 ---
 
 ## Supported platforms and package managers
 
-| Platform          | Managers                                                     |
-| ----------------- | -------------------------------------------------------------- |
-| Linux (Arch)      | `pacman` (official repos), `paru`/`yay` (AUR)                |
-| Linux (other)     | `snap`, `linuxbrew`                                           |
-| macOS             | `brew` (formulae + casks), `mas` (Mac App Store)             |
-| Windows (native)  | `winget`, `scoop`, `choco`                                    |
-| WSL2              | Targets the Linux userland inside WSL2 (treated as `arch`)    |
-| Any of the above  | `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta` (global JS/TS tools), `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi` (global Python/data tools), `cargo` (global crates), `go` (`go install` binaries), `rustup` (explicit Rust toolchains/components/targets), `gem` (global Ruby gems), `composer` (global PHP packages), `dotnet-tool` (global .NET tools), `ghcup`/`stack` (Haskell toolchains/tools), `opam` (OCaml switch packages), `juliaup` (Julia channels), `sdkman`/`asdf`/`mise` (universal tool/version managers), `krew` (kubectl plugins), `helm` (Helm plugins), `vscode` (VS Code extensions) |
+| Platform / target       | Managers                                                     |
+| ----------------------- | ------------------------------------------------------------ |
+| Linux `arch`            | `pacman` (official repos), `paru`/`yay` (AUR)                |
+| Linux `ubuntu` / `linux` | `snap`, `linuxbrew`                                         |
+| macOS `macos`           | `brew` (formulae + casks), `mas` (Mac App Store)             |
+| Windows `windows`       | `winget`, `scoop`, `choco`                                  |
+| WSL2 `ubuntu`           | WSL Ubuntu userland via `snap` or `linuxbrew`                |
+| WSL2 `wsl-arch`         | ArchWSL / Arch-like WSL userland via `pacman`, `paru`/`yay` |
+| Any of the above        | `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta` (global JS/TS tools), `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi` (global Python/data tools), `cargo` (global crates), `go` (`go install` binaries), `rustup` (explicit Rust toolchains/components/targets), `gem` (global Ruby gems), `composer` (global PHP packages), `dotnet-tool` (global .NET tools), `ghcup`/`stack` (Haskell toolchains/tools), `opam` (OCaml switch packages), `juliaup` (Julia channels), `sdkman`/`asdf`/`mise` (universal tool/version managers), `krew` (kubectl plugins), `helm` (Helm plugins), `vscode` (VS Code extensions) |
 
 `genv` detects which managers are available on the current host and picks the best one automatically, or uses your preference.
+
+Linux support is Arch-first, with `snap` and Linuxbrew covering Ubuntu-like and
+other snap-capable hosts. Native `apt`, `dnf`, and `apk` adapters are deferred;
+use `genv map --target <id>` and `genv export --target <id>` to inspect mapping
+gaps before moving a spec between Linux families.
 
 ---
 
@@ -326,6 +335,7 @@ When you run `genv apply`:
 | `genv status [flags]`                             | Show drift between genv.json and the lock file                         |
 | `genv status --files [flags]`                     | Check the `files` block against the live filesystem only (does not touch the spec-vs-lock check above) |
 | `genv pull [flags]`                               | Fetch genv.json from the `repo.url`/`repo.ref` git remote configured in the spec |
+| `genv migrate [flags]`                            | Convert legacy host predicates to schemaVersion 8 targets              |
 | `genv list`                                       | List packages currently tracked by genv (from lock file) (alias: `ls`) |
 | `genv profile list`                               | List available profiles and mark the active one                        |
 | `genv profile create <name>`                      | Scaffold a new profile file                                            |
@@ -359,6 +369,7 @@ When you run `genv apply`:
 - `--no-hooks` — skip pre-add and post-add hooks without skipping the install
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
+- `--target <id>` — target bucket to mutate when editing a schema v8 spec
 - `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv remove` flags
@@ -366,6 +377,7 @@ When you run `genv apply`:
 - `--no-hooks` — skip pre-remove and post-remove hooks without skipping the uninstall
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--host <name>` — host name for host-specific hooks (defaults to `$GENV_HOST` or the machine hostname)
+- `--target <id>` — target bucket to mutate when editing a schema v8 spec
 - `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv adopt` flags
@@ -391,6 +403,8 @@ When you run `genv apply`:
 - `--hook-timeout <duration>` — per-hook deadline, e.g. `5m` or `30s` (0 = no timeout)
 - `--debug` — emit debug-level structured logs to stderr
 - `--host <name>` — host name for host-specific records (defaults to `$GENV_HOST` or the machine hostname)
+- `--target <id>` — active schema v8 target (defaults to `$GENV_TARGET` or host classification)
+- `--force-new-lock` — back up a foreign lock file and start a new local lock
 - `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
 
 ### `genv status` flags
@@ -407,11 +421,17 @@ When you run `genv apply`:
 - `--ref <ref>` — override the repository ref configured in `repo.ref` (default: `main`)
 - `--dry-run` — print what would be pulled without writing `genv.json`
 
+### `genv migrate` flags
+
+- `--file <path>` — path to `genv.json`
+- `--write` — overwrite `genv.json` with the migrated schema v8 spec; without it, migrated JSON is printed to stdout
+
 ### `genv scan` flags
 
 - `--json` — emit machine-readable JSON to stdout
 - `--debug` — emit debug-level structured logs to stderr
 - `--lock-file <path>` — path to the lock file (defaults to `genv.lock.json` in the genv config directory)
+- `--target <id>` — target bucket to mutate when scanning into a schema v8 spec
 
 ### `genv upgrade` flags
 

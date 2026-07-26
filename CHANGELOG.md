@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Native Windows PowerShell parity (schema **v7**): `env`/`shell` profile backends write `env.ps1` / `shell.ps1` and inject the CurrentUser CurrentHost profile when `pwsh` or Windows PowerShell is on `PATH` (prefer `pwsh`). Aliases/functions may set `"shell": "powershell"`; omitted `shell` stays POSIX-only. Hooks on Windows use the detected PowerShell engine (`-NoProfile -Command` / `-File`), with `cmd /C` fallback. `genv completion powershell` embeds and installs `completions/genv.ps1`.
+- Multi-machine portability (schema **v8**): `defaults` plus `targets.*` let one git-tracked `genv.json` carry macOS, Windows, native Arch, Ubuntu-like Linux, Ubuntu WSL2, and Arch WSL2 desired state without sharing lock files. `genv migrate` converts legacy host predicates to target buckets, `genv map --target` prints assist-only manager mapping suggestions, and `genv export --target --out` writes single-target snapshots plus reports while omitting locks and sensitive env values. `genv apply --target` selects the active bucket and refuses foreign locks unless `--force-new-lock` backs them up first.
 
 ### Changed
 
