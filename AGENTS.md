@@ -49,6 +49,9 @@ Current top-level commands (see `main.go:81-127`):
 - `validate` — validate `genv.json` without installing anything
 - `upgrade` — re-resolve and upgrade pinned packages
 - `pull` — fetch the spec from the git repository declared in `repo.url`
+- `migrate` — convert legacy host predicates to schemaVersion 8 target buckets
+- `export` — build a single-target schemaVersion 8 snapshot plus report
+- `map` — print assist-only manager mapping suggestions for a target
 - `init` — interactive wizard to create a new `genv.json`
 - `env` — manage global environment variables (`set`, `unset`, `list`)
 - `shell` — manage shell config (`alias set/unset`, `status`, `edit`)
@@ -187,8 +190,12 @@ opt-in convenience and is not configured in this repository.
 - Runtime user config, lock files, and a separate global `AGENTS.md`/agent baseline live under `~/.config/genv/`.
 - Project agent guidance is primarily this `AGENTS.md`; `.cursor/` is gitignored and there is no project `.cursor/rules` pack yet.
 - `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`.
-- Schema versions `"1"`–`"7"` are accepted; v7 adds `"shell": "powershell"` targeting for aliases/functions. On Windows, `genv apply` uses a profile-backend abstraction (`POSIXBackend` + `PowerShellBackend`): prefer `pwsh`, else `powershell.exe`; omit PowerShell writes on non-Windows. Shared `env` maps emit both `env.sh` and `env.ps1` when the corresponding backend runs.
+- Schema versions `"1"`–`"8"` are accepted. v7 adds `"shell": "powershell"` targeting for aliases/functions. v8 adds portable `defaults` plus `targets.*` bundles; top-level desired-state blocks and per-record `host` are invalid in v8. Known targets are `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, and optional catch-all `linux`; `genv apply` selects `--target`, then `GENV_TARGET`, then host classification.
+- Schema v8 target overlays support `null` tombstones for inherited `env`, `shell.aliases`, `shell.functions`, and `services` map entries. Tombstones are valid only under `targets.*`, not `defaults`.
+- `genv migrate` converts v1-v7 host-scoped specs to v8 target buckets; `genv export --target --out` writes a single-target snapshot plus report and bundled relative file assets while omitting locks and sensitive env values; `genv map --target` is print-only guidance for manager mapping gaps.
+- On Windows, `genv apply` uses a profile-backend abstraction (`POSIXBackend` + `PowerShellBackend`): prefer `pwsh`, else `powershell.exe`; omit PowerShell writes on non-Windows. Shared `env` maps emit both `env.sh` and `env.ps1` when the corresponding backend runs.
 - Publishing the `genv` binary to winget/scoop/choco remains deferred; adapters already manage packages through those managers when present.
-- Host classification currently recognizes `macos` / native `windows` / `wsl2` / `arch` only; other Linux distros get an empty host (host-scoped packages skipped) unless `GENV_HOST`/`--host` is set, and there are no `apt`/`dnf`/`apk` adapters yet.
-- Lock files are machine-local and must not travel with the spec; applying a foreign lock across OS/machines causes wrong uninstalls and false “up to date” results.
+- Host classification currently recognizes `macos`, native `windows`, native `arch`, `ubuntu`, and `wsl-arch`. WSL2 does not inherit native `arch`: Ubuntu-like WSL2 classifies as `ubuntu`, Arch-like WSL2 classifies as `wsl-arch`, and other WSL distros require `GENV_TARGET`/`--target`.
+- Public Linux channels remain Arch-first plus `snap` and `linuxbrew`; `apt`/`dnf`/`apk` adapters are deferred.
+- Lock files are machine-local and must not travel with the spec. Schema v8 locks record target/GOOS/manager metadata; foreign locks are refused unless `genv apply --force-new-lock` backs them up and starts a new local lock.
 - Today `genv add` can still write the spec before install succeeds and exit 0 on failure; fixing that ordering is a known v4 correctness goal.

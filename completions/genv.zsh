@@ -21,6 +21,7 @@ _genv() {
 		'validate:Validate genv.json against the schema'
 		'upgrade:Upgrade all tracked packages to their latest versions'
 		'updates:Check available updates for genv-tracked packages'
+		'migrate:Convert legacy host predicates to schemaVersion 8 targets'
 		'export:Build a single-target portable snapshot and report'
 		'map:Print assist-only manager mapping suggestions for a target'
 		'pull:Fetch the spec from a git repository and update genv.json'
@@ -184,6 +185,11 @@ _genv() {
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'--force-new-lock[Back up a foreign lock and start a new local lock]'
+			;;
+		migrate)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--write[Overwrite genv.json with the migrated schemaVersion 8 spec]'
 			;;
 		export)
 			_arguments \

@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates export map pull init env shell service profile version help
+        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service profile version help
             return 1
         end
     end
@@ -112,6 +112,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell c
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'
+complete -c genv -n __fish_genv_no_subcommand -f -a migrate -d 'Convert legacy host predicates to schemaVersion 8 targets'
 complete -c genv -n __fish_genv_no_subcommand -f -a export -d 'Build a single-target portable snapshot and report'
 complete -c genv -n __fish_genv_no_subcommand -f -a map -d 'Print assist-only manager mapping suggestions for a target'
 complete -c genv -n __fish_genv_no_subcommand -f -a pull -d 'Fetch the spec from a git repository and update genv.json'
@@ -202,6 +203,9 @@ complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-le
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
 complete -c genv -n '__fish_genv_using_command apply' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_using_command apply' -l force-new-lock -d 'Back up a foreign lock and start a new local lock'
+
+# migrate
+complete -c genv -n '__fish_genv_using_command migrate' -l write -d 'Overwrite genv.json with the migrated schemaVersion 8 spec'
 
 # export
 complete -c genv -n '__fish_genv_using_command export' -l target -d 'Target id to export' -x
