@@ -1,5 +1,9 @@
 # Outdated-Aware Upgrade Implementation Plan
 
+> **Status: COMPLETED (2026-07-21 / v3.2.x).** Shipped via the outdated-aware upgrade commits (`66f3be1` … `ada5ff8`, PR #64). Checkboxes below are historical plan tracking and were not backfilled; treat the design + CHANGELOG as the source of truth.
+>
+> **Note:** The plan mentions a `DetectOutdated` option; the landed API uses `Filters.All` (default outdated-only, `--all` for brute-force).
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `genv upgrade` default to planning only actually-outdated packages (with `--all` for the old brute-force path), batch mas upgrades, and add `OutdatedLister` coverage for the common managers listed in the design spec.
