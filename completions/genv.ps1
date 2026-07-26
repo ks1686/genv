@@ -41,6 +41,16 @@ function script:Get-GenvCompletions {
 	}
 
 	switch ($cmd) {
+		{ $_ -in 'apply' } {
+			$flags = @('--file', '--lock-file', '--dry-run', '--force', '--strict', '--yes',
+				'--quiet', '--json', '--timeout', '--no-hooks', '--hook-timeout', '--debug',
+				'--host', '--target', '--force-new-lock')
+			return $flags |
+				Where-Object { $_ -like "$WordToComplete*" } |
+				ForEach-Object {
+					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterName', $_)
+				}
+		}
 		{ $_ -in 'remove', 'rm', 'disown', 'upgrade' } {
 			try {
 				$pkgs = & genv __complete packages 2>$null

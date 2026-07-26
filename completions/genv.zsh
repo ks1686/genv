@@ -177,7 +177,9 @@ _genv() {
 				'--no-hooks[Skip pre-apply and post-apply hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
-				'--host=[Host name for host-specific records]:host:'
+				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
+				'--force-new-lock[Back up a foreign lock and start a new local lock]'
 			;;
 		status)
 			_arguments \

@@ -196,6 +196,8 @@ complete -c genv -n '__fish_genv_using_command apply' -l no-hooks -d 'Skip pre-a
 complete -c genv -n '__fish_genv_using_command apply' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
+complete -c genv -n '__fish_genv_using_command apply' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command apply' -l force-new-lock -d 'Back up a foreign lock and start a new local lock'
 
 # status / scan
 complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l lock-file -d 'Path to genv lock file' -r

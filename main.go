@@ -25,6 +25,7 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/hooks"
 	"github.com/ks1686/genv/internal/host"
+	"github.com/ks1686/genv/internal/lockgate"
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/profile"
@@ -34,6 +35,7 @@ import (
 	"github.com/ks1686/genv/internal/search"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/shellcfg"
+	"github.com/ks1686/genv/internal/target"
 	"github.com/ks1686/genv/internal/upgrade"
 )
 
@@ -911,6 +913,8 @@ type applyOptions struct {
 	Timeout       time.Duration
 	Debug         bool
 	TargetProfile string
+	Target        string
+	ForceNewLock  bool
 	NoHooks       bool
 	HookTimeout   time.Duration
 }
@@ -938,6 +942,8 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -994,9 +1000,43 @@ func runApply(opts applyOptions) int {
 }
 
 func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
-	f = host.FilterForHost(f, hostForCommand(opts.Host))
-
 	available := resolver.Detect()
+	if lf == nil {
+		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
+	}
+	if f.SchemaVersion == schema.Version8 {
+		targetID, err := target.Resolve(opts.Target)
+		if err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitUsage
+		}
+		if f.Targets[targetID] == nil {
+			fprintf(os.Stderr, "genv apply: no matching targets.%s in %s\n", targetID, opts.File)
+			return exitValidation
+		}
+		effective, err := schema.MergeTarget(f, targetID)
+		if err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitValidation
+		}
+		decision := lockgate.Check(lf, targetID, runtime.GOOS, available)
+		if decision.Foreign {
+			if !opts.ForceNewLock {
+				fprintf(os.Stderr, "genv apply: foreign lock refused: %s\n", decision.Reason)
+				fprintf(os.Stderr, "Back up or remove %s, or rerun with --force-new-lock to move it aside and create a new local lock.\n", lockPath)
+				return exitLogic
+			}
+			backupPath := lockPath + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+			if err := os.Rename(lockPath, backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				fprintf(os.Stderr, "genv apply: warning: could not back up foreign lock %s: %v\n", lockPath, err)
+			}
+			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
+		}
+		f = effective
+		opts.Target = targetID
+	} else {
+		f = host.FilterForHost(f, hostForCommand(opts.Host))
+	}
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
 
 	if opts.JSONOut {
@@ -1058,7 +1098,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	success := len(errs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
 
 	installed := make([]string, len(execResult.Installed))
 	for i, lp := range execResult.Installed {
@@ -1137,7 +1177,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 					return exitLogic
 				}
 			}
-			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, true)
+			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, true)
 		}
 		return exitOK
 	}
@@ -1212,7 +1252,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, success)
+	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
 
 	if !success {
 		for _, e := range execResult.Errors {
@@ -1235,13 +1275,17 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile string, success bool) {
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, success bool) {
 	if success && targetProfile != "" {
 		if targetProfile == "base" {
 			lf.ActiveProfile = ""
 		} else {
 			lf.ActiveProfile = targetProfile
 		}
+	}
+	if success && activeTarget != "" {
+		lf.Target = activeTarget
+		lf.GOOS = runtime.GOOS
 	}
 	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
 	for _, id := range execResult.Uninstalled {
@@ -3818,6 +3862,8 @@ Apply-specific flags:
   --no-hooks           Skip apply lifecycle hooks without skipping apply
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
+  --target <id>        Portable target id for schemaVersion 8 specs
+  --force-new-lock     Back up a foreign lock and start a new local lock
 
 Remove-specific flags:
   --no-hooks                Skip remove lifecycle hooks without skipping uninstall
