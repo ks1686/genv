@@ -18,12 +18,21 @@ var ErrAlreadyTracked = errors.New("package already tracked")
 //   - managers may be nil; each key must be a known manager name.
 //
 // Returns ErrAlreadyTracked if the ID is already present.
-func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]string) error {
+func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]string, targetID string) error {
 	if id == "" {
 		return fmt.Errorf("package id must not be empty")
 	}
 
-	for _, p := range f.Packages {
+	packages := &f.Packages
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		packages = &bundle.Packages
+	}
+
+	for _, p := range *packages {
 		if p.ID == id {
 			return fmt.Errorf("%w: %q (use 'genv remove %s' first to re-add it)", ErrAlreadyTracked, id, id)
 		}
@@ -46,6 +55,6 @@ func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]str
 		Managers: managers, // nil is safe: omitempty omits nil and empty maps
 	}
 
-	f.Packages = append(f.Packages, pkg)
+	*packages = append(*packages, pkg)
 	return nil
 }

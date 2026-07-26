@@ -16,7 +16,7 @@ func newFile(pkgs ...schema.Package) *schema.GenvFile {
 
 func TestAdd_Basic(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "*", "", nil); err != nil {
+	if err := Add(f, "git", "*", "", nil, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(f.Packages) != 1 {
@@ -31,7 +31,7 @@ func TestAdd_Basic(t *testing.T) {
 func TestAdd_WithPreferAndManagers(t *testing.T) {
 	f := newFile()
 	managers := map[string]string{"snap": "hello", "brew": "hello"}
-	if err := Add(f, "hello", "*", "snap", managers); err != nil {
+	if err := Add(f, "hello", "*", "snap", managers, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	p := f.Packages[0]
@@ -45,14 +45,14 @@ func TestAdd_WithPreferAndManagers(t *testing.T) {
 
 func TestAdd_EmptyID(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "", "*", "", nil); err == nil {
+	if err := Add(f, "", "*", "", nil, ""); err == nil {
 		t.Fatal("expected error for empty id")
 	}
 }
 
 func TestAdd_Duplicate(t *testing.T) {
 	f := newFile(schema.Package{ID: "git"})
-	err := Add(f, "git", "*", "", nil)
+	err := Add(f, "git", "*", "", nil, "")
 	if err == nil {
 		t.Fatal("expected ErrAlreadyTracked")
 	}
@@ -63,21 +63,21 @@ func TestAdd_Duplicate(t *testing.T) {
 
 func TestAdd_UnknownPrefer(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "*", "yum", nil); err == nil {
+	if err := Add(f, "git", "*", "yum", nil, ""); err == nil {
 		t.Fatal("expected error for unknown prefer")
 	}
 }
 
 func TestAdd_UnknownManagerKey(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "*", "", map[string]string{"yum": "git"}); err == nil {
+	if err := Add(f, "git", "*", "", map[string]string{"yum": "git"}, ""); err == nil {
 		t.Fatal("expected error for unknown manager key")
 	}
 }
 
 func TestAdd_NoVersionOmitted(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "", "", nil); err != nil {
+	if err := Add(f, "git", "", "", nil, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f.Packages[0].Version != "" {
@@ -88,7 +88,7 @@ func TestAdd_NoVersionOmitted(t *testing.T) {
 func TestAdd_PreservesOrder(t *testing.T) {
 	f := newFile()
 	for _, id := range []string{"git", "neovim", "firefox"} {
-		if err := Add(f, id, "*", "", nil); err != nil {
+		if err := Add(f, id, "*", "", nil, ""); err != nil {
 			t.Fatalf("Add(%s): %v", id, err)
 		}
 	}
@@ -104,7 +104,7 @@ func TestAdd_PreservesOrder(t *testing.T) {
 // the resulting Package has a nil managers map (marshaled as omitempty/absent).
 func TestAdd_NilManagers(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "*", "", nil); err != nil {
+	if err := Add(f, "git", "*", "", nil, ""); err != nil {
 		t.Fatalf("unexpected error with nil managers: %v", err)
 	}
 	if f.Packages[0].Managers != nil {
@@ -116,7 +116,7 @@ func TestAdd_NilManagers(t *testing.T) {
 // accepted without error.
 func TestAdd_EmptyManagersMap(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "git", "*", "", map[string]string{}); err != nil {
+	if err := Add(f, "git", "*", "", map[string]string{}, ""); err != nil {
 		t.Fatalf("unexpected error with empty managers map: %v", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestAdd_MultipleDistinctPackages(t *testing.T) {
 	f := newFile()
 	ids := []string{"git", "neovim", "firefox", "ripgrep"}
 	for _, id := range ids {
-		if err := Add(f, id, "*", "", nil); err != nil {
+		if err := Add(f, id, "*", "", nil, ""); err != nil {
 			t.Fatalf("Add(%s): %v", id, err)
 		}
 	}
@@ -148,7 +148,7 @@ func TestAdd_AllKnownManagers(t *testing.T) {
 	for _, mgr := range knownManagers {
 		t.Run(mgr, func(t *testing.T) {
 			f := newFile()
-			if err := Add(f, "pkg", "", mgr, nil); err != nil {
+			if err := Add(f, "pkg", "", mgr, nil, ""); err != nil {
 				t.Errorf("Add with known manager %q: unexpected error: %v", mgr, err)
 			}
 		})
@@ -160,7 +160,7 @@ func TestAdd_AllKnownManagers(t *testing.T) {
 func TestAdd_VersionStoredVerbatim(t *testing.T) {
 	f := newFile()
 	const ver = "0.10.5-beta+build.123"
-	if err := Add(f, "pkg", ver, "", nil); err != nil {
+	if err := Add(f, "pkg", ver, "", nil, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f.Packages[0].Version != ver {
