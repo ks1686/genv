@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ks1686/genv/schema/v8/genv.json",
+  "title": "genv.json",
+  "description": "genv portable targets manifest - schema version 8",
+  "type": "object",
+  "required": ["schemaVersion", "targets"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "8"
+    },
+    "repo": {
+      "type": "object"
+    },
+    "defaults": {
+      "$ref": "#/$defs/bundle"
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "enum": ["macos", "windows", "arch", "ubuntu", "wsl-arch", "linux"]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/bundle"
+      }
+    },
+    "packages": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "env": {
+      "type": "null"
+    },
+    "shell": {
+      "type": "null"
+    },
+    "files": {
+      "type": "null"
+    },
+    "services": {
+      "type": "null"
+    },
+    "hooks": {
+      "type": "null"
+    }
+  },
+  "$defs": {
+    "bundle": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/package"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/envVar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "shell": {
+          "type": "object"
+        },
+        "files": {
+          "type": "object"
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "hooks": {
+          "type": "object"
+        }
+      }
+    },
+    "envVar": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "sensitive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "not": {
+        "required": ["host"]
+      },
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "prefer": {
+          "type": "string"
+        },
+        "managers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
