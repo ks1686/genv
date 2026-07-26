@@ -21,6 +21,7 @@ _genv() {
 		'validate:Validate genv.json against the schema'
 		'upgrade:Upgrade all tracked packages to their latest versions'
 		'updates:Check available updates for genv-tracked packages'
+		'export:Build a single-target portable snapshot and report'
 		'pull:Fetch the spec from a git repository and update genv.json'
 		'init:Create a new genv.json interactively'
 		'env:Manage shell environment variables'
@@ -180,6 +181,14 @@ _genv() {
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'--force-new-lock[Back up a foreign lock and start a new local lock]'
+			;;
+		export)
+			_arguments \
+				'--file=[Path to genv.json]:path:_files' \
+				'--target=[Target id to export]:target:' \
+				'--out=[Directory to write genv.json and report.json]:path:_files -/' \
+				'--strict[Exit nonzero if the report contains errors]' \
+				'--from-v7[Migrate v1-v7 input to schemaVersion 8 in memory first]'
 			;;
 		status)
 			_arguments \

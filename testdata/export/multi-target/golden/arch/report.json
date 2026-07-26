@@ -1,0 +1,18 @@
+[
+  {
+    "class": "error",
+    "code": "absolute-source",
+    "message": "files.templates[1].source is absolute and cannot be bundled: /etc/genv/secret.tmpl"
+  },
+  {
+    "class": "error",
+    "code": "manager-not-supported",
+    "message": "package \"windows-terminal\" has no managers usable on target \"arch\"",
+    "packageID": "windows-terminal"
+  },
+  {
+    "class": "warning",
+    "code": "sensitive-env-omitted",
+    "message": "env.SECRET is marked sensitive and was omitted from the export snapshot"
+  }
+]
