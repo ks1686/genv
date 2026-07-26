@@ -48,6 +48,25 @@ func TestFilterForHost_Packages(t *testing.T) {
 	}
 }
 
+func TestFilterForHost_WslArchDoesNotInheritBareArch(t *testing.T) {
+	f := &schema.GenvFile{
+		Packages: []schema.Package{
+			{ID: "arch", Host: schema.HostPredicate{"arch"}},
+			{ID: "wsl", Host: schema.HostPredicate{"wsl-arch"}},
+			{ID: "universal"},
+		},
+	}
+
+	got := FilterForHost(f, "wsl-arch")
+
+	if len(got.Packages) != 2 {
+		t.Fatalf("got %d packages, want 2", len(got.Packages))
+	}
+	if got.Packages[0].ID != "wsl" || got.Packages[1].ID != "universal" {
+		t.Fatalf("got packages %v, want [wsl universal]", got.Packages)
+	}
+}
+
 func TestFilterForHost_Services(t *testing.T) {
 	f := &schema.GenvFile{
 		Services: map[string]schema.Service{
