@@ -4,7 +4,7 @@ Date: 2026-07-13
 Repository: `/Users/ks1686/Documents/Repos/genv`  
 Branch: `codex/scheduler-platform-correctness`  
 Starting commit: `dc31d11`  
-Status: implementation is nearly complete, uncommitted, with one validated correctness blocker remaining
+Status: **RESOLVED / historical** (2026-07-25) — the remaining systemd status blocker was fixed and merged (`b21c663` and follow-ups on the scheduler platform-correctness line). Do not treat the “uncommitted blocker” sections below as current work.
 
 ## Read this first
 
@@ -13,9 +13,9 @@ The approved design and execution plan are:
 - `docs/superpowers/specs/2026-07-12-scheduler-platform-correctness-design.md`
 - `docs/superpowers/plans/2026-07-12-scheduler-platform-correctness.md`
 
-Task evidence is under `.superpowers/sdd/task-{1..5}-report.md`. The durable progress ledger is `.superpowers/sdd/progress.md`.
+Task evidence lived under `.superpowers/sdd/` during the original session and is not part of the durable repo history.
 
-Do not stage, commit, push, install the development binary, or replace the live scheduler job unless the user explicitly authorizes that action. Developer ID signing/notarization is intentionally out of scope.
+~~Do not stage, commit, push...~~ (obsolete handoff instructions — work is merged)
 
 ## Original objective and decisions
 
