@@ -389,6 +389,78 @@ func validateShellConfig(f *GenvFile, shell *ShellConfig, fieldPrefix string) []
 	return errs
 }
 
+func validateTargetShellConfig(f *GenvFile, shell *TargetShellConfig, fieldPrefix string, allowTombstones bool) []ValidationError {
+	if shell == nil {
+		return nil
+	}
+	var errs []ValidationError
+	aliasShells := make(map[string]string, len(shell.Aliases))
+	for k, v := range shell.Aliases {
+		if v == nil {
+			if k == "" {
+				errs = append(errs, ValidationError{
+					Field:   fieldPrefix + ".aliases",
+					Message: "alias name must not be empty",
+				})
+			}
+			if !allowTombstones {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("%s.aliases.%s", fieldPrefix, k),
+					Message: "tombstone null entries are only valid under targets",
+				})
+			}
+			continue
+		}
+		aliasShells[k] = v.Shell
+	}
+	errs = append(errs, validateShellEntries(aliasShells, fieldPrefix+".aliases", "alias")...)
+
+	funcShells := make(map[string]string, len(shell.Functions))
+	for k, v := range shell.Functions {
+		if v == nil {
+			if k == "" {
+				errs = append(errs, ValidationError{
+					Field:   fieldPrefix + ".functions",
+					Message: "function name must not be empty",
+				})
+			}
+			if !allowTombstones {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("%s.functions.%s", fieldPrefix, k),
+					Message: "tombstone null entries are only valid under targets",
+				})
+			}
+			continue
+		}
+		funcShells[k] = v.Shell
+		if containsShellMeta(v.Body) {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.functions.%s.body", fieldPrefix, k),
+				Message: "contains shell metacharacters; function body must be plain text without separators or substitutions",
+			})
+		}
+	}
+	errs = append(errs, validateShellEntries(funcShells, fieldPrefix+".functions", "function")...)
+	errs = append(errs, requirePowerShellV7(f, fieldPrefix, aliasShells, funcShells)...)
+
+	for i, src := range shell.Source {
+		if src == "" {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.source[%d]", fieldPrefix, i),
+				Message: "source path must not be empty",
+			})
+			continue
+		}
+		if containsShellMeta(src) {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.source[%d]", fieldPrefix, i),
+				Message: "contains shell metacharacters",
+			})
+		}
+	}
+	return errs
+}
+
 func validateShellEntries(shells map[string]string, fieldPrefix, singularName string) []ValidationError {
 	var errs []ValidationError
 	for name, sh := range shells {
@@ -904,7 +976,7 @@ func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string,
 	errs = append(errs, validatePackageList(bundle.Packages, fieldPrefix+".packages", positions)...)
 	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", positions)...)
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
-	errs = append(errs, validateShellConfig(f, bundle.Shell, fieldPrefix+".shell")...)
+	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)
 	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
 	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", positions)...)
 	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)

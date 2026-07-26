@@ -183,7 +183,7 @@ type GenvFile struct {
 type TargetBundle struct {
 	Packages []Package           `json:"packages,omitempty"`
 	Env      map[string]*EnvVar  `json:"env,omitempty"`
-	Shell    *ShellConfig        `json:"shell,omitempty"`
+	Shell    *TargetShellConfig  `json:"shell,omitempty"`
 	Services map[string]*Service `json:"services,omitempty"`
 	Files    *FilesConfig        `json:"files,omitempty"`
 	Hooks    *HooksConfig        `json:"hooks,omitempty"`
@@ -278,6 +278,14 @@ type ShellConfig struct {
 	Aliases   map[string]ShellAlias    `json:"aliases,omitempty"`
 	Functions map[string]ShellFunction `json:"functions,omitempty"`
 	Source    []string                 `json:"source,omitempty"`
+}
+
+// TargetShellConfig is the v8 defaults/targets shell block. Alias and function
+// entries are pointers so target JSON null values can delete defaults.
+type TargetShellConfig struct {
+	Aliases   map[string]*ShellAlias    `json:"aliases,omitempty"`
+	Functions map[string]*ShellFunction `json:"functions,omitempty"`
+	Source    []string                  `json:"source,omitempty"`
 }
 
 // ShellAlias is a single shell alias declaration.
