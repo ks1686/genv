@@ -45,7 +45,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --no-hooks --hook-timeout --host"
+		opts="--file --lock-file --no-hooks --hook-timeout --host --target"
 		;;
 	disown)
 		if [[ "${cur}" != -* ]]; then
@@ -60,7 +60,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host"
+		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host --target"
 		;;
 	adopt)
 		# Complete --prefer value with available managers.
@@ -145,8 +145,8 @@ _genv() {
 			fi
 		else
 			case "${env_sub}" in
-			set) opts="--file --sensitive" ;;
-			unset) opts="--file" ;;
+			set) opts="--file --sensitive --target" ;;
+			unset) opts="--file --target" ;;
 			list | ls) opts="--file --json" ;;
 			esac
 		fi
@@ -196,8 +196,8 @@ _genv() {
 					fi
 				else
 					case "${shell_sub2}" in
-					set) opts="--file --shell" ;;
-					unset) opts="--file" ;;
+					set) opts="--file --shell --target" ;;
+					unset) opts="--file --target" ;;
 					esac
 				fi
 				;;
@@ -251,7 +251,8 @@ _genv() {
 			fi
 		else
 			case "${svc_sub}" in
-			add) opts="--file --start --stop --restart --status --brew-formula" ;;
+			add) opts="--file --start --stop --restart --status --brew-formula --target" ;;
+			remove | rm) opts="--file --target" ;;
 			*) opts="--file" ;;
 			esac
 		fi

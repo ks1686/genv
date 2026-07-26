@@ -20,11 +20,11 @@ func Remove(f *schema.GenvFile, id, targetID string) error {
 
 	packages := &f.Packages
 	if f.SchemaVersion == schema.Version8 {
-		bundle, err := ActiveBundle(f, targetID)
+		targetPackages, err := activePackageSlice(f, targetID)
 		if err != nil {
 			return err
 		}
-		packages = &bundle.Packages
+		packages = targetPackages
 	}
 
 	for i, p := range *packages {

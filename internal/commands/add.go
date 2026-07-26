@@ -25,11 +25,11 @@ func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]str
 
 	packages := &f.Packages
 	if f.SchemaVersion == schema.Version8 {
-		bundle, err := ActiveBundle(f, targetID)
+		targetPackages, err := activePackageSlice(f, targetID)
 		if err != nil {
 			return err
 		}
-		packages = &bundle.Packages
+		packages = targetPackages
 	}
 
 	for _, p := range *packages {

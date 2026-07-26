@@ -58,6 +58,26 @@ func TestAdd_V8WritesActiveTargetPackages(t *testing.T) {
 	}
 }
 
+func TestAdd_V8SeedsNilTargetPackagesFromDefaults(t *testing.T) {
+	f := newV8File("arch", &schema.TargetBundle{})
+	f.Defaults = &schema.TargetBundle{
+		Packages: []schema.Package{{ID: "git", Managers: map[string]string{"pacman": "git"}}},
+	}
+
+	if err := Add(f, "jq", "", "", nil, "arch"); err != nil {
+		t.Fatalf("Add v8 with defaults: %v", err)
+	}
+
+	got := f.Targets["arch"].Packages
+	if len(got) != 2 || got[0].ID != "git" || got[1].ID != "jq" {
+		t.Fatalf("expected default and added packages, got %+v", got)
+	}
+	got[0].Managers["pacman"] = "changed"
+	if f.Defaults.Packages[0].Managers["pacman"] != "git" {
+		t.Fatalf("default package managers were not deep-copied: %+v", f.Defaults.Packages[0].Managers)
+	}
+}
+
 func TestAdd_V8MissingTargetFails(t *testing.T) {
 	f := newV8File("arch", &schema.TargetBundle{})
 
