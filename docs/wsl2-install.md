@@ -47,9 +47,15 @@ genv version
 
 ## Step 5 — Create your config
 
-genv classifies WSL2 as the `wsl2` host, and WSL2 also matches records aimed at
-`arch` (host inheritance), so `host` selectors like `["arch", "wsl2"]` both apply
-here. Manager availability is detected separately from the host class.
+For schema v8 configs, WSL2 is classified by its Linux userland:
+
+- Ubuntu or Ubuntu-like WSL2 uses the `ubuntu` target.
+- Arch-based WSL2 (for example ArchWSL) uses the `wsl-arch` target.
+- There is no blanket inheritance from native `arch` to WSL2. Put shared entries
+  in `defaults`, then add distro-specific package managers in `targets.ubuntu`
+  or `targets.wsl-arch`.
+
+Manager availability is detected separately from the target.
 
 **Ubuntu / non-Arch WSL2** installs through `snap` or `linuxbrew` (Homebrew on
 Linux). genv does not use `apt`:
@@ -57,41 +63,91 @@ Linux). genv does not use `apt`:
 ```bash
 mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
-  "schemaVersion": "5",
-  "packages": [
-    {
-      "id": "jq",
-      "prefer": "snap",
-      "managers": {
-        "snap": "jq",
-        "linuxbrew": "jq"
-      }
+  "schemaVersion": "8",
+  "targets": {
+    "ubuntu": {
+      "packages": [
+        {
+          "id": "jq",
+          "prefer": "snap",
+          "managers": {
+            "snap": "jq",
+            "linuxbrew": "jq"
+          }
+        }
+      ]
     }
-  ]
+  }
 }
 EOF
 ```
+
+Apply with `genv apply --target ubuntu`, or rely on automatic classification
+when this WSL distro is Ubuntu-like.
 
 > Snap needs `snapd`, which relies on systemd being enabled in WSL2. If that is
 > not set up, install [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux)
 > and use `"prefer": "linuxbrew"` instead.
 
-**Arch-based WSL2** (e.g. ArchWSL) supports `pacman` plus the `paru`/`yay` AUR
-helpers, exactly like a native Arch host. A bare package id resolves
-automatically:
+**Arch-based WSL2** (for example ArchWSL) supports `pacman` plus the `paru`/`yay`
+AUR helpers. Use the `wsl-arch` target, not a native `arch` bucket:
 
 ```bash
 mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
 {
-  "schemaVersion": "5",
-  "packages": [
-    {
-      "id": "jq"
+  "schemaVersion": "8",
+  "targets": {
+    "wsl-arch": {
+      "packages": [
+        {
+          "id": "jq",
+          "prefer": "pacman"
+        }
+      ]
     }
-  ]
+  }
 }
 EOF
 ```
+
+Apply with `genv apply --target wsl-arch`, or rely on automatic classification
+when this WSL distro is Arch-like.
+
+If you share one file between native Arch, Ubuntu WSL2, and Arch WSL2, keep the
+common parts in `defaults`:
+
+```json
+{
+  "schemaVersion": "8",
+  "defaults": {
+    "env": {
+      "EDITOR": { "value": "nvim" }
+    }
+  },
+  "targets": {
+    "arch": {
+      "packages": [{ "id": "jq", "prefer": "pacman" }]
+    },
+    "ubuntu": {
+      "packages": [{ "id": "jq", "prefer": "snap" }]
+    },
+    "wsl-arch": {
+      "packages": [{ "id": "jq", "prefer": "pacman" }]
+    }
+  }
+}
+```
+
+Legacy schema v1-v7 files can still use per-record `host`, but `wsl2` no longer
+inherits `arch`. Migrate them with:
+
+```bash
+genv migrate --file ~/.config/genv/genv.json
+genv migrate --file ~/.config/genv/genv.json --write
+```
+
+Review any warning that says bare `wsl2` entries were placed in `targets.wsl-arch`;
+Ubuntu WSL users should move those records to `targets.ubuntu`.
 
 ---
 
