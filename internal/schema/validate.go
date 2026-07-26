@@ -213,11 +213,11 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6, Version7),
 		})
 	}
 	return errs
@@ -228,7 +228,7 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 	if _, ok := raw["packages"]; !ok {
 		// Schema v5 adds files/hooks/repo blocks and v6 adds updates; a spec may
 		// legitimately contain only those blocks, so packages is optional there.
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Field:   "packages",
 				Message: "required field is missing",
@@ -281,11 +281,11 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
-				Message:  fmt.Sprintf("env block requires schemaVersion %q, %q, %q, %q, or %q (current: %q); run 'genv env set' to upgrade", Version2, Version3, Version4, Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("env block requires schemaVersion %q or newer (current: %q); run 'genv env set' to upgrade", Version2, f.SchemaVersion),
 			})
 		}
 		for name := range f.Env {
@@ -303,11 +303,11 @@ func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[stri
 func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["shell"],
 				Field:    "shell",
-				Message:  fmt.Sprintf("shell block requires schemaVersion %q, %q, %q, or %q (current: %q); run 'genv shell alias set' to upgrade", Version3, Version4, Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("shell block requires schemaVersion %q or newer (current: %q); run 'genv shell alias set' to upgrade", Version3, f.SchemaVersion),
 			})
 		}
 		if f.Shell != nil {
@@ -328,6 +328,7 @@ func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 				}
 			}
 			errs = append(errs, validateShellEntries(funcShells, "shell.functions", "function")...)
+			errs = append(errs, requirePowerShellV7(f, aliasShells, funcShells)...)
 
 			for i, src := range f.Shell.Source {
 				if src == "" {
@@ -368,14 +369,42 @@ func validateShellEntries(shells map[string]string, fieldPrefix, singularName st
 	return errs
 }
 
+// requirePowerShellV7 rejects shell: "powershell" targets on schema versions
+// older than v7 (the version that introduced PowerShell targeting).
+func requirePowerShellV7(f *GenvFile, aliasShells, funcShells map[string]string) []ValidationError {
+	if versionRank(f.SchemaVersion) >= versionRank(Version7) {
+		return nil
+	}
+	var errs []ValidationError
+	for name, sh := range aliasShells {
+		if sh != "powershell" {
+			continue
+		}
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
+			Message: fmt.Sprintf(`shell target "powershell" requires schemaVersion %q or newer (current: %q)`, Version7, f.SchemaVersion),
+		})
+	}
+	for name, sh := range funcShells {
+		if sh != "powershell" {
+			continue
+		}
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("shell.functions.%s.shell", name),
+			Message: fmt.Sprintf(`shell target "powershell" requires schemaVersion %q or newer (current: %q)`, Version7, f.SchemaVersion),
+		})
+	}
+	return errs
+}
+
 func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasServices := raw["services"]; hasServices {
-		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["services"],
 				Field:    "services",
-				Message:  fmt.Sprintf("services block requires schemaVersion %q, %q, or %q (current: %q); run 'genv service add' to upgrade", Version4, Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("services block requires schemaVersion %q or newer (current: %q); run 'genv service add' to upgrade", Version4, f.SchemaVersion),
 			})
 		}
 		if f.Services != nil {
@@ -456,11 +485,11 @@ func expandPath(s string) (string, error) {
 func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasFiles := raw["files"]; hasFiles {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["files"],
 				Field:    "files",
-				Message:  fmt.Sprintf("files block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("files block requires schemaVersion %q or newer (current: %q)", Version5, f.SchemaVersion),
 			})
 		}
 		if f.Files == nil {
@@ -524,11 +553,11 @@ func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasHooks := raw["hooks"]; hasHooks {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["hooks"],
 				Field:    "hooks",
-				Message:  fmt.Sprintf("hooks block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("hooks block requires schemaVersion %q or newer (current: %q)", Version5, f.SchemaVersion),
 			})
 		}
 		if f.Hooks == nil {
@@ -540,7 +569,7 @@ func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 		errs = append(errs, err...)
 		err = validateHookPhase("postUpgrade", f.Hooks.PostUpgrade)
 		errs = append(errs, err...)
-		if f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, validateNoV6Hooks(f.Hooks, positions)...)
 			return errs
 		}
@@ -616,11 +645,11 @@ func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []Validati
 func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasRepo := raw["repo"]; hasRepo {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 			errs = append(errs, ValidationError{
 				Position: positions["repo"],
 				Field:    "repo",
-				Message:  fmt.Sprintf("repo block requires schemaVersion %q or %q (current: %q)", Version5, Version6, f.SchemaVersion),
+				Message:  fmt.Sprintf("repo block requires schemaVersion %q or newer (current: %q)", Version5, f.SchemaVersion),
 			})
 		}
 		if f.Repo == nil {
@@ -645,11 +674,11 @@ func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[
 	if _, hasUpdates := raw["updates"]; !hasUpdates {
 		return errs
 	}
-	if f.SchemaVersion != Version6 {
+	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
 		errs = append(errs, ValidationError{
 			Position: positions["updates"],
 			Field:    "updates",
-			Message:  fmt.Sprintf("updates block requires schemaVersion %q (current: %q); bump schemaVersion to %q to use the updates config", Version6, f.SchemaVersion, Version6),
+			Message:  fmt.Sprintf("updates block requires schemaVersion %q or newer (current: %q); bump schemaVersion to %q to use the updates config", Version6, f.SchemaVersion, Version6),
 		})
 	}
 	if f.Updates == nil {

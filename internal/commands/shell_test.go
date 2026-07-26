@@ -110,13 +110,26 @@ func TestShellAliasSet_EmptyName(t *testing.T) {
 
 func TestShellAliasSet_InvalidShellTarget(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := ShellAliasSet(f, "ll", "ls -la", "powershell"); err == nil {
+	if err := ShellAliasSet(f, "ll", "ls -la", "cmd"); err == nil {
 		t.Error("expected error for unknown shell target")
 	}
 }
 
+func TestShellAliasSet_PowerShellRaisesV7(t *testing.T) {
+	f := &schema.GenvFile{SchemaVersion: schema.Version3, Packages: []schema.Package{}}
+	if err := ShellAliasSet(f, "ll", "Get-ChildItem", "powershell"); err != nil {
+		t.Fatalf("ShellAliasSet powershell: %v", err)
+	}
+	if f.SchemaVersion != schema.Version7 {
+		t.Errorf("schemaVersion = %q, want %q", f.SchemaVersion, schema.Version7)
+	}
+	if f.Shell.Aliases["ll"].Shell != "powershell" {
+		t.Errorf("shell target = %q, want powershell", f.Shell.Aliases["ll"].Shell)
+	}
+}
+
 func TestShellAliasSet_AllShellTargets(t *testing.T) {
-	for _, shell := range []string{"bash", "zsh", "fish", ""} {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell", ""} {
 		f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
 		if err := ShellAliasSet(f, "foo", "bar", shell); err != nil {
 			t.Errorf("ShellAliasSet with shell=%q: unexpected error: %v", shell, err)
