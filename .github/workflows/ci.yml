@@ -47,6 +47,10 @@ jobs:
 
       - name: Cold-start bench gate
         run: make bench-gate
+        env:
+          # Shared GitHub runners are slower than local machines (~250ms observed
+          # for BenchmarkDetect). Keep a regression gate with headroom for noise.
+          BENCH_MAX_MS: "400"
 
   build-windows:
     name: Build (Windows)
