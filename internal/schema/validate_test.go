@@ -923,6 +923,36 @@ func TestParseAndValidate_V8AcceptsDefaultsAndTargets(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_V8RejectsUnknownEnvTombstone(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"env":{"EDITOR":{"value":"nvim"}}},
+	  "targets":{"arch":{"env":{"EDTIOR":null}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "targets.arch.env.EDTIOR") {
+		t.Fatalf("expected unknown env tombstone validation error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V8RejectsUnknownAliasTombstone(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"shell":{"aliases":{"ll":{"value":"ls -la"}}}},
+	  "targets":{"arch":{"shell":{"aliases":{"sl":null}}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "targets.arch.shell.aliases.sl") {
+		t.Fatalf("expected unknown alias tombstone validation error, got: %v", errs)
+	}
+}
+
 func TestParseAndValidate_V8RejectsHostOnPackage(t *testing.T) {
 	raw := `{"schemaVersion":"8","targets":{"arch":{"packages":[{"id":"git","host":["arch"]}]}}}`
 	_, errs, err := ParseAndValidate([]byte(raw))

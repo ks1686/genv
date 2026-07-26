@@ -967,8 +967,88 @@ func validateV8(f *GenvFile, positions map[string]Position) []ValidationError {
 			continue
 		}
 		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, positions)...)
+		errs = append(errs, validateKnownTombstones(bundle, f.Defaults, targetPath, positions)...)
 	}
 	return errs
+}
+
+func validateKnownTombstones(target, defaults *TargetBundle, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	for name, v := range target.Env {
+		if v != nil || hasDefaultEnv(defaults, name) {
+			continue
+		}
+		field := fmt.Sprintf("%s.env.%s", fieldPrefix, name)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  fmt.Sprintf("unknown tombstone %q: no non-null defaults.env entry exists to delete", name),
+		})
+	}
+	if target.Shell != nil {
+		for name, v := range target.Shell.Aliases {
+			if v != nil || hasDefaultAlias(defaults, name) {
+				continue
+			}
+			field := fmt.Sprintf("%s.shell.aliases.%s", fieldPrefix, name)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("unknown tombstone %q: no non-null defaults.shell.aliases entry exists to delete", name),
+			})
+		}
+		for name, v := range target.Shell.Functions {
+			if v != nil || hasDefaultFunction(defaults, name) {
+				continue
+			}
+			field := fmt.Sprintf("%s.shell.functions.%s", fieldPrefix, name)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("unknown tombstone %q: no non-null defaults.shell.functions entry exists to delete", name),
+			})
+		}
+	}
+	for name, svc := range target.Services {
+		if svc != nil || hasDefaultService(defaults, name) {
+			continue
+		}
+		field := fmt.Sprintf("%s.services.%s", fieldPrefix, name)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  fmt.Sprintf("unknown tombstone %q: no non-null defaults.services entry exists to delete", name),
+		})
+	}
+	return errs
+}
+
+func hasDefaultEnv(defaults *TargetBundle, name string) bool {
+	if defaults == nil {
+		return false
+	}
+	return defaults.Env[name] != nil
+}
+
+func hasDefaultAlias(defaults *TargetBundle, name string) bool {
+	if defaults == nil || defaults.Shell == nil {
+		return false
+	}
+	return defaults.Shell.Aliases[name] != nil
+}
+
+func hasDefaultFunction(defaults *TargetBundle, name string) bool {
+	if defaults == nil || defaults.Shell == nil {
+		return false
+	}
+	return defaults.Shell.Functions[name] != nil
+}
+
+func hasDefaultService(defaults *TargetBundle, name string) bool {
+	if defaults == nil {
+		return false
+	}
+	return defaults.Services[name] != nil
 }
 
 func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
