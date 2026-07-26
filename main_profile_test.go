@@ -99,8 +99,18 @@ func TestProfileSwitch(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
+	fakeBin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(fakeBin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	fakeBrew := filepath.Join(fakeBin, "brew")
+	if err := os.WriteFile(fakeBrew, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
+
 	base := genvfile.New()
-	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg"})
+	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg", Prefer: "brew"})
 	if err := genvfile.Write(specPath, base); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +119,7 @@ func TestProfileSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	profA, _ := profile.Load(specPath, "A")
-	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A"})
+	profA.Packages = append(profA.Packages, schema.Package{ID: "pkg-A", Prefer: "brew"})
 	if err := genvfile.Write(profile.Path(specPath, "A"), profA); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +128,7 @@ func TestProfileSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	profB, _ := profile.Load(specPath, "B")
-	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B"})
+	profB.Packages = append(profB.Packages, schema.Package{ID: "pkg-B", Prefer: "brew"})
 	if err := genvfile.Write(profile.Path(specPath, "B"), profB); err != nil {
 		t.Fatal(err)
 	}

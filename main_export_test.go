@@ -61,3 +61,19 @@ func TestExportCmdFromV7MigratesInMemory(t *testing.T) {
 		t.Fatalf("export legacy without --from-v7 = %d, want %d", code, exitUsage)
 	}
 }
+
+func TestExportCmdUsageFailures(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "genv.json")
+	writeTestFile(t, specPath, `{"schemaVersion":"8","targets":{"ubuntu":{}}}`)
+
+	if code := run([]string{"export", "--file", specPath, "--out", filepath.Join(dir, "out")}); code != exitUsage {
+		t.Fatalf("export without target = %d, want %d", code, exitUsage)
+	}
+	if code := run([]string{"export", "--file", specPath, "--target", "ubuntu"}); code != exitUsage {
+		t.Fatalf("export without out = %d, want %d", code, exitUsage)
+	}
+	if code := run([]string{"export", "--file", filepath.Join(dir, "missing.json"), "--target", "ubuntu", "--out", filepath.Join(dir, "out")}); code != exitIO {
+		t.Fatalf("export missing file = %d, want %d", code, exitIO)
+	}
+}

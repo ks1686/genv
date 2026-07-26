@@ -41,8 +41,7 @@ bench:
 # Uses the worst of three BenchmarkDetect runs; fails if that exceeds BENCH_MAX_MS.
 bench-gate:
 	go test -bench=BenchmarkDetect -benchtime=5s -count=3 ./internal/resolver/ | tee /tmp/bench.txt
-	@ms=$$(grep BenchmarkDetect /tmp/bench.txt | awk '{print $$3}' | sed 's/ns\/op//' | sort -n | tail -1); \
-	ms_int=$$(echo "$$ms / 1000000" | bc); \
+	@ms_int=$$(awk '/BenchmarkDetect/ { sub(/ns\/op/, "", $$3); if ($$3 > max) max = $$3 } END { printf "%d", max / 1000000 }' /tmp/bench.txt); \
 	echo "BenchmarkDetect worst-case: $${ms_int}ms (budget $(BENCH_MAX_MS)ms)"; \
 	if [ "$$ms_int" -gt "$(BENCH_MAX_MS)" ]; then echo "FAIL: cold-start budget exceeded (>$(BENCH_MAX_MS)ms)"; exit 1; fi
 
