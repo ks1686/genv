@@ -152,6 +152,10 @@ function script:Get-GenvCompletions {
 			}
 			return (& $completeCandidates -Candidates $flags)
 		}
+		{ $_ -in 'scan' } {
+			$flags = @('--file', '--lock-file', '--json', '--debug', '--target')
+			return (& $completeCandidates -Candidates $flags)
+		}
 		{ $_ -in 'completion' } {
 			$shells = @('bash', 'zsh', 'fish', 'powershell', 'install')
 			return (& $completeCandidates -Candidates $shells -ResultType 'ParameterValue')
