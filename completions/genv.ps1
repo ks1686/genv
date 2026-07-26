@@ -5,7 +5,7 @@
 $script:GenvCommands = @(
 	'add', 'remove', 'rm', 'adopt', 'disown', 'list', 'ls', 'apply', 'edit',
 	'clean', 'scan', 'status', 'completion', 'validate', 'upgrade', 'updates',
-	'export', 'pull', 'init', 'env', 'shell', 'service', 'profile', 'version', 'help'
+	'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'profile', 'version', 'help'
 )
 
 function script:Get-GenvCompletions {
@@ -53,6 +53,14 @@ function script:Get-GenvCompletions {
 		}
 		{ $_ -in 'export' } {
 			$flags = @('--file', '--target', '--out', '--strict', '--from-v7')
+			return $flags |
+				Where-Object { $_ -like "$WordToComplete*" } |
+				ForEach-Object {
+					[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterName', $_)
+				}
+		}
+		{ $_ -in 'map' } {
+			$flags = @('--file', '--target')
 			return $flags |
 				Where-Object { $_ -like "$WordToComplete*" } |
 				ForEach-Object {

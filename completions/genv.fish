@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates export pull init env shell service profile version help
+        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates export map pull init env shell service profile version help
             return 1
         end
     end
@@ -113,6 +113,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.j
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'
 complete -c genv -n __fish_genv_no_subcommand -f -a export -d 'Build a single-target portable snapshot and report'
+complete -c genv -n __fish_genv_no_subcommand -f -a map -d 'Print assist-only manager mapping suggestions for a target'
 complete -c genv -n __fish_genv_no_subcommand -f -a pull -d 'Fetch the spec from a git repository and update genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a init -d 'Create a new genv.json interactively'
 complete -c genv -n __fish_genv_no_subcommand -f -a env -d 'Manage shell environment variables'
@@ -205,6 +206,9 @@ complete -c genv -n '__fish_genv_using_command export' -l target -d 'Target id t
 complete -c genv -n '__fish_genv_using_command export' -l out -d 'Directory to write genv.json and report.json' -r
 complete -c genv -n '__fish_genv_using_command export' -l strict -d 'Exit nonzero if the report contains errors'
 complete -c genv -n '__fish_genv_using_command export' -l from-v7 -d 'Migrate v1-v7 input to schemaVersion 8 in memory first'
+
+# map
+complete -c genv -n '__fish_genv_using_command map' -l target -d 'Destination target id' -x
 
 # status / scan
 complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l lock-file -d 'Path to genv lock file' -r
