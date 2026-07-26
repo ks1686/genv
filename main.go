@@ -133,6 +133,8 @@ func run(args []string) int {
 		return updatesCmd(args[1:])
 	case "pull":
 		return pullCmd(args[1:])
+	case "migrate":
+		return migrateCmd(args[1:])
 	case "init":
 		return initCmd(args[1:])
 	case "env":
@@ -3832,6 +3834,7 @@ Commands:
   shell       Manage shell aliases and shell config drift
   service     Manage user-space services
   pull        Fetch genv.json from the configured spec repository
+  migrate     Convert legacy host predicates to schemaVersion 8 targets
   completion  Print or install the shell completion script (bash, zsh, or fish)
   validate    Validate genv.json against the schema
   upgrade     Upgrade all tracked packages to their latest versions
