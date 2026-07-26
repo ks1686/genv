@@ -1,7 +1,8 @@
 # Multi-machine and cross-OS genv configs
 
-Use a schema v8 `genv.json` as the source of truth for every machine, and keep
-machine-local state out of git.
+Use one schema **v8** `genv.json` as the git source of truth for every machine.
+Keep machine-local state (locks, secrets) out of git. Companion overview:
+[README](../README.md) · [SCHEMA](../SCHEMA.md).
 
 ## What belongs in git
 

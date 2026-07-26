@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Documentation pass for the v4.0.0 line: README rewritten around schema v8 targets and current install/CLI surface; SCHEMA, SECURITY, ROADMAP, and platform install guides updated for PowerShell (v7), portable targets (v8), and versioned release asset names.
+
 ## v4.0.0 - 2026-07-26
 
 ### Added

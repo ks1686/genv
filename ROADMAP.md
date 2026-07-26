@@ -1,6 +1,8 @@
 # Roadmap and Implementation Checklist
 
-This document is the public source of truth for delivery milestones, scope, and acceptance criteria.
+This document is the **historical** delivery checklist for milestones through v3.0.0, plus release notes for later tags. For current product docs, start at [README.md](README.md) and [CHANGELOG.md](CHANGELOG.md).
+
+**Shipped:** [v4.0.0](https://github.com/ks1686/genv/releases/tag/v4.0.0) — schema v7 PowerShell parity and schema v8 portable multi-target configs (`defaults` / `targets`, migrate/export/map, foreign-lock gate). New major work should land as issues/proposals before becoming committed milestones.
 
 ## Status Legend
 
@@ -395,7 +397,7 @@ This release ships the surface needed to move `~/terminal-config` from shell scr
   - `genv pull` — self-pull the spec repo declared in the `repo` field, refusing on a dirty tree
   - `genv adopt --files` — register already-managed files into the lock without rewriting them
   - `genv status --files` — live filesystem parity check for the `files` block
-- **Host filter**: `internal/host` detects `macos`, `arch`, and `wsl2`; WSL2 inherits all `host: "arch"` records
+- **Host / target filter (historical note)**: early releases detected `macos` / `arch` / `wsl2` with WSL→arch inherit. As of v4.0.0, classification returns `macos` / `windows` / `arch` / `ubuntu` / `wsl-arch`, and schema v8 uses `targets.*` instead of per-record `host`.
 - **Hooks executor**: `internal/hooks` runs declared shell command strings, filters by host, propagates non-zero exits, and honors `GENV_NO_INTERACTIVE=1`
 - **Lock file outside repo**: default lock path is `~/.config/genv/genv.lock.json` from `genvfile.DefaultDir`, not derived from the spec path; overridable via `--lock-file`
 
@@ -420,10 +422,12 @@ These gates apply to every milestone.
 - [x] v2.2.0 — scoped M13 surface shipped: schema v5 `files`, `hooks`, host selectors, repo metadata, and `pull`/`status --files`/`adopt --files` commands
 - [x] v2.3.0 — native Windows support shipped ahead of the original v3.0.0 milestone: `windows` host classification, `winget`/`scoop`/`choco` adapters, and `merge-dir` file links
 - [x] v3.0.0 — M11 updates checker, M12 named profiles, M13 lifecycle hooks, upgrade JSON/filtering, and tracked-only ecosystem adapters complete.
+- [x] v3.2.x — outdated-aware `genv upgrade` / `updates check`
+- [x] v4.0.0 — schema v7 PowerShell parity; schema v8 portable targets (`defaults` / `targets.*`), migrate/export/map, foreign-lock refusal
 
 ## Future Ideas
 
-The committed roadmap backlog is closed after v3.0.0. Future major work should start as an issue or proposal before becoming a committed milestone.
+The committed milestone backlog through v3.0.0 is closed; v4.0.0 shipped portability as the next major line. Further major work should start as an issue or proposal before becoming a committed milestone.
 
 Possible non-committed ideas:
 
