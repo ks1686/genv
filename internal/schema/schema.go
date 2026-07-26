@@ -1,4 +1,4 @@
-// Package schema defines the genv.json v1-v5 data model and validation logic.
+// Package schema defines the genv.json v1–v7 data model and validation logic.
 package schema
 
 import (
@@ -24,8 +24,11 @@ const Version5 = "5"
 // Version6 is the accepted value for genv.json v6 (adds the updates config block).
 const Version6 = "6"
 
+// Version7 is the accepted value for genv.json v7 (adds PowerShell shell targeting).
+const Version7 = "7"
+
 // versionOrder lists known schemaVersion values from oldest to newest.
-var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6}
+var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7}
 
 // versionRank returns the ordinal of a schemaVersion string within versionOrder,
 // or -1 if the value is not a recognized version.
@@ -53,13 +56,14 @@ func AtLeastVersion(current, min string) string {
 // KnownShellTargets is the set of valid per-shell targeting values for alias
 // and function entries. An empty string means "all supported shells".
 var KnownShellTargets = map[string]bool{
-	"bash": true,
-	"zsh":  true,
-	"fish": true,
+	"bash":       true,
+	"zsh":        true,
+	"fish":       true,
+	"powershell": true,
 }
 
 // ValidShellTargetsMsg is the user-facing string describing valid shell target values.
-const ValidShellTargetsMsg = `"bash", "zsh", "fish", or omit for all`
+const ValidShellTargetsMsg = `"bash", "zsh", "fish", "powershell", or omit for all POSIX`
 
 // KnownManagers is the set of package-manager IDs recognized in schema v1.
 var KnownManagers = map[string]bool{
@@ -247,14 +251,14 @@ type ShellConfig struct {
 }
 
 // ShellAlias is a single shell alias declaration.
-// Shell may be "bash", "zsh", "fish", or empty (applied to all supported shells).
+// Shell may be "bash", "zsh", "fish", "powershell", or empty (POSIX shells only).
 type ShellAlias struct {
 	Value string `json:"value"`
 	Shell string `json:"shell,omitempty"`
 }
 
 // ShellFunction is a single shell function declaration.
-// Shell may be "bash", "zsh", "fish", or empty (applied to all supported shells).
+// Shell may be "bash", "zsh", "fish", "powershell", or empty (POSIX shells only).
 type ShellFunction struct {
 	Body  string `json:"body"`
 	Shell string `json:"shell,omitempty"`

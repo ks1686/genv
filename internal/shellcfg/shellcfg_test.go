@@ -186,6 +186,44 @@ func TestWriteFragment_Empty_RemovesFile(t *testing.T) {
 	}
 }
 
+func TestWriteFragment_SkipsPowerShellTargets(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shell.sh")
+	cfg := &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{
+			"ll": {Value: "Get-ChildItem", Shell: "powershell"},
+			"gs": {Value: "git status"},
+		},
+	}
+	if err := WriteFragment(path, cfg); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if strings.Contains(got, "Get-ChildItem") || strings.Contains(got, "powershell") {
+		t.Errorf("powershell alias leaked into POSIX fragment:\n%s", got)
+	}
+	if !strings.Contains(got, "alias gs=") {
+		t.Errorf("missing POSIX alias:\n%s", got)
+	}
+
+	// PowerShell-only config should remove the fragment.
+	cfg = &schema.ShellConfig{
+		Aliases: map[string]schema.ShellAlias{
+			"ll": {Value: "Get-ChildItem", Shell: "powershell"},
+		},
+	}
+	if err := WriteFragment(path, cfg); err != nil {
+		t.Fatalf("WriteFragment PS-only: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("expected PS-only fragment to be removed")
+	}
+}
+
 func TestWriteFragment_Deterministic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "shell.sh")
