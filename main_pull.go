@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	pullassets "github.com/ks1686/genv/internal/pull"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -63,6 +64,12 @@ func pullCmd(args []string) int {
 
 	if *dryRun {
 		fprintf(os.Stdout, "would pull %s @ %s into %s\n", url, ref, *file)
+		if assets := pullassets.BundleAssetSources(f); len(assets) > 0 {
+			fPrintln(os.Stdout, "would copy assets:")
+			for _, asset := range assets {
+				fprintf(os.Stdout, "  %s\n", asset)
+			}
+		}
 		return exitOK
 	}
 
@@ -88,7 +95,27 @@ func pullCmd(args []string) int {
 		return exitIO
 	}
 
+	remote, err := genvfile.Read(src)
+	if err != nil {
+		fprintf(os.Stderr, "genv pull: reading remote spec: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+	copiedAssets, err := pullassets.CopyBundleAssets(cacheDir, filepath.Dir(*file), remote)
+	if err != nil {
+		fprintf(os.Stderr, "genv pull: copying assets: %v\n", err)
+		return exitIO
+	}
+
 	fprintf(os.Stdout, "pulled %s @ %s into %s\n", url, ref, *file)
+	if len(copiedAssets) > 0 {
+		fPrintln(os.Stdout, "copied assets:")
+		for _, asset := range copiedAssets {
+			fprintf(os.Stdout, "  %s\n", asset)
+		}
+	}
 	return exitOK
 }
 
