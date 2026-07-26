@@ -15,7 +15,7 @@
       "type": "object"
     },
     "defaults": {
-      "$ref": "#/$defs/bundle"
+      "$ref": "#/$defs/defaultBundle"
     },
     "targets": {
       "type": "object",
@@ -24,7 +24,7 @@
         "enum": ["macos", "windows", "arch", "ubuntu", "wsl-arch", "linux"]
       },
       "additionalProperties": {
-        "$ref": "#/$defs/bundle"
+        "$ref": "#/$defs/targetBundle"
       }
     },
     "packages": {
@@ -48,7 +48,40 @@
     }
   },
   "$defs": {
-    "bundle": {
+    "defaultBundle": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/package"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/envVar"
+          }
+        },
+        "shell": {
+          "type": "object"
+        },
+        "files": {
+          "type": "object"
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "hooks": {
+          "type": "object"
+        }
+      }
+    },
+    "targetBundle": {
       "type": "object",
       "additionalProperties": true,
       "properties": {

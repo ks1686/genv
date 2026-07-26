@@ -176,6 +176,42 @@ type GenvFile struct {
 	Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 }
 
+// MarshalJSON preserves the legacy v1-v7 top-level shape while letting v8 omit
+// empty legacy top-level blocks. In particular, nil/empty Packages must not
+// serialize as "packages": null in portable target files.
+func (f GenvFile) MarshalJSON() ([]byte, error) {
+	type alias GenvFile
+	if f.SchemaVersion != Version8 {
+		return json.Marshal(alias(f))
+	}
+	type v8File struct {
+		SchemaVersion string                   `json:"schemaVersion"`
+		Packages      []Package                `json:"packages,omitempty"`
+		Env           map[string]EnvVar        `json:"env,omitempty"`
+		Shell         *ShellConfig             `json:"shell,omitempty"`
+		Services      map[string]Service       `json:"services,omitempty"`
+		Files         *FilesConfig             `json:"files,omitempty"`
+		Hooks         *HooksConfig             `json:"hooks,omitempty"`
+		Repo          *Repo                    `json:"repo,omitempty"`
+		Updates       *UpdatesConfig           `json:"updates,omitempty"`
+		Defaults      *TargetBundle            `json:"defaults,omitempty"`
+		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
+	}
+	return json.Marshal(v8File{
+		SchemaVersion: f.SchemaVersion,
+		Packages:      f.Packages,
+		Env:           f.Env,
+		Shell:         f.Shell,
+		Services:      f.Services,
+		Files:         f.Files,
+		Hooks:         f.Hooks,
+		Repo:          f.Repo,
+		Updates:       f.Updates,
+		Defaults:      f.Defaults,
+		Targets:       f.Targets,
+	})
+}
+
 // TargetBundle is a v8 defaults or target-scoped config block.
 //
 // Env and Services use pointer map values so target entries can unmarshal JSON
