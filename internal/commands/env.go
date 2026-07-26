@@ -16,9 +16,21 @@ var ErrEnvNotFound = errors.New("env var not found in spec")
 // EnvSet adds or updates the variable name in f's env block.
 // It upgrades f.SchemaVersion to schema.Version2 if needed.
 // Returns an error if name is not a valid POSIX variable name.
-func EnvSet(f *schema.GenvFile, name, value string, sensitive bool) error {
+func EnvSet(f *schema.GenvFile, name, value string, sensitive bool, targetID string) error {
 	if !schema.ValidEnvName(name) {
 		return fmt.Errorf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*\nTip: use letters, digits, and underscores only; the name must not start with a digit", name)
+	}
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		if bundle.Env == nil {
+			bundle.Env = make(map[string]*schema.EnvVar)
+		}
+		ev := schema.EnvVar{Value: value, Sensitive: sensitive}
+		bundle.Env[name] = &ev
+		return nil
 	}
 	if f.Env == nil {
 		f.Env = make(map[string]schema.EnvVar)
@@ -32,7 +44,31 @@ func EnvSet(f *schema.GenvFile, name, value string, sensitive bool) error {
 
 // EnvUnset removes the variable name from f's env block.
 // Returns ErrEnvNotFound when name is absent.
-func EnvUnset(f *schema.GenvFile, name string) error {
+func EnvUnset(f *schema.GenvFile, name, targetID string) error {
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		if bundle.Env != nil {
+			if _, ok := bundle.Env[name]; ok {
+				if defaultEnvExists(f.Defaults, name) {
+					bundle.Env[name] = nil
+				} else {
+					delete(bundle.Env, name)
+				}
+				return nil
+			}
+		}
+		if defaultEnvExists(f.Defaults, name) {
+			if bundle.Env == nil {
+				bundle.Env = make(map[string]*schema.EnvVar)
+			}
+			bundle.Env[name] = nil
+			return nil
+		}
+		return fmt.Errorf("%w: %q\nTip: run 'genv env list' to see declared variables", ErrEnvNotFound, name)
+	}
 	if _, ok := f.Env[name]; !ok {
 		return fmt.Errorf("%w: %q\nTip: run 'genv env list' to see declared variables", ErrEnvNotFound, name)
 	}

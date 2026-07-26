@@ -13,7 +13,7 @@ import (
 
 func TestEnvSet_New(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := EnvSet(f, "MY_VAR", "hello", false); err != nil {
+	if err := EnvSet(f, "MY_VAR", "hello", false, ""); err != nil {
 		t.Fatalf("EnvSet: %v", err)
 	}
 	if f.SchemaVersion != schema.Version2 {
@@ -37,7 +37,7 @@ func TestEnvSet_PreservesNewerSchema(t *testing.T) {
 	// blocks and fail validation on write).
 	for _, v := range []string{schema.Version5, schema.Version6} {
 		f := &schema.GenvFile{SchemaVersion: v, Packages: []schema.Package{}}
-		if err := EnvSet(f, "MY_VAR", "hello", false); err != nil {
+		if err := EnvSet(f, "MY_VAR", "hello", false, ""); err != nil {
 			t.Fatalf("EnvSet at %s: %v", v, err)
 		}
 		if f.SchemaVersion != v {
@@ -48,7 +48,7 @@ func TestEnvSet_PreservesNewerSchema(t *testing.T) {
 
 func TestEnvSet_Sensitive(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
-	if err := EnvSet(f, "SECRET", "s3cr3t", true); err != nil {
+	if err := EnvSet(f, "SECRET", "s3cr3t", true, ""); err != nil {
 		t.Fatalf("EnvSet: %v", err)
 	}
 	if !f.Env["SECRET"].Sensitive {
@@ -62,7 +62,7 @@ func TestEnvSet_Update(t *testing.T) {
 		Packages:      []schema.Package{},
 		Env:           map[string]schema.EnvVar{"X": {Value: "old"}},
 	}
-	if err := EnvSet(f, "X", "new", false); err != nil {
+	if err := EnvSet(f, "X", "new", false, ""); err != nil {
 		t.Fatalf("EnvSet update: %v", err)
 	}
 	if f.Env["X"].Value != "new" {
@@ -74,7 +74,7 @@ func TestEnvSet_InvalidName(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version, Packages: []schema.Package{}}
 	cases := []string{"1invalid", "has space", "has-dash", ""}
 	for _, name := range cases {
-		if err := EnvSet(f, name, "val", false); err == nil {
+		if err := EnvSet(f, name, "val", false, ""); err == nil {
 			t.Errorf("EnvSet(%q): expected error, got nil", name)
 		}
 	}
@@ -85,7 +85,7 @@ func TestEnvSet_ValidNames(t *testing.T) {
 	cases := []string{"FOO", "_BAR", "baz_123", "X", "_"}
 	for _, name := range cases {
 		f.Env = nil
-		if err := EnvSet(f, name, "v", false); err != nil {
+		if err := EnvSet(f, name, "v", false, ""); err != nil {
 			t.Errorf("EnvSet(%q): unexpected error: %v", name, err)
 		}
 	}
@@ -99,7 +99,7 @@ func TestEnvUnset_OK(t *testing.T) {
 		Packages:      []schema.Package{},
 		Env:           map[string]schema.EnvVar{"FOO": {Value: "bar"}},
 	}
-	if err := EnvUnset(f, "FOO"); err != nil {
+	if err := EnvUnset(f, "FOO", ""); err != nil {
 		t.Fatalf("EnvUnset: %v", err)
 	}
 	if _, ok := f.Env["FOO"]; ok {
@@ -109,7 +109,7 @@ func TestEnvUnset_OK(t *testing.T) {
 
 func TestEnvUnset_NotFound(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version2, Packages: []schema.Package{}}
-	err := EnvUnset(f, "MISSING")
+	err := EnvUnset(f, "MISSING", "")
 	if err == nil {
 		t.Fatal("expected error for missing var")
 	}

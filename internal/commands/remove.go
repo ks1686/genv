@@ -13,14 +13,23 @@ var ErrNotTracked = errors.New("package not tracked")
 // Remove deletes the first package with the given id from f.
 // Order of the remaining packages is preserved.
 // Returns ErrNotTracked if the id is not found.
-func Remove(f *schema.GenvFile, id string) error {
+func Remove(f *schema.GenvFile, id, targetID string) error {
 	if id == "" {
 		return fmt.Errorf("package id must not be empty")
 	}
 
-	for i, p := range f.Packages {
+	packages := &f.Packages
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		packages = &bundle.Packages
+	}
+
+	for i, p := range *packages {
 		if p.ID == id {
-			f.Packages = append(f.Packages[:i], f.Packages[i+1:]...)
+			*packages = append((*packages)[:i], (*packages)[i+1:]...)
 			return nil
 		}
 	}

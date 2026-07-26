@@ -21,12 +21,27 @@ func ensureShell(f *schema.GenvFile) {
 
 // ShellAliasSet adds or updates the alias name in f's shell block.
 // Shell target may be "bash", "zsh", "fish", "powershell", or "" (POSIX).
-func ShellAliasSet(f *schema.GenvFile, name, value, shell string) error {
+func ShellAliasSet(f *schema.GenvFile, name, value, shell, targetID string) error {
 	if name == "" {
 		return fmt.Errorf("alias name must not be empty\nTip: provide a valid shell identifier as NAME")
 	}
 	if shell != "" && !schema.KnownShellTargets[shell] {
 		return fmt.Errorf("unknown shell %q; expected %s", shell, schema.ValidShellTargetsMsg)
+	}
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		if bundle.Shell == nil {
+			bundle.Shell = &schema.TargetShellConfig{}
+		}
+		if bundle.Shell.Aliases == nil {
+			bundle.Shell.Aliases = make(map[string]*schema.ShellAlias)
+		}
+		alias := schema.ShellAlias{Value: value, Shell: shell}
+		bundle.Shell.Aliases[name] = &alias
+		return nil
 	}
 	ensureShell(f)
 	if shell == "powershell" {
@@ -41,7 +56,34 @@ func ShellAliasSet(f *schema.GenvFile, name, value, shell string) error {
 
 // ShellAliasUnset removes the alias name from f's shell block.
 // Returns ErrShellAliasNotFound when name is absent.
-func ShellAliasUnset(f *schema.GenvFile, name string) error {
+func ShellAliasUnset(f *schema.GenvFile, name, targetID string) error {
+	if f.SchemaVersion == schema.Version8 {
+		bundle, err := ActiveBundle(f, targetID)
+		if err != nil {
+			return err
+		}
+		if bundle.Shell != nil && bundle.Shell.Aliases != nil {
+			if _, ok := bundle.Shell.Aliases[name]; ok {
+				if defaultAliasExists(f.Defaults, name) {
+					bundle.Shell.Aliases[name] = nil
+				} else {
+					delete(bundle.Shell.Aliases, name)
+				}
+				return nil
+			}
+		}
+		if defaultAliasExists(f.Defaults, name) {
+			if bundle.Shell == nil {
+				bundle.Shell = &schema.TargetShellConfig{}
+			}
+			if bundle.Shell.Aliases == nil {
+				bundle.Shell.Aliases = make(map[string]*schema.ShellAlias)
+			}
+			bundle.Shell.Aliases[name] = nil
+			return nil
+		}
+		return fmt.Errorf("%w: %q\nTip: run 'genv shell status' to see declared aliases", ErrShellAliasNotFound, name)
+	}
 	if f.Shell == nil {
 		return fmt.Errorf("%w: %q\nTip: run 'genv shell alias set' to declare aliases", ErrShellAliasNotFound, name)
 	}
