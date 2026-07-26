@@ -236,7 +236,7 @@ Error-class examples (fail `--strict`):
 - Absolute paths or untyped path entries that cannot be relocated into the bundle
 - Target ID unknown / missing bucket
 
-Warning-class examples (nonzero only with a future `--warnings-as-errors` if added; default: warn, exit 0 unless `--strict` hit an error-class):
+Warning-class examples (printed in the report; exit 0 unless combined with error-class items under `--strict`):
 
 - Package present only via a deferred channel (apt/dnf suggestion text)
 - Env vars that look machine-specific (`PATH` fragments with Homebrew prefixes, etc.)
