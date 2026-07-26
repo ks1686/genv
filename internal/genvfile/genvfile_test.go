@@ -81,6 +81,41 @@ func TestWriteAndRead_Roundtrip(t *testing.T) {
 	}
 }
 
+func TestWrite_V8OmitsEmptyLegacyTopLevelFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+
+	original := &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Targets: map[string]*schema.TargetBundle{
+			"arch": {},
+		},
+	}
+	if err := Write(path, original); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	for _, forbidden := range []string{
+		`"packages": null`,
+		`"env": null`,
+		`"shell": null`,
+		`"files": null`,
+		`"services": null`,
+		`"hooks": null`,
+	} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("v8 write emitted %s:\n%s", forbidden, data)
+		}
+	}
+	if strings.Contains(string(data), `"packages"`) {
+		t.Fatalf("v8 write emitted empty top-level packages:\n%s", data)
+	}
+}
+
 func TestWrite_IsAtomic(t *testing.T) {
 	// After a successful Write, there should be no leftover .tmp file.
 	dir := t.TempDir()

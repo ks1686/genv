@@ -135,7 +135,7 @@ complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_comm
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l no-hooks -d 'Skip pre-remove and post-remove hooks'
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 
 # list / ls
 complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_command ls' -l lock-file -d 'Path to genv lock file' -r
@@ -150,7 +150,7 @@ complete -c genv -n '__fish_genv_using_command add' -l no-search -d 'Skip intera
 complete -c genv -n '__fish_genv_using_command add' -l no-hooks -d 'Skip pre-add and post-add hooks'
 complete -c genv -n '__fish_genv_using_command add' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command add' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command add' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 
 # adopt-only
 complete -c genv -n '__fish_genv_using_command adopt' -l host -d 'Host name for host-specific records' -x

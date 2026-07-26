@@ -701,6 +701,7 @@ func adoptCmd(args []string) int {
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 	filesOnly := fs.Bool("files", false, "adopt matching files block entries into the lock without changing targets")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 
@@ -756,7 +757,7 @@ func adoptCmd(args []string) int {
 	}
 
 	// 3. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers, ""); exit != exitOK {
+	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
 		return exit
 	}
 
@@ -843,6 +844,7 @@ func disownCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -855,7 +857,7 @@ func disownCmd(args []string) int {
 	id := fs.Arg(0)
 
 	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id, *lockFile, "")
+	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id, *lockFile, *targetFlag)
 	if exit != exitOK {
 		return exit
 	}

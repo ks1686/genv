@@ -52,7 +52,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file"
+		opts="--file --lock-file --target"
 		;;
 	add)
 		# Complete --prefer value with available managers.
@@ -68,7 +68,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --host --files --json"
+		opts="--file --lock-file --version --prefer --manager --host --target --files --json"
 		;;
 	upgrade)
 		# Complete positional arg (if any) with tracked package IDs.
