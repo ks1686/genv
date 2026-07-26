@@ -1,6 +1,6 @@
 # Releasing genv
 
-This repository publishes GitHub releases, a Homebrew formula, and an AUR package
+This repository publishes GitHub releases, a Homebrew cask, and an AUR package
 automatically when an annotated tag is pushed. GoReleaser handles GitHub releases,
 Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-off required.
 
@@ -16,9 +16,10 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v1.0.0` | M6 and M7 complete (stable API/quality bar + UX command set) |
 | `v2.0.0` | M8 and M9 complete (env and shell configuration management) |
 | `v2.1.0` | M10 complete (services management, new adapters: zypper/xbps/emerge, Snap Store publishing) |
-| `v2.2.0` | M13 complete (hooks and lifecycle scripts) |
-| `v2.3.0` | M12 complete (named profiles) |
-| `v3.0.0` | M11 complete + first-party Windows support (Chocolatey, Scoop) |
+| `v2.2.0` | Scoped M13 surface (schema v5 `files`/`hooks`, host selectors, `pull` / `status --files` / `adopt --files`) |
+| `v2.3.0` | Native Windows support (`windows` host, `winget`/`scoop`/`choco`, merge-dir file links) |
+| `v3.0.0` | M11 updates checker, M12 named profiles, full M13 lifecycle hooks, upgrade JSON/filtering, tracked ecosystem adapters |
+| `v3.2.x` | Outdated-aware `genv upgrade` / `updates check` (default plan only packages with detected updates) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
@@ -263,10 +264,14 @@ Artifacts land in `./dist/`. Nothing is published.
 
 ## Future distribution channels
 
-Candidates for v3.0.0 (Windows support milestone):
+The `genv` binary is **not** published to winget, Scoop, or Chocolatey as an
+install channel today — Windows users should download release archives from
+GitHub Releases (see README). Publishing those channels is deferred until there
+is clear demand; it is not tied to a specific version milestone.
 
-| Channel | Complexity | Notes |
+| Channel | Status | Notes |
 | --- | --- | --- |
-| Scoop | Low | GoReleaser supports it natively; relevant for v3.0.0 Windows support |
-| winget | Low | GoReleaser supports it natively; relevant for v3.0.0 Windows support |
-| apt PPA | High | Needs a Launchpad account; `.deb` artifacts already ship via GitHub Releases |
+| Scoop | Deferred | GoReleaser supports it; not wired |
+| winget | Deferred | GoReleaser supports it; not wired |
+| Chocolatey | Deferred | Separate packaging work; adapters already manage *other* packages via choco |
+| apt PPA | Deferred | `.deb` artifacts already ship via GitHub Releases |

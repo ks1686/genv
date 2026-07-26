@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the cold-start budget (`BENCH_MAX_MS`; local default 200ms, CI uses 400ms for shared-runner noise). Previously claimed but not wired into GitHub Actions.
+- Documentation cleanup: roadmap/release/security wording aligned with the v3.x line; winget/Scoop/Chocolatey install channels explicitly deferred; outdated-upgrade plan and scheduler handoff marked completed/historical; `SECURITY_AUDIT.md` annotated with 2026-07-25 remediation status.
+
+### Fixed
+
+- README `--lock-file` help text now correctly defaults to the genv config directory (not “next to the resolved spec”).
+
 ## v3.2.1 - 2026-07-21
 
 ### Changed
@@ -309,10 +318,10 @@ Milestones M6 and M7 are complete. The CLI surface, JSON output schema, and `gen
 
 - `--json` output envelope gains a `"version"` field; schema is versioned and documented.
 - Formal deprecation policy established: breaking changes require a major version bump.
-- All internal packages reach ≥80% line coverage as reported by `go test -cover`.
+- All internal packages reach ≥80% line coverage as reported by `go test -cover`. *(Clarified 2026-07: CI enforces an 80% **total** statement-coverage floor via `COVER_MIN` / `make cover-gate`; per-package totals vary.)*
 - Property-based and fuzz tests added for version constraint logic and the resolver.
 - End-to-end smoke tests run `genv apply` against real package managers in CI.
-- Resolver + manager detection benchmarked; <200ms cold-start budget enforced as a CI gate.
+- Resolver + manager detection benchmarked; <200ms cold-start budget enforced as a CI gate. *(Wired into GitHub Actions in Unreleased.)*
 - Security audit: all adapter shell invocations reviewed for injection vectors; none found.
 
 ### Developer and user experience (M7)

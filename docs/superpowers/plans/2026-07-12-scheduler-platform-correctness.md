@@ -1,5 +1,7 @@
 # Scheduler and Platform Correctness Implementation Plan
 
+> **Status: COMPLETED / historical (merged 2026-07).** See also `docs/handoffs/2026-07-13-scheduler-platform-correctness.md` (resolved).
+
 > **Execution:** Follow this plan task by task with strict RED-GREEN-REFACTOR cycles. Do not implement or test Developer ID signing/notarization.
 
 **Goal:** Make automatic manager suggestions platform-native, make scheduled updates run in a reliable environment with truthful status, prevent unsafe constrained upgrades, and preserve actionable scheduled-run diagnostics.

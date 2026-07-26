@@ -2,12 +2,12 @@
 
 ## Supported Versions
 
-`genv` is pre-1.0 software. Only the latest release receives security fixes.
+Only the latest stable release receives security fixes.
 
-| Version       | Supported |
-| ------------- | --------- |
-| latest (0.x)  | Yes       |
-| older 0.x     | No        |
+| Version | Supported |
+| --- | --- |
+| latest (`v3.x`) | Yes |
+| older majors / previous minors | No |
 
 ## Reporting a Vulnerability
 
