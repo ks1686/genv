@@ -275,7 +275,7 @@ When you run `genv apply`:
 
 **Fields:**
 
-- `schemaVersion` — `"1"` through `"6"`; older versions still load
+- `schemaVersion` — `"1"` through `"7"`; older versions still load
 - `packages` — array of tracked packages
   - `id` — canonical name for the package (used by genv)
   - `version` — optional version constraint; omit for latest; supports `"x.y.*"` prefix wildcards
@@ -339,7 +339,7 @@ When you run `genv apply`:
 | `genv env <set\|unset\|list>`                     | Manage global environment variables in the spec                        |
 | `genv shell <alias\|status\|edit>`                | Manage shell aliases and shell config drift                            |
 | `genv service <add\|remove\|list\|start\|stop\|status>` | Manage declared user-space services (aliases: `rm`, `ls`)         |
-| `genv completion <bash\|zsh\|fish>`               | Print shell completion script                                          |
+| `genv completion <bash\|zsh\|fish\|powershell>`   | Print shell completion script                                          |
 | `genv completion install [shell] [--dir]`         | Install completion into the shell's completion dir (shell auto-detected from `$SHELL`) |
 | `genv clean [--dry-run]`                          | Clear the cache of all detected package managers                       |
 | `genv edit`                                       | Open genv.json in `$EDITOR`                                            |

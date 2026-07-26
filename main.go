@@ -28,6 +28,7 @@ import (
 	"github.com/ks1686/genv/internal/logging"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/profile"
+	"github.com/ks1686/genv/internal/profilebackend"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/search"
@@ -52,6 +53,9 @@ var completionZsh string
 
 //go:embed completions/genv.fish
 var completionFish string
+
+//go:embed completions/genv.ps1
+var completionPowerShell string
 
 // Structured exit codes.
 const (
@@ -1262,19 +1266,13 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	}
 }
 
-// applyEnvVars writes the managed env fragment, updates lf.Env in memory, and
-// returns lists of applied and removed variable names. The caller is responsible
-// for persisting the lock file (avoiding a double-write when packages and env
-// vars are both applied in the same run).
+// applyEnvVars writes managed env fragments via selected profile backends,
+// updates lf.Env in memory, and returns lists of applied and removed variable
+// names. The caller is responsible for persisting the lock file (avoiding a
+// double-write when packages and env vars are both applied in the same run).
 // If verbose is true, it prints progress lines to stdout.
 func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
 	if len(f.Env) == 0 && len(lf.Env) == 0 {
-		return nil, nil
-	}
-
-	fragPath, err := genvenv.FragmentPath()
-	if err != nil {
-		fprintf(os.Stderr, "genv: cannot determine fragment path: %v\n", err)
 		return nil, nil
 	}
 
@@ -1288,9 +1286,22 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 		}
 	}
 
-	if err := genvenv.ApplyEnv(fragPath, f.Env, genvenv.RcFiles()); err != nil {
-		fprintf(os.Stderr, "genv: writing env fragment: %v\n", err)
-		return applied, removed
+	if warn := profilebackend.MissingEngineWarning(runtime.GOOS); warn != "" {
+		fprintf(os.Stderr, "genv: warning: %s\n", warn)
+	}
+
+	backends := profilebackend.SelectBackends(runtime.GOOS)
+	var lastFrag string
+	for _, b := range backends {
+		if err := b.ApplyEnv(f.Env); err != nil {
+			fprintf(os.Stderr, "genv: writing env fragment (%s): %v\n", b.Name(), err)
+			return applied, removed
+		}
+		lastFrag = b.Name()
+	}
+	if lastFrag == "" && (len(applied) > 0 || len(removed) > 0 || len(f.Env) > 0) {
+		// No backend ran (e.g. Windows without PowerShell and without POSIX rc).
+		fprintf(os.Stderr, "genv: warning: no profile backend available to write env fragment\n")
 	}
 
 	if verbose {
@@ -1301,7 +1312,9 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 			fprintf(os.Stdout, "  env: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			fprintf(os.Stdout, "env fragment written to %s\n", fragPath)
+			if fragPath, err := genvenv.FragmentPath(); err == nil {
+				fprintf(os.Stdout, "env fragment written (%s backends) e.g. %s\n", lastFrag, fragPath)
+			}
 		}
 	}
 
@@ -2127,17 +2140,11 @@ func shellEditCmd(args []string) int {
 	return exitOK
 }
 
-// applyShellCfg writes the managed shell fragment, updates lf.Shell in memory,
-// and returns lists of applied and removed entry names. The caller writes the lock.
-// If verbose is true, it prints progress lines to stdout.
+// applyShellCfg writes managed shell fragments via selected profile backends,
+// updates lf.Shell in memory, and returns lists of applied and removed entry
+// names. The caller writes the lock. If verbose is true, it prints progress.
 func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
 	if f.Shell == nil && lf.Shell == nil {
-		return nil, nil
-	}
-
-	fragPath, err := shellcfg.FragmentPath()
-	if err != nil {
-		fprintf(os.Stderr, "genv: cannot determine shell fragment path: %v\n", err)
 		return nil, nil
 	}
 
@@ -2170,13 +2177,24 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 		}
 	}
 
+	if warn := profilebackend.MissingEngineWarning(runtime.GOOS); warn != "" {
+		// Avoid duplicate warning when applyEnvVars already printed it in the same run;
+		// still useful when only shell is applied.
+		if len(f.Env) == 0 && len(lf.Env) == 0 {
+			fprintf(os.Stderr, "genv: warning: %s\n", warn)
+		}
+	}
+
 	var cfg *schema.ShellConfig
 	if f.Shell != nil {
 		cfg = f.Shell
 	}
-	if err := shellcfg.ApplyShell(fragPath, cfg, genvenv.RcFiles()); err != nil {
-		fprintf(os.Stderr, "genv: writing shell fragment: %v\n", err)
-		return applied, removed
+	backends := profilebackend.SelectBackends(runtime.GOOS)
+	for _, b := range backends {
+		if err := b.ApplyShell(cfg); err != nil {
+			fprintf(os.Stderr, "genv: writing shell fragment (%s): %v\n", b.Name(), err)
+			return applied, removed
+		}
 	}
 
 	if verbose {
@@ -2187,10 +2205,13 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 			fprintf(os.Stdout, "  shell: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
+			if fragPath, err := shellcfg.FragmentPath(); err == nil {
+				fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
+			}
 		}
 	}
 	if hasFishEntries {
+		fragPath, _ := shellcfg.FragmentPath()
 		fprintf(os.Stdout, "note: fish-specific shell entries are not auto-applied.\n")
 		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", fragPath)
 	}
@@ -2882,12 +2903,13 @@ func completionCmd(args []string) int {
 		fPrintln(os.Stderr, "usage: genv completion <shell>")
 		fPrintln(os.Stderr, "       genv completion install [shell] [--dir <path>]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish")
+		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish, powershell")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "examples:")
 		fPrintln(os.Stderr, "  genv completion bash >> ~/.bashrc")
 		fPrintln(os.Stderr, "  genv completion zsh  > ~/.zsh/completions/_genv")
 		fPrintln(os.Stderr, "  genv completion fish > ~/.config/fish/completions/genv.fish")
+		fPrintln(os.Stderr, "  genv completion powershell > ~/.config/genv/completions/genv.ps1")
 		fPrintln(os.Stderr, "  genv completion install        # auto-detect the current shell")
 		fPrintln(os.Stderr, "  genv completion install zsh    # install for a specific shell")
 	}
@@ -2895,7 +2917,7 @@ func completionCmd(args []string) int {
 		return exitUsage
 	}
 	if fs.NArg() < 1 {
-		fPrintln(os.Stderr, "genv completion: missing shell argument (bash, zsh, or fish)")
+		fPrintln(os.Stderr, "genv completion: missing shell argument (bash, zsh, fish, or powershell)")
 		fs.Usage()
 		return exitUsage
 	}
@@ -2923,10 +2945,17 @@ func completionScriptFor(shell string) (script, filename, defaultDir string, err
 		return completionZsh, "_genv", filepath.Join(xdgDataHome(), "zsh", "site-functions"), nil
 	case "fish":
 		return completionFish, "genv.fish", filepath.Join(xdgConfigHome(), "fish", "completions"), nil
+	case "powershell":
+		// Default under the genv config dir; users dot-source from their profile.
+		dir, derr := genvfile.DefaultDir()
+		if derr != nil {
+			dir = filepath.Join(xdgConfigHome(), "genv")
+		}
+		return completionPowerShell, "genv.ps1", filepath.Join(dir, "completions"), nil
 	case "":
-		return "", "", "", fmt.Errorf("missing shell argument (bash, zsh, or fish)")
+		return "", "", "", fmt.Errorf("missing shell argument (bash, zsh, fish, or powershell)")
 	default:
-		return "", "", "", fmt.Errorf("unknown shell %q — supported shells are: bash, zsh, fish", shell)
+		return "", "", "", fmt.Errorf("unknown shell %q — supported shells are: bash, zsh, fish, powershell", shell)
 	}
 }
 
@@ -2940,7 +2969,7 @@ func completionInstallCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv completion install [shell] [--dir <path>]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish (default: detected from $SHELL)")
+		fPrintln(os.Stderr, "  shell   One of: bash, zsh, fish, powershell (default: detected from $SHELL)")
 		fPrintln(os.Stderr, "  --dir   Install into this directory instead of the shell default")
 	}
 	shell, flagArgs := extractPositional(args)
@@ -2950,7 +2979,7 @@ func completionInstallCmd(args []string) int {
 	if shell == "" {
 		shell = detectShell()
 		if shell == "" {
-			fPrintln(os.Stderr, "genv completion install: could not detect shell from $SHELL; pass one of: bash, zsh, fish")
+			fPrintln(os.Stderr, "genv completion install: could not detect shell from $SHELL; pass one of: bash, zsh, fish, powershell")
 			return exitUsage
 		}
 	}
@@ -2979,11 +3008,15 @@ func completionInstallCmd(args []string) int {
 	if shell == "zsh" && *dir == "" {
 		fprintf(os.Stdout, "Ensure %s is on your $fpath before compinit runs, then restart your shell.\n", target)
 	}
+	if shell == "powershell" {
+		fprintf(os.Stdout, "Add this line to your PowerShell profile to enable completions:\n")
+		fprintf(os.Stdout, "  . %s\n", path)
+	}
 	return exitOK
 }
 
-// detectShell returns "bash", "zsh", or "fish" based on the basename of $SHELL,
-// or "" when it is unset or unrecognized.
+// detectShell returns "bash", "zsh", "fish", or "powershell" based on the
+// basename of $SHELL, or "" when it is unset or unrecognized.
 func detectShell() string {
 	switch filepath.Base(os.Getenv("SHELL")) {
 	case "bash":
@@ -2992,6 +3025,8 @@ func detectShell() string {
 		return "zsh"
 	case "fish":
 		return "fish"
+	case "pwsh", "powershell":
+		return "powershell"
 	default:
 		return ""
 	}

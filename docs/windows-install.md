@@ -51,7 +51,7 @@ Create `%USERPROFILE%\.config\genv\genv.json`:
 New-Item -ItemType Directory -Force $HOME\.config\genv
 @'
 {
-  "schemaVersion": "5",
+  "schemaVersion": "7",
   "packages": [
     {
       "id": "Git.Git",
@@ -102,12 +102,37 @@ genv status
 
 ---
 
+## Native Windows shell, env, and hooks
+
+On native Windows, `genv apply` prefers **PowerShell 7+ (`pwsh`)**, then
+Windows PowerShell 5.1 (`powershell` / `powershell.exe`):
+
+- Shared `env` values are written to `%USERPROFILE%\.config\genv\env.ps1` and
+  injected into the CurrentUser CurrentHost profile.
+- Shell aliases/functions with `"shell": "powershell"` (schema **v7**) go to
+  `shell.ps1`. Entries with an omitted `shell` target stay POSIX-only.
+- If a POSIX shell/rc is already present (e.g. Git Bash), genv also maintains
+  `env.sh` / `shell.sh`.
+- If no PowerShell engine is on `PATH`, genv warns and skips `.ps1` profiles
+  without failing the whole apply.
+
+Hooks on Windows run as `pwsh|powershell -NoProfile -Command …` (or `-File`
+for script hooks). Without an engine they fall back to `cmd /C` with a warning.
+
+Completions:
+
+```powershell
+genv completion powershell
+genv completion install powershell
+# then: . $HOME\.config\genv\completions\genv.ps1
+```
+
+---
+
 ## Native Windows limitations
 
-- The `env` and `shell` commands currently manage POSIX-style shell fragments
-  (`bash`/`zsh`/`fish`). They do not yet write PowerShell profiles.
-- Hooks run through `cmd /C` on native Windows. Use Windows command syntax in
-  hooks whose `host` selector is `windows`.
+- PowerShell apply targets are Windows-only; macOS/Linux never write `.ps1`
+  profiles even if `pwsh` is installed.
 - File links use Windows symlinks. If link creation fails, enable Developer Mode
   or run the shell as Administrator.
 - WSL2 is separate from native Windows: run the Linux binary inside WSL2 and use
