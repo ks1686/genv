@@ -88,6 +88,7 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateHooks(f, raw, positions)...)
 	errs = append(errs, validateRepo(f, raw, positions)...)
 	errs = append(errs, validateUpdates(f, raw, positions)...)
+	errs = append(errs, validateV8(f, positions)...)
 
 	return f, errs, nil
 }
@@ -213,11 +214,11 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6, Version7),
+			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8),
 		})
 	}
 	return errs
@@ -228,50 +229,56 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 	if _, ok := raw["packages"]; !ok {
 		// Schema v5 adds files/hooks/repo blocks and v6 adds updates; a spec may
 		// legitimately contain only those blocks, so packages is optional there.
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Field:   "packages",
 				Message: "required field is missing",
 			})
 		}
 	} else {
-		seen := make(map[string]int) // id → first index
-		for i, pkg := range f.Packages {
-			pkgPath := fmt.Sprintf("packages[%d]", i)
+		errs = append(errs, validatePackageList(f.Packages, "packages", positions)...)
+	}
+	return errs
+}
 
-			if pkg.ID == "" {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath],
-					Field:    pkgPath + ".id",
-					Message:  "required field is missing or empty",
-				})
-			} else if prev, dup := seen[pkg.ID]; dup {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath+".id"],
-					Field:    pkgPath + ".id",
-					Message:  fmt.Sprintf("duplicate id %q (first seen at packages[%d])", pkg.ID, prev),
-				})
-			} else {
-				seen[pkg.ID] = i
-			}
+func validatePackageList(packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	seen := make(map[string]int) // id → first index
+	for i, pkg := range packages {
+		pkgPath := fmt.Sprintf("%s[%d]", fieldPrefix, i)
 
-			if pkg.Prefer != "" && !KnownManagers[pkg.Prefer] {
-				errs = append(errs, ValidationError{
-					Position: positions[pkgPath+".prefer"],
-					Field:    pkgPath + ".prefer",
-					Message:  fmt.Sprintf("unknown manager %q", pkg.Prefer),
-				})
-			}
+		if pkg.ID == "" {
+			errs = append(errs, ValidationError{
+				Position: positions[pkgPath],
+				Field:    pkgPath + ".id",
+				Message:  "required field is missing or empty",
+			})
+		} else if prev, dup := seen[pkg.ID]; dup {
+			errs = append(errs, ValidationError{
+				Position: positions[pkgPath+".id"],
+				Field:    pkgPath + ".id",
+				Message:  fmt.Sprintf("duplicate id %q (first seen at %s[%d])", pkg.ID, fieldPrefix, prev),
+			})
+		} else {
+			seen[pkg.ID] = i
+		}
 
-			for mgr := range pkg.Managers {
-				if !KnownManagers[mgr] {
-					field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
-					errs = append(errs, ValidationError{
-						Position: positions[field],
-						Field:    field,
-						Message:  fmt.Sprintf("unknown manager %q", mgr),
-					})
-				}
+		if pkg.Prefer != "" && !KnownManagers[pkg.Prefer] {
+			errs = append(errs, ValidationError{
+				Position: positions[pkgPath+".prefer"],
+				Field:    pkgPath + ".prefer",
+				Message:  fmt.Sprintf("unknown manager %q", pkg.Prefer),
+			})
+		}
+
+		for mgr := range pkg.Managers {
+			if !KnownManagers[mgr] {
+				field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
+				errs = append(errs, ValidationError{
+					Position: positions[field],
+					Field:    field,
+					Message:  fmt.Sprintf("unknown manager %q", mgr),
+				})
 			}
 		}
 	}
@@ -281,20 +288,45 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
 				Message:  fmt.Sprintf("env block requires schemaVersion %q or newer (current: %q); run 'genv env set' to upgrade", Version2, f.SchemaVersion),
 			})
 		}
-		for name := range f.Env {
-			if !ValidEnvName(name) {
-				errs = append(errs, ValidationError{
-					Field:   "env." + name,
-					Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
-				})
-			}
+		errs = append(errs, validateEnvMap(f.Env, "env")...)
+	}
+	return errs
+}
+
+func validateEnvMap(env map[string]EnvVar, fieldPrefix string) []ValidationError {
+	var errs []ValidationError
+	for name := range env {
+		if !ValidEnvName(name) {
+			errs = append(errs, ValidationError{
+				Field:   fieldPrefix + "." + name,
+				Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
+			})
+		}
+	}
+	return errs
+}
+
+func validateTargetEnvMap(env map[string]*EnvVar, fieldPrefix string, allowTombstones bool) []ValidationError {
+	var errs []ValidationError
+	for name, v := range env {
+		if !ValidEnvName(name) {
+			errs = append(errs, ValidationError{
+				Field:   fieldPrefix + "." + name,
+				Message: fmt.Sprintf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*", name),
+			})
+		}
+		if v == nil && !allowTombstones {
+			errs = append(errs, ValidationError{
+				Field:   fieldPrefix + "." + name,
+				Message: "tombstone null entries are only valid under targets",
+			})
 		}
 	}
 	return errs
@@ -303,48 +335,55 @@ func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[stri
 func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["shell"],
 				Field:    "shell",
 				Message:  fmt.Sprintf("shell block requires schemaVersion %q or newer (current: %q); run 'genv shell alias set' to upgrade", Version3, f.SchemaVersion),
 			})
 		}
-		if f.Shell != nil {
-			aliasShells := make(map[string]string, len(f.Shell.Aliases))
-			for k, v := range f.Shell.Aliases {
-				aliasShells[k] = v.Shell
-			}
-			errs = append(errs, validateShellEntries(aliasShells, "shell.aliases", "alias")...)
+		errs = append(errs, validateShellConfig(f, f.Shell, "shell")...)
+	}
+	return errs
+}
 
-			funcShells := make(map[string]string, len(f.Shell.Functions))
-			for k, v := range f.Shell.Functions {
-				funcShells[k] = v.Shell
-				if containsShellMeta(v.Body) {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.functions.%s.body", k),
-						Message: "contains shell metacharacters; function body must be plain text without separators or substitutions",
-					})
-				}
-			}
-			errs = append(errs, validateShellEntries(funcShells, "shell.functions", "function")...)
-			errs = append(errs, requirePowerShellV7(f, aliasShells, funcShells)...)
+func validateShellConfig(f *GenvFile, shell *ShellConfig, fieldPrefix string) []ValidationError {
+	if shell == nil {
+		return nil
+	}
+	var errs []ValidationError
+	aliasShells := make(map[string]string, len(shell.Aliases))
+	for k, v := range shell.Aliases {
+		aliasShells[k] = v.Shell
+	}
+	errs = append(errs, validateShellEntries(aliasShells, fieldPrefix+".aliases", "alias")...)
 
-			for i, src := range f.Shell.Source {
-				if src == "" {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.source[%d]", i),
-						Message: "source path must not be empty",
-					})
-					continue
-				}
-				if containsShellMeta(src) {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("shell.source[%d]", i),
-						Message: "contains shell metacharacters",
-					})
-				}
-			}
+	funcShells := make(map[string]string, len(shell.Functions))
+	for k, v := range shell.Functions {
+		funcShells[k] = v.Shell
+		if containsShellMeta(v.Body) {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.functions.%s.body", fieldPrefix, k),
+				Message: "contains shell metacharacters; function body must be plain text without separators or substitutions",
+			})
+		}
+	}
+	errs = append(errs, validateShellEntries(funcShells, fieldPrefix+".functions", "function")...)
+	errs = append(errs, requirePowerShellV7(f, fieldPrefix, aliasShells, funcShells)...)
+
+	for i, src := range shell.Source {
+		if src == "" {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.source[%d]", fieldPrefix, i),
+				Message: "source path must not be empty",
+			})
+			continue
+		}
+		if containsShellMeta(src) {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.source[%d]", fieldPrefix, i),
+				Message: "contains shell metacharacters",
+			})
 		}
 	}
 	return errs
@@ -371,7 +410,7 @@ func validateShellEntries(shells map[string]string, fieldPrefix, singularName st
 
 // requirePowerShellV7 rejects shell: "powershell" targets on schema versions
 // older than v7 (the version that introduced PowerShell targeting).
-func requirePowerShellV7(f *GenvFile, aliasShells, funcShells map[string]string) []ValidationError {
+func requirePowerShellV7(f *GenvFile, fieldPrefix string, aliasShells, funcShells map[string]string) []ValidationError {
 	if versionRank(f.SchemaVersion) >= versionRank(Version7) {
 		return nil
 	}
@@ -381,7 +420,7 @@ func requirePowerShellV7(f *GenvFile, aliasShells, funcShells map[string]string)
 			continue
 		}
 		errs = append(errs, ValidationError{
-			Field:   fmt.Sprintf("shell.aliases.%s.shell", name),
+			Field:   fmt.Sprintf("%s.aliases.%s.shell", fieldPrefix, name),
 			Message: fmt.Sprintf(`shell target "powershell" requires schemaVersion %q or newer (current: %q)`, Version7, f.SchemaVersion),
 		})
 	}
@@ -390,7 +429,7 @@ func requirePowerShellV7(f *GenvFile, aliasShells, funcShells map[string]string)
 			continue
 		}
 		errs = append(errs, ValidationError{
-			Field:   fmt.Sprintf("shell.functions.%s.shell", name),
+			Field:   fmt.Sprintf("%s.functions.%s.shell", fieldPrefix, name),
 			Message: fmt.Sprintf(`shell target "powershell" requires schemaVersion %q or newer (current: %q)`, Version7, f.SchemaVersion),
 		})
 	}
@@ -400,67 +439,101 @@ func requirePowerShellV7(f *GenvFile, aliasShells, funcShells map[string]string)
 func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasServices := raw["services"]; hasServices {
-		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["services"],
 				Field:    "services",
 				Message:  fmt.Sprintf("services block requires schemaVersion %q or newer (current: %q); run 'genv service add' to upgrade", Version4, f.SchemaVersion),
 			})
 		}
-		if f.Services != nil {
-			for name, svc := range f.Services {
-				if name == "" {
-					errs = append(errs, ValidationError{
-						Field:   "services",
-						Message: "service name must not be empty",
-					})
-				}
-				if strings.ContainsAny(name, "\r\n") {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("services.%s", name),
-						Message: "service name must not contain newlines",
-					})
-				}
-				if len(svc.Start) == 0 && svc.BrewFormula == "" {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("services.%s.start", name),
-						Message: "start command is required (or set brew_formula for brew-managed services)",
-					})
-				}
-				if svc.BrewFormula != "" && len(svc.Start) > 0 {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("services.%s", name),
-						Message: "brew_formula and start are mutually exclusive; use one or the other",
-					})
-				}
-				if strings.ContainsAny(svc.BrewFormula, "\r\n") {
-					errs = append(errs, ValidationError{
-						Field:   fmt.Sprintf("services.%s.brew_formula", name),
-						Message: "brew_formula must not contain newlines",
-					})
-				}
-				errs = append(errs, validateServiceCommand(name, "start", svc.Start)...)
-				errs = append(errs, validateServiceCommand(name, "stop", svc.Stop)...)
-				errs = append(errs, validateServiceCommand(name, "restart", svc.Restart)...)
-				errs = append(errs, validateServiceCommand(name, "status", svc.Status)...)
-			}
-		}
+		errs = append(errs, validateServiceMap(f.Services, "services")...)
 	}
 	return errs
 }
 
-func validateServiceCommand(name, field string, args []string) []ValidationError {
+func validateServiceMap(services map[string]Service, fieldPrefix string) []ValidationError {
+	var errs []ValidationError
+	for name, svc := range services {
+		errs = append(errs, validateServiceName(name, fieldPrefix)...)
+		errs = append(errs, validateService(name, svc, fieldPrefix)...)
+	}
+	return errs
+}
+
+func validateTargetServiceMap(services map[string]*Service, fieldPrefix string, allowTombstones bool) []ValidationError {
+	var errs []ValidationError
+	for name, svc := range services {
+		errs = append(errs, validateServiceName(name, fieldPrefix)...)
+		if svc == nil {
+			if !allowTombstones {
+				errs = append(errs, ValidationError{
+					Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
+					Message: "tombstone null entries are only valid under targets",
+				})
+			}
+			continue
+		}
+		errs = append(errs, validateService(name, *svc, fieldPrefix)...)
+	}
+	return errs
+}
+
+func validateServiceName(name, fieldPrefix string) []ValidationError {
+	var errs []ValidationError
+	if name == "" {
+		errs = append(errs, ValidationError{
+			Field:   fieldPrefix,
+			Message: "service name must not be empty",
+		})
+	}
+	if strings.ContainsAny(name, "\r\n") {
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
+			Message: "service name must not contain newlines",
+		})
+	}
+	return errs
+}
+
+func validateService(name string, svc Service, fieldPrefix string) []ValidationError {
+	var errs []ValidationError
+	if len(svc.Start) == 0 && svc.BrewFormula == "" {
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("%s.%s.start", fieldPrefix, name),
+			Message: "start command is required (or set brew_formula for brew-managed services)",
+		})
+	}
+	if svc.BrewFormula != "" && len(svc.Start) > 0 {
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
+			Message: "brew_formula and start are mutually exclusive; use one or the other",
+		})
+	}
+	if strings.ContainsAny(svc.BrewFormula, "\r\n") {
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("%s.%s.brew_formula", fieldPrefix, name),
+			Message: "brew_formula must not contain newlines",
+		})
+	}
+	errs = append(errs, validateServiceCommand(fieldPrefix, name, "start", svc.Start)...)
+	errs = append(errs, validateServiceCommand(fieldPrefix, name, "stop", svc.Stop)...)
+	errs = append(errs, validateServiceCommand(fieldPrefix, name, "restart", svc.Restart)...)
+	errs = append(errs, validateServiceCommand(fieldPrefix, name, "status", svc.Status)...)
+	return errs
+}
+
+func validateServiceCommand(fieldPrefix, name, field string, args []string) []ValidationError {
 	var errs []ValidationError
 	for i, arg := range args {
 		if arg == "" {
 			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("services.%s.%s[%d]", name, field, i),
+				Field:   fmt.Sprintf("%s.%s.%s[%d]", fieldPrefix, name, field, i),
 				Message: "command arguments must not be empty",
 			})
 		}
 		if strings.ContainsAny(arg, "\r\n") {
 			errs = append(errs, ValidationError{
-				Field:   fmt.Sprintf("services.%s.%s[%d]", name, field, i),
+				Field:   fmt.Sprintf("%s.%s.%s[%d]", fieldPrefix, name, field, i),
 				Message: "command arguments must not contain newlines",
 			})
 		}
@@ -485,66 +558,72 @@ func expandPath(s string) (string, error) {
 func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasFiles := raw["files"]; hasFiles {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["files"],
 				Field:    "files",
 				Message:  fmt.Sprintf("files block requires schemaVersion %q or newer (current: %q)", Version5, f.SchemaVersion),
 			})
 		}
-		if f.Files == nil {
-			return errs
+		errs = append(errs, validateFilesConfig(f.Files, "files")...)
+	}
+	return errs
+}
+
+func validateFilesConfig(files *FilesConfig, fieldPrefix string) []ValidationError {
+	if files == nil {
+		return nil
+	}
+	var errs []ValidationError
+	for i, l := range files.Links {
+		field := fmt.Sprintf("%s.links[%d]", fieldPrefix, i)
+		if l.Source == "" {
+			errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
 		}
-		for i, l := range f.Files.Links {
-			field := fmt.Sprintf("files.links[%d]", i)
-			if l.Source == "" {
-				errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
-			}
-			if l.Target == "" {
-				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
-			}
-			if l.Mode != "" && l.Mode != "link" && l.Mode != "managed-link" && l.Mode != "merge-dir" {
-				errs = append(errs, ValidationError{
-					Field:   field + ".mode",
-					Message: fmt.Sprintf("invalid link mode %q; expected \"link\", \"managed-link\", or \"merge-dir\"", l.Mode),
-				})
-			}
-			if expanded, err := expandPath(l.Target); err != nil || expanded == "" {
-				msg := "cannot expand target path"
-				if err != nil {
-					msg = fmt.Sprintf("%s: %v", msg, err)
-				}
-				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
-			}
+		if l.Target == "" {
+			errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
 		}
-		for i, tpl := range f.Files.Templates {
-			field := fmt.Sprintf("files.templates[%d]", i)
-			if tpl.Source == "" {
-				errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
-			}
-			if tpl.Target == "" {
-				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
-			}
-			if expanded, err := expandPath(tpl.Target); err != nil || expanded == "" {
-				msg := "cannot expand target path"
-				if err != nil {
-					msg = fmt.Sprintf("%s: %v", msg, err)
-				}
-				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
-			}
+		if l.Mode != "" && l.Mode != "link" && l.Mode != "managed-link" && l.Mode != "merge-dir" {
+			errs = append(errs, ValidationError{
+				Field:   field + ".mode",
+				Message: fmt.Sprintf("invalid link mode %q; expected \"link\", \"managed-link\", or \"merge-dir\"", l.Mode),
+			})
 		}
-		for i, d := range f.Files.Dirs {
-			field := fmt.Sprintf("files.dirs[%d]", i)
-			if d.Target == "" {
-				errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+		if expanded, err := expandPath(l.Target); err != nil || expanded == "" {
+			msg := "cannot expand target path"
+			if err != nil {
+				msg = fmt.Sprintf("%s: %v", msg, err)
 			}
-			if expanded, err := expandPath(d.Target); err != nil || expanded == "" {
-				msg := "cannot expand target path"
-				if err != nil {
-					msg = fmt.Sprintf("%s: %v", msg, err)
-				}
-				errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+		}
+	}
+	for i, tpl := range files.Templates {
+		field := fmt.Sprintf("%s.templates[%d]", fieldPrefix, i)
+		if tpl.Source == "" {
+			errs = append(errs, ValidationError{Field: field + ".source", Message: "source must not be empty"})
+		}
+		if tpl.Target == "" {
+			errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+		}
+		if expanded, err := expandPath(tpl.Target); err != nil || expanded == "" {
+			msg := "cannot expand target path"
+			if err != nil {
+				msg = fmt.Sprintf("%s: %v", msg, err)
 			}
+			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
+		}
+	}
+	for i, d := range files.Dirs {
+		field := fmt.Sprintf("%s.dirs[%d]", fieldPrefix, i)
+		if d.Target == "" {
+			errs = append(errs, ValidationError{Field: field + ".target", Message: "target must not be empty"})
+		}
+		if expanded, err := expandPath(d.Target); err != nil || expanded == "" {
+			msg := "cannot expand target path"
+			if err != nil {
+				msg = fmt.Sprintf("%s: %v", msg, err)
+			}
+			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
 		}
 	}
 	return errs
@@ -553,44 +632,50 @@ func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[st
 func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasHooks := raw["hooks"]; hasHooks {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["hooks"],
 				Field:    "hooks",
 				Message:  fmt.Sprintf("hooks block requires schemaVersion %q or newer (current: %q)", Version5, f.SchemaVersion),
 			})
 		}
-		if f.Hooks == nil {
-			return errs
-		}
-		err := validateHookPhase("preUpgrade", f.Hooks.PreUpgrade)
-		errs = append(errs, err...)
-		err = validateHookPhase("postApply", f.Hooks.PostApply)
-		errs = append(errs, err...)
-		err = validateHookPhase("postUpgrade", f.Hooks.PostUpgrade)
-		errs = append(errs, err...)
-		if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
-			errs = append(errs, validateNoV6Hooks(f.Hooks, positions)...)
-			return errs
-		}
-		err = validateHookPhase("preApply", f.Hooks.PreApply)
-		errs = append(errs, err...)
-		err = validateHookPhase("preAdd", f.Hooks.PreAdd)
-		errs = append(errs, err...)
-		err = validateHookPhase("postAdd", f.Hooks.PostAdd)
-		errs = append(errs, err...)
-		err = validateHookPhase("preRemove", f.Hooks.PreRemove)
-		errs = append(errs, err...)
-		err = validateHookPhase("postRemove", f.Hooks.PostRemove)
-		errs = append(errs, err...)
+		errs = append(errs, validateHooksConfig(f, f.Hooks, "hooks", positions)...)
 	}
 	return errs
 }
 
-func validateHookPhase(phase string, hooks []Hook) []ValidationError {
+func validateHooksConfig(f *GenvFile, hooks *HooksConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if hooks == nil {
+		return nil
+	}
+	var errs []ValidationError
+	err := validateHookPhase(fieldPrefix, "preUpgrade", hooks.PreUpgrade)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "postApply", hooks.PostApply)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "postUpgrade", hooks.PostUpgrade)
+	errs = append(errs, err...)
+	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		errs = append(errs, validateNoV6Hooks(hooks, fieldPrefix, positions)...)
+		return errs
+	}
+	err = validateHookPhase(fieldPrefix, "preApply", hooks.PreApply)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "preAdd", hooks.PreAdd)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "postAdd", hooks.PostAdd)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "preRemove", hooks.PreRemove)
+	errs = append(errs, err...)
+	err = validateHookPhase(fieldPrefix, "postRemove", hooks.PostRemove)
+	errs = append(errs, err...)
+	return errs
+}
+
+func validateHookPhase(fieldPrefix, phase string, hooks []Hook) []ValidationError {
 	var errs []ValidationError
 	for i, h := range hooks {
-		field := fmt.Sprintf("hooks.%s[%d]", phase, i)
+		field := fmt.Sprintf("%s.%s[%d]", fieldPrefix, phase, i)
 		hasCommand := h.Command != ""
 		hasFile := h.File != ""
 		if hasCommand == hasFile {
@@ -606,7 +691,7 @@ func validateHookPhase(phase string, hooks []Hook) []ValidationError {
 	return errs
 }
 
-func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []ValidationError {
+func validateNoV6Hooks(h *HooksConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
 	phases := map[string][]Hook{
 		"preApply":   h.PreApply,
 		"preAdd":     h.PreAdd,
@@ -619,7 +704,7 @@ func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []Validati
 		if len(hooks) == 0 {
 			continue
 		}
-		field := "hooks." + phase
+		field := fieldPrefix + "." + phase
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
@@ -631,7 +716,7 @@ func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []Validati
 			if hook.File == "" {
 				continue
 			}
-			field := fmt.Sprintf("hooks.%s[%d].file", phase, i)
+			field := fmt.Sprintf("%s.%s[%d].file", fieldPrefix, phase, i)
 			errs = append(errs, ValidationError{
 				Position: positions[field],
 				Field:    field,
@@ -645,7 +730,7 @@ func validateNoV6Hooks(h *HooksConfig, positions map[string]Position) []Validati
 func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasRepo := raw["repo"]; hasRepo {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 			errs = append(errs, ValidationError{
 				Position: positions["repo"],
 				Field:    "repo",
@@ -674,7 +759,7 @@ func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[
 	if _, hasUpdates := raw["updates"]; !hasUpdates {
 		return errs
 	}
-	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 {
+	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
 		errs = append(errs, ValidationError{
 			Position: positions["updates"],
 			Field:    "updates",
@@ -728,6 +813,207 @@ func validateUpdatesManagers(field string, managers []string, positions map[stri
 			Field:    elem,
 			Message:  fmt.Sprintf("unknown manager %q", mgr),
 		})
+	}
+	return errs
+}
+
+func validateV8(f *GenvFile, positions map[string]Position) []ValidationError {
+	if f.SchemaVersion != Version8 {
+		return nil
+	}
+
+	var errs []ValidationError
+	if len(f.Packages) > 0 {
+		errs = append(errs, ValidationError{
+			Position: positions["packages"],
+			Field:    "packages",
+			Message:  "top-level packages are not allowed in schemaVersion \"8\"; use targets.<target>.packages",
+		})
+	}
+	if f.Env != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["env"],
+			Field:    "env",
+			Message:  "top-level env is not allowed in schemaVersion \"8\"; use defaults.env or targets.<target>.env",
+		})
+	}
+	if f.Shell != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["shell"],
+			Field:    "shell",
+			Message:  "top-level shell is not allowed in schemaVersion \"8\"; use defaults.shell or targets.<target>.shell",
+		})
+	}
+	if f.Files != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["files"],
+			Field:    "files",
+			Message:  "top-level files are not allowed in schemaVersion \"8\"; use defaults.files or targets.<target>.files",
+		})
+	}
+	if f.Services != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["services"],
+			Field:    "services",
+			Message:  "top-level services are not allowed in schemaVersion \"8\"; use defaults.services or targets.<target>.services",
+		})
+	}
+	if f.Hooks != nil {
+		errs = append(errs, ValidationError{
+			Position: positions["hooks"],
+			Field:    "hooks",
+			Message:  "top-level hooks are not allowed in schemaVersion \"8\"; use defaults.hooks or targets.<target>.hooks",
+		})
+	}
+
+	if len(f.Targets) == 0 {
+		errs = append(errs, ValidationError{
+			Position: positions["targets"],
+			Field:    "targets",
+			Message:  "at least one target is required",
+		})
+	}
+
+	if f.Defaults != nil {
+		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, positions)...)
+	}
+	for target, bundle := range f.Targets {
+		targetPath := "targets." + target
+		if !KnownTargets[target] {
+			errs = append(errs, ValidationError{
+				Position: positions[targetPath],
+				Field:    targetPath,
+				Message:  fmt.Sprintf("unknown target %q", target),
+			})
+		}
+		if bundle == nil {
+			errs = append(errs, ValidationError{
+				Position: positions[targetPath],
+				Field:    targetPath,
+				Message:  "target must be an object",
+			})
+			continue
+		}
+		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, positions)...)
+	}
+	return errs
+}
+
+func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	errs = append(errs, validatePackageList(bundle.Packages, fieldPrefix+".packages", positions)...)
+	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", positions)...)
+	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
+	errs = append(errs, validateShellConfig(f, bundle.Shell, fieldPrefix+".shell")...)
+	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
+	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", positions)...)
+	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)
+	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", positions)...)
+	errs = append(errs, validateHooksConfig(f, bundle.Hooks, fieldPrefix+".hooks", positions)...)
+	errs = append(errs, validateNoHookHosts(bundle.Hooks, fieldPrefix+".hooks", positions)...)
+	return errs
+}
+
+func validateNoPackageHosts(packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	for i, pkg := range packages {
+		if len(pkg.Host) == 0 {
+			continue
+		}
+		field := fmt.Sprintf("%s[%d].host", fieldPrefix, i)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+		})
+	}
+	return errs
+}
+
+func validateNoServiceHosts(services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	for name, svc := range services {
+		if svc == nil || len(svc.Host) == 0 {
+			continue
+		}
+		field := fmt.Sprintf("%s.%s.host", fieldPrefix, name)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+		})
+	}
+	return errs
+}
+
+func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if files == nil {
+		return nil
+	}
+	var errs []ValidationError
+	for i, link := range files.Links {
+		if len(link.Host) == 0 {
+			continue
+		}
+		field := fmt.Sprintf("%s.links[%d].host", fieldPrefix, i)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+		})
+	}
+	for i, tpl := range files.Templates {
+		if len(tpl.Host) == 0 {
+			continue
+		}
+		field := fmt.Sprintf("%s.templates[%d].host", fieldPrefix, i)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+		})
+	}
+	for i, dir := range files.Dirs {
+		if len(dir.Host) == 0 {
+			continue
+		}
+		field := fmt.Sprintf("%s.dirs[%d].host", fieldPrefix, i)
+		errs = append(errs, ValidationError{
+			Position: positions[field],
+			Field:    field,
+			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+		})
+	}
+	return errs
+}
+
+func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if hooks == nil {
+		return nil
+	}
+	phases := map[string][]Hook{
+		"preApply":    hooks.PreApply,
+		"postApply":   hooks.PostApply,
+		"preAdd":      hooks.PreAdd,
+		"postAdd":     hooks.PostAdd,
+		"preRemove":   hooks.PreRemove,
+		"postRemove":  hooks.PostRemove,
+		"preUpgrade":  hooks.PreUpgrade,
+		"postUpgrade": hooks.PostUpgrade,
+	}
+	var errs []ValidationError
+	for phase, entries := range phases {
+		for i, hook := range entries {
+			if len(hook.Host) == 0 {
+				continue
+			}
+			field := fmt.Sprintf("%s.%s[%d].host", fieldPrefix, phase, i)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			})
+		}
 	}
 	return errs
 }

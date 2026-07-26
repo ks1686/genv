@@ -894,6 +894,46 @@ func TestParseAndValidate_PowerShellRequiresV7(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_V8RejectsTopLevelPackages(t *testing.T) {
+	raw := `{"schemaVersion":"8","packages":[{"id":"git"}],"targets":{"arch":{"packages":[]}}}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for top-level packages on v8")
+	}
+}
+
+func TestParseAndValidate_V8AcceptsDefaultsAndTargets(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "defaults":{"env":{"EDITOR":{"value":"nvim"}}},
+	  "targets":{
+	    "arch":{"packages":[{"id":"git","prefer":"pacman"}],"env":{"EDITOR":null}},
+	    "macos":{"packages":[{"id":"git","prefer":"brew"}]}
+	  }
+	}`
+	f, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil || len(errs) > 0 {
+		t.Fatalf("unexpected: err=%v errs=%v", err, errs)
+	}
+	if f.Targets["arch"].Env["EDITOR"] != nil {
+		t.Fatal("expected tombstone nil pointer for EDITOR on arch")
+	}
+}
+
+func TestParseAndValidate_V8RejectsHostOnPackage(t *testing.T) {
+	raw := `{"schemaVersion":"8","targets":{"arch":{"packages":[{"id":"git","host":["arch"]}]}}}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected error for host on v8 package")
+	}
+}
+
 func TestParseAndValidate_FilesBlockRequiresV5(t *testing.T) {
 	input := `{"schemaVersion":"4","packages":[],"files":{"links":[]}}`
 	_, errs, err := ParseAndValidate([]byte(input))
