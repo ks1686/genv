@@ -19,6 +19,21 @@ func TestCurrent_UsesGenvHost(t *testing.T) {
 	}
 }
 
+func TestIsWSLAndIsArchDetectors(t *testing.T) {
+	// Exercise the detector functions regardless of host; on macOS both
+	// typically return false after failing to read Linux-only paths.
+	_ = isWSL()
+	_ = isArch()
+
+	t.Setenv("GENV_HOST", "")
+	got, err := Classify()
+	if runtime.GOOS == "darwin" {
+		if err != nil || got != "macos" {
+			t.Fatalf("Classify on darwin = %q, %v", got, err)
+		}
+	}
+}
+
 func TestCurrent_FallsBackToHostname(t *testing.T) {
 	t.Setenv("GENV_HOST", "")
 
