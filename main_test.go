@@ -1146,6 +1146,48 @@ func TestScanCmd_InvalidFile(t *testing.T) {
 	}
 }
 
+func TestScanCmd_V8WritesActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	seed := &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Targets: map[string]*schema.TargetBundle{
+			"arch":  {},
+			"macos": {Packages: []schema.Package{{ID: "existing"}}},
+		},
+	}
+	if err := genvfile.Write(path, seed); err != nil {
+		t.Fatalf("seeding spec: %v", err)
+	}
+
+	snap := &scanManagerNameAdapter{name: "snap", installed: []string{"jq"}}
+	originalAll := adapter.All
+	adapter.All = []adapter.Adapter{snap}
+	t.Cleanup(func() { adapter.All = originalAll })
+
+	code := run([]string{"scan", "--file", path, "--lock-file", lockPath, "--target", "arch"})
+	if code != exitOK {
+		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 0 {
+		t.Fatalf("v8 scan wrote top-level packages: %+v", f.Packages)
+	}
+	arch := f.Targets["arch"]
+	if arch == nil || len(arch.Packages) != 1 || arch.Packages[0].ID != "jq" {
+		t.Fatalf("targets.arch packages = %+v, want jq", arch)
+	}
+	macos := f.Targets["macos"]
+	if macos == nil || len(macos.Packages) != 1 || macos.Packages[0].ID != "existing" {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
+	}
+}
+
 func TestScanCmd_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
