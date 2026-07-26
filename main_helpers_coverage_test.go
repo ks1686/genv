@@ -225,7 +225,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		},
 		Shell: &schema.ShellConfig{
 			Aliases: map[string]schema.ShellAlias{
-				"ll":   {Value: "ls -la"},
+				"ll":    {Value: "ls -la"},
 				"ffish": {Value: "echo fish", Shell: "fish"},
 			},
 		},
