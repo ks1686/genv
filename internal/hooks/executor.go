@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ks1686/genv/internal/host"
+	"github.com/ks1686/genv/internal/profilebackend"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -64,10 +66,14 @@ type RunOptions struct {
 func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
 // shellFor returns the shell binary and its command flag for the given GOOS.
-// Native Windows has no "sh", so hooks run via "cmd /C"; every other OS uses
-// the POSIX "sh -c".
+// Native Windows prefers pwsh/powershell (-Command); without an engine it falls
+// back to cmd /C. Every other OS uses POSIX sh -c.
 func shellFor(goos string) (bin string, flag string) {
 	if goos == "windows" {
+		if eng, ok := profilebackend.DetectEngine(); ok {
+			return eng.Bin, "-Command"
+		}
+		warnWindowsHookFallback()
 		return "cmd", "/C"
 	}
 	return "sh", "-c"
@@ -75,9 +81,21 @@ func shellFor(goos string) (bin string, flag string) {
 
 func scriptRunnerFor(goos string) []string {
 	if goos == "windows" {
+		if eng, ok := profilebackend.DetectEngine(); ok {
+			return []string{eng.Bin, "-NoProfile", "-File"}
+		}
+		warnWindowsHookFallback()
 		return []string{"cmd", "/C"}
 	}
 	return []string{"sh"}
+}
+
+var windowsHookFallbackOnce sync.Once
+
+func warnWindowsHookFallback() {
+	windowsHookFallbackOnce.Do(func() {
+		_, _ = fmt.Fprintln(os.Stderr, "genv: warning: no PowerShell engine on PATH; running hooks via cmd /C")
+	})
 }
 
 // NewExecutor returns an Executor that writes subprocess output to stdout and stderr.
@@ -208,6 +226,13 @@ func (e *Executor) hookArgs(h schema.Hook) ([]string, error) {
 		}
 		args := scriptRunnerFor(e.goos)
 		return append(args, path), nil
+	}
+	if e.goos == "windows" {
+		if eng, ok := profilebackend.DetectEngine(); ok {
+			return []string{eng.Bin, "-NoProfile", "-Command", h.Command}, nil
+		}
+		warnWindowsHookFallback()
+		return []string{"cmd", "/C", h.Command}, nil
 	}
 	bin, flag := shellFor(e.goos)
 	return []string{bin, flag, h.Command}, nil

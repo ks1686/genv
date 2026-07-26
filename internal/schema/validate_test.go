@@ -841,20 +841,56 @@ func TestParseAndValidate_V4StillValid(t *testing.T) {
 	}
 }
 
-func TestParseAndValidate_RejectsV7(t *testing.T) {
+func TestParseAndValidate_AcceptsV7(t *testing.T) {
 	input := `{"schemaVersion":"7","packages":[]}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("expected no validation errors for v7, got: %v", errs)
+	}
+	if f.SchemaVersion != Version7 {
+		t.Errorf("SchemaVersion = %q, want %q", f.SchemaVersion, Version7)
+	}
+}
+
+func TestParseAndValidate_AcceptsPowerShellShellTarget(t *testing.T) {
+	input := `{
+		"schemaVersion":"7",
+		"packages":[],
+		"shell":{
+			"aliases":{"ll":{"value":"Get-ChildItem","shell":"powershell"}},
+			"functions":{"greet":{"body":"Write-Host hi","shell":"powershell"}}
+		}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("expected no validation errors, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_PowerShellRequiresV7(t *testing.T) {
+	input := `{
+		"schemaVersion":"3",
+		"packages":[],
+		"shell":{"aliases":{"ll":{"value":"Get-ChildItem","shell":"powershell"}}}
+	}`
 	_, errs, err := ParseAndValidate([]byte(input))
 	if err != nil {
 		t.Fatalf("unexpected fatal error: %v", err)
 	}
 	found := false
 	for _, e := range errs {
-		if e.Field == "schemaVersion" {
+		if e.Field == "shell.aliases.ll.shell" && strings.Contains(e.Message, "schemaVersion") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected schemaVersion error for v7, got: %v", errs)
+		t.Errorf("expected powershell target rejected on v3, got: %v", errs)
 	}
 }
 

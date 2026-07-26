@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ks1686/genv/internal/profilebackend"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -104,6 +105,11 @@ func TestExecutor_ShellArgvPerOS(t *testing.T) {
 }
 
 func TestShellFor(t *testing.T) {
+	restore := profilebackend.SetLookPathForTest(func(string) (string, error) {
+		return "", os.ErrNotExist
+	})
+	t.Cleanup(restore)
+
 	cases := []struct {
 		goos string
 		bin  string
@@ -117,6 +123,50 @@ func TestShellFor(t *testing.T) {
 		bin, flag := shellFor(tc.goos)
 		if bin != tc.bin || flag != tc.flag {
 			t.Errorf("shellFor(%q) = (%q, %q), want (%q, %q)", tc.goos, bin, flag, tc.bin, tc.flag)
+		}
+	}
+}
+
+func TestHookArgs_WindowsPrefersPwsh(t *testing.T) {
+	restore := profilebackend.SetLookPathForTest(func(file string) (string, error) {
+		if file == "pwsh" {
+			return `/fake/pwsh`, nil
+		}
+		return "", os.ErrNotExist
+	})
+	t.Cleanup(restore)
+
+	e, _ := newTestExecutor(nil, nil)
+	e.goos = "windows"
+	args, err := e.hookArgs(schema.Hook{Command: "Write-Host hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`/fake/pwsh`, "-NoProfile", "-Command", "Write-Host hi"}
+	if len(args) != len(want) {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args = %v, want %v", args, want)
+		}
+	}
+
+	script := filepath.Join(t.TempDir(), "hook.ps1")
+	if err := os.WriteFile(script, []byte("Write-Host ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args, err = e.hookArgs(schema.Hook{File: script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []string{`/fake/pwsh`, "-NoProfile", "-File", script}
+	if len(args) != len(want) {
+		t.Fatalf("script args = %v, want %v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("script args = %v, want %v", args, want)
 		}
 	}
 }

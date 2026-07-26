@@ -43,6 +43,7 @@ func TestCompletionCmd_PrintsScriptsAndInstalls(t *testing.T) {
 		{shell: "bash", marker: "bash completion"},
 		{shell: "zsh", marker: "#compdef genv"},
 		{shell: "fish", marker: "fish completion"},
+		{shell: "powershell", marker: "Register-ArgumentCompleter"},
 	} {
 		t.Run(tc.shell, func(t *testing.T) {
 			var code int
@@ -63,7 +64,10 @@ func TestCompletionCmd_PrintsScriptsAndInstalls(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "genv.fish")); err != nil {
 		t.Fatalf("installed completion: %v", err)
 	}
-	if code := run([]string{"completion", "powershell"}); code != exitUsage {
+	if code := run([]string{"completion", "powershell"}); code != exitOK {
+		t.Errorf("completion powershell = %d, want exitOK", code)
+	}
+	if code := run([]string{"completion", "unknownshell"}); code != exitUsage {
 		t.Errorf("completion unknown shell = %d, want exitUsage", code)
 	}
 }
