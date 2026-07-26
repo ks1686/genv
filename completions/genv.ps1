@@ -93,6 +93,11 @@ function script:Get-GenvCompletions {
 				'--no-search', '--no-hooks', '--hook-timeout', '--host', '--target')
 			return (& $completeCandidates -Candidates $flags)
 		}
+		{ $_ -in 'adopt' } {
+			$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
+				'--host', '--target', '--files', '--json')
+			return (& $completeCandidates -Candidates $flags)
+		}
 		{ $_ -in 'remove', 'rm' } {
 			if ($WordToComplete -like '-*') {
 				$flags = @('--file', '--lock-file', '--no-hooks', '--hook-timeout', '--host', '--target')
@@ -100,7 +105,14 @@ function script:Get-GenvCompletions {
 			}
 			return (& $completePackages)
 		}
-		{ $_ -in 'disown', 'upgrade' } {
+		{ $_ -in 'disown' } {
+			if ($WordToComplete -like '-*') {
+				$flags = @('--file', '--lock-file', '--target')
+				return (& $completeCandidates -Candidates $flags)
+			}
+			return (& $completePackages)
+		}
+		{ $_ -in 'upgrade' } {
 			return (& $completePackages)
 		}
 		{ $_ -in 'env' } {

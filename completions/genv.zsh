@@ -75,6 +75,7 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'1: :->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
@@ -104,6 +105,7 @@ _genv() {
 				"--prefer=[Preferred manager]:manager:($(genv __complete managers 2>/dev/null))" \
 				'--manager=[Manager-specific names]:manager:' \
 				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'--files[Adopt matching files block entries into the lock without changing targets]' \
 				'--json[Emit machine-readable JSON to stdout]'
 			;;

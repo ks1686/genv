@@ -56,6 +56,25 @@ func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {
 	}
 }
 
+func withInstalledBrew(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+install|uninstall|upgrade|cleanup|list)
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake brew: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // ---- basic routing ----------------------------------------------------------
 
 func TestRun_NoArgs(t *testing.T) {
@@ -643,6 +662,31 @@ func TestAdoptCmd_NoManagerOrNotInstalled(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_V8TargetFlagWritesSelectedTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	withInstalledBrew(t)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{},"macos":{}}}`)
+	writeLock(t, lockPath, nil)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "arch", "--prefer", "brew", "git"})
+	if code != exitOK {
+		t.Fatalf("adopt v8 target: expected exitOK (%d), got %d", exitOK, code)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Targets["arch"].Packages) != 1 || f.Targets["arch"].Packages[0].ID != "git" {
+		t.Fatalf("targets.arch packages = %+v, want git", f.Targets["arch"].Packages)
+	}
+	if len(f.Targets["macos"].Packages) != 0 {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", f.Targets["macos"].Packages)
+	}
+}
+
 // ---- genv disown -------------------------------------------------------------
 // disown removes the package from genv.json and the lock file without uninstalling.
 
@@ -686,6 +730,43 @@ func TestDisownCmd_Basic(t *testing.T) {
 		if p.ID == "git" {
 			t.Error("git should have been removed from lock")
 		}
+	}
+}
+
+func TestDisownCmd_V8TargetFlagRemovesSelectedTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+		"schemaVersion":"8",
+		"targets":{
+			"arch":{"packages":[{"id":"git"}]},
+			"macos":{"packages":[{"id":"git"}]}
+		}
+	}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}})
+
+	code := run([]string{"disown", "--file", path, "--lock-file", lockPath, "--target", "arch", "git"})
+	if code != exitOK {
+		t.Fatalf("disown v8 target: expected exitOK (%d), got %d", exitOK, code)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Targets["arch"].Packages) != 0 {
+		t.Fatalf("targets.arch packages not removed: %+v", f.Targets["arch"].Packages)
+	}
+	if len(f.Targets["macos"].Packages) != 1 || f.Targets["macos"].Packages[0].ID != "git" {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", f.Targets["macos"].Packages)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	if len(lf.Packages) != 0 {
+		t.Fatalf("lock packages = %+v, want empty", lf.Packages)
 	}
 }
 
@@ -3311,6 +3392,58 @@ func TestPullCmd_DryRunFlagOverridesRepo(t *testing.T) {
 	if !strings.Contains(out, "dev") {
 		t.Errorf("dry-run output missing override ref: %q", out)
 	}
+}
+
+func TestPullCmd_DryRunListsRemoteFileAssets(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "remote")
+	destDir := filepath.Join(dir, "dest")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+
+	if err := os.MkdirAll(filepath.Join(repoDir, "assets"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(remote assets): %v", err)
+	}
+	runGitForTest(t, repoDir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoDir, "assets", "profile"), []byte("profile"), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote asset): %v", err)
+	}
+	remoteSpec := fmt.Sprintf(`{
+  "schemaVersion": "7",
+  "packages": [],
+  "repo": {"url": %q, "ref": "main"},
+  "files": {"links": [{"source": "assets/profile", "target": "~/.profile"}]}
+}`, repoDir)
+	if err := os.WriteFile(filepath.Join(repoDir, "genv.json"), []byte(remoteSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(remote spec): %v", err)
+	}
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=genv test", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest): %v", err)
+	}
+	specPath := filepath.Join(destDir, "genv.json")
+	localSpec := fmt.Sprintf(`{"schemaVersion":"7","packages":[],"repo":{"url":%q,"ref":"main"}}`, repoDir)
+	if err := os.WriteFile(specPath, []byte(localSpec), 0o644); err != nil {
+		t.Fatalf("WriteFile(local spec): %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"pull", "--file", specPath, "--dry-run"})
+	})
+	if code != exitOK {
+		t.Fatalf("dry-run: expected exitOK (%d), got %d", exitOK, code)
+	}
+	if !strings.Contains(out, "would copy assets:") || !strings.Contains(out, "assets/profile") {
+		t.Fatalf("dry-run output missing remote asset list: %q", out)
+	}
+	assertPulledPathNotExists(t, filepath.Join(destDir, "assets", "profile"))
 }
 
 func TestPull_CopiesRelativeFileAssets(t *testing.T) {
