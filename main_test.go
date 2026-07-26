@@ -90,6 +90,135 @@ func TestRun_Version(t *testing.T) {
 	}
 }
 
+func TestMutationCommands_V8WriteActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{},"macos":{}}}`)
+	writeLock(t, lockPath, nil)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"add", []string{"add", "--file", path, "--lock-file", lockPath, "--target", "arch", "--no-hooks", "--no-search", "git"}},
+		{"env set", []string{"env", "set", "--file", path, "--target", "arch", "EDITOR", "nvim"}},
+		{"shell alias set", []string{"shell", "alias", "set", "--file", path, "--target", "arch", "ll", "ls -la"}},
+		{"service add", []string{"service", "add", "--file", path, "--target", "arch", "worker", "--start", "worker"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := run(tc.args); code != exitOK {
+				t.Fatalf("run(%v) = %d, want %d", tc.args, code, exitOK)
+			}
+		})
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 0 || f.Env != nil || f.Shell != nil || f.Services != nil {
+		t.Fatalf("v8 mutation wrote top-level fields: %+v", f)
+	}
+	arch := f.Targets["arch"]
+	if arch == nil {
+		t.Fatal("targets.arch missing")
+	}
+	if len(arch.Packages) != 1 || arch.Packages[0].ID != "git" {
+		t.Fatalf("targets.arch packages = %+v, want git", arch.Packages)
+	}
+	if arch.Env["EDITOR"] == nil || arch.Env["EDITOR"].Value != "nvim" {
+		t.Fatalf("targets.arch env = %+v, want EDITOR=nvim", arch.Env)
+	}
+	if arch.Shell == nil || arch.Shell.Aliases["ll"] == nil || arch.Shell.Aliases["ll"].Value != "ls -la" {
+		t.Fatalf("targets.arch shell = %+v, want ll alias", arch.Shell)
+	}
+	if arch.Services["worker"] == nil || len(arch.Services["worker"].Start) != 1 || arch.Services["worker"].Start[0] != "worker" {
+		t.Fatalf("targets.arch services = %+v, want worker", arch.Services)
+	}
+	if macos := f.Targets["macos"]; macos == nil || len(macos.Packages) != 0 || macos.Env != nil || macos.Shell != nil || macos.Services != nil {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
+	}
+}
+
+func TestMutationCommands_V8MissingTargetFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	writeTestFile(t, path, `{"schemaVersion":"8","targets":{"arch":{}}}`)
+
+	code := run([]string{"env", "set", "--file", path, "--target", "ubuntu", "EDITOR", "nvim"})
+	if code != exitValidation {
+		t.Fatalf("missing v8 target exit = %d, want %d", code, exitValidation)
+	}
+}
+
+func TestMutationRemoveCommands_V8UseActiveTarget(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+		"schemaVersion":"8",
+		"targets":{
+			"arch":{
+				"packages":[{"id":"git"}],
+				"env":{"EDITOR":{"value":"nvim"}},
+				"shell":{"aliases":{"ll":{"value":"ls -la"}}},
+				"services":{"worker":{"start":["worker"]}}
+			},
+			"macos":{
+				"packages":[{"id":"git"}],
+				"env":{"EDITOR":{"value":"vim"}},
+				"shell":{"aliases":{"ll":{"value":"ls -l"}}},
+				"services":{"worker":{"start":["worker"]}}
+			}
+		}
+	}`)
+	writeLock(t, lockPath, nil)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"remove", []string{"remove", "--file", path, "--lock-file", lockPath, "--target", "arch", "--no-hooks", "git"}},
+		{"env unset", []string{"env", "unset", "--file", path, "--target", "arch", "EDITOR"}},
+		{"shell alias unset", []string{"shell", "alias", "unset", "--file", path, "--target", "arch", "ll"}},
+		{"service remove", []string{"service", "remove", "--file", path, "--target", "arch", "worker"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := run(tc.args); code != exitOK {
+				t.Fatalf("run(%v) = %d, want %d", tc.args, code, exitOK)
+			}
+		})
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	arch := f.Targets["arch"]
+	if len(arch.Packages) != 0 {
+		t.Fatalf("targets.arch packages not removed: %+v", arch.Packages)
+	}
+	if _, ok := arch.Env["EDITOR"]; ok {
+		t.Fatalf("targets.arch env not removed: %+v", arch.Env)
+	}
+	if _, ok := arch.Shell.Aliases["ll"]; ok {
+		t.Fatalf("targets.arch alias not removed: %+v", arch.Shell.Aliases)
+	}
+	if _, ok := arch.Services["worker"]; ok {
+		t.Fatalf("targets.arch service not removed: %+v", arch.Services)
+	}
+	macos := f.Targets["macos"]
+	if len(macos.Packages) != 1 || macos.Env["EDITOR"] == nil || macos.Shell.Aliases["ll"] == nil || macos.Services["worker"] == nil {
+		t.Fatalf("targets.macos mutated unexpectedly: %+v", macos)
+	}
+}
+
 // ---- genv add ----------------------------------------------------------------
 // add writes to genv.json and attempts a best-effort installation.
 // Installation failure is non-fatal (no package manager in CI), so all spec-update
