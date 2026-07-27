@@ -1247,7 +1247,7 @@ func TestScanCmd_V8WritesActiveTarget(t *testing.T) {
 	adapter.All = []adapter.Adapter{snap}
 	t.Cleanup(func() { adapter.All = originalAll })
 
-	code := run([]string{"scan", "--file", path, "--lock-file", lockPath, "--target", "arch"})
+	code := run([]string{"scan", "--file", path, "--lock-file", lockPath, "--target", "arch", "--yes"})
 	if code != exitOK {
 		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
 	}
@@ -1373,7 +1373,6 @@ func TestScanCmd_DarwinDoesNotListLinuxbrew(t *testing.T) {
 	})
 
 	code := run([]string{"scan", "--file", path})
-
 	if code != exitOK {
 		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
 	}
@@ -1432,7 +1431,7 @@ func TestScanCmd_UsesVersionListerWithoutPerPackageVersionQueries(t *testing.T) 
 	adapter.All = []adapter.Adapter{batch}
 	t.Cleanup(func() { adapter.All = originalAll })
 
-	code := run([]string{"scan", "--file", path})
+	code := run([]string{"scan", "--file", path, "--yes"})
 	if code != exitOK {
 		t.Fatalf("scan: expected exitOK (%d), got %d", exitOK, code)
 	}

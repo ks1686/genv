@@ -129,3 +129,48 @@ func TestApply_ForceBackupFlagBacksUpWithoutPerEntryBackup(t *testing.T) {
 		t.Fatalf("expected one backup file, got %v", matches)
 	}
 }
+
+func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	t.Setenv("HOME", dir)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	goodSource := filepath.Join(dir, "good-src.txt")
+	goodTarget := filepath.Join(dir, "good-tgt.txt")
+	badSource := filepath.Join(dir, "bad-src.txt")
+	badTarget := filepath.Join(dir, "bad-tgt.txt")
+	hookLog := filepath.Join(dir, "hook.log")
+
+	writeTestFile(t, goodSource, "good\n")
+	writeTestFile(t, badSource, "desired\n")
+	writeTestFile(t, badTarget, "blocking\n")
+	writeTestFile(t, specPath, `{
+		"schemaVersion":"6",
+		"files":{"links":[
+			{"source":"`+goodSource+`","target":"`+goodTarget+`","mode":"link"},
+			{"source":"`+badSource+`","target":"`+badTarget+`","mode":"link"}
+		]},
+		"hooks":{"postApply":[{"command":"printf ran >> `+hookLog+`"}]}
+	}`)
+
+	var code int
+	var stderr string
+	_ = captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes"})
+		})
+	})
+	if code != exitLogic {
+		t.Fatalf("expected exitLogic, got %d; stderr=%s", code, stderr)
+	}
+	if _, err := os.Lstat(goodTarget); err != nil {
+		t.Fatalf("good link should still be created: %v", err)
+	}
+	if _, err := os.Stat(hookLog); !os.IsNotExist(err) {
+		t.Fatalf("post-apply hook should not run on unresolved mismatch; err=%v", err)
+	}
+	if !strings.Contains(stderr, "skipping post-apply hooks") || !strings.Contains(stderr, "mismatch") {
+		t.Fatalf("stderr should explain skipped hooks due to mismatches; got %q", stderr)
+	}
+}
