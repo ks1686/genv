@@ -113,6 +113,10 @@ function script:Get-GenvCompletions {
 			return (& $completePackages)
 		}
 		{ $_ -in 'upgrade' } {
+			if ($WordToComplete -like '-*') {
+				$flags = @('--file', '--lock-file', '--dry-run', '--yes', '--no-hooks', '--json', '--only', '--skip', '--only-manager', '--skip-manager', '--hook-timeout', '--debug', '--host', '--target')
+				return (& $completeCandidates -Candidates $flags)
+			}
 			return (& $completePackages)
 		}
 		{ $_ -in 'env' } {

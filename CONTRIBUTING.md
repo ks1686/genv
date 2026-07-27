@@ -72,6 +72,9 @@ Integration tests (require Docker):
 
 ```bash
 go test -tags integration ./internal/adapter/
+
+# Full schemaVersion 8 CLI matrix (builds genv in Arch and runs every command):
+make integration-v8
 ```
 
 ---

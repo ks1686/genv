@@ -254,6 +254,86 @@ func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetF
 	return targetID, exitOK
 }
 
+// resolveEffectiveSpec flattens a schemaVersion 8 target (MergeTarget) or applies
+// legacy host filtering so callers can read top-level packages/env/shell/services.
+func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*schema.GenvFile, string, error) {
+	if f == nil {
+		return nil, "", fmt.Errorf("genv file is nil")
+	}
+	if f.SchemaVersion == schema.Version8 {
+		targetID, err := target.Resolve(targetFlag)
+		if err != nil {
+			return nil, "", err
+		}
+		if f.Targets[targetID] == nil {
+			return nil, "", fmt.Errorf("no matching targets.%s", targetID)
+		}
+		effective, err := schema.MergeTarget(f, targetID)
+		if err != nil {
+			return nil, "", err
+		}
+		return effective, targetID, nil
+	}
+	return host.FilterForHost(f, hostName), "", nil
+}
+
+// materializeSpecForCommand resolves the effective flat spec for read paths
+// (status, upgrade, updates) using the same Resolve+MergeTarget path as apply.
+func materializeSpecForCommand(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag string) (*schema.GenvFile, string, int) {
+	effective, targetID, err := resolveEffectiveSpec(f, hostForCommand(hostFlag), targetFlag)
+	if err == nil {
+		return effective, targetID, exitOK
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "resolve target") || strings.Contains(msg, "pass --target"):
+		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
+		return nil, "", exitUsage
+	case strings.HasPrefix(msg, "no matching targets."):
+		fprintf(os.Stderr, "genv %s: %s in %s\n", commandName, msg, file)
+		return nil, "", exitValidation
+	default:
+		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
+		return nil, "", exitValidation
+	}
+}
+
+// readMaterializedSpec loads genv.json and flattens the active v8 target (or
+// applies legacy host filtering) so callers can read top-level fields.
+func readMaterializedSpec(commandName, file, hostFlag, targetFlag string) (*schema.GenvFile, int) {
+	f, err := genvfile.Read(file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv %s: %s not found\n", commandName, file)
+			return nil, exitIO
+		}
+		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return nil, exitValidation
+		}
+		return nil, exitIO
+	}
+	effective, _, code := materializeSpecForCommand(commandName, file, f, hostFlag, targetFlag)
+	return effective, code
+}
+
+// materializedHooks returns the effective hooks block for lifecycle commands.
+// Returns nil hooks (not an error) when the spec is missing or has no hooks.
+func materializedHooks(commandName, file, hostFlag, targetFlag string) (*schema.HooksConfig, int) {
+	f, err := genvfile.Read(file)
+	if err != nil {
+		return nil, exitOK
+	}
+	effective, _, code := materializeSpecForCommand(commandName, file, f, hostFlag, targetFlag)
+	if code != exitOK {
+		return nil, code
+	}
+	if effective == nil {
+		return nil, exitOK
+	}
+	return effective.Hooks, exitOK
+}
+
 // addToSpec reads or creates the spec at file, records the package, and writes
 // it back. Prints "created <file>" when the file is brand-new. Returns an exit
 // code; exitOK means success.
@@ -420,14 +500,17 @@ func addCmd(args []string) int {
 	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, _ := genvfile.ReadLock(lockPath)
 	if !*noHooks {
-		if f, err := genvfile.Read(*file); err == nil && f != nil && f.Hooks != nil {
-			filtered := host.FilterForHost(f, hostName)
+		hooksCfg, code := materializedHooks("add", *file, *hostFlag, *targetFlag)
+		if code != exitOK {
+			return code
+		}
+		if hooksCfg != nil && len(hooksCfg.PreAdd) > 0 {
 			profileName := ""
 			if lf != nil {
 				profileName = lf.ActiveProfile
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
-				Hooks:   filtered.Hooks.PreAdd,
+				Hooks:   hooksCfg.PreAdd,
 				Context: hookContext{Event: "add", Phase: "pre-add", Host: hostName, Profile: profileName, Installed: []string{id}},
 				Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
@@ -470,17 +553,19 @@ func addCmd(args []string) int {
 	if exit != exitOK || *noHooks {
 		return exit
 	}
-	f, err := genvfile.Read(*file)
-	if err != nil || f == nil || f.Hooks == nil {
+	hooksCfg, code := materializedHooks("add", *file, *hostFlag, *targetFlag)
+	if code != exitOK {
+		return code
+	}
+	if hooksCfg == nil || len(hooksCfg.PostAdd) == 0 {
 		return exit
 	}
-	filtered := host.FilterForHost(f, hostName)
 	profileName := ""
 	if lf != nil {
 		profileName = lf.ActiveProfile
 	}
 	errs := runHookPhase(context.Background(), hookPhaseRun{
-		Hooks:   filtered.Hooks.PostAdd,
+		Hooks:   hooksCfg.PostAdd,
 		Context: hookContext{Event: "add", Phase: "post-add", Host: hostName, Profile: profileName, Installed: []string{id}},
 		Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 	})
@@ -546,11 +631,11 @@ func runRemove(opts removeOptions) int {
 		if f, err := genvfile.Read(file); err == nil {
 			packages := f.Packages
 			if f.SchemaVersion == schema.Version8 {
-				targetID, exit := resolveMutationTarget("remove", file, f, opts.Target)
+				effective, _, exit := materializeSpecForCommand("remove", file, f, opts.Host, opts.Target)
 				if exit != exitOK {
 					return exit
 				}
-				packages = f.Targets[targetID].Packages
+				packages = effective.Packages
 			}
 			idLower := strings.ToLower(id)
 			exact := false
@@ -587,14 +672,17 @@ func runRemove(opts removeOptions) int {
 	lockPath := lockPathForSpec(file, opts.LockFile)
 	lfBefore, _ := genvfile.ReadLock(lockPath)
 	if !opts.NoHooks {
-		if f, err := genvfile.Read(file); err == nil && f != nil && f.Hooks != nil {
-			filtered := host.FilterForHost(f, hostName)
+		hooksCfg, code := materializedHooks("remove", file, opts.Host, opts.Target)
+		if code != exitOK {
+			return code
+		}
+		if hooksCfg != nil && len(hooksCfg.PreRemove) > 0 {
 			profileName := ""
 			if lfBefore != nil {
 				profileName = lfBefore.ActiveProfile
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
-				Hooks:   filtered.Hooks.PreRemove,
+				Hooks:   hooksCfg.PreRemove,
 				Context: hookContext{Event: "remove", Phase: "pre-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
 				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
@@ -663,14 +751,17 @@ func runRemove(opts removeOptions) int {
 		return exitLogic
 	}
 	if !opts.NoHooks {
-		if f, err := genvfile.Read(file); err == nil && f != nil && f.Hooks != nil {
-			filtered := host.FilterForHost(f, hostName)
+		hooksCfg, code := materializedHooks("remove", file, opts.Host, opts.Target)
+		if code != exitOK {
+			return code
+		}
+		if hooksCfg != nil && len(hooksCfg.PostRemove) > 0 {
 			profileName := ""
 			if lfBefore != nil {
 				profileName = lfBefore.ActiveProfile
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
-				Hooks:   filtered.Hooks.PostRemove,
+				Hooks:   hooksCfg.PostRemove,
 				Context: hookContext{Event: "remove", Phase: "post-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
 				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
@@ -723,7 +814,7 @@ func adoptCmd(args []string) int {
 		}
 	}
 	if *filesOnly {
-		return adoptFilesCmd(*file, *lockFile, *hostFlag, *jsonOut)
+		return adoptFilesCmd(*file, *lockFile, *hostFlag, *targetFlag, *jsonOut)
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
@@ -774,7 +865,7 @@ func adoptCmd(args []string) int {
 	return exitOK
 }
 
-func adoptFilesCmd(file, lockFile, hostFlag string, jsonOut bool) int {
+func adoptFilesCmd(file, lockFile, hostFlag, targetFlag string, jsonOut bool) int {
 	f, err := genvfile.Read(file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
@@ -788,7 +879,10 @@ func adoptFilesCmd(file, lockFile, hostFlag string, jsonOut bool) int {
 		return exitIO
 	}
 	hostName := hostForCommand(hostFlag)
-	filtered := host.FilterForHost(f, hostName)
+	filtered, _, code := materializeSpecForCommand("adopt", file, f, hostFlag, targetFlag)
+	if code != exitOK {
+		return code
+	}
 	statusCfg := filesConfigWithResolvedSources(filtered.Files, sourceRootForSpec(file, f))
 	res, err := files.Status(statusCfg, hostName)
 	if jsonOut {
@@ -1047,23 +1141,13 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	if lf == nil {
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
-	activeTarget := ""
-	if f.SchemaVersion == schema.Version8 {
-		targetID, err := target.Resolve(opts.Target)
-		if err != nil {
-			fprintf(os.Stderr, "genv apply: %v\n", err)
-			return exitUsage
-		}
-		if f.Targets[targetID] == nil {
-			fprintf(os.Stderr, "genv apply: no matching targets.%s in %s\n", targetID, opts.File)
-			return exitValidation
-		}
-		effective, err := schema.MergeTarget(f, targetID)
-		if err != nil {
-			fprintf(os.Stderr, "genv apply: %v\n", err)
-			return exitValidation
-		}
-		decision := lockgate.Check(lf, targetID, runtime.GOOS, available)
+	isV8 := f.SchemaVersion == schema.Version8
+	effective, activeTarget, code := materializeSpecForCommand("apply", opts.File, f, opts.Host, opts.Target)
+	if code != exitOK {
+		return code
+	}
+	if isV8 {
+		decision := lockgate.Check(lf, activeTarget, runtime.GOOS, available)
 		if decision.Foreign {
 			if !opts.ForceNewLock {
 				fprintf(os.Stderr, "genv apply: foreign lock refused: %s\n", decision.Reason)
@@ -1076,11 +1160,8 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 			}
 			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
 		}
-		f = effective
-		activeTarget = targetID
-	} else {
-		f = host.FilterForHost(f, hostForCommand(opts.Host))
 	}
+	f = effective
 	opts.Target = activeTarget
 	result := resolver.Reconcile(f.Packages, lf.Packages, available)
 
@@ -1946,22 +2027,15 @@ func envListCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found — run 'genv env set' to create it\n", *file)
-			return exitIO
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
+	f, code := readMaterializedSpec("env list", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
@@ -2161,22 +2235,15 @@ func shellStatusCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found — run 'genv shell alias set' to create it\n", *file)
-			return exitIO
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
+	f, code := readMaterializedSpec("shell status", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(*file))
@@ -2544,6 +2611,7 @@ func statusCmd(args []string) int {
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem only")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -2572,7 +2640,10 @@ func statusCmd(args []string) int {
 		return exitIO
 	}
 	hostName := hostForCommand(*hostFlag)
-	f = host.FilterForHost(f, hostName)
+	f, _, code := materializeSpecForCommand("status", *file, f, *hostFlag, *targetFlag)
+	if code != exitOK {
+		return code
+	}
 
 	if *filesOnly {
 		statusCfg := filesConfigWithResolvedSources(f.Files, sourceRootForSpec(*file, f))
@@ -3200,7 +3271,11 @@ func completeInternalCmd(args []string) int {
 		if err != nil {
 			return exitOK // silent: no spec yet is not an error during completion
 		}
-		for _, p := range f.Packages {
+		effective, _, err := resolveEffectiveSpec(f, hostForCommand(""), "")
+		if err != nil {
+			return exitOK
+		}
+		for _, p := range effective.Packages {
 			fPrintln(os.Stdout, p.ID)
 		}
 	case "managers":
@@ -3263,6 +3338,7 @@ func upgradeCmd(args []string) int {
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to upgrade")
@@ -3316,7 +3392,10 @@ func upgradeCmd(args []string) int {
 		}
 		return exitIO
 	}
-	f = host.FilterForHost(f, hostName)
+	f, _, code := materializeSpecForCommand("upgrade", *file, f, *hostFlag, *targetFlag)
+	if code != exitOK {
+		return code
+	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
@@ -3925,6 +4004,7 @@ Flags common to all commands:
 
 Host-specific flags (used by apply, status, upgrade, updates check/start, adopt):
   --host <name>   Host name for host-specific records (default: $GENV_HOST or os.Hostname())
+  --target <id>   Portable target id for schemaVersion 8 specs (default: $GENV_TARGET or host classification)
 
 Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
@@ -3973,6 +4053,7 @@ Upgrade-specific flags:
   --skip-manager <mgrs>     Comma-separated managers to skip
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug                   Emit debug-level structured logs to stderr
+  --target <id>             Portable target id for schemaVersion 8 specs
 
 Updates-specific flags:
   check                         Plan available updates for genv-tracked packages only
@@ -3985,7 +4066,9 @@ Updates-specific flags:
   check --only-manager <mgrs>   Comma-separated managers to check
   check --skip-manager <mgrs>   Comma-separated managers to skip
   check --host <name>           Host name for host-specific records
+  check --target <id>           Portable target id for schemaVersion 8 specs
   check --lock-file <path>      Path to genv lock file
+  start --target <id>           Portable target id for schemaVersion 8 specs
 
 Status-specific flags:
   --json    Emit machine-readable JSON to stdout
@@ -4209,22 +4292,15 @@ func serviceListCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv: %s not found — run 'genv service add' to create one\n", *file)
-			return exitIO
-		}
-		fprintf(os.Stderr, "genv: %v\n", err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
-		}
-		return exitIO
+	f, code := readMaterializedSpec("service list", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	commands.ServiceList(f, os.Stdout)
@@ -4235,6 +4311,7 @@ func serviceListCmd(args []string) int {
 func serviceStartCmd(args []string) int {
 	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -4245,10 +4322,9 @@ func serviceStartCmd(args []string) int {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	f, code := readMaterializedSpec("service start", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	// Debug: print what services we found
@@ -4290,6 +4366,7 @@ func serviceStartCmd(args []string) int {
 func serviceStopCmd(args []string) int {
 	fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -4300,10 +4377,9 @@ func serviceStopCmd(args []string) int {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	f, code := readMaterializedSpec("service stop", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	svc, ok := f.Services[name]
@@ -4341,6 +4417,7 @@ func serviceStopCmd(args []string) int {
 func serviceStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -4351,10 +4428,9 @@ func serviceStatusCmd(args []string) int {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
-	if err != nil {
-		fprintf(os.Stderr, "genv: %v\n", err)
-		return exitIO
+	f, code := readMaterializedSpec("service status", *file, "", *targetFlag)
+	if code != exitOK {
+		return code
 	}
 
 	svc, ok := f.Services[name]

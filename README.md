@@ -207,11 +207,11 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `adopt` / `disown` | Track without install / untrack without uninstall |
 | `scan` | Bulk-adopt installed packages |
 | `list` (`ls`) | Show lock-tracked packages |
-| `status` | Spec ↔ lock drift (`--files` for filesystem check) |
+| `status` | Spec ↔ lock drift (`--files`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--target`, `--force-new-lock`) |
 | `validate` | Validate spec only |
-| `upgrade` | Upgrade outdated tracked packages (`--all` = every unconstrained) |
-| `updates` | Background checker (`check` / `start` / `stop` / `status`) |
+| `upgrade` | Upgrade outdated tracked packages (`--all`, `--target`) |
+| `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target` on check/start) |
 | `profile` | Named overlays (`list` / `create` / `switch`) |
 | `pull` | Fetch spec + file assets from `repo` |
 | `migrate` | v1–v7 → v8 targets |
@@ -227,7 +227,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 
 - `--file <path>` — spec path (default under `~/.config/genv/`)
 - `--lock-file <path>` — lock path (default `genv.lock.json` in the genv config dir)
-- `--target <id>` — v8 target for apply / mutate / export / map / scan
+- `--target <id>` — v8 target for apply / status / upgrade / updates / mutate / export / map / scan
 - `--host <name>` — legacy host filter override for v1–v7 records / hooks (defaults via host **classification**, not hostname)
 - `--json` — machine-readable envelope on stdout; subprocess noise on stderr
 
