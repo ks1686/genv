@@ -21,6 +21,7 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v3.0.0` | M11 updates checker, M12 named profiles, full M13 lifecycle hooks, upgrade JSON/filtering, tracked ecosystem adapters |
 | `v3.2.x` | Outdated-aware `genv upgrade` / `updates check` (default plan only packages with detected updates) |
 | `v4.0.0` | Schema v7 PowerShell parity + schema v8 portable multi-target (`defaults`/`targets`, migrate/export/map, foreign-lock gate) |
+| `v4.0.1` | Fix schemaVersion 8 materialize gaps (`status` / `upgrade` / `updates` / hooks / env·shell·service reads) + Arch CLI matrix CI |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
