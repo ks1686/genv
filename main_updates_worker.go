@@ -11,9 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
+	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/upgrade"
 )
@@ -44,17 +46,35 @@ func updatesRunOnceCmd(args []string) int {
 		logger.Warn("updates.check.config", slog.Any("err", err))
 		return exitValidation
 	}
-	cfg, _, cfgErr := parseEnabledUpdatesConfig(f)
+	cfg, interval, cfgErr := parseEnabledUpdatesConfig(f)
 	if cfgErr != nil {
 		logger.Warn("updates.check.config", slog.Any("err", cfgErr))
 		return exitValidation
 	}
-	f, _, code := materializeSpecForCommand("updates", *file, f, *hostFlag, *targetFlag)
+	ctx, cancel := context.WithTimeout(context.Background(), service.ScheduledJobTimeOut(interval))
+	defer cancel()
+
+	type runOnceResult struct{ code int }
+	done := make(chan runOnceResult, 1)
+	go func() {
+		done <- runOnceResult{code: updatesRunOnceBody(ctx, logger, f, cfg, *file, *lockFile, *hostFlag, *targetFlag)}
+	}()
+	select {
+	case res := <-done:
+		return res.code
+	case <-ctx.Done():
+		logger.Warn("updates.check.timeout", slog.Duration("timeout", service.ScheduledJobTimeOut(interval)), slog.Any("err", ctx.Err()))
+		return exitLogic
+	}
+}
+
+func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.GenvFile, cfg *schema.UpdatesConfig, file, lockFile, hostFlag, targetFlag string) int {
+	f, _, code := materializeSpecForCommand("updates", file, f, hostFlag, targetFlag)
 	if code != exitOK {
 		logger.Warn("updates.check.target", slog.Int("exit", code))
 		return code
 	}
-	lockPath := lockPathForSpec(*file, *lockFile)
+	lockPath := lockPathForSpec(file, lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("updates.check.lock", slog.Any("err", err))
@@ -66,16 +86,20 @@ func updatesRunOnceCmd(args []string) int {
 		logger.Warn("updates.check.plan", slog.Any("err", err))
 		return exitUsage
 	}
+	if err := ctx.Err(); err != nil {
+		logger.Warn("updates.check.timeout", slog.Any("err", err))
+		return exitLogic
+	}
 	if !cfg.AutoApply {
 		outdated := countPlannedPackages(plan)
 		logger.Info("updates.check.planned", slog.Int("packages", outdated), slog.Int("batches", len(plan.Actions)), slog.Int("skipped", len(plan.Skipped)), slog.Bool("auto_apply", false))
 		if outdated > 0 {
-			notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("%d package(s) have updates available", outdated), logger)
+			notifyUpdates(ctx, cfg.Notify, "genv updates", fmt.Sprintf("%d package(s) have updates available", outdated), logger)
 		}
 		return exitOK
 	}
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
-	runResult := updatesRunUpgrade(context.Background(), upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics})
+	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics})
 	matchedErrors := make([]bool, len(runResult.Errors))
 	for _, failure := range runResult.Failures {
 		sanitizedIDs := make([]string, len(failure.IDs))
@@ -99,7 +123,7 @@ func updatesRunOnceCmd(args []string) int {
 		logger.Warn("updates.apply.diagnostics", slog.String("diagnostics", rendered))
 	}
 	logger.Info("updates.apply.completed", slog.Int("upgraded", len(runResult.Upgraded)), slog.Int("errors", len(runResult.Errors)), slog.Bool("auto_apply", true))
-	notifyUpdates(cfg.Notify, "genv updates", fmt.Sprintf("auto-apply completed: %d upgraded, %d error(s)", len(runResult.Upgraded), len(runResult.Errors)), logger)
+	notifyUpdates(ctx, cfg.Notify, "genv updates", fmt.Sprintf("auto-apply completed: %d upgraded, %d error(s)", len(runResult.Upgraded), len(runResult.Errors)), logger)
 	if runResult.LockWriteError != nil {
 		logger.Warn("updates.apply.lock", slog.Any("err", runResult.LockWriteError))
 		return exitIO
@@ -173,25 +197,27 @@ func countPlannedPackages(plan upgrade.UpgradePlan) int {
 	return n
 }
 
-func notifyUpdates(enabled bool, title, message string, logger *slog.Logger) {
+func notifyUpdates(ctx context.Context, enabled bool, title, message string, logger *slog.Logger) {
 	if !enabled {
 		return
 	}
 	switch {
 	case service.IsLaunchdAvailable():
-		runNotification(logger, "osascript", "-e", fmt.Sprintf("display notification %q with title %q", message, title))
+		runNotification(ctx, logger, "osascript", "-e", fmt.Sprintf("display notification %q with title %q", message, title))
 	default:
-		runNotification(logger, "notify-send", title, message)
+		runNotification(ctx, logger, "notify-send", title, message)
 	}
 }
 
-func runNotification(logger *slog.Logger, notifier string, args ...string) {
+func runNotification(ctx context.Context, logger *slog.Logger, notifier string, args ...string) {
 	path, err := updatesLookPath(notifier)
 	if err != nil {
 		logger.Warn("updates.notify.unavailable", slog.String("notifier", notifier), slog.Any("err", err))
 		return
 	}
-	if err := exec.Command(path, args...).Run(); err != nil {
+	notifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(notifyCtx, path, args...).Run(); err != nil {
 		logger.Warn("updates.notify.failed", slog.String("notifier", notifier), slog.Any("err", err))
 	}
 }

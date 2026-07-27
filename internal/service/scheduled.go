@@ -88,8 +88,9 @@ Description=genv scheduled job: %s
 
 [Service]
 Type=oneshot
+TimeoutStartSec=%d
 %sExecStart=%s
-`, name, renderSystemdEnvironment(environment), renderSystemdCommand(command))
+`, name, scheduledJobTimeOutSeconds(24*time.Hour), renderSystemdEnvironment(environment), renderSystemdCommand(command))
 }
 
 func SystemdScheduledTimerContent(name string, interval time.Duration) string {
@@ -128,9 +129,31 @@ func LaunchdScheduledPlistContent(name string, command []string, interval time.D
     <true/>
     <key>StartInterval</key>
     <integer>%d</integer>
+    <key>TimeOut</key>
+    <integer>%d</integer>
 </dict>
 </plist>
-`, xmlEscape(launchdScheduledLabel(name)), b.String(), renderLaunchdEnvironment(environment), seconds)
+`, xmlEscape(launchdScheduledLabel(name)), b.String(), renderLaunchdEnvironment(environment), seconds, scheduledJobTimeOutSeconds(interval))
+}
+
+// ScheduledJobTimeOut is the wall-clock budget for a scheduled updates run.
+// Matches launchd TimeOut / systemd TimeoutStartSec so Go can exit before the
+// supervisor SIGTERMs a wedged process.
+func ScheduledJobTimeOut(interval time.Duration) time.Duration {
+	return time.Duration(scheduledJobTimeOutSeconds(interval)) * time.Second
+}
+
+func scheduledJobTimeOutSeconds(interval time.Duration) int {
+	const minTimeout = 60
+	const maxTimeout = 300 // 5 minutes
+	sec := int(interval.Seconds()) / 2
+	if sec < minTimeout {
+		sec = minTimeout
+	}
+	if sec > maxTimeout {
+		sec = maxTimeout
+	}
+	return sec
 }
 
 func systemdScheduledUnitName(name string) string {
