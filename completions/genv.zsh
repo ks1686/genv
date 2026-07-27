@@ -224,6 +224,8 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--dry-run[List packages that would be adopted without writing]' \
+				'--yes[Skip the confirmation prompt]' \
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:'

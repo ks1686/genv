@@ -1220,6 +1220,11 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
 		if filePlanErr != nil {
 			errs = append(errs, filePlanErr.Error())
+			if !opts.NoHooks && hasPostApplyHooks(f) {
+				skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
+				errs = append(errs, skipMsg)
+				fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
+			}
 		} else if !opts.NoHooks {
 			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
 			errs = append(errs, failedHooks...)
@@ -1375,6 +1380,9 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 		if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
 			writeFileMismatchGuidance(os.Stderr, appliedFiles)
+			if !opts.NoHooks && hasPostApplyHooks(f) {
+				fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
+			}
 		}
 	}
 	var hookErrs []string
@@ -1768,6 +1776,10 @@ func writeFileMismatchGuidance(w io.Writer, res *files.ApplyResult) {
 		fprintf(w, "genv apply: mismatch: %s\n", target)
 	}
 	fPrintln(w, "Hint: re-run with genv apply --force to overwrite, and add --backup (or per-entry backup: true) to preserve the existing file as *.backup.*")
+}
+
+func hasPostApplyHooks(f *schema.GenvFile) bool {
+	return f != nil && f.Hooks != nil && len(f.Hooks.PostApply) > 0
 }
 
 func filePlanEntries(res *files.ApplyResult) []output.FilePlanEntry {
@@ -2429,18 +2441,25 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 }
 
 // scanCmd implements `genv scan`.
-// Discovers all packages currently installed via available package managers and
-// bulk-adopts them into genv.json and the lock file. Packages already tracked
-// are skipped. Duplicate names discovered across multiple managers are
-// deduplicated — the first adapter in registry order wins.
+// Discovers packages currently installed via available managers and adopts
+// them into genv.json and the lock file. Use --dry-run to preview; text mode
+// confirms unless --yes is set (JSON writes without a prompt, matching apply).
 var scanGOOS = runtime.GOOS
+
+type scanCandidate struct {
+	id      string
+	manager string
+	pkgName string
+	version string
+}
 
 func scanCmd(args []string) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv scan [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Discover all installed packages and adopt them into genv.json.")
+		fPrintln(os.Stderr, "Discover installed packages and adopt them into genv.json.")
+		fPrintln(os.Stderr, "Preview with --dry-run. Text mode prompts unless --yes is set.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -2450,6 +2469,8 @@ func scanCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	targetFlag := fs.String("target", "", "target ID for schemaVersion 8 (default: $GENV_TARGET or detected host target)")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	dryRun := fs.Bool("dry-run", false, "list packages that would be adopted without writing the spec or lock")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 
 	if err := fs.Parse(args); err != nil {
@@ -2479,7 +2500,7 @@ func scanCmd(args []string) int {
 				Version: output.SchemaVersion,
 				Command: "scan",
 				OK:      true,
-				Data:    output.ScanResult{Added: 0, Skipped: 0},
+				Data:    output.ScanResult{Added: 0, Skipped: 0, DryRun: *dryRun},
 			})
 		}
 		fPrintln(os.Stdout, "no supported package managers detected.")
@@ -2516,9 +2537,8 @@ func scanCmd(args []string) int {
 		}
 	}
 
-	// Deduplicate across managers using a seen set.
 	seen := make(map[string]bool)
-	var added int
+	var candidates []scanCandidate
 	var skipped int
 
 	for _, a := range scanAdaptersOnGOOS(available, scanGOOS) {
@@ -2549,31 +2569,66 @@ func scanCmd(args []string) int {
 
 			if trackedInSpec[pkgName] {
 				skipped++
-				continue // already in spec
-			}
-
-			// Add to spec.
-			if err := commands.Add(f, pkgName, "", "", nil, targetID); err != nil {
-				// ErrAlreadyTracked can race with trackedInSpec; skip silently.
-				skipped++
 				continue
 			}
-			trackedInSpec[pkgName] = true
 
-			// Record in lock with best-effort version capture.
-			lp := genvfile.LockedPackage{
-				ID:      pkgName,
-				Manager: a.Name(),
-				PkgName: pkgName,
-			}
+			c := scanCandidate{id: pkgName, manager: a.Name(), pkgName: pkgName}
 			if v, ok := versions[pkgName]; ok {
-				lp.InstalledVersion = v
+				c.version = v
 			} else if v, err := a.QueryVersion(pkgName); err == nil {
-				lp.InstalledVersion = v
+				c.version = v
 			}
-			lf.Packages = append(lf.Packages, lp)
-			added++
+			candidates = append(candidates, c)
+			trackedInSpec[pkgName] = true // prevent duplicate IDs across managers in this pass
 		}
+	}
+
+	if *dryRun {
+		ids := make([]string, len(candidates))
+		for i, c := range candidates {
+			ids[i] = c.id
+		}
+		if *jsonOut {
+			return writeJSON(os.Stdout, output.Envelope{
+				Version: output.SchemaVersion,
+				Command: "scan",
+				OK:      true,
+				Data:    output.ScanResult{Added: len(candidates), Skipped: skipped, DryRun: true, Packages: ids},
+			})
+		}
+		if len(candidates) == 0 && skipped == 0 {
+			fPrintln(os.Stdout, "no packages found.")
+			return exitOK
+		}
+		fprintf(os.Stdout, "scan dry-run: would adopt %d package(s), %d already tracked\n", len(candidates), skipped)
+		for _, c := range candidates {
+			fprintf(os.Stdout, "  + %s  via %s\n", c.id, c.manager)
+		}
+		return exitOK
+	}
+
+	if len(candidates) > 0 && !*jsonOut && !*yes {
+		if !confirm(fmt.Sprintf("This will adopt %d package(s) into genv.json. Continue? [y/N] ", len(candidates))) {
+			fPrintln(os.Stdout, "Aborted.")
+			return exitOK
+		}
+	}
+
+	var added int
+	for _, c := range candidates {
+		if err := commands.Add(f, c.id, "", "", nil, targetID); err != nil {
+			// ErrAlreadyTracked can race with trackedInSpec; skip silently.
+			skipped++
+			continue
+		}
+		lp := genvfile.LockedPackage{
+			ID:               c.id,
+			Manager:          c.manager,
+			PkgName:          c.pkgName,
+			InstalledVersion: c.version,
+		}
+		lf.Packages = append(lf.Packages, lp)
+		added++
 	}
 
 	if added > 0 {
@@ -4017,7 +4072,7 @@ Commands:
   disown <id> Stop tracking a package in genv.json without uninstalling it
   list        List all packages installed by genv                   (alias: ls)
   apply       Reconcile system state with genv.json (install added, remove deleted)
-  scan        Discover all installed packages and bulk-adopt them into genv.json
+  scan        Discover installed packages and bulk-adopt them (use --dry-run / --yes)
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
