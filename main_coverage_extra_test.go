@@ -13,6 +13,9 @@ import (
 func TestValidateCmd_ValidInvalidAndMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	originalHome := managedAgentHomeDir
+	managedAgentHomeDir = func() (string, error) { return t.TempDir(), nil }
+	t.Cleanup(func() { managedAgentHomeDir = originalHome })
 	valid := filepath.Join(dir, "valid.json")
 	if err := os.WriteFile(valid, []byte(`{"schemaVersion":"6","packages":[]}`), 0o644); err != nil {
 		t.Fatalf("write valid spec: %v", err)
