@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.3 - 2026-07-26
+
+### Fixed
+
+- When `genv apply` leaves unresolved file mismatches, it now prints that post-apply hooks are being skipped (services still run before files; only hooks are gated).
+
+### Added
+
+- `genv scan --dry-run` previews packages that would be adopted without writing the spec or lock.
+- `genv scan` text mode confirms before adopting unless `--yes` is set (JSON still writes without a prompt, matching `apply --json`).
+
 ## v4.0.2 - 2026-07-26
 
 ### Fixed

@@ -205,7 +205,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | ------- | ------- |
 | `add` / `remove` (`rm`) | Track + install / untrack + uninstall |
 | `adopt` / `disown` | Track without install / untrack without uninstall |
-| `scan` | Bulk-adopt installed packages |
+| `scan` | Bulk-adopt installed packages (`--dry-run`, `--yes`) |
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--target`, `--force-new-lock`) |
