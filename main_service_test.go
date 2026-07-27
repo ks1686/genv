@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/genvfile"
@@ -87,4 +89,57 @@ func TestServiceCLIUsageErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServiceStatus_BrewFormula(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	spec := `{"schemaVersion":"6","packages":[],"services":{"redis":{"brew_formula":"redis"}}}`
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	installBrewServicesList := func(t *testing.T, listBody string) {
+		t.Helper()
+		binDir := t.TempDir()
+		script := "#!/bin/sh\n" +
+			"if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then\n" +
+			"  printf '%s\\n' '" + listBody + "'\n" +
+			"  exit 0\n" +
+			"fi\n" +
+			"exit 0\n"
+		if err := os.WriteFile(filepath.Join(binDir, "brew"), []byte(script), 0o755); err != nil {
+			t.Fatalf("write fake brew: %v", err)
+		}
+		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
+
+	t.Run("running", func(t *testing.T) {
+		installBrewServicesList(t, "redis started user")
+		var code int
+		out := captureStdout(t, func() {
+			code = run([]string{"service", "status", "redis", "--file", path})
+		})
+		if code != exitOK {
+			t.Fatalf("service status (running): got %d, want %d; stdout=%q", code, exitOK, out)
+		}
+		if !strings.Contains(out, "running") || strings.Contains(out, "NOT running") {
+			t.Fatalf("stdout = %q, want running", out)
+		}
+	})
+
+	t.Run("not running", func(t *testing.T) {
+		installBrewServicesList(t, "redis stopped user")
+		var code int
+		out := captureStdout(t, func() {
+			code = run([]string{"service", "status", "redis", "--file", path})
+		})
+		if code != exitLogic {
+			t.Fatalf("service status (not running): got %d, want %d; stdout=%q", code, exitLogic, out)
+		}
+		if !strings.Contains(out, "NOT running") {
+			t.Fatalf("stdout = %q, want NOT running", out)
+		}
+	})
 }

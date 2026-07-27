@@ -95,7 +95,7 @@ drives the real binary. All eight currently pass.
 | --- | --- | --- |
 | S1 FreshEmptyHome | `status --files` | Empty HOME: exits 4 and reports each target `missing`. |
 | S2 ApplyClean | `apply --yes` | Creates the link, then `status --files` exits 0 (`ok` / `up to date`). |
-| S3 MismatchNoForce | `apply` | A real file blocking a link target: exits 4 and leaves that file byte-for-byte untouched (still a regular file). |
+| S3 MismatchNoForce | `apply --yes` | A real file blocking a link target: exits 4 and leaves that file byte-for-byte untouched (still a regular file). Packages/services still apply when present. |
 | S4 MismatchForceBackup | `apply --force --yes` | Backs up the blocking file to one `target.backup.<timestamp>`, installs the symlink, then `status --files` exits 0. |
 | S5 CodexTemplatedDrift | `status --files`, `apply --force --yes` | Stale rendered `copy-template` target is flagged `mismatch` (exit 4); force re-renders it with the real HOME (no literal `__HOME__`), writes one backup, and status then exits 0. |
 | S6 DryRun | `apply --dry-run --force --yes` | Reports the planned change but writes nothing to disk and creates no backup. |
