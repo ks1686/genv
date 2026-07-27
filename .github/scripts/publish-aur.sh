@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Publishes a PKGBUILD and .SRCINFO to the AUR for the genv package.
+# Publishes a PKGBUILD and .SRCINFO to the AUR for the genv-bin package.
 # Usage: publish-aur.sh <version>   (version without leading 'v', e.g. 0.2.0)
 # Requires: AUR_KEY env var containing the SSH private key.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=aur-common.sh
+source "${SCRIPT_DIR}/aur-common.sh"
 
 VERSION="$1"
 PKGBASE="genv-bin"
@@ -15,14 +19,10 @@ SHA256_AMD64=$(grep "genv_${VERSION}_linux_amd64.tar.gz" /tmp/checksums.txt | aw
 SHA256_ARM64=$(grep "genv_${VERSION}_linux_arm64.tar.gz" /tmp/checksums.txt  | awk '{print $1}')
 
 # ── SSH setup ─────────────────────────────────────────────────────────────────
-mkdir -p ~/.ssh
-printf '%s\n' "${AUR_KEY}" > ~/.ssh/aur
-chmod 600 ~/.ssh/aur
-ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=yes"
+aur_setup_ssh
 
 # ── Clone AUR repo ────────────────────────────────────────────────────────────
-git clone "ssh://aur@aur.archlinux.org/${PKGBASE}.git" /tmp/aur-pkg
+aur_clone "${PKGBASE}" /tmp/aur-pkg
 cd /tmp/aur-pkg
 
 # ── Generate PKGBUILD ─────────────────────────────────────────────────────────
@@ -88,4 +88,4 @@ git config user.name  "ks1686"
 git config user.email "ks1686@users.noreply.github.com"
 git add PKGBUILD .SRCINFO
 git diff --cached --quiet || git commit -m "Update to ${VERSION}"
-git push origin master
+aur_push
