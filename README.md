@@ -208,7 +208,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `scan` | Bulk-adopt installed packages |
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--target`) |
-| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--target`, `--force-new-lock`) |
+| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--target`, `--force-new-lock`) |
 | `validate` | Validate spec only |
 | `upgrade` | Upgrade outdated tracked packages (`--all`, `--target`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target` on check/start) |
@@ -235,10 +235,13 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 
 ```bash
 genv apply --target ubuntu --dry-run --json
+genv apply --force --backup --yes                 # overwrite mismatched files; keep *.backup.*
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
 genv export --target macos --out ./dist/macos --strict
 genv migrate --write
 ```
+
+File mismatches without `--force` no longer block packages/services: non-conflicting file ops still apply, each mismatched path is printed, and apply exits `4` if any remain.
 
 ### Updates checker
 

@@ -19,6 +19,9 @@ func updatesCmd(args []string) int {
 		return exitUsage
 	}
 	switch args[0] {
+	case "help", "--help", "-h":
+		printUpdatesUsage()
+		return exitOK
 	case "check":
 		return updatesCheckCmd(args[1:])
 	case "start":

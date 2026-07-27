@@ -77,6 +77,12 @@ homebrew_casks:
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/genv"]
+            # launchd caches the adhoc codesign identity; reload the updates
+            # agent after binary replace so scheduled runs keep working.
+            plist = File.expand_path("~/Library/LaunchAgents/genv.updates.plist")
+            if File.exist?(plist)
+              system_command "#{staged_path}/genv", args: ["updates", "start"]
+            end
           end
 
 # ── Snap Store ────────────────────────────────────────────────────────────────
