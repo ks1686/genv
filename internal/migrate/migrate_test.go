@@ -52,8 +52,8 @@ func TestToV8BucketsHostScopedSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToV8 returned error: %v", err)
 	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v, want none", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "without host predicates") {
+		t.Fatalf("warnings = %v, want unscoped package copy warning", warnings)
 	}
 	if got.SchemaVersion != schema.Version8 {
 		t.Fatalf("schemaVersion = %q, want %q", got.SchemaVersion, schema.Version8)

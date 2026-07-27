@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.2 - 2026-07-26
+
+### Fixed
+
+- `genv apply` no longer aborts the whole run when a managed file mismatches: packages, env, shell, and services still apply; non-conflicting file ops still run; mismatched paths are named; exit `4` if any file issues remain.
+- Text apply plans print per-file `create` / `update` / `mismatch` / `ok` lines (not only a count).
+- `genv service status` works for `brew_formula` services without a `status` argv (delegates to `brew services list`).
+- `genv updates help` / `--help` / `-h` print usage and exit 0.
+- After Homebrew cask upgrades, `post_install` re-runs `genv updates start` when the updates LaunchAgent is present; `updates status` and successful `genv upgrade` of package `genv` hint to re-register when launchd codesign kills the agent.
+- Unit tests for service apply no longer write live launchd plists under the real `$HOME`.
+
+### Added
+
+- `genv apply --backup` backs up mismatched targets before `--force` overwrite (same effect as per-entry `backup: true`).
+
+### Changed
+
+- `genv migrate` warns when host-unscoped packages are copied into every migrated target bucket.
+
 ## v4.0.1 - 2026-07-26
 
 ### Fixed

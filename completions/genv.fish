@@ -195,6 +195,7 @@ complete -c genv -n '__fish_genv_seen_sub updates start' -l target -d 'Portable 
 complete -c genv -n '__fish_genv_using_command apply' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command apply' -l dry-run -d 'Print the reconcile plan without executing'
 complete -c genv -n '__fish_genv_using_command apply' -l force -d 'Overwrite mismatched managed files'
+complete -c genv -n '__fish_genv_using_command apply' -l backup -d 'Back up mismatched files before overwrite'
 complete -c genv -n '__fish_genv_using_command apply' -l strict -d 'Exit with an error if any package cannot be resolved'
 complete -c genv -n '__fish_genv_using_command apply' -l yes -d 'Skip the confirmation prompt'
 complete -c genv -n '__fish_genv_using_command apply' -l quiet -d 'Suppress plan output'
