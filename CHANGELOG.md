@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.5 - 2026-07-27
+
 ### Fixed
 
 - `updates start` derives Homebrew `bin/genv` from Caskroom/Cellar versioned paths even when the brew symlink is missing or dangling mid-upgrade (no longer depends on `SameFile` alone).
