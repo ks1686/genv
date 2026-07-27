@@ -77,7 +77,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --dry-run --yes --no-hooks --json --only --skip --only-manager --skip-manager --hook-timeout --debug --host"
+		opts="--file --lock-file --dry-run --yes --no-hooks --json --only --skip --only-manager --skip-manager --hook-timeout --debug --host --target"
 		;;
 	updates)
 		local updates_sub=""
@@ -98,8 +98,8 @@ _genv() {
 			fi
 		else
 			case "${updates_sub}" in
-			check) opts="--file --lock-file --json --only --skip --only-manager --skip-manager --host" ;;
-			start) opts="--file --lock-file --host" ;;
+			check) opts="--file --lock-file --json --only --skip --only-manager --skip-manager --host --target" ;;
+			start) opts="--file --lock-file --host --target" ;;
 			*) opts="" ;;
 			esac
 		fi
@@ -117,7 +117,7 @@ _genv() {
 		opts="--file --target"
 		;;
 	status)
-		opts="--file --lock-file --json --debug --files --host"
+		opts="--file --lock-file --json --debug --files --host --target"
 		;;
 	scan)
 		opts="--file --lock-file --json --debug --target"
@@ -150,7 +150,7 @@ _genv() {
 			case "${env_sub}" in
 			set) opts="--file --sensitive --target" ;;
 			unset) opts="--file --target" ;;
-			list | ls) opts="--file --json" ;;
+			list | ls) opts="--file --json --target" ;;
 			esac
 		fi
 		;;
@@ -204,7 +204,7 @@ _genv() {
 					esac
 				fi
 				;;
-			status) opts="--file --json" ;;
+			status) opts="--file --json --target" ;;
 			edit) opts="--file" ;;
 			esac
 		fi
@@ -256,6 +256,8 @@ _genv() {
 			case "${svc_sub}" in
 			add) opts="--file --start --stop --restart --status --brew-formula --target" ;;
 			remove | rm) opts="--file --target" ;;
+			list | ls) opts="--file --target" ;;
+			start | stop | status) opts="--file --target" ;;
 			*) opts="--file" ;;
 			esac
 		fi

@@ -124,6 +124,7 @@ _genv() {
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'1: :->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
@@ -158,13 +159,15 @@ _genv() {
 						'--skip=[Package IDs or names to skip]:packages:' \
 						'--only-manager=[Managers to check]:managers:' \
 						'--skip-manager=[Managers to skip]:managers:' \
-						'--host=[Host name for host-specific records]:host:'
+						'--host=[Host name for host-specific records]:host:' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				start)
 					_arguments \
 						'--file=[Path to genv.json]:path:_files' \
 						'--lock-file=[Path to genv lock file]:path:_files' \
-						'--host=[Host name for host-specific records]:host:'
+						'--host=[Host name for host-specific records]:host:' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				esac
 				;;
@@ -213,7 +216,8 @@ _genv() {
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--files[Check files block against the live filesystem only]' \
-				'--host=[Host name for host-specific records]:host:'
+				'--host=[Host name for host-specific records]:host:' \
+				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
 		scan)
 			_arguments \

@@ -317,7 +317,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if code := adoptFilesCmd(specPath, "", "", false); code != exitOK {
+	if code := adoptFilesCmd(specPath, "", "", "", false); code != exitOK {
 		t.Fatalf("adopt files = %d", code)
 	}
 	lockPath := genvfile.LockPathFrom(specPath)
@@ -331,7 +331,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 
 	var code int
 	out := captureStdout(t, func() {
-		code = adoptFilesCmd(specPath, "", "", true)
+		code = adoptFilesCmd(specPath, "", "", "", true)
 	})
 	if code != exitOK {
 		t.Fatalf("adopt files --json = %d (%s)", code, out)
@@ -340,7 +340,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 		t.Errorf("json output = %s", out)
 	}
 
-	if code := adoptFilesCmd(filepath.Join(dir, "missing.json"), "", "", false); code != exitIO {
+	if code := adoptFilesCmd(filepath.Join(dir, "missing.json"), "", "", "", false); code != exitIO {
 		t.Errorf("missing spec = %d", code)
 	}
 }

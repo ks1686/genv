@@ -12,10 +12,33 @@ permissions:
 #   1. Adapter-layer tests  (internal/adapter/)
 #   2. End-to-end tests     (e2e/)
 #
+# Plus a schemaVersion 8 CLI command matrix that builds genv inside Arch and
+# exercises every top-level command (not install-only).
+#
 # Skipped adapters and reasons:
 #   linuxbrew   — Brew on Linux; same caching/time constraint as macOS brew.
 
 jobs:
+  # ── schemaVersion 8 full CLI command matrix ─────────────────────────────────
+  # Builds the current sources in Arch and runs scripts/docker-v8-command-matrix.sh
+  # against a real pacman-backed v8 spec. Covers apply/status/upgrade/updates,
+  # add/remove hooks, env/shell/service, export/map, and the rest of the CLI.
+  v8-command-matrix:
+    name: arch-latest (v8 command matrix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run schemaVersion 8 CLI command matrix
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/src:ro" \
+            -e GENV_SRC_ROOT=/src \
+            archlinux:latest \
+            bash /src/scripts/docker-v8-command-matrix.sh
+
   # ── paru (Arch AUR helper) ───────────────────────────────────────────────────
   # paru refuses ALL operations when run as root. Spin up an Arch container via
   # docker run, build paru from AUR as a non-root builder user, then run tests
