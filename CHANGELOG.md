@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.1 - 2026-07-26
+
+### Fixed
+
+- On schemaVersion 8 specs, `status`, `upgrade`, `updates check` / `__run-once`, `env list`, `shell status`, `service list|start|stop|status`, `adopt --files`, and add/remove lifecycle hooks now materialize the active target via the same `Resolve` + `MergeTarget` path as `apply` (with `--target` / `$GENV_TARGET`). Previously they read empty top-level fields, so status reported every lock entry as `extra` and upgrade/updates silently planned nothing after `genv migrate`.
+
 ### Changed
 
-- Documentation pass for the v4.0.0 line: README rewritten around schema v8 targets and current install/CLI surface; SCHEMA, SECURITY, ROADMAP, and platform install guides updated for PowerShell (v7), portable targets (v8), and versioned release asset names.
+- Integration CI adds an Arch Docker **v8 command matrix** (`scripts/docker-v8-command-matrix.sh` / `make integration-v8`) that builds genv and exercises every top-level CLI command against a pacman-backed schemaVersion 8 spec.
 
 ## v4.0.0 - 2026-07-26
 
@@ -20,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - CI now enforces a statement-coverage floor (`COVER_MIN`, default 80%) via `make cover-gate` and runs `make bench-gate` for the cold-start budget (`BENCH_MAX_MS`; local default 200ms, CI uses 400ms for shared-runner noise). Previously claimed but not wired into GitHub Actions.
 - Documentation cleanup: roadmap/release/security wording aligned with the v3.x/v4.x line; winget/Scoop/Chocolatey install channels explicitly deferred; outdated-upgrade plan and scheduler handoff marked completed/historical; `SECURITY_AUDIT.md` annotated with 2026-07-25 remediation status.
 - Host classification no longer treats WSL2 as a blanket Arch match. Targets are `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, and optional `linux`.
+- Documentation pass for the v4.0.0 line: README rewritten around schema v8 targets and current install/CLI surface; SCHEMA, SECURITY, ROADMAP, and platform install guides updated for PowerShell (v7), portable targets (v8), and versioned release asset names.
 
 ### Fixed
 
