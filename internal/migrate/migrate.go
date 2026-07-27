@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/ks1686/genv/internal/schema"
 )
@@ -54,6 +55,11 @@ func ToV8(in *schema.GenvFile) (*schema.GenvFile, []string, error) {
 
 	if err := bucketPackages(out.Targets, targetIDs, in.Packages); err != nil {
 		return nil, nil, err
+	}
+	if unscoped := countUnscopedPackages(in.Packages); unscoped > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"%d package(s) without host predicates were copied into migrated target(s) [%s]; review and prune targets you do not use",
+			unscoped, strings.Join(targetIDs, ", ")))
 	}
 	if err := bucketServices(out.Targets, targetIDs, in.Services); err != nil {
 		return nil, nil, err
@@ -184,6 +190,16 @@ func bucketPackages(targets map[string]*schema.TargetBundle, defaultTargetIDs []
 		}
 	}
 	return nil
+}
+
+func countUnscopedPackages(packages []schema.Package) int {
+	n := 0
+	for _, pkg := range packages {
+		if len(pkg.Host) == 0 {
+			n++
+		}
+	}
+	return n
 }
 
 func bucketServices(targets map[string]*schema.TargetBundle, defaultTargetIDs []string, services map[string]schema.Service) error {

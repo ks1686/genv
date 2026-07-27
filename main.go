@@ -1047,6 +1047,7 @@ type applyOptions struct {
 	Quiet         bool
 	JSONOut       bool
 	Force         bool
+	Backup        bool
 	Timeout       time.Duration
 	Debug         bool
 	TargetProfile string
@@ -1070,6 +1071,7 @@ func applyCmd(args []string) int {
 	fs.StringVar(&opts.LockFile, "lock-file", "", "path to genv lock file")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite mismatched managed files")
+	fs.BoolVar(&opts.Backup, "backup", false, "back up mismatched files before overwrite (implies keeping originals as *.backup.*)")
 	fs.BoolVar(&opts.Strict, "strict", false, "exit with an error if any package cannot be resolved")
 	fs.BoolVar(&opts.Yes, "yes", false, "skip the confirmation prompt (for CI and scripts)")
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress plan output (useful in scripts)")
@@ -1277,14 +1279,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	}
 	planOpts := opts
 	planOpts.DryRun = true
-	filePlan, filePlanErr := applyFiles(ctx, planOpts, f, lf)
+	filePlan, _ := applyFiles(ctx, planOpts, f, lf)
 	fileChanges := 0
 	if filePlan != nil {
 		fileChanges = len(filePlan.Created) + len(filePlan.Updated) + len(filePlan.Mismatched)
-	}
-	if filePlanErr != nil {
-		fprintf(os.Stderr, "genv apply: %v\n", filePlanErr)
-		return exitLogic
 	}
 
 	if toInstall == 0 && toRemove == 0 && envChanges == 0 && shellChanges == 0 && serviceChanges == 0 && fileChanges == 0 {
@@ -1313,6 +1311,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitLogic
 	}
 
+	if fileChanges > 0 && !opts.Quiet {
+		writeFilePlan(planOut, filePlan)
+	}
+
 	if opts.DryRun {
 		if envChanges > 0 && !opts.Quiet {
 			fprintf(os.Stdout, "env: %d variable(s) to apply\n", envChanges)
@@ -1322,9 +1324,6 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 		if serviceChanges > 0 && !opts.Quiet {
 			fprintf(os.Stdout, "service: %d service(s) to reconcile\n", serviceChanges)
-		}
-		if fileChanges > 0 && !opts.Quiet {
-			fprintf(os.Stdout, "files: %d file entry/entries to reconcile\n", fileChanges)
 		}
 		return exitOK
 	}
@@ -1367,10 +1366,15 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	applyShellCfg(f, lf, !opts.Quiet)
 	_, _, svcErrs := applyServices(ctx, f, lf, !opts.Quiet)
 	var fileErrs []error
+	var appliedFiles *files.ApplyResult
 	if len(execResult.Errors) == 0 {
-		_, filePlanErr = applyFiles(ctx, opts, f, lf)
+		var filePlanErr error
+		appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
 		if filePlanErr != nil {
 			fileErrs = append(fileErrs, filePlanErr)
+		}
+		if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
+			writeFileMismatchGuidance(os.Stderr, appliedFiles)
 		}
 	}
 	var hookErrs []string
@@ -1740,6 +1744,32 @@ func writeFileStatus(w io.Writer, res *files.StatusResult) {
 	_ = tw.Flush()
 }
 
+func writeFilePlan(w io.Writer, res *files.ApplyResult) {
+	if res == nil {
+		return
+	}
+	entries := filePlanEntries(res)
+	if len(entries) == 0 {
+		return
+	}
+	fPrintln(w, "files:")
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, e := range entries {
+		fprintf(tw, "  %s\t%s\n", e.Kind, e.Target)
+	}
+	_ = tw.Flush()
+}
+
+func writeFileMismatchGuidance(w io.Writer, res *files.ApplyResult) {
+	if res == nil || len(res.Mismatched) == 0 {
+		return
+	}
+	for _, target := range res.Mismatched {
+		fprintf(w, "genv apply: mismatch: %s\n", target)
+	}
+	fPrintln(w, "Hint: re-run with genv apply --force to overwrite, and add --backup (or per-entry backup: true) to preserve the existing file as *.backup.*")
+}
+
 func filePlanEntries(res *files.ApplyResult) []output.FilePlanEntry {
 	if res == nil {
 		return nil
@@ -1776,7 +1806,7 @@ func applyFiles(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *
 		SourceRoot: sourceRootForSpec(opts.File, f),
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
-		Backup:     false,
+		Backup:     opts.Backup,
 	})
 	if err == nil && !opts.DryRun {
 		lf.Files = lockedFilesFromSpec(f.Files)
@@ -3574,6 +3604,9 @@ func upgradeCmd(args []string) int {
 		fprintf(os.Stderr, "genv upgrade: %v\n", runResult.LockWriteError)
 		return exitIO
 	}
+	if exitCode == exitOK {
+		adviseUpdatesReregister(os.Stdout, runResult.Upgraded)
+	}
 	return exitCode
 }
 
@@ -3739,6 +3772,10 @@ func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Durati
 			Manager:    u.Manager,
 			NewVersion: u.InstalledVersion,
 		})
+	}
+
+	if len(errs) == 0 {
+		adviseUpdatesReregister(os.Stderr, runResult.Upgraded)
 	}
 
 	return writeJSON(os.Stdout, output.Envelope{
@@ -4436,6 +4473,15 @@ func serviceStatusCmd(args []string) int {
 	svc, ok := f.Services[name]
 	if !ok {
 		fprintf(os.Stderr, "genv: service %q not found in spec\n", name)
+		return exitLogic
+	}
+
+	if svc.BrewFormula != "" {
+		if service.BrewServicesRunning(svc.BrewFormula) {
+			fprintf(os.Stdout, "service %q is running\n", name)
+			return exitOK
+		}
+		fprintf(os.Stdout, "service %q is NOT running\n", name)
 		return exitLogic
 	}
 

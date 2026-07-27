@@ -214,7 +214,7 @@ func TestFiles_S3_MismatchNoForce(t *testing.T) {
 		t.Fatalf("write planted file: %v", err)
 	}
 
-	stdout, stderr, code := r.genv("", "apply")
+	stdout, stderr, code := r.genv("", "apply", "--yes")
 	if code != 4 {
 		t.Errorf("apply mismatch no-force: exit %d, want 4\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
