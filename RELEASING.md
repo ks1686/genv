@@ -214,6 +214,15 @@ paru -S genv       # builds from source
    - Push the Homebrew formula to `ks1686/homebrew-tap`
    - Push updated PKGBUILDs to AUR (`genv-bin` pre-compiled and `genv` source)
 
+   If GitHub/Homebrew succeeded but AUR failed (transient `aur.archlinux.org` SSH),
+   do **not** re-run the whole Release job (GoReleaser will hit `already_exists`).
+   Instead dispatch an AUR-only repair:
+
+   ```bash
+   gh workflow run Release -f mode=aur-only -f version=4.0.3
+   gh run watch  # pick the new run
+   ```
+
 6. **Verify** by downloading one artifact and running:
 
    ```bash
