@@ -209,7 +209,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--target`, `--force-new-lock`) |
-| `validate` | Validate spec only |
+| `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade outdated tracked packages (`--all`, `--target`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target` on check/start) |
 | `profile` | Named overlays (`list` / `create` / `switch`) |
