@@ -1,10 +1,12 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // brewBase holds the Available and PlanInstall implementations shared between
@@ -46,7 +48,11 @@ type brewOutdatedEntry struct {
 // Note: `brew outdated` reflects the state of the last `brew update`; genv does
 // not run `brew update` first to avoid a network fetch on every scheduled check.
 func (brewBase) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("brew", "outdated", "--json=v2").Output()
+	// Bound brew's HTTPS/trust evaluation so a launchd-session keychain hang
+	// cannot wedge the scheduled updates checker forever.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "brew", "outdated", "--json=v2").Output()
 	if err != nil {
 		return nil, err
 	}

@@ -46,6 +46,9 @@ func ScheduledPath(pathValue, goos string) string {
 	}
 
 	for _, entry := range strings.Split(pathValue, ":") {
+		if isHomebrewShimDir(entry) {
+			continue
+		}
 		appendEntry(entry)
 	}
 	for _, entry := range scheduledPathDefaults[goos] {
@@ -53,6 +56,12 @@ func ScheduledPath(pathValue, goos string) string {
 	}
 
 	return strings.Join(entries, ":")
+}
+
+func isHomebrewShimDir(entry string) bool {
+	// Homebrew injects these during cask/formula hooks; they must not be baked
+	// into launchd/systemd PATH (shims expect an interactive brew session).
+	return strings.Contains(entry, "/Homebrew/shims/") || strings.Contains(entry, "/linuxbrew/.linuxbrew/Homebrew/shims/")
 }
 
 func renderSystemdEnvironment(environment map[string]string) string {
