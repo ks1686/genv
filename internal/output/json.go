@@ -73,8 +73,10 @@ type StatusResult struct {
 
 // ScanResult is the Data payload for `genv scan --json`.
 type ScanResult struct {
-	Added   int `json:"added"`
-	Skipped int `json:"skipped"`
+	Added    int      `json:"added"`
+	Skipped  int      `json:"skipped"`
+	DryRun   bool     `json:"dryRun,omitempty"`
+	Packages []string `json:"packages,omitempty"`
 }
 
 // ApplyResult is the Data payload for `genv apply --json` (non-dry-run).
