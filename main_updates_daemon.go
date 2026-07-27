@@ -41,6 +41,7 @@ func updatesStartCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -65,9 +66,15 @@ func updatesStartCmd(args []string) int {
 	}
 	lockPath := lockPathForSpec(*file, *lockFile)
 	command := []string{exe, "updates", "__run-once", "--file", absFile, "--lock-file", lockPath, "--host", hostForCommand(*hostFlag)}
+	if strings.TrimSpace(*targetFlag) != "" {
+		command = append(command, "--target", strings.TrimSpace(*targetFlag))
+	}
 	pathValue := os.Getenv("PATH")
 	goos := runtime.GOOS
 	environment := map[string]string{"PATH": service.ScheduledPath(pathValue, goos)}
+	if target := strings.TrimSpace(os.Getenv("GENV_TARGET")); target != "" && strings.TrimSpace(*targetFlag) == "" {
+		environment["GENV_TARGET"] = target
+	}
 	if err := backend.Start(context.Background(), service.ScheduledJob{Name: updatesServiceName, Command: command, Interval: interval, Environment: environment}); err != nil {
 		fprintf(os.Stderr, "genv updates start: %v\n", err)
 		return exitIO

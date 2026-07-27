@@ -1,4 +1,4 @@
-.PHONY: build test test-verbose test-cover cover-gate bench bench-gate ci lint fmt vet tidy clean
+.PHONY: build test test-verbose test-cover cover-gate bench bench-gate ci lint fmt vet tidy clean integration-v8
 
 BINARY := genv
 
@@ -21,6 +21,15 @@ ci: vet
 	go tool cover -func=coverage.out
 	$(MAKE) cover-gate
 	$(MAKE) bench-gate
+
+# integration-v8 builds genv inside Arch Docker and runs every CLI command
+# against a schemaVersion 8 pacman-backed spec (see scripts/docker-v8-command-matrix.sh).
+integration-v8:
+	docker run --rm \
+		-v "$(CURDIR):/src:ro" \
+		-e GENV_SRC_ROOT=/src \
+		archlinux:latest \
+		bash /src/scripts/docker-v8-command-matrix.sh
 
 test-verbose:
 	go test -v ./...

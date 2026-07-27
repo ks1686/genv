@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/ks1686/genv/internal/genvfile"
-	"github.com/ks1686/genv/internal/host"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/upgrade"
@@ -30,6 +29,7 @@ func updatesRunOnceCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -49,7 +49,11 @@ func updatesRunOnceCmd(args []string) int {
 		logger.Warn("updates.check.config", slog.Any("err", cfgErr))
 		return exitValidation
 	}
-	f = host.FilterForHost(f, hostForCommand(*hostFlag))
+	f, _, code := materializeSpecForCommand("updates", *file, f, *hostFlag, *targetFlag)
+	if code != exitOK {
+		logger.Warn("updates.check.target", slog.Int("exit", code))
+		return code
+	}
 	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {

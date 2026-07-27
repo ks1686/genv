@@ -155,29 +155,27 @@ opt-in convenience and is not configured in this repository.
 
 - Prefer `genv upgrade` to plan only packages with detected updates by default, with `--all` as the escape hatch for the old brute-force “touch everything” path.
 - Keep successful upgrade output visible; filtering should drop non-outdated plan noise, not hide upgrades that actually run.
-- When choosing implementation scope, often asks for a recommendation first; if wanting maximum coverage, prefers the most thorough option that still keeps outdated detection honest.
+- When choosing implementation scope, often asks for a recommendation first; if wanting maximum coverage, prefers the most thorough / “powerful” option that still keeps outdated detection honest.
 - Prefers subagent-driven execution for multi-step implementation plans when that option is offered.
 - Prefers agent guidance as a global baseline under `~/.config/genv/` (and Cursor User Rules when configured); add project-specific rules only when explicitly requested.
 - For cross-platform shell/env work (including PowerShell), do not assume PowerShell exists on every host; gate apply/write on availability.
+- Prefer cross-platform aliases/env (e.g. EDITOR, general shell aliases) in v8 `defaults`, with OS-specific overlays only under `targets.*`.
 - Prefer `genv add` to persist into `genv.json` only after a successful install/verification (fail nonzero and leave the spec unchanged on unresolved/install failure).
 - Want richer tab completions with package-manager repo autofill for `add`, not only tracked package IDs and detected managers.
 - Treat multi-machine / cross-OS config portability (export-to-target / migration without sharing locks) as a first-class product goal.
 - For public Linux support, focus on major distros whose packaging channels do not require separate human review gates known to reject AI-assisted tooling.
+- Defer codebase-wide debloat/optimization until after the planned feature and correctness suite lands.
 
 ## Learned Workspace Facts
 
-- `genv upgrade` and `genv updates check` share the upgrade planner; default planning uses outdated detection (`Filters.All` false / `OutdatedLister`), and managers without a lister (or on lister error) keep packages rather than silently skipping them.
-- `OutdatedLister` coverage includes brew/linuxbrew, mas, bun, npm/pnpm/yarn, uv/pipx, cargo, winget/scoop/choco, pacman/paru/yay, and snap; mas also implements `BatchUpgrader` so multiple App Store upgrades batch into one `mas upgrade` invocation.
-- Design specs and plans live under `docs/superpowers/`; completed items (e.g. outdated-aware upgrade, scheduler handoff) are marked COMPLETED/RESOLVED in-place in those docs.
-- Runtime user config, lock files, and a separate global `AGENTS.md`/agent baseline live under `~/.config/genv/`.
-- Project agent guidance is primarily this `AGENTS.md`; `.cursor/` is gitignored and there is no project `.cursor/rules` pack yet.
-- `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`.
-- Schema versions `"1"`–`"8"` are accepted. v7 adds `"shell": "powershell"` targeting for aliases/functions. v8 adds portable `defaults` plus `targets.*` bundles; top-level desired-state blocks and per-record `host` are invalid in v8. Known targets are `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, and optional catch-all `linux`; `genv apply` selects `--target`, then `GENV_TARGET`, then host classification.
-- Schema v8 target overlays support `null` tombstones for inherited `env`, `shell.aliases`, `shell.functions`, and `services` map entries. Tombstones are valid only under `targets.*`, not `defaults`.
-- `genv migrate` converts v1-v7 host-scoped specs to v8 target buckets; `genv export --target --out` writes a single-target snapshot plus report and bundled relative file assets while omitting locks and sensitive env values; `genv map --target` is print-only guidance for manager mapping gaps.
+- `genv upgrade` and `genv updates check` share the upgrade planner; default planning uses outdated detection (`Filters.All` false / `OutdatedLister`). Managers without a lister (or on lister error) keep packages rather than silently skipping them. `OutdatedLister` covers brew/linuxbrew, mas, bun, npm/pnpm/yarn, uv/pipx, cargo, winget/scoop/choco, pacman/paru/yay, and snap; mas also implements `BatchUpgrader`.
+- Design specs and plans live under `docs/superpowers/`; completed items are marked COMPLETED/RESOLVED in-place. Runtime config, locks, and the global agent baseline live under `~/.config/genv/`; project guidance is this `AGENTS.md` (`.cursor/` is gitignored).
+- `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`. Integration workflow also runs `scripts/docker-v8-command-matrix.sh` (`make integration-v8`) — an Arch Docker job that builds genv and exercises every CLI command against a schemaVersion 8 pacman-backed spec.
+- Schema versions `"1"`–`"8"` are accepted. v7 adds `"shell": "powershell"` targeting. v8 uses portable `defaults` plus `targets.*` (known: `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, optional `linux`); top-level desired-state blocks and per-record `host` are invalid in v8. Target overlays support `null` tombstones for inherited `env` / `shell.aliases` / `shell.functions` / `services` (targets only, not defaults). Target selection is `--target`, then `GENV_TARGET`, then host classification.
+- Any command that reads tracked packages on schemaVersion 8 must materialize via `resolveEffectiveSpec` / `materializeSpecForCommand` (`target.Resolve` + `schema.MergeTarget`). `host.FilterForHost` alone drops v8 `targets.*` and leaves top-level `packages` empty — the 4.0.0 bug in `status` / `upgrade` / `updates check` (fixed by sharing apply’s materialize path and `--target`).
+- `genv migrate` converts v1–v7 host-scoped specs to v8 target buckets; `genv export --target --out` writes a single-target snapshot plus report and bundled relative file assets while omitting locks and sensitive env values; `genv map --target` is print-only guidance for manager mapping gaps.
 - On Windows, `genv apply` uses a profile-backend abstraction (`POSIXBackend` + `PowerShellBackend`): prefer `pwsh`, else `powershell.exe`; omit PowerShell writes on non-Windows. Shared `env` maps emit both `env.sh` and `env.ps1` when the corresponding backend runs.
-- Publishing the `genv` binary to winget/scoop/choco remains deferred; adapters already manage packages through those managers when present.
-- Host classification currently recognizes `macos`, native `windows`, native `arch`, `ubuntu`, and `wsl-arch`. WSL2 does not inherit native `arch`: Ubuntu-like WSL2 classifies as `ubuntu`, Arch-like WSL2 classifies as `wsl-arch`, and other WSL distros require `GENV_TARGET`/`--target`.
-- Public Linux channels remain Arch-first plus `snap` and `linuxbrew`; `apt`/`dnf`/`apk` adapters are deferred.
+- Host classification recognizes `macos`, native `windows`, native `arch`, `ubuntu`, and `wsl-arch`. WSL2 does not inherit native `arch`: Ubuntu-like WSL2 → `ubuntu`, Arch-like WSL2 → `wsl-arch`; other WSL distros need `GENV_TARGET`/`--target`.
+- Public Linux channels remain Arch-first plus `snap` and `linuxbrew`; `apt`/`dnf`/`apk` adapters are deferred. Publishing the `genv` binary to winget/scoop/choco remains deferred (adapters already manage packages through those managers when present).
 - Lock files are machine-local and must not travel with the spec. Schema v8 locks record target/GOOS/manager metadata; foreign locks are refused unless `genv apply --force-new-lock` backs them up and starts a new local lock.
 - Today `genv add` can still write the spec before install succeeds and exit 0 on failure; fixing that ordering is a known v4 correctness goal.

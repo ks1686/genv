@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ks1686/genv/internal/genvfile"
-	"github.com/ks1686/genv/internal/host"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/upgrade"
@@ -58,6 +57,7 @@ func updatesCheckCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to check")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to check")
@@ -70,7 +70,10 @@ func updatesCheckCmd(args []string) int {
 	if err != nil {
 		return updatesCheckReadSpecError(*file, *jsonOut, err)
 	}
-	f = host.FilterForHost(f, hostForCommand(*hostFlag))
+	f, _, code := materializeSpecForCommand("updates check", *file, f, *hostFlag, *targetFlag)
+	if code != exitOK {
+		return code
+	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
 	if _, err := os.Stat(lockPath); err != nil {
