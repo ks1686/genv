@@ -25,6 +25,7 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.2` | Apply continues past file mismatches; human file plans + `--backup`; brew-formula service status; updates `--help`; launchd re-register after genv upgrade |
 | `v4.0.3` | Explicit skip message for post-apply hooks on file mismatch; `scan --dry-run` + confirmation/`--yes` |
 | `v4.0.4` | Prefer PATH-stable genv path for updates LaunchAgent/systemd; agent dangling-path checks in status/validate; AUR publish retry + aur-only repair |
+| `v4.0.5` | Brew bin derivation without SameFile mid-upgrade; strip Homebrew shims from scheduled PATH; `__run-once` / brew / notify timeouts so launchd cannot wedge |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
