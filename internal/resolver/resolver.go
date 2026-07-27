@@ -295,12 +295,17 @@ func FilterOutdated(packages []genvfile.LockedPackage) (kept []genvfile.LockedPa
 			keep[name] = nil // no capability: keep all
 			continue
 		}
+		started := time.Now()
 		outdated, err := lister.ListOutdated(g.pkgNames)
+		elapsed := time.Since(started).Round(time.Millisecond)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("could not determine outdated packages for %s (%v) — keeping all", name, err))
+			warnings = append(warnings, fmt.Sprintf("could not determine outdated packages for %s after %s (%v) — keeping all", name, elapsed, err))
 			keep[name] = nil // query failed: keep all conservatively
 			continue
 		}
+		// Timing is logged as a warning so scheduled updates.log and CLI stderr
+		// can distinguish a real slow query from a silent timeout fallback.
+		warnings = append(warnings, fmt.Sprintf("outdated timing: %s took %s (%d hits)", name, elapsed, len(outdated)))
 		set := make(map[string]bool, len(outdated))
 		for pkgName := range outdated {
 			set[pkgName] = true

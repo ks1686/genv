@@ -75,8 +75,8 @@ func TestFilterOutdated_KeepsOnlyOutdated(t *testing.T) {
 	if got := keptIDs(kept); !slices.Equal(got, []string{"wget"}) {
 		t.Fatalf("kept = %v, want [wget]", got)
 	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v, want none", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "outdated timing: brew") {
+		t.Fatalf("warnings = %v, want one brew timing line", warnings)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestFilterOutdated_QueryErrorKeepsAllWithWarning(t *testing.T) {
 	if got := keptIDs(kept); !slices.Equal(got, []string{"wget", "jq"}) {
 		t.Fatalf("kept = %v, want all packages", got)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "brew") {
-		t.Fatalf("warnings = %v, want one mentioning brew", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "brew") || !strings.Contains(warnings[0], "after") {
+		t.Fatalf("warnings = %v, want one mentioning brew and duration", warnings)
 	}
 }
 
