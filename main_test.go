@@ -2504,6 +2504,9 @@ func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *tes
 	originalExecutable := updatesExecutable
 	updatesExecutable = func() (string, error) { return "/tmp/genv-test-bin", nil }
 	t.Cleanup(func() { updatesExecutable = originalExecutable })
+	originalLookPath := updatesSelfLookPath
+	updatesSelfLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	t.Cleanup(func() { updatesSelfLookPath = originalLookPath })
 	invokingPath := "/custom/bin:relative:/usr/bin:/custom/bin"
 	t.Setenv("PATH", invokingPath)
 
@@ -2534,6 +2537,124 @@ func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *tes
 	}
 	if !strings.Contains(out, "check/log/notify only") || strings.Contains(out, "auto-apply enabled") {
 		t.Fatalf("stdout = %q, want explicit default check-only mode", out)
+	}
+}
+
+func TestUpdatesStart_prefers_stable_PATH_executable_over_caskroom(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	caskroom := filepath.Join(dir, "Caskroom", "genv", "4.0.3")
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(caskroom, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realBin := filepath.Join(caskroom, "genv")
+	if err := os.WriteFile(realBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stable := filepath.Join(binDir, "genv")
+	if err := os.Symlink(realBin, stable); err != nil {
+		t.Fatal(err)
+	}
+
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[],"updates":{"enabled":true,"interval":"1h"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	supervisor := &fakeUpdatesSupervisor{supported: true}
+	withUpdatesSupervisor(t, supervisor)
+
+	originalExecutable := updatesExecutable
+	updatesExecutable = func() (string, error) { return realBin, nil }
+	t.Cleanup(func() { updatesExecutable = originalExecutable })
+	originalLookPath := updatesSelfLookPath
+	updatesSelfLookPath = func(file string) (string, error) {
+		if file == "genv" {
+			return stable, nil
+		}
+		return "", os.ErrNotExist
+	}
+	t.Cleanup(func() { updatesSelfLookPath = originalLookPath })
+
+	var code int
+	captureStdout(t, func() {
+		code = run([]string{"updates", "start", "--file", specPath, "--lock-file", lockPath, "--host", "macos"})
+	})
+	if code != exitOK {
+		t.Fatalf("code = %d, want %d", code, exitOK)
+	}
+	if len(supervisor.started) != 1 {
+		t.Fatalf("started = %#v", supervisor.started)
+	}
+	if got := supervisor.started[0].Command[0]; got != stable {
+		t.Fatalf("command[0] = %q, want stable PATH symlink %q", got, stable)
+	}
+}
+
+func TestUpdatesStatus_warns_when_agent_executable_missing(t *testing.T) {
+	home := t.TempDir()
+	originalHome := managedAgentHomeDir
+	managedAgentHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { managedAgentHomeDir = originalHome })
+
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(home, "Caskroom", "genv", "4.0.2", "genv")
+	plist := service.LaunchdScheduledPlistContent("updates", []string{missing, "updates", "__run-once"}, time.Hour, nil)
+	if err := os.WriteFile(filepath.Join(agentDir, "genv.updates.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	supervisor := &fakeUpdatesSupervisor{
+		supported: true,
+		status:    service.ScheduledJobStatus{Registered: true, LastRun: service.ScheduledRunSuccess, Detail: "genv.updates"},
+	}
+	withUpdatesSupervisor(t, supervisor)
+
+	var code int
+	out := captureStdout(t, func() { code = run([]string{"updates", "status"}) })
+	if code != exitOK {
+		t.Fatalf("code = %d, want %d", code, exitOK)
+	}
+	if !strings.Contains(out, "Warning:") || !strings.Contains(out, missing) || !strings.Contains(out, "genv updates start") {
+		t.Fatalf("stdout = %q, want dangling-path warning and re-register hint", out)
+	}
+}
+
+func TestValidateCmd_rejects_broken_managed_agent_executable(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	originalHome := managedAgentHomeDir
+	managedAgentHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { managedAgentHomeDir = originalHome })
+
+	agentDir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(home, "gone", "genv")
+	plist := service.LaunchdScheduledPlistContent("updates", []string{missing, "updates", "__run-once"}, time.Hour, nil)
+	if err := os.WriteFile(filepath.Join(agentDir, "genv.updates.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	valid := filepath.Join(dir, "valid.json")
+	if err := os.WriteFile(valid, []byte(`{"schemaVersion":"6","packages":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	errOut := captureStderr(t, func() { code = run([]string{"validate", "--file", valid}) })
+	if code != exitValidation {
+		t.Fatalf("code = %d, want %d\nstderr: %s", code, exitValidation, errOut)
+	}
+	if !strings.Contains(errOut, missing) || !strings.Contains(errOut, "genv updates start") {
+		t.Fatalf("stderr = %q, want missing path and repair hint", errOut)
 	}
 }
 
