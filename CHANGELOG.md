@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Release workflow: AUR publish retries transient `aur.archlinux.org` SSH drops, and `workflow_dispatch` supports `aur-only` repair for an existing GitHub release without re-running GoReleaser.
+
 ## v4.0.3 - 2026-07-26
 
 ### Fixed

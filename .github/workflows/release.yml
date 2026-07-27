@@ -2,9 +2,21 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "full = GoReleaser + AUR; aur-only = republish AUR for an existing GitHub release"
+        type: choice
+        options:
+          - full
+          - aur-only
+        default: full
+      version:
+        description: "Semver without leading v (required for aur-only, e.g. 4.0.3)"
+        required: false
+        type: string
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -16,27 +28,73 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve checkout ref
+        id: ref
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.mode }}" = "aur-only" ]; then
+            version="${{ github.event.inputs.version }}"
+            version="${version#v}"
+            if [ -z "$version" ]; then
+              echo "aur-only requires the version input" >&2
+              exit 1
+            fi
+            echo "ref=v${version}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: Resolve mode and version
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            mode="full"
+            version="${GITHUB_REF_NAME#v}"
+          else
+            mode="${{ github.event.inputs.mode }}"
+            version="${{ github.event.inputs.version }}"
+            version="${version#v}"
+            if [ -z "$version" ]; then
+              version="$(git describe --tags --abbrev=0)"
+              version="${version#v}"
+            fi
+          fi
+          if [ -z "$version" ]; then
+            echo "could not resolve release version" >&2
+            exit 1
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved mode=$mode version=$version"
 
       - name: Set up Go
+        if: steps.meta.outputs.mode == 'full'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Install cosign
+        if: steps.meta.outputs.mode == 'full'
         uses: sigstore/cosign-installer@v3
 
       - name: Install snapcraft
+        if: steps.meta.outputs.mode == 'full'
         run: sudo snap install snapcraft --classic
 
       - name: Run unit test suite
+        if: steps.meta.outputs.mode == 'full'
         run: go test ./...
 
       - name: Run GoReleaser
+        if: steps.meta.outputs.mode == 'full'
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
@@ -48,15 +106,13 @@ jobs:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
       - name: Publish to AUR (genv-bin, pre-compiled binary)
-        if: "!contains(github.ref_name, '-')"
+        if: "!contains(steps.meta.outputs.version, '-')"
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
-          VERSION: ${{ github.ref_name }}
-        run: bash .github/scripts/publish-aur.sh "${VERSION#v}"
+        run: bash .github/scripts/publish-aur.sh "${{ steps.meta.outputs.version }}"
 
       - name: Publish to AUR (genv, builds from source)
-        if: "!contains(github.ref_name, '-')"
+        if: "!contains(steps.meta.outputs.version, '-')"
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
-          VERSION: ${{ github.ref_name }}
-        run: bash .github/scripts/publish-aur-src.sh "${VERSION#v}"
+        run: bash .github/scripts/publish-aur-src.sh "${{ steps.meta.outputs.version }}"
