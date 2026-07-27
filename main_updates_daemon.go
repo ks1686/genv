@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/selfpath"
 	"github.com/ks1686/genv/internal/service"
 )
 
@@ -29,6 +31,8 @@ type updatesSupervisor interface {
 var (
 	newUpdatesSupervisor = func() updatesSupervisor { return service.NewScheduledBackend() }
 	updatesExecutable    = os.Executable
+	updatesSelfLookPath  = exec.LookPath
+	managedAgentHomeDir  = os.UserHomeDir
 )
 
 func updatesStartCmd(args []string) int {
@@ -60,6 +64,9 @@ func updatesStartCmd(args []string) int {
 		fprintf(os.Stderr, "genv updates start: finding current executable: %v\n", err)
 		return exitIO
 	}
+	// Prefer a PATH-stable invocation path (e.g. Homebrew's bin/genv symlink)
+	// over a version-pinned Caskroom path from os.Executable / cask post_install.
+	exe = selfpath.PreferStable(exe, os.Args[0], updatesSelfLookPath)
 	absFile, err := filepath.Abs(*file)
 	if err != nil {
 		fprintf(os.Stderr, "genv updates start: resolving spec path: %v\n", err)
@@ -129,6 +136,7 @@ func updatesStatusCmd(args []string) int {
 	}
 	if status.Executing {
 		fprintf(os.Stdout, "updates checker is registered and executing (%s).\n", status.Detail)
+		adviseBrokenManagedAgents(os.Stdout)
 		return exitOK
 	}
 	switch status.LastRun {
@@ -144,7 +152,23 @@ func updatesStatusCmd(args []string) int {
 	default:
 		fprintf(os.Stdout, "updates checker is registered and idle; last-run outcome is unknown (%s).\n", status.Detail)
 	}
+	adviseBrokenManagedAgents(os.Stdout)
 	return exitOK
+}
+
+func adviseBrokenManagedAgents(w io.Writer) {
+	home, err := managedAgentHomeDir()
+	if err != nil {
+		return
+	}
+	issues := service.ListManagedAgentProgramIssues(home)
+	if len(issues) == 0 {
+		return
+	}
+	for _, issue := range issues {
+		fPrintln(w, "Warning: "+issue.Detail)
+	}
+	fPrintln(w, "Hint: a genv-managed agent points at a missing executable (often a Homebrew Caskroom version path after upgrade); re-run: genv updates start")
 }
 
 func lastRunDetailSuggestsCodesign(detail string) bool {
