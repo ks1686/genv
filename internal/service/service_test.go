@@ -71,6 +71,10 @@ func TestServiceStatus(t *testing.T) {
 }
 
 func TestApplyServices(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installServiceFakeBinary(t, "systemctl", "exit 0")
+	installServiceFakeBinary(t, "launchctl", "exit 0")
 	ctx := context.Background()
 
 	// Case: start a missing service
@@ -136,6 +140,10 @@ func TestApplyServicesFailure(t *testing.T) {
 
 func TestApplyServicesModified(t *testing.T) {
 	// A service whose config changed vs the lock must be re-applied.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installServiceFakeBinary(t, "systemctl", "exit 0")
+	installServiceFakeBinary(t, "launchctl", "exit 0")
 	ctx := context.Background()
 	spec := map[string]schema.Service{
 		"mod-svc": {Start: []string{"true"}},

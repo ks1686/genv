@@ -179,6 +179,7 @@ _genv() {
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--dry-run[Print the reconcile plan without executing]' \
 				'--force[Overwrite mismatched managed files]' \
+				'--backup[Back up mismatched files before overwrite]' \
 				'--strict[Exit with an error if any package cannot be resolved]' \
 				'--yes[Skip the confirmation prompt]' \
 				'--quiet[Suppress plan output]' \
@@ -367,6 +368,7 @@ _genv() {
 						'--lock-file=[Path to genv lock file]:path:_files' \
 						'--dry-run[Print the reconcile plan without executing]' \
 						'--force[Overwrite mismatched managed files]' \
+						'--backup[Back up mismatched files before overwrite]' \
 						'--strict[Exit with an error if any package cannot be resolved]' \
 						'--yes[Skip the confirmation prompt]' \
 						'--quiet[Suppress plan output]' \
