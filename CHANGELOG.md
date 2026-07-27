@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.4 - 2026-07-27
+
 ### Fixed
 
 - `genv updates start` prefers a PATH-stable self path (e.g. Homebrew `bin/genv`) over a version-pinned Caskroom path from `os.Executable` / cask `post_install`, so the updates LaunchAgent/systemd unit survives upgrades. `updates status` warns and `validate` fails when genv-managed agents point at a missing executable.
