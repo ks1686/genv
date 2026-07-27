@@ -3130,6 +3130,56 @@ func TestUpdatesRunOnce_unsupported_notifier_logs_warning_without_crashing(t *te
 	}
 }
 
+func TestUpdatesRunOnce_hanging_notifier_does_not_block_or_timeout(t *testing.T) {
+	// Regression: under launchd, osascript can ignore CommandContext cancel and
+	// hold __run-once until the 5m job deadline → exit 4 after a successful plan.
+	dir := t.TempDir()
+	xdg := filepath.Join(dir, "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"6","packages":[{"id":"alpha"}],"updates":{"enabled":true,"interval":"1h","notify":true}}`), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "brew", PkgName: "alpha"}})
+
+	hangBin := filepath.Join(dir, "hang-notify")
+	if err := os.WriteFile(hangBin, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatalf("write hang bin: %v", err)
+	}
+
+	originalBuild := updatesBuildPlan
+	updatesBuildPlan = func(opts upgrade.UpgradeOptions) (upgrade.UpgradePlan, error) {
+		return upgrade.UpgradePlan{Actions: []resolver.UpgradeAction{
+			{LPs: []genvfile.LockedPackage{{ID: "alpha", Manager: "brew", PkgName: "alpha"}}},
+		}}, nil
+	}
+	t.Cleanup(func() { updatesBuildPlan = originalBuild })
+	originalLookPath := updatesLookPath
+	updatesLookPath = func(string) (string, error) { return hangBin, nil }
+	t.Cleanup(func() { updatesLookPath = originalLookPath })
+
+	started := time.Now()
+	code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath})
+	elapsed := time.Since(started)
+	if code != exitOK {
+		t.Fatalf("code = %d, want %d (hanging notifier must not force timeout exit 4)", code, exitOK)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("elapsed = %s, want quick return without waiting on notifier", elapsed)
+	}
+	logBytes, err := os.ReadFile(filepath.Join(xdg, "genv", "updates.log"))
+	if err != nil {
+		t.Fatalf("read updates log: %v", err)
+	}
+	if !strings.Contains(string(logBytes), "updates.check.planned") {
+		t.Fatalf("log missing planned event: %s", logBytes)
+	}
+	if strings.Contains(string(logBytes), "updates.check.timeout") {
+		t.Fatalf("log unexpectedly timed out: %s", logBytes)
+	}
+}
+
 func TestUpgradeHookEnv_builds_deterministic_context_in_plan_order(t *testing.T) {
 	// Given: plan, skipped, upgraded, and failed packages deliberately not sorted alphabetically.
 	plan := []resolver.UpgradeAction{
