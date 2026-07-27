@@ -81,18 +81,23 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		return exitIO
 	}
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
+	planStarted := time.Now()
 	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
+	planDur := time.Since(planStarted).Round(time.Millisecond)
 	if err != nil {
-		logger.Warn("updates.check.plan", slog.Any("err", err))
+		logger.Warn("updates.check.plan", slog.Any("err", err), slog.Duration("duration", planDur))
 		return exitUsage
 	}
+	for _, warn := range plan.Warnings {
+		logger.Info("updates.check.warning", slog.String("warning", warn))
+	}
 	if err := ctx.Err(); err != nil {
-		logger.Warn("updates.check.timeout", slog.Any("err", err))
+		logger.Warn("updates.check.timeout", slog.Any("err", err), slog.Duration("duration", planDur))
 		return exitLogic
 	}
 	if !cfg.AutoApply {
 		outdated := countPlannedPackages(plan)
-		logger.Info("updates.check.planned", slog.Int("packages", outdated), slog.Int("batches", len(plan.Actions)), slog.Int("skipped", len(plan.Skipped)), slog.Bool("auto_apply", false))
+		logger.Info("updates.check.planned", slog.Int("packages", outdated), slog.Int("batches", len(plan.Actions)), slog.Int("skipped", len(plan.Skipped)), slog.Bool("auto_apply", false), slog.Duration("duration", planDur))
 		if outdated > 0 {
 			notifyUpdates(ctx, cfg.Notify, "genv updates", fmt.Sprintf("%d package(s) have updates available", outdated), logger)
 		}
