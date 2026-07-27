@@ -318,11 +318,17 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	if !strings.Contains(unit, "Type=oneshot") || !strings.Contains(unit, `ExecStart="/usr/local/bin/genv" "updates" "__run-once"`) {
 		t.Fatalf("systemd unit = %q, want one-shot genv updates command", unit)
 	}
+	if !strings.Contains(unit, "TimeoutStartSec=300") {
+		t.Fatalf("systemd unit = %q, want TimeoutStartSec so wedged jobs are killed", unit)
+	}
 	if !strings.Contains(timer, "OnUnitActiveSec=7200s") || !strings.Contains(timer, "Unit=genv-updates.service") {
 		t.Fatalf("systemd timer = %q, want 7200s cadence for updates unit", timer)
 	}
 	if !strings.Contains(plist, "<key>StartInterval</key>") || !strings.Contains(plist, "<integer>7200</integer>") || !strings.Contains(plist, "<string>genv.updates</string>") {
 		t.Fatalf("launchd plist = %q, want StartInterval cadence for updates label", plist)
+	}
+	if !strings.Contains(plist, "<key>TimeOut</key>") || !strings.Contains(plist, "<integer>300</integer>") {
+		t.Fatalf("launchd plist = %q, want TimeOut so launchd SIGTERMs wedged jobs", plist)
 	}
 }
 

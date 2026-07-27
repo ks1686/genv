@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `updates start` derives Homebrew `bin/genv` from Caskroom/Cellar versioned paths even when the brew symlink is missing or dangling mid-upgrade (no longer depends on `SameFile` alone).
+- Scheduled updates PATH no longer retains Homebrew shim directories captured from cask `post_install`.
+- `updates __run-once` enforces a wall-clock deadline (launchd `TimeOut` / systemd `TimeoutStartSec`, plus an in-process timeout) so a TLS/keychain hang cannot wedge the hourly checker permanently; `brew outdated` and notifications use bounded command contexts.
+
 ## v4.0.4 - 2026-07-27
 
 ### Fixed

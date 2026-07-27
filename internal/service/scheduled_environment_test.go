@@ -13,6 +13,16 @@ func TestScheduledPath(t *testing.T) {
 		want      []string
 	}{
 		{
+			name:      "darwin strips Homebrew shims and retains absolute entries",
+			pathValue: "/opt/homebrew/Library/Homebrew/shims/shared:/custom/bin::relative:/usr/bin:/custom/bin:/another/bin",
+			goos:      "darwin",
+			want: []string{
+				"/custom/bin", "/usr/bin", "/another/bin",
+				"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin",
+				"/bin", "/usr/sbin", "/sbin",
+			},
+		},
+		{
 			name:      "darwin retains absolute entries and appends defaults",
 			pathValue: "/custom/bin::relative:/usr/bin:/custom/bin:/another/bin",
 			goos:      "darwin",
