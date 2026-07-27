@@ -54,17 +54,22 @@ func updatesRunOnceCmd(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), service.ScheduledJobTimeOut(interval))
 	defer cancel()
 
-	type runOnceResult struct{ code int }
-	done := make(chan runOnceResult, 1)
+	done := make(chan int, 1)
 	go func() {
-		done <- runOnceResult{code: updatesRunOnceBody(ctx, logger, f, cfg, *file, *lockFile, *hostFlag, *targetFlag)}
+		done <- updatesRunOnceBody(ctx, logger, f, cfg, *file, *lockFile, *hostFlag, *targetFlag)
 	}()
 	select {
-	case res := <-done:
-		return res.code
+	case code := <-done:
+		return code
 	case <-ctx.Done():
-		logger.Warn("updates.check.timeout", slog.Duration("timeout", service.ScheduledJobTimeOut(interval)), slog.Any("err", ctx.Err()))
-		return exitLogic
+		// Prefer a late completion over a false timeout when both are ready.
+		select {
+		case code := <-done:
+			return code
+		default:
+			logger.Warn("updates.check.timeout", slog.Duration("timeout", service.ScheduledJobTimeOut(interval)), slog.Any("err", ctx.Err()))
+			return exitLogic
+		}
 	}
 }
 
@@ -202,27 +207,35 @@ func countPlannedPackages(plan upgrade.UpgradePlan) int {
 	return n
 }
 
-func notifyUpdates(ctx context.Context, enabled bool, title, message string, logger *slog.Logger) {
+func notifyUpdates(_ context.Context, enabled bool, title, message string, logger *slog.Logger) {
 	if !enabled {
 		return
 	}
+	var notifier string
+	var args []string
 	switch {
 	case service.IsLaunchdAvailable():
-		runNotification(ctx, logger, "osascript", "-e", fmt.Sprintf("display notification %q with title %q", message, title))
+		notifier = "osascript"
+		args = []string{"-e", fmt.Sprintf("display notification %q with title %q", message, title)}
 	default:
-		runNotification(ctx, logger, "notify-send", title, message)
+		notifier = "notify-send"
+		args = []string{title, message}
 	}
-}
-
-func runNotification(ctx context.Context, logger *slog.Logger, notifier string, args ...string) {
 	path, err := updatesLookPath(notifier)
 	if err != nil {
 		logger.Warn("updates.notify.unavailable", slog.String("notifier", notifier), slog.Any("err", err))
 		return
 	}
-	notifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	// Never block the scheduled worker on a desktop notification. Under launchd,
+	// osascript has been observed to ignore CommandContext cancel and hold the
+	// process until the job deadline (exit 4) even after a successful plan.
+	go runNotificationAsync(logger, notifier, path, args...)
+}
+
+func runNotificationAsync(logger *slog.Logger, notifier, path string, args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := exec.CommandContext(notifyCtx, path, args...).Run(); err != nil {
+	if err := exec.CommandContext(ctx, path, args...).Run(); err != nil {
 		logger.Warn("updates.notify.failed", slog.String("notifier", notifier), slog.Any("err", err))
 	}
 }
