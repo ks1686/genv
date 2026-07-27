@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -135,12 +136,31 @@ func updatesStatusCmd(args []string) int {
 		fprintf(os.Stdout, "updates checker is registered and idle; last run succeeded%s (%s).\n", scheduledRunStatusDetail(status), status.Detail)
 	case service.ScheduledRunFailure:
 		fprintf(os.Stdout, "updates checker is registered and idle; last run failed%s (%s).\n", scheduledRunStatusDetail(status), status.Detail)
+		if lastRunDetailSuggestsCodesign(status.LastRunDetail) {
+			fPrintln(os.Stdout, "Hint: launchd may have cached a stale codesign for the genv binary; re-register with: genv updates start")
+		}
 	case service.ScheduledRunUnknown, "":
 		fprintf(os.Stdout, "updates checker is registered and idle; no completed run is known (%s).\n", status.Detail)
 	default:
 		fprintf(os.Stdout, "updates checker is registered and idle; last-run outcome is unknown (%s).\n", status.Detail)
 	}
 	return exitOK
+}
+
+func lastRunDetailSuggestsCodesign(detail string) bool {
+	d := strings.ToLower(detail)
+	return strings.Contains(d, "codesign") || strings.Contains(d, "os_reason_codesigning")
+}
+
+// adviseUpdatesReregister prints guidance when the genv binary itself was upgraded,
+// so launchd picks up the new codesign identity.
+func adviseUpdatesReregister(w io.Writer, upgraded []genvfile.LockedPackage) {
+	for _, pkg := range upgraded {
+		if pkg.ID == "genv" {
+			fPrintln(w, "Hint: genv was upgraded; if the updates checker is registered, re-run: genv updates start")
+			return
+		}
+	}
 }
 
 func scheduledRunStatusDetail(status service.ScheduledJobStatus) string {

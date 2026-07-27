@@ -2393,6 +2393,28 @@ func TestUpdates_UsageErrors_are_actionable(t *testing.T) {
 	}
 }
 
+func TestUpdates_Help_returns_ok(t *testing.T) {
+	for _, args := range [][]string{
+		{"updates", "help"},
+		{"updates", "--help"},
+		{"updates", "-h"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var code int
+			errOut := captureStderr(t, func() { code = run(args) })
+			if code != exitOK {
+				t.Fatalf("run(%v): expected exitOK (%d), got %d", args, exitOK, code)
+			}
+			if !strings.Contains(errOut, "usage: genv updates <check|start|stop|status>") {
+				t.Fatalf("stderr = %q, want updates usage", errOut)
+			}
+			if strings.Contains(errOut, "unknown subcommand") {
+				t.Fatalf("stderr = %q, must not report unknown subcommand for help", errOut)
+			}
+		})
+	}
+}
+
 type fakeUpdatesSupervisor struct {
 	supported bool
 	status    service.ScheduledJobStatus
@@ -2553,6 +2575,7 @@ func TestUpdatesStatus_prints_typed_scheduler_state(t *testing.T) {
 		{name: "registered idle no known run", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunUnknown}, want: []string{"registered and idle", "no completed run is known"}},
 		{name: "registered idle last run succeeded", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunSuccess, ExitCode: &exitZero}, want: []string{"registered and idle", "last run succeeded", "status 0"}},
 		{name: "registered idle last run failed", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunFailure, ExitCode: &exitSeven, LastRunDetail: "exit-code"}, want: []string{"registered and idle", "last run failed", "status 7", "exit-code"}},
+		{name: "codesign failure guidance", status: service.ScheduledJobStatus{Supported: true, Registered: true, LastRun: service.ScheduledRunFailure, ExitCode: &exitSeven, LastRunDetail: "OS_REASON_CODESIGNING"}, want: []string{"last run failed", "OS_REASON_CODESIGNING", "genv updates start"}},
 	}
 
 	for _, tt := range tests {
@@ -2577,6 +2600,32 @@ func TestUpdatesStatus_prints_typed_scheduler_state(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAdviseUpdatesReregister_helpers(t *testing.T) {
+	if !lastRunDetailSuggestsCodesign("OS_REASON_CODESIGNING") {
+		t.Fatal("expected codesign reason to match")
+	}
+	if !lastRunDetailSuggestsCodesign("codesign invalid") {
+		t.Fatal("expected case-insensitive codesign match")
+	}
+	if lastRunDetailSuggestsCodesign("exit-code") {
+		t.Fatal("did not expect non-codesign detail to match")
+	}
+
+	var buf bytes.Buffer
+	adviseUpdatesReregister(&buf, nil)
+	if buf.Len() != 0 {
+		t.Fatalf("unexpected guidance for empty upgraded list: %q", buf.String())
+	}
+	adviseUpdatesReregister(&buf, []genvfile.LockedPackage{{ID: "ripgrep"}})
+	if buf.Len() != 0 {
+		t.Fatalf("unexpected guidance when genv was not upgraded: %q", buf.String())
+	}
+	adviseUpdatesReregister(&buf, []genvfile.LockedPackage{{ID: "ripgrep"}, {ID: "genv"}})
+	if !strings.Contains(buf.String(), "genv updates start") {
+		t.Fatalf("guidance = %q, want genv updates start", buf.String())
 	}
 }
 
