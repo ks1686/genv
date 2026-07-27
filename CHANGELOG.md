@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.6 - 2026-07-27
+
 ### Added
 
 - Scheduled `updates __run-once` logs per-manager outdated-query timings (and total plan duration) so a slow launchd run can be distinguished from a silent timeout fallback.
