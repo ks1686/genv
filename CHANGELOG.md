@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `genv updates start` prefers a PATH-stable self path (e.g. Homebrew `bin/genv`) over a version-pinned Caskroom path from `os.Executable` / cask `post_install`, so the updates LaunchAgent/systemd unit survives upgrades. `updates status` warns and `validate` fails when genv-managed agents point at a missing executable.
 - Release workflow: AUR publish retries transient `aur.archlinux.org` SSH drops, and `workflow_dispatch` supports `aur-only` repair for an existing GitHub release without re-running GoReleaser.
 
 ## v4.0.3 - 2026-07-26

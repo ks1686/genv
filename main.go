@@ -3377,11 +3377,14 @@ func completeInternalCmd(args []string) int {
 }
 
 // validateCmd implements `genv validate`.
-// Reads and validates genv.json, exiting 0 on success and 3 on any error.
+// Reads and validates genv.json, then fails if any genv-managed launchd/systemd
+// agent points at a missing or non-executable ProgramArguments[0]/ExecStart.
 func validateCmd(args []string) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv validate [flags]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Validates genv.json and checks genv-managed supervisor agents for dangling executables.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -3401,6 +3404,15 @@ func validateCmd(args []string) int {
 		return exitValidation
 	}
 	fprintf(os.Stdout, "%s is valid.\n", *file)
+	if home, homeErr := managedAgentHomeDir(); homeErr == nil {
+		if issues := service.ListManagedAgentProgramIssues(home); len(issues) > 0 {
+			for _, issue := range issues {
+				fprintf(os.Stderr, "genv validate: %s\n", issue.Detail)
+			}
+			fPrintln(os.Stderr, "Hint: re-run genv updates start (and re-apply services) so supervisor artifacts point at a live executable")
+			return exitValidation
+		}
+	}
 	return exitOK
 }
 
