@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `updates __run-once` no longer blocks on desktop notifications after a successful plan. Under launchd, `osascript` could ignore cancel and hold the process until the 5m job deadline (`updates.check.timeout` → exit 4) even though outdated detection had already finished in seconds.
+
 ## v4.0.6 - 2026-07-27
 
 ### Added
