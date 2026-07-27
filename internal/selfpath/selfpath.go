@@ -6,14 +6,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // PreferStable returns a path that refers to the same file as exe when possible,
 // preferring a PATH hit for filepath.Base(exe) over a version-pinned install
 // path (e.g. Homebrew Caskroom/.../<version>/genv used by cask post_install).
 //
-// lookPath defaults to exec.LookPath when nil. If no same-file PATH candidate
-// exists, exe is returned unchanged.
+// When exe lives under Homebrew Caskroom/Cellar versioned layout, the brew
+// prefix bin/<name> path is preferred even if that symlink is missing or
+// briefly dangling mid-upgrade (SameFile would fail in that window).
+//
+// lookPath defaults to exec.LookPath when nil. If no stable candidate exists,
+// exe is returned unchanged.
 func PreferStable(exe, arg0 string, lookPath func(string) (string, error)) string {
 	if exe == "" {
 		return exe
@@ -26,6 +31,9 @@ func PreferStable(exe, arg0 string, lookPath func(string) (string, error)) strin
 		if p, err := lookPath(base); err == nil && sameFile(p, exe) {
 			return p
 		}
+	}
+	if stable := brewStableBin(exe); stable != "" {
+		return stable
 	}
 	if arg0 != "" && arg0 != exe {
 		cand := arg0
@@ -41,6 +49,29 @@ func PreferStable(exe, arg0 string, lookPath func(string) (string, error)) strin
 		}
 	}
 	return exe
+}
+
+// brewStableBin maps Homebrew versioned install paths to <prefix>/bin/<name>.
+// Returns "" when exe is not under Caskroom or Cellar.
+func brewStableBin(exe string) string {
+	exe = filepath.Clean(exe)
+	base := filepath.Base(exe)
+	if base == "" || base == "." {
+		return ""
+	}
+	const sep = string(filepath.Separator)
+	for _, marker := range []string{sep + "Caskroom" + sep, sep + "Cellar" + sep} {
+		idx := strings.Index(exe, marker)
+		if idx < 0 {
+			continue
+		}
+		prefix := exe[:idx]
+		if prefix == "" {
+			continue
+		}
+		return filepath.Join(prefix, "bin", base)
+	}
+	return ""
 }
 
 func sameFile(a, b string) bool {
