@@ -52,6 +52,11 @@ func (Paru) Search(query string) ([]string, error) {
 	return parsePacmanSearch(lines, query), nil
 }
 
+// ListNames returns all installable packages from pacman and AUR repos.
+func (Paru) ListNames() ([]string, error) {
+	return runListOutput("paru", "-Slq")
+}
+
 // ListInstalled delegates to pacman since paru manages the same pacman DB.
 func (Paru) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")

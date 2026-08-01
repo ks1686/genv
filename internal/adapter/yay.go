@@ -52,6 +52,11 @@ func (Yay) Search(query string) ([]string, error) {
 	return parsePacmanSearch(lines, query), nil
 }
 
+// ListNames returns all installable packages from pacman and AUR repos.
+func (Yay) ListNames() ([]string, error) {
+	return runListOutput("yay", "-Slq")
+}
+
 // ListInstalled delegates to pacman since yay manages the same pacman DB.
 func (Yay) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qqe")
