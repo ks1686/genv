@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -54,7 +55,11 @@ func (Pacman) Query(pkgName string) (bool, error) { return runQuery("pacman", "-
 
 // Search returns package names from official pacman repos whose name contains query.
 func (Pacman) Search(query string) ([]string, error) {
-	lines, err := runListOutput("pacman", "-Ss", query)
+	return Pacman{}.SearchContext(context.Background(), query)
+}
+
+func (Pacman) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "pacman", "-Ss", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
@@ -63,7 +68,11 @@ func (Pacman) Search(query string) ([]string, error) {
 
 // ListNames returns all installable packages from official pacman repos.
 func (Pacman) ListNames() ([]string, error) {
-	return runListOutput("pacman", "-Slq")
+	return Pacman{}.ListNamesContext(context.Background())
+}
+
+func (Pacman) ListNamesContext(ctx context.Context) ([]string, error) {
+	return runListOutputContext(ctx, "pacman", "-Slq")
 }
 
 func (Pacman) ListInstalled() ([]string, error) {

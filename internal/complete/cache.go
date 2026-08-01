@@ -63,7 +63,7 @@ func ReadDump(manager string) ([]string, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if time.Since(info.ModTime()) > CacheTTL {
+	if info.Size() == 0 || time.Since(info.ModTime()) >= CacheTTL {
 		return nil, false
 	}
 	f, err := os.Open(path)
@@ -83,6 +83,9 @@ func ReadDump(manager string) ([]string, bool) {
 	if err := scanner.Err(); err != nil {
 		return nil, false
 	}
+	if len(names) == 0 {
+		return nil, false
+	}
 	return names, true
 }
 
@@ -92,15 +95,33 @@ func WriteDump(manager string, names []string) error {
 	if err != nil {
 		return err
 	}
+	if len(names) == 0 {
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create cache dir: %w", err)
 	}
-	content := strings.Join(names, "\n")
-	if len(names) > 0 {
-		content += "\n"
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+DumpFilename(manager)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary dump: %w", err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		return fmt.Errorf("write dump: %w", err)
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+
+	if err := temp.Chmod(0o600); err != nil {
+		temp.Close()
+		return fmt.Errorf("chmod temporary dump: %w", err)
+	}
+	content := strings.Join(names, "\n") + "\n"
+	if _, err := temp.WriteString(content); err != nil {
+		temp.Close()
+		return fmt.Errorf("write temporary dump: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close temporary dump: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace dump: %w", err)
 	}
 	return nil
 }

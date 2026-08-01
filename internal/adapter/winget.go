@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 )
@@ -46,7 +47,11 @@ func (Winget) Query(pkgName string) (bool, error) {
 
 // Search returns winget package IDs whose listing contains query.
 func (Winget) Search(query string) ([]string, error) {
-	lines, err := runListOutput("winget", "search", "--query", query)
+	return Winget{}.SearchContext(context.Background(), query)
+}
+
+func (Winget) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "winget", "search", "--query", query)
 	if err != nil || len(lines) == 0 {
 		return nil, err
 	}

@@ -2,8 +2,11 @@ package complete
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,7 +65,7 @@ func TestCollectRepoNames_prefersCompletionNamerForNonEmptyPrefix(t *testing.T) 
 	got := collectRepoNames("g", []repoJob{{
 		manager: "mas",
 		completion: func(prefix string) ([]string, error) {
-			return []string{"GarageBand"}, nil
+			return []string{"GarageBand", "Xcode"}, nil
 		},
 		list: func() ([]string, error) {
 			return []string{"list-must-not-run"}, nil
@@ -74,6 +77,19 @@ func TestCollectRepoNames_prefersCompletionNamerForNonEmptyPrefix(t *testing.T) 
 
 	if !slices.Equal(got, []string{"GarageBand"}) {
 		t.Fatalf("got %v want [GarageBand]", got)
+	}
+}
+
+func TestCollectRepoNames_filtersSearchResultsByPrefix(t *testing.T) {
+	got := collectRepoNames("open", []repoJob{{
+		manager: "search",
+		search: func(string) ([]string, error) {
+			return []string{"OpenJDK", "not-open-prefix"}, nil
+		},
+	}}, time.Second, time.Second)
+
+	if !slices.Equal(got, []string{"OpenJDK"}) {
+		t.Fatalf("got %v want [OpenJDK]", got)
 	}
 }
 
@@ -206,6 +222,62 @@ func TestRepoPackagesOnGOOS_usesCachedAutomaticManagers(t *testing.T) {
 	)
 	if len(got) != 0 {
 		t.Fatalf("ineligible brew returned %v on linux", got)
+	}
+}
+
+func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	binDir := t.TempDir()
+	countPath := filepath.Join(t.TempDir(), "calls")
+	t.Setenv("NPM_SEARCH_COUNT", countPath)
+	script := `#!/bin/sh
+echo call >> "$NPM_SEARCH_COUNT"
+printf 'typescript\tdesc\tdate\tver\tkeywords\n'
+`
+	npmPath := filepath.Join(binDir, "npm")
+	if err := os.WriteFile(npmPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	got := repoPackagesOnGOOS(
+		"type",
+		map[string]bool{"bun": true, "npm": true},
+		"darwin",
+		time.Now(),
+	)
+	if !slices.Equal(got, []string{"typescript"}) {
+		t.Fatalf("got %v want [typescript]", got)
+	}
+	content, err := os.ReadFile(countPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := strings.Count(string(content), "call\n"); calls != 1 {
+		t.Fatalf("npm search calls = %d, want 1", calls)
+	}
+}
+
+func TestRepoPackagesOnGOOS_keepsMasProductIDsMatchedByName(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	binDir := t.TempDir()
+	script := `#!/bin/sh
+printf '497799835  Xcode (16.0)\n'
+`
+	masPath := filepath.Join(binDir, "mas")
+	if err := os.WriteFile(masPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	got := repoPackagesOnGOOS(
+		"xcode",
+		map[string]bool{"mas": true},
+		"darwin",
+		time.Now(),
+	)
+	if !slices.Equal(got, []string{"497799835"}) {
+		t.Fatalf("got %v want [497799835]", got)
 	}
 }
 

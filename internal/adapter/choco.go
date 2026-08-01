@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -61,7 +62,11 @@ func (Choco) Query(pkgName string) (bool, error) {
 
 // Search returns Chocolatey package names containing query.
 func (Choco) Search(query string) ([]string, error) {
-	lines, err := runListOutput("choco", "search", query)
+	return Choco{}.SearchContext(context.Background(), query)
+}
+
+func (Choco) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "choco", "search", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}

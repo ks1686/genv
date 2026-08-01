@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 )
@@ -61,7 +62,11 @@ func (Scoop) Query(pkgName string) (bool, error) {
 
 // Search returns scoop app names containing query.
 func (Scoop) Search(query string) ([]string, error) {
-	lines, err := runListOutput("scoop", "search", query)
+	return Scoop{}.SearchContext(context.Background(), query)
+}
+
+func (Scoop) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "scoop", "search", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
