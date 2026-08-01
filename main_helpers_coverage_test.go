@@ -212,6 +212,14 @@ func TestXDGHelpersAndCompleteInternal(t *testing.T) {
 	}
 }
 
+func TestCompleteRepoPackages_topicExists(t *testing.T) {
+	// Even with no managers, topic must be recognized and exit 0
+	code := completeInternalCmd([]string{"repo-packages", "zzz-nonexistent-prefix-genv"})
+	if code != exitOK {
+		t.Fatalf("code = %d, want %d", code, exitOK)
+	}
+}
+
 func TestCompletionCmdIncludesPortabilityEntries(t *testing.T) {
 	var code int
 	out := captureStdout(t, func() {
