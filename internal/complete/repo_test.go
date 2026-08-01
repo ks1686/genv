@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -250,5 +251,60 @@ func TestCollectRepoNames_limitsConcurrentManagers(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("collection did not finish")
+	}
+}
+
+func TestCollectRepoNames_searchTimeoutRetainsConcurrencySlot(t *testing.T) {
+	const jobCount = MaxWorkers * 2
+
+	release := make(chan struct{})
+	started := make(chan struct{}, jobCount)
+	var inFlight atomic.Int32
+	var peak atomic.Int32
+
+	jobs := make([]repoJob, jobCount)
+	for i := range jobs {
+		jobs[i] = repoJob{
+			manager: "search-" + strconv.Itoa(i),
+			search: func(string) ([]string, error) {
+				current := inFlight.Add(1)
+				for {
+					previous := peak.Load()
+					if current <= previous || peak.CompareAndSwap(previous, current) {
+						break
+					}
+				}
+				started <- struct{}{}
+				<-release
+				inFlight.Add(-1)
+				return nil, nil
+			},
+		}
+	}
+
+	done := make(chan []string, 1)
+	go func() {
+		done <- collectRepoNames("g", jobs, time.Second, 25*time.Millisecond)
+	}()
+
+	for range MaxWorkers {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("initial searches did not start")
+		}
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("collection did not finish")
+	}
+
+	if got := peak.Load(); got > MaxWorkers {
+		t.Fatalf("peak in-flight searches = %d, want at most %d", got, MaxWorkers)
 	}
 }

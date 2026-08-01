@@ -194,7 +194,9 @@ func callRepoSearch(
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		err := ctx.Err()
+		<-result
+		return nil, err
 	case completed := <-result:
 		return completed.names, completed.err
 	}
