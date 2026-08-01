@@ -223,6 +223,17 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `clean` | Clear detected manager caches |
 | `version` / `help` | Build info / usage |
 
+### Shell completions
+
+Install for your shell (auto-detects from `$SHELL` when omitted):
+
+```bash
+genv completion install        # bash, zsh, or fish
+genv completion install powershell
+```
+
+Tab completion on `add` / `adopt` suggests package names from available managers (Homebrew-style local dumps when possible). After you accept a name, interactive `genv add` still asks which manager to use when multiple match.
+
 ### Common flags
 
 - `--file <path>` — spec path (default under `~/.config/genv/`)

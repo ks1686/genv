@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Shell completions for `genv add` / `genv adopt` suggest repository package names via
+  `genv __complete repo-packages` (cached manager dumps + live search fallback).
+
 ## v4.0.7 - 2026-07-27
 
 ### Fixed
