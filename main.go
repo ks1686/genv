@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
-	"github.com/ks1686/genv/internal/complete"
 	"github.com/ks1686/genv/internal/commands"
+	"github.com/ks1686/genv/internal/complete"
 	genvenv "github.com/ks1686/genv/internal/env"
 	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/genvfile"
