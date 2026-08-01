@@ -42,6 +42,13 @@ func (Bun) PlanClean() [][]string {
 	return [][]string{{"bun", "pm", "cache", "rm", "--global"}}
 }
 
+func (Bun) Search(query string) ([]string, error) {
+	if _, err := lookPath("npm"); err != nil {
+		return nil, nil
+	}
+	return searchNpmRegistry(query)
+}
+
 func (b Bun) Query(pkgName string) (bool, error) {
 	entries, err := b.listEntries()
 	if err != nil {

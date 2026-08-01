@@ -50,6 +50,30 @@ func (Mas) PlanUpgradeBatch(pkgNames []string) []string {
 // PlanClean is a no-op: mas keeps no local cache to purge.
 func (Mas) PlanClean() [][]string { return nil }
 
+func (Mas) Search(query string) ([]string, error) {
+	apps, err := masSearchApps(query)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(apps))
+	for _, app := range apps {
+		ids = append(ids, app.id)
+	}
+	return ids, nil
+}
+
+func (Mas) CompletionNames(prefix string) ([]string, error) {
+	apps, err := masSearchApps(prefix)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(apps))
+	for _, app := range apps {
+		names = append(names, strings.ToLower(strings.ReplaceAll(app.name, " ", "-")))
+	}
+	return names, nil
+}
+
 func (Mas) Query(pkgName string) (bool, error) {
 	ids, err := masListIDs()
 	if err != nil {
@@ -145,6 +169,31 @@ func masOutdatedTarget(line string) string {
 		}
 	}
 	return "outdated"
+}
+
+type masSearchApp struct {
+	id   string
+	name string
+}
+
+func masSearchApps(query string) ([]masSearchApp, error) {
+	lines, err := runListOutput("mas", "search", query)
+	if err != nil {
+		return nil, err
+	}
+	query = strings.ToLower(query)
+	var apps []masSearchApp
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		name := strings.Join(fields[1:len(fields)-1], " ")
+		if strings.Contains(strings.ToLower(name), query) {
+			apps = append(apps, masSearchApp{id: fields[0], name: name})
+		}
+	}
+	return apps, nil
 }
 
 // masListIDs runs "mas list" and returns the leading numeric product ID of each
