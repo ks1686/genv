@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Yay is the adapter for yay (Yet Another Yogurt), an AUR helper for Arch Linux.
 // yay wraps pacman and handles AUR packages; it manages privilege escalation
@@ -45,7 +48,11 @@ func (Yay) Query(pkgName string) (bool, error) { return runQuery("yay", "-Qi", p
 
 // Search returns package names from pacman/AUR repos whose name contains query.
 func (Yay) Search(query string) ([]string, error) {
-	lines, err := runListOutput("yay", "-Ss", query)
+	return Yay{}.SearchContext(context.Background(), query)
+}
+
+func (Yay) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "yay", "-Ss", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
@@ -54,7 +61,11 @@ func (Yay) Search(query string) ([]string, error) {
 
 // ListNames returns all installable packages from pacman and AUR repos.
 func (Yay) ListNames() ([]string, error) {
-	return runListOutput("yay", "-Slq")
+	return Yay{}.ListNamesContext(context.Background())
+}
+
+func (Yay) ListNamesContext(ctx context.Context) ([]string, error) {
+	return runListOutputContext(ctx, "yay", "-Slq")
 }
 
 // ListInstalled delegates to pacman since yay manages the same pacman DB.

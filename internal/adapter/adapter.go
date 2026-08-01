@@ -3,6 +3,7 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -22,16 +23,31 @@ type Searchable interface {
 	Search(query string) ([]string, error)
 }
 
+// ContextSearchable lets latency-sensitive callers cancel repository searches.
+type ContextSearchable interface {
+	SearchContext(ctx context.Context, query string) ([]string, error)
+}
+
 // NameLister is an optional extension for managers that can dump installable
 // package names quickly enough for shell completion (Homebrew-style).
 type NameLister interface {
 	ListNames() ([]string, error)
 }
 
+// ContextNameLister lets latency-sensitive callers cancel repository dumps.
+type ContextNameLister interface {
+	ListNamesContext(ctx context.Context) ([]string, error)
+}
+
 // CompletionNamer is an optional extension for managers whose Tab labels should
 // differ from Search/install package names (e.g. mas app names vs product IDs).
 type CompletionNamer interface {
 	CompletionNames(prefix string) ([]string, error)
+}
+
+// ContextCompletionNamer lets latency-sensitive callers cancel label lookups.
+type ContextCompletionNamer interface {
+	CompletionNamesContext(ctx context.Context, prefix string) ([]string, error)
 }
 
 // VersionLister is an optional extension of Adapter for managers whose list
@@ -213,8 +229,16 @@ func runQuery(cmd string, args ...string) (bool, error) {
 // runListOutput runs cmd and returns stdout split into trimmed, non-empty lines.
 // A non-zero exit code is treated as "no packages" (nil, nil), not an error.
 func runListOutput(cmd string, args ...string) ([]string, error) {
-	out, err := exec.Command(cmd, args...).Output()
+	return runListOutputContext(context.Background(), cmd, args...)
+}
+
+// runListOutputContext is runListOutput with subprocess cancellation.
+func runListOutputContext(ctx context.Context, cmd string, args ...string) ([]string, error) {
+	out, err := exec.CommandContext(ctx, cmd, args...).Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return nil, nil

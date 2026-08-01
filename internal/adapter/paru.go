@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Paru is the adapter for paru, an AUR helper for Arch Linux.
 // paru wraps pacman and handles AUR packages; it manages privilege escalation
@@ -45,7 +48,11 @@ func (Paru) Query(pkgName string) (bool, error) { return runQuery("paru", "-Qi",
 
 // Search returns package names from pacman/AUR repos whose name contains query.
 func (Paru) Search(query string) ([]string, error) {
-	lines, err := runListOutput("paru", "-Ss", query)
+	return Paru{}.SearchContext(context.Background(), query)
+}
+
+func (Paru) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "paru", "-Ss", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
@@ -54,7 +61,11 @@ func (Paru) Search(query string) ([]string, error) {
 
 // ListNames returns all installable packages from pacman and AUR repos.
 func (Paru) ListNames() ([]string, error) {
-	return runListOutput("paru", "-Slq")
+	return Paru{}.ListNamesContext(context.Background())
+}
+
+func (Paru) ListNamesContext(ctx context.Context) ([]string, error) {
+	return runListOutputContext(ctx, "paru", "-Slq")
 }
 
 // ListInstalled delegates to pacman since paru manages the same pacman DB.

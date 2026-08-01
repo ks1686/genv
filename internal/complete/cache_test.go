@@ -23,6 +23,70 @@ func TestReadWriteDump_roundTrip(t *testing.T) {
 	}
 }
 
+func TestReadDump_emptyFileIsMiss(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir, err := CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, DumpFilename("brew"))
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if names, hit := ReadDump("brew"); hit || names != nil {
+		t.Fatalf("ReadDump() = %v, %v; want nil, false", names, hit)
+	}
+}
+
+func TestWriteDump_emptyDoesNotCreateDump(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	for _, names := range [][]string{nil, {}} {
+		if err := WriteDump("brew", names); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dir, err := CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, DumpFilename("brew"))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("Stat() error = %v, want not exist", err)
+	}
+}
+
+func TestWriteDump_atomicallyReplacesExistingDump(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := WriteDump("brew", []string{"old"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteDump("brew", []string{"new", "names"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, hit := ReadDump("brew")
+	if !hit || !slices.Equal(got, []string{"new", "names"}) {
+		t.Fatalf("ReadDump() = %v, %v; want [new names], true", got, hit)
+	}
+	dir, err := CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != DumpFilename("brew") {
+		t.Fatalf("cache entries = %v, want only brew.txt", entries)
+	}
+}
+
 func TestReadDump_expired(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if err := WriteDump("brew", []string{"git"}); err != nil {

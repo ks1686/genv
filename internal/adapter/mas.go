@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"slices"
 	"strings"
 )
@@ -51,7 +52,11 @@ func (Mas) PlanUpgradeBatch(pkgNames []string) []string {
 func (Mas) PlanClean() [][]string { return nil }
 
 func (Mas) Search(query string) ([]string, error) {
-	apps, err := masSearchApps(query)
+	return Mas{}.SearchContext(context.Background(), query)
+}
+
+func (Mas) SearchContext(ctx context.Context, query string) ([]string, error) {
+	apps, err := masSearchAppsContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -63,15 +68,11 @@ func (Mas) Search(query string) ([]string, error) {
 }
 
 func (Mas) CompletionNames(prefix string) ([]string, error) {
-	apps, err := masSearchApps(prefix)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(apps))
-	for _, app := range apps {
-		names = append(names, strings.ToLower(strings.ReplaceAll(app.name, " ", "-")))
-	}
-	return names, nil
+	return Mas{}.Search(prefix)
+}
+
+func (Mas) CompletionNamesContext(ctx context.Context, prefix string) ([]string, error) {
+	return Mas{}.SearchContext(ctx, prefix)
 }
 
 func (Mas) Query(pkgName string) (bool, error) {
@@ -176,8 +177,8 @@ type masSearchApp struct {
 	name string
 }
 
-func masSearchApps(query string) ([]masSearchApp, error) {
-	lines, err := runListOutput("mas", "search", query)
+func masSearchAppsContext(ctx context.Context, query string) ([]masSearchApp, error) {
+	lines, err := runListOutputContext(ctx, "mas", "search", query)
 	if err != nil {
 		return nil, err
 	}

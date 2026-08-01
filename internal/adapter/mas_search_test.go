@@ -24,7 +24,7 @@ echo "456  Code Runner (2.0)"`)
 	}
 }
 
-func TestMas_CompletionNames_ReturnsLowercaseSlugs(t *testing.T) {
+func TestMas_CompletionNames_ReturnsMatchingProductIDs(t *testing.T) {
 	installFakeBinary(t, "mas", `if [ "$1" != "search" ] || [ "$2" != "cut" ]; then
   echo "unexpected args: $*" >&2
   exit 1
@@ -36,7 +36,7 @@ echo "497799835  Xcode (16.0)"`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"final-cut-pro"}
+	want := []string{"1631624924"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("CompletionNames() = %v, want %v", got, want)
 	}

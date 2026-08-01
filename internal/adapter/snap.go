@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 )
@@ -45,7 +46,11 @@ func (Snap) Query(pkgName string) (bool, error) { return runQuery("snap", "list"
 // Search returns snap package names containing query.
 // "snap find" output: header line then data lines of "name version publisher notes summary".
 func (Snap) Search(query string) ([]string, error) {
-	lines, err := runListOutput("snap", "find", query)
+	return Snap{}.SearchContext(context.Background(), query)
+}
+
+func (Snap) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "snap", "find", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}

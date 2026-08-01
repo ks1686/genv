@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"strings"
 	"unicode/utf8"
 )
@@ -43,10 +44,14 @@ func (Bun) PlanClean() [][]string {
 }
 
 func (Bun) Search(query string) ([]string, error) {
+	return Bun{}.SearchContext(context.Background(), query)
+}
+
+func (Bun) SearchContext(ctx context.Context, query string) ([]string, error) {
 	if _, err := lookPath("npm"); err != nil {
 		return nil, nil
 	}
-	return searchNpmRegistry(query)
+	return searchNpmRegistryContext(ctx, query)
 }
 
 func (b Bun) Query(pkgName string) (bool, error) {

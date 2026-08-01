@@ -1,6 +1,9 @@
 package adapter
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // Npm manages globally installed npm packages only.
 type Npm struct{}
@@ -31,7 +34,11 @@ func (Npm) PlanUpgrade(pkgName string) []string {
 func (Npm) PlanClean() [][]string { return nil }
 
 func (Npm) Search(query string) ([]string, error) {
-	return searchNpmRegistry(query)
+	return searchNpmRegistryContext(context.Background(), query)
+}
+
+func (Npm) SearchContext(ctx context.Context, query string) ([]string, error) {
+	return searchNpmRegistryContext(ctx, query)
 }
 
 func (n Npm) Query(pkgName string) (bool, error) {
@@ -83,15 +90,15 @@ func (Npm) listEntries() ([]jsPackageEntry, error) {
 	return runJSONPackageList("npm", "list", "--global", "--depth=0", "--json")
 }
 
-func searchNpmRegistry(query string) ([]string, error) {
-	lines, err := runListOutput("npm", "search", "--parseable", query)
+func searchNpmRegistryContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "npm", "search", "--parseable", query)
 	if err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(lines))
 	for _, line := range lines {
 		name, _, _ := strings.Cut(line, "\t")
-		if name != "" {
+		if name != "" && containsFold(name, query) {
 			names = append(names, name)
 		}
 	}

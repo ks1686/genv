@@ -112,7 +112,11 @@ func (brewBase) PlanClean() [][]string {
 // which are skipped. Package names that are not an exact case-insensitive match
 // of a section header are returned.
 func (brewBase) Search(query string) ([]string, error) {
-	lines, err := runListOutput("brew", "search", query)
+	return brewBase{}.SearchContext(context.Background(), query)
+}
+
+func (brewBase) SearchContext(ctx context.Context, query string) ([]string, error) {
+	lines, err := runListOutputContext(ctx, "brew", "search", query)
 	if err != nil || len(lines) == 0 {
 		return lines, err
 	}
@@ -130,11 +134,15 @@ func (brewBase) Search(query string) ([]string, error) {
 
 // ListNames returns all installable formulae and casks for shell completion.
 func (brewBase) ListNames() ([]string, error) {
-	formulae, err := brewCompletionList("formulae")
+	return brewBase{}.ListNamesContext(context.Background())
+}
+
+func (brewBase) ListNamesContext(ctx context.Context) ([]string, error) {
+	formulae, err := brewCompletionListContext(ctx, "formulae")
 	if err != nil {
 		return nil, err
 	}
-	casks, err := brewCompletionList("casks")
+	casks, err := brewCompletionListContext(ctx, "casks")
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +158,8 @@ func (brewBase) ListNames() ([]string, error) {
 	return names, nil
 }
 
-func brewCompletionList(arg string) ([]string, error) {
-	cmd := exec.Command("brew", arg)
+func brewCompletionListContext(ctx context.Context, arg string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "brew", arg)
 	cmd.Env = append(os.Environ(), "HOMEBREW_COMPLETION=1")
 	out, err := cmd.Output()
 	if err != nil {

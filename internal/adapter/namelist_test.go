@@ -66,6 +66,7 @@ echo "git"
 
 func TestBrew_ListNames_formulaeAndCasks(t *testing.T) {
 	installFakeBinary(t, "brew", `#!/bin/sh
+[ "$HOMEBREW_COMPLETION" = "1" ] || exit 1
 case "$1" in
   formulae) echo "openjdk"; echo "wget" ;;
   casks) echo "docker"; echo "openjdk" ;;

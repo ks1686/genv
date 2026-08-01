@@ -18,10 +18,14 @@ const (
 )
 
 type repoJob struct {
-	manager    string
-	completion func(string) ([]string, error)
-	list       func() ([]string, error)
-	search     func(string) ([]string, error)
+	manager       string
+	completion    func(string) ([]string, error)
+	completionCtx func(context.Context, string) ([]string, error)
+	opaqueValues  bool
+	list          func() ([]string, error)
+	listCtx       func(context.Context) ([]string, error)
+	search        func(string) ([]string, error)
+	searchCtx     func(context.Context, string) ([]string, error)
 }
 
 type repoResult struct {
@@ -50,6 +54,12 @@ func repoPackagesOnGOOS(
 		job := repoJob{manager: manager}
 		if namer, ok := candidate.(adapter.CompletionNamer); ok {
 			job.completion = namer.CompletionNames
+			// mas completion values are installable numeric IDs selected by an
+			// already-filtered app-name query, so the IDs cannot match the prefix.
+			job.opaqueValues = manager == "mas"
+		}
+		if namer, ok := candidate.(adapter.ContextCompletionNamer); ok {
+			job.completionCtx = namer.CompletionNamesContext
 		}
 		if lister, ok := candidate.(adapter.NameLister); ok {
 			job.list = func() ([]string, error) {
@@ -63,8 +73,29 @@ func repoPackagesOnGOOS(
 				return names, err
 			}
 		}
+		if lister, ok := candidate.(adapter.ContextNameLister); ok {
+			job.listCtx = func(ctx context.Context) ([]string, error) {
+				if names, hit := ReadDump(manager); hit {
+					return names, nil
+				}
+				names, err := lister.ListNamesContext(ctx)
+				if err == nil {
+					_ = WriteDump(manager, names)
+				}
+				return names, err
+			}
+		}
 		if searchable, ok := candidate.(adapter.Searchable); ok {
 			job.search = searchable.Search
+		}
+		if searchable, ok := candidate.(adapter.ContextSearchable); ok {
+			job.searchCtx = searchable.SearchContext
+		}
+		// Bun and npm search the same npm registry. When npm participates,
+		// schedule that backend once while retaining Bun.Search for other callers.
+		if manager == "bun" && available["npm"] && adapter.AutomaticOnGOOS("npm", goos) {
+			job.search = nil
+			job.searchCtx = nil
 		}
 		jobs = append(jobs, job)
 	}
@@ -158,10 +189,24 @@ func runRepoJob(
 	job repoJob,
 	searchTimeout time.Duration,
 ) ([]string, error) {
+	if prefix != "" && job.completionCtx != nil {
+		names, err := callRepoSearchContext(ctx, searchTimeout, func(ctx context.Context) ([]string, error) {
+			return job.completionCtx(ctx, prefix)
+		})
+		return filterCompletionNames(names, prefix, job.opaqueValues), err
+	}
 	if prefix != "" && job.completion != nil {
-		return callRepoSearch(ctx, searchTimeout, func() ([]string, error) {
+		names, err := callRepoSearch(ctx, searchTimeout, func() ([]string, error) {
 			return job.completion(prefix)
 		})
+		return filterCompletionNames(names, prefix, job.opaqueValues), err
+	}
+	if job.listCtx != nil {
+		names, err := job.listCtx(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return filterPrefix(names, prefix), nil
 	}
 	if job.list != nil {
 		names, err := job.list()
@@ -170,12 +215,36 @@ func runRepoJob(
 		}
 		return filterPrefix(names, prefix), nil
 	}
+	if prefix != "" && job.searchCtx != nil {
+		names, err := callRepoSearchContext(ctx, searchTimeout, func(ctx context.Context) ([]string, error) {
+			return job.searchCtx(ctx, prefix)
+		})
+		return filterPrefix(names, prefix), err
+	}
 	if prefix != "" && job.search != nil {
-		return callRepoSearch(ctx, searchTimeout, func() ([]string, error) {
+		names, err := callRepoSearch(ctx, searchTimeout, func() ([]string, error) {
 			return job.search(prefix)
 		})
+		return filterPrefix(names, prefix), err
 	}
 	return nil, nil
+}
+
+func filterCompletionNames(names []string, prefix string, opaqueValues bool) []string {
+	if opaqueValues {
+		return names
+	}
+	return filterPrefix(names, prefix)
+}
+
+func callRepoSearchContext(
+	parent context.Context,
+	timeout time.Duration,
+	call func(context.Context) ([]string, error),
+) ([]string, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	return call(ctx)
 }
 
 func callRepoSearch(
