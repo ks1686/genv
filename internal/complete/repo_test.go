@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ks1686/genv/internal/adapter"
 )
 
 func TestCollectRepoNames_filtersSortsAndDeduplicatesListerResults(t *testing.T) {
@@ -258,7 +260,7 @@ printf 'typescript\tdesc\tdate\tver\tkeywords\n'
 	}
 }
 
-func TestRepoPackagesOnGOOS_keepsMasProductIDsMatchedByName(t *testing.T) {
+func TestCollectRepoNames_keepsMasProductIDsMatchedByName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	binDir := t.TempDir()
 	script := `#!/bin/sh
@@ -270,12 +272,12 @@ printf '497799835  Xcode (16.0)\n'
 	}
 	t.Setenv("PATH", binDir)
 
-	got := repoPackagesOnGOOS(
-		"xcode",
-		map[string]bool{"mas": true},
-		"darwin",
-		time.Now(),
-	)
+	mas := adapter.Mas{}
+	got := collectRepoNames("xcode", []repoJob{{
+		manager:       "mas",
+		completionCtx: mas.CompletionNamesContext,
+		opaqueValues:  true,
+	}}, time.Second, time.Second)
 	if !slices.Equal(got, []string{"497799835"}) {
 		t.Fatalf("got %v want [497799835]", got)
 	}
