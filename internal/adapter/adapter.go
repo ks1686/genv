@@ -22,6 +22,18 @@ type Searchable interface {
 	Search(query string) ([]string, error)
 }
 
+// NameLister is an optional extension for managers that can dump installable
+// package names quickly enough for shell completion (Homebrew-style).
+type NameLister interface {
+	ListNames() ([]string, error)
+}
+
+// CompletionNamer is an optional extension for managers whose Tab labels should
+// differ from Search/install package names (e.g. mas app names vs product IDs).
+type CompletionNamer interface {
+	CompletionNames(prefix string) ([]string, error)
+}
+
 // VersionLister is an optional extension of Adapter for managers whose list
 // command reports installed package versions in the same call.
 type VersionLister interface {
