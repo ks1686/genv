@@ -63,6 +63,29 @@ function script:Get-GenvCompletions {
 			}
 		} catch {}
 	}
+	$completeRepoPackages = {
+		try {
+			$pkgs = & genv __complete repo-packages $WordToComplete 2>$null
+			if ($pkgs) {
+				($pkgs -split '\s+') |
+					Where-Object { $_ -and ($_ -like "$WordToComplete*") } |
+					ForEach-Object {
+						[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+					}
+			}
+		} catch {}
+	}
+	$previous = $null
+	if ($tokens.Count -ge 2) {
+		$last = $tokens[-1]
+		if ($WordToComplete -and ($last -eq $WordToComplete -or $last -like "$WordToComplete*")) {
+			$previous = $tokens[-2]
+		} else {
+			$previous = $last
+		}
+	} elseif ($tokens.Count -eq 1) {
+		$previous = $tokens[0]
+	}
 	$cmdIndex = [array]::IndexOf($tokens, $cmd)
 	$after = @()
 	if ($cmdIndex -ge 0 -and ($cmdIndex + 1) -lt $tokens.Count) {
@@ -89,14 +112,44 @@ function script:Get-GenvCompletions {
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'add' } {
-			$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
-				'--no-search', '--no-hooks', '--hook-timeout', '--host', '--target')
-			return (& $completeCandidates -Candidates $flags)
+			if ($WordToComplete -like '-*') {
+				$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
+					'--no-search', '--no-hooks', '--hook-timeout', '--host', '--target')
+				return (& $completeCandidates -Candidates $flags)
+			}
+			if ($previous -eq '--prefer') {
+				try {
+					$managers = & genv __complete managers 2>$null
+					if ($managers) {
+						return ($managers -split '\s+') |
+							Where-Object { $_ -and ($_ -like "$WordToComplete*") } |
+							ForEach-Object {
+								[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+							}
+					}
+				} catch {}
+			}
+			return (& $completeRepoPackages)
 		}
 		{ $_ -in 'adopt' } {
-			$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
-				'--host', '--target', '--files', '--json')
-			return (& $completeCandidates -Candidates $flags)
+			if ($WordToComplete -like '-*') {
+				$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
+					'--host', '--target', '--files', '--json')
+				return (& $completeCandidates -Candidates $flags)
+			}
+			if ($previous -eq '--prefer') {
+				try {
+					$managers = & genv __complete managers 2>$null
+					if ($managers) {
+						return ($managers -split '\s+') |
+							Where-Object { $_ -and ($_ -like "$WordToComplete*") } |
+							ForEach-Object {
+								[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+							}
+					}
+				} catch {}
+			}
+			return (& $completeRepoPackages)
 		}
 		{ $_ -in 'remove', 'rm' } {
 			if ($WordToComplete -like '-*') {
