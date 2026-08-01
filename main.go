@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/complete"
 	"github.com/ks1686/genv/internal/commands"
 	genvenv "github.com/ks1686/genv/internal/env"
 	"github.com/ks1686/genv/internal/files"
@@ -3342,6 +3343,7 @@ func xdgConfigHome() string {
 // Topics:
 //   - packages [--file <path>]  — IDs from genv.json (for remove/disown/upgrade)
 //   - managers                  — available package manager names (for --prefer)
+//   - repo-packages [prefix]    — repository package names (for add/adopt)
 func completeInternalCmd(args []string) int {
 	if len(args) == 0 {
 		return exitUsage
@@ -3369,6 +3371,15 @@ func completeInternalCmd(args []string) int {
 			if available[a.Name()] {
 				fPrintln(os.Stdout, a.Name())
 			}
+		}
+	case "repo-packages":
+		prefix := ""
+		if len(args) > 1 {
+			prefix = args[1]
+		}
+		available := resolver.Detect()
+		for _, name := range complete.RepoPackages(prefix, available) {
+			fPrintln(os.Stdout, name)
 		}
 	default:
 		return exitUsage
