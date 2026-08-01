@@ -95,7 +95,13 @@ _genv() {
 				'--no-hooks[Skip pre-add and post-add hooks]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--host=[Host name for host-specific records]:host:' \
-				'--target=[Portable target id for schemaVersion 8 specs]:target:'
+				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
+				'1: :->pkgid'
+			if [[ $state == pkgid ]]; then
+				local -a pkgs
+				pkgs=(${(f)"$(genv __complete repo-packages ${words[CURRENT]} 2>/dev/null)"})
+				_describe -t packages 'package' pkgs
+			fi
 			;;
 		adopt)
 			_arguments \
@@ -107,7 +113,13 @@ _genv() {
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
 				'--files[Adopt matching files block entries into the lock without changing targets]' \
-				'--json[Emit machine-readable JSON to stdout]'
+				'--json[Emit machine-readable JSON to stdout]' \
+				'1: :->pkgid'
+			if [[ $state == pkgid ]]; then
+				local -a pkgs
+				pkgs=(${(f)"$(genv __complete repo-packages ${words[CURRENT]} 2>/dev/null)"})
+				_describe -t packages 'package' pkgs
+			fi
 			;;
 		upgrade)
 			_arguments \

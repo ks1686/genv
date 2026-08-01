@@ -97,6 +97,11 @@ function __fish_genv_managers
     genv __complete managers 2>/dev/null
 end
 
+function __fish_genv_repo_packages
+    set -l cur (commandline -ct)
+    genv __complete repo-packages $cur 2>/dev/null
+end
+
 # Commands
 complete -c genv -n __fish_genv_no_subcommand -f -a add -d 'Add a package to the spec and install it now'
 complete -c genv -n __fish_genv_no_subcommand -f -a 'remove rm' -d 'Remove a package from the spec and uninstall it now'
@@ -140,7 +145,9 @@ complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_comm
 # list / ls
 complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_command ls' -l lock-file -d 'Path to genv lock file' -r
 
-# add / adopt
+# add / adopt — complete positional arg with repository package names
+complete -c genv -n '__fish_genv_using_command add' -f -a '(__fish_genv_repo_packages)' -d 'Package'
+complete -c genv -n '__fish_genv_using_command adopt' -f -a '(__fish_genv_repo_packages)' -d 'Package'
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l version -d 'Version constraint' -x
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' \

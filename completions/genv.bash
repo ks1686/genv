@@ -60,12 +60,20 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
+		if [[ "${cur}" != -* ]]; then
+			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete repo-packages "${cur}" 2>/dev/null)" -- "${cur}")
+			return 0
+		fi
 		opts="--file --lock-file --version --prefer --manager --no-search --no-hooks --hook-timeout --host --target"
 		;;
 	adopt)
 		# Complete --prefer value with available managers.
 		if [[ "${prev}" == "--prefer" ]]; then
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete managers 2>/dev/null)" -- "${cur}")
+			return 0
+		fi
+		if [[ "${cur}" != -* ]]; then
+			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete repo-packages "${cur}" 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
 		opts="--file --lock-file --version --prefer --manager --host --target --files --json"
