@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -125,6 +126,38 @@ func (brewBase) Search(query string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// ListNames returns all installable formulae and casks for shell completion.
+func (brewBase) ListNames() ([]string, error) {
+	formulae, err := brewCompletionList("formulae")
+	if err != nil {
+		return nil, err
+	}
+	casks, err := brewCompletionList("casks")
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(formulae)+len(casks))
+	var names []string
+	for _, name := range append(formulae, casks...) {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func brewCompletionList(arg string) ([]string, error) {
+	cmd := exec.Command("brew", arg)
+	cmd.Env = append(os.Environ(), "HOMEBREW_COMPLETION=1")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return trimmedNonEmptyLines(string(out)), nil
 }
 
 // Brew is the adapter for Homebrew (macOS and Linux).
