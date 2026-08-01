@@ -19,6 +19,51 @@ func sameStringSet(got, want []string) bool {
 	return true
 }
 
+func TestPacman_ListNames(t *testing.T) {
+	installFakeBinary(t, "pacman", `#!/bin/sh
+[ "$1" = "-Slq" ] || exit 1
+echo "ripgrep"
+echo "git"
+`)
+	names, err := Pacman{}.ListNames()
+	if err != nil {
+		t.Fatalf("ListNames: %v", err)
+	}
+	if !sameStringSet(names, []string{"git", "ripgrep"}) {
+		t.Fatalf("got %v", names)
+	}
+}
+
+func TestParu_ListNames(t *testing.T) {
+	installFakeBinary(t, "paru", `#!/bin/sh
+[ "$1" = "-Slq" ] || exit 1
+echo "ripgrep"
+echo "git"
+`)
+	names, err := Paru{}.ListNames()
+	if err != nil {
+		t.Fatalf("ListNames: %v", err)
+	}
+	if !sameStringSet(names, []string{"git", "ripgrep"}) {
+		t.Fatalf("got %v", names)
+	}
+}
+
+func TestYay_ListNames(t *testing.T) {
+	installFakeBinary(t, "yay", `#!/bin/sh
+[ "$1" = "-Slq" ] || exit 1
+echo "ripgrep"
+echo "git"
+`)
+	names, err := Yay{}.ListNames()
+	if err != nil {
+		t.Fatalf("ListNames: %v", err)
+	}
+	if !sameStringSet(names, []string{"git", "ripgrep"}) {
+		t.Fatalf("got %v", names)
+	}
+}
+
 func TestBrew_ListNames_formulaeAndCasks(t *testing.T) {
 	installFakeBinary(t, "brew", `#!/bin/sh
 case "$1" in

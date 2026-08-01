@@ -61,6 +61,11 @@ func (Pacman) Search(query string) ([]string, error) {
 	return parsePacmanSearch(lines, query), nil
 }
 
+// ListNames returns all installable packages from official pacman repos.
+func (Pacman) ListNames() ([]string, error) {
+	return runListOutput("pacman", "-Slq")
+}
+
 func (Pacman) ListInstalled() ([]string, error) {
 	return runListOutput("pacman", "-Qq")
 }
