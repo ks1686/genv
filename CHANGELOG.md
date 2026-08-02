@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.9 - 2026-08-01
+
+### Fixed
+
+- Lifecycle hooks now inherit stdin (same as package actions), so interactive prompts in hooks work at a TTY.
+- `--yes` is exposed to hooks as `GENV_YES=true|false` (alongside existing `GENV_*` context env) so hooks can opt into noninteractive flags.
+
 ## v4.0.8 - 2026-08-01
 
 ### Added
