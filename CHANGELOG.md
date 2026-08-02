@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.8 - 2026-08-01
+
 ### Added
 
 - Shell completions for `genv add` / `genv adopt` suggest repository package names via
