@@ -17,20 +17,22 @@ import (
 
 // fakeRunner records command invocations and returns a programmed error.
 type fakeRunner struct {
-	calls [][]string
-	envs  [][]string
-	err   error
+	calls  [][]string
+	envs   [][]string
+	stdins []io.Reader
+	err    error
 }
 
-func (f *fakeRunner) Run(_ context.Context, args []string, env []string, _, _ io.Writer) error {
+func (f *fakeRunner) Run(_ context.Context, args []string, env []string, stdin io.Reader, _, _ io.Writer) error {
 	f.calls = append(f.calls, args)
 	f.envs = append(f.envs, env)
+	f.stdins = append(f.stdins, stdin)
 	return f.err
 }
 
 type blockingRunner struct{}
 
-func (blockingRunner) Run(ctx context.Context, _ []string, _ []string, _, _ io.Writer) error {
+func (blockingRunner) Run(ctx context.Context, _ []string, _ []string, _ io.Reader, _, _ io.Writer) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -316,6 +318,25 @@ func TestPreUpgrade_WithEnv_passes_additions_without_changing_argv(t *testing.T)
 	}
 	if len(fr.envs) != 1 || !slicesEqual(fr.envs[0], env) {
 		t.Fatalf("env = %v, want %v", fr.envs, env)
+	}
+}
+
+func TestRunOptions_Stdin_forwarded_to_runner(t *testing.T) {
+	ctx := context.Background()
+	e, fr := newTestExecutor(nil, nil)
+	stdin := strings.NewReader("y\n")
+	hooks := []schema.Hook{{Command: "read ans"}}
+
+	err := e.PreUpgradeWithOptions(ctx, hooks, RunOptions{Host: "any", Stdin: stdin})
+
+	if err != nil {
+		t.Fatalf("PreUpgradeWithOptions() error = %v, want nil", err)
+	}
+	if len(fr.stdins) != 1 {
+		t.Fatalf("got %d stdin captures, want 1", len(fr.stdins))
+	}
+	if fr.stdins[0] != stdin {
+		t.Fatalf("stdin = %v, want same reader passed in RunOptions", fr.stdins[0])
 	}
 }
 
