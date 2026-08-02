@@ -15,7 +15,7 @@ REPO="https://github.com/ks1686/genv"
 
 # ── Fetch source tarball and compute sha256sum ─────────────────────────────────
 curl -fsSL "${REPO}/archive/refs/tags/v${VERSION}.tar.gz" -o /tmp/genv-src.tar.gz
-SHA256SRC=$(sha256sum /tmp/genv-src.tar.gz | awk '{print $1}')
+SHA256SRC=$(aur_sha256_file /tmp/genv-src.tar.gz)
 
 # ── SSH setup ─────────────────────────────────────────────────────────────────
 aur_setup_ssh
@@ -56,7 +56,7 @@ package() {
 }
 PKGEOF
 
-sed -i \
+aur_sed_inplace \
   -e "s/__PKGBASE__/${PKGBASE}/g" \
   -e "s/__VERSION__/${VERSION}/g" \
   -e "s/__SHA256SRC__/${SHA256SRC}/g" \

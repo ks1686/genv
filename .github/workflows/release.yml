@@ -108,14 +108,51 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
+  # AUR SSH from ubuntu-latest currently gets "down due to maintenance" while
+  # residential/macOS egress reaches a healthy IPv4 endpoint. Publish AUR from
+  # macOS so v4.x repairs and releases can land.
+  aur:
+    name: Publish to AUR
+    needs: release
+    if: always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'aur-only'))
+    runs-on: macos-latest
+    steps:
+      - name: Resolve version
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ github.event.inputs.version }}"
+            version="${version#v}"
+          fi
+          if [ -z "$version" ]; then
+            echo "could not resolve release version" >&2
+            exit 1
+          fi
+          if [[ "$version" == *-* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.meta.outputs.skip == 'false'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          ref: ${{ github.ref }}
+
       - name: Publish to AUR (genv-bin, pre-compiled binary)
-        if: "!contains(steps.meta.outputs.version, '-')"
+        if: steps.meta.outputs.skip == 'false'
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
         run: bash .github/scripts/publish-aur.sh "${{ steps.meta.outputs.version }}"
 
       - name: Publish to AUR (genv, builds from source)
-        if: "!contains(steps.meta.outputs.version, '-')"
+        if: steps.meta.outputs.skip == 'false'
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
         run: bash .github/scripts/publish-aur-src.sh "${{ steps.meta.outputs.version }}"

@@ -9,7 +9,7 @@ aur_setup_ssh() {
 	# Refresh host keys; tolerate transient ssh-keyscan failures.
 	local attempt=1
 	while (( attempt <= 5 )); do
-		if ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
+		if ssh-keyscan -4 -H aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
 			break
 		fi
 		if (( attempt == 5 )); then
@@ -66,4 +66,25 @@ aur_push() {
 	done
 	echo "aur-common: push failed after retries" >&2
 	return 1
+}
+
+# Portable in-place sed (GNU sed vs BSD sed on macOS runners).
+aur_sed_inplace() {
+	local file="${!#}"
+	local args=("${@:1:$#-1}")
+	if sed --version >/dev/null 2>&1; then
+		sed -i "${args[@]}" "$file"
+	else
+		sed -i '' "${args[@]}" "$file"
+	fi
+}
+
+# Portable sha256 of a file (Linux sha256sum vs macOS shasum).
+aur_sha256_file() {
+	local file="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$file" | awk '{print $1}'
+	else
+		shasum -a 256 "$file" | awk '{print $1}'
+	fi
 }
