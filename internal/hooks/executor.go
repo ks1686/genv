@@ -40,16 +40,17 @@ type Executor struct {
 }
 
 type commandRunner interface {
-	Run(ctx context.Context, args []string, env []string, stdout, stderr io.Writer) error
+	Run(ctx context.Context, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error
 }
 
 type execRunner struct{}
 
-func (execRunner) Run(ctx context.Context, args []string, env []string, stdout, stderr io.Writer) error {
+func (execRunner) Run(ctx context.Context, args []string, env []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
+	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
@@ -61,6 +62,7 @@ type RunOptions struct {
 	DryRun  bool
 	Env     []string
 	Timeout time.Duration
+	Stdin   io.Reader
 }
 
 func fprintf(w io.Writer, format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
@@ -200,7 +202,7 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		if opts.Timeout > 0 {
 			runCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
 		}
-		err = e.runner.Run(runCtx, args, opts.Env, e.Stdout, e.Stderr)
+		err = e.runner.Run(runCtx, args, opts.Env, opts.Stdin, e.Stdout, e.Stderr)
 		cancel()
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("%s hook timed out after %s %s: %w", phase, opts.Timeout, desc, context.DeadlineExceeded)
