@@ -28,6 +28,7 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.5` | Brew bin derivation without SameFile mid-upgrade; strip Homebrew shims from scheduled PATH; `__run-once` / brew / notify timeouts so launchd cannot wedge |
 | `v4.0.6` | Per-manager outdated timing in updates.log to diagnose slow launchd checks vs timeout fallback |
 | `v4.0.7` | `__run-once` no longer hangs on osascript notify until 5m deadline (exit 4) |
+| `v4.0.8` | `add`/`adopt` Tab completions via `genv __complete repo-packages` (cached dumps + search fallback) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
