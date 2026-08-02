@@ -39,7 +39,10 @@ jobs:
               echo "aur-only requires the version input" >&2
               exit 1
             fi
-            echo "ref=v${version}" >> "$GITHUB_OUTPUT"
+            # Checkout the workflow branch (latest publish scripts), not the
+            # release tag — AUR scripts only need the version string + GitHub
+            # release assets, not the tagged tree.
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
           else
             echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
           fi
