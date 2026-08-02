@@ -19,7 +19,9 @@ aur_setup_ssh() {
 		sleep $((attempt * 3))
 		attempt=$((attempt + 1))
 	done
-	export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
+	# Force IPv4: some CI networks reach AUR over IPv6 and get the
+	# "down due to maintenance" banner while IPv4 SSH is healthy.
+	export GIT_SSH_COMMAND="ssh -4 -i ~/.ssh/aur -o AddressFamily=inet -o StrictHostKeyChecking=yes -o ConnectTimeout=30"
 }
 
 # Clone an AUR package repo with retries (aur.archlinux.org often drops SSH).
@@ -29,6 +31,14 @@ aur_clone() {
 	local attempt=1
 	local delay=5
 	while (( attempt <= 6 )); do
+		rm -rf "${dest}"
+		# Prefer HTTPS for the read-only clone (works during partial SSH outages),
+		# then rewrite origin to SSH so aur_push can authenticate with AUR_KEY.
+		if git clone "https://aur.archlinux.org/${pkg}.git" "${dest}"; then
+			git -C "${dest}" remote set-url origin "ssh://aur@aur.archlinux.org/${pkg}.git"
+			return 0
+		fi
+		echo "aur-common: HTTPS clone ${pkg} attempt ${attempt} failed; trying SSH..." >&2
 		rm -rf "${dest}"
 		if git clone "ssh://aur@aur.archlinux.org/${pkg}.git" "${dest}"; then
 			return 0
