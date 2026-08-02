@@ -104,7 +104,7 @@ Tracked packages only; not a system-wide “update everything” tool.
 
 Phases: `preApply` / `postApply`, `preAdd` / `postAdd`, `preRemove` / `postRemove`, `preUpgrade` / `postUpgrade` (v5 also had `preUpgrade` / `postApply` / `postUpgrade`).
 
-Each hook is `{ "command": "..." }` or `{ "file": "..." }` (exactly one), optional `host` on v1–v7. Context env: `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, `GENV_SKIPPED`.
+Each hook is `{ "command": "..." }` or `{ "file": "..." }` (exactly one), optional `host` on v1–v7. Context env: `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_YES`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, `GENV_SKIPPED`.
 
 Hooks run as the current user and are arbitrary code by design — treat the spec as trusted.
 

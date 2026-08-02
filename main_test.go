@@ -3206,6 +3206,7 @@ func TestUpgradeHookEnv_builds_deterministic_context_in_plan_order(t *testing.T)
 		"GENV_HOST=ci-host",
 		"GENV_PROFILE=",
 		"GENV_DRY_RUN=false",
+		"GENV_YES=false",
 		"GENV_INSTALLED=",
 		"GENV_REMOVED=",
 		"GENV_UPGRADED=zed,bun-tool",
@@ -3215,6 +3216,49 @@ func TestUpgradeHookEnv_builds_deterministic_context_in_plan_order(t *testing.T)
 	}
 	if !slices.Equal(env, want) {
 		t.Fatalf("upgradeHookEnv() = %v, want %v", env, want)
+	}
+}
+
+func TestUpgradeHookEnv_Yes_emits_GENV_YES_true(t *testing.T) {
+	env := upgradeHookEnv(upgradeHookOptions{
+		Phase: "pre",
+		Host:  "ci-host",
+		Yes:   true,
+	})
+	if !slices.Contains(env, "GENV_YES=true") {
+		t.Fatalf("upgradeHookEnv() = %v, want GENV_YES=true", env)
+	}
+}
+
+func TestApply_LifecycleHooks_receive_GENV_YES_when_yes_flag_set(t *testing.T) {
+	// Given: apply with --yes and a hook that records GENV_YES.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookLog := filepath.Join(dir, "hooks.log")
+	installLog := filepath.Join(dir, "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{"command":"printf '%s\n' \"$GENV_YES\" >> ` + hookLog + `"}],"postApply":[{"command":"printf '%s\n' \"$GENV_YES\" >> ` + hookLog + `"}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLockFile(t, lockPath, &genvfile.LockFile{SchemaVersion: "1", Packages: nil})
+
+	// When
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "1s"})
+
+	// Then
+	if code != exitOK {
+		t.Fatalf("apply GENV_YES hooks: expected exitOK (%d), got %d", exitOK, code)
+	}
+	got, err := os.ReadFile(hookLog)
+	if err != nil {
+		t.Fatalf("read hook log: %v", err)
+	}
+	want := "true\ntrue\n"
+	if string(got) != want {
+		t.Fatalf("hook log = %q, want %q", string(got), want)
 	}
 }
 

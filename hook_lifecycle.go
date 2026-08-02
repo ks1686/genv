@@ -19,6 +19,7 @@ type hookContext struct {
 	Host            string
 	Profile         string
 	DryRun          bool
+	Yes             bool
 	Installed       []string
 	Removed         []string
 	Upgraded        []string
@@ -33,11 +34,16 @@ type hookPhaseRun struct {
 	Timeout time.Duration
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Stdin   io.Reader
 }
 
 func runHookPhase(ctx context.Context, req hookPhaseRun) []string {
 	if len(req.Hooks) == 0 {
 		return nil
+	}
+	stdin := req.Stdin
+	if stdin == nil {
+		stdin = os.Stdin
 	}
 	exec := hooks.NewExecutor(req.Stdout, req.Stderr)
 	opts := hooks.RunOptions{
@@ -45,6 +51,7 @@ func runHookPhase(ctx context.Context, req hookPhaseRun) []string {
 		DryRun:  req.Context.DryRun,
 		Env:     hookEnv(req.Context),
 		Timeout: req.Timeout,
+		Stdin:   stdin,
 	}
 	var err error
 	switch req.Context.Phase {
@@ -78,6 +85,7 @@ func hookEnv(ctx hookContext) []string {
 		"GENV_HOST=" + ctx.Host,
 		"GENV_PROFILE=" + ctx.Profile,
 		"GENV_DRY_RUN=" + boolString(ctx.DryRun),
+		"GENV_YES=" + boolString(ctx.Yes),
 		"GENV_INSTALLED=" + strings.Join(ctx.Installed, ","),
 		"GENV_REMOVED=" + strings.Join(ctx.Removed, ","),
 		"GENV_UPGRADED=" + strings.Join(ctx.Upgraded, ","),
