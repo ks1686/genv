@@ -53,7 +53,7 @@ package() {
 }
 PKGEOF
 
-sed -i \
+aur_sed_inplace \
   -e "s/__PKGBASE__/${PKGBASE}/g" \
   -e "s/__VERSION__/${VERSION}/g" \
   -e "s/__SHA256_AMD64__/${SHA256_AMD64}/g" \
