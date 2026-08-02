@@ -1198,7 +1198,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	hostName := hostForCommand(opts.Host)
 	if !opts.NoHooks {
-		preErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, true)
+		preErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, true)
 		if len(preErrs) > 0 {
 			return writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: false, Data: output.ApplyResult{FailedHooks: preErrs}, Errors: preErrs})
 		}
@@ -1227,7 +1227,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 				fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
 			}
 		} else if !opts.NoHooks {
-			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
+			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
 			errs = append(errs, failedHooks...)
 		}
 	}
@@ -1298,8 +1298,8 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		if !opts.DryRun {
 			if !opts.NoHooks {
 				hostName := hostForCommand(opts.Host)
-				hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile}, opts.HookTimeout, false)
-				hookErrs = append(hookErrs, runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile}, opts.HookTimeout, false)...)
+				hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}, opts.HookTimeout, false)
+				hookErrs = append(hookErrs, runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}, opts.HookTimeout, false)...)
 				if len(hookErrs) > 0 {
 					for _, e := range hookErrs {
 						fprintf(os.Stderr, "genv apply: %s\n", e)
@@ -1356,7 +1356,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	hostName := hostForCommand(opts.Host)
 	if !opts.NoHooks {
-		hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, false)
+		hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, false)
 		if len(hookErrs) > 0 {
 			for _, e := range hookErrs {
 				fprintf(os.Stderr, "genv apply: %s\n", e)
@@ -1388,7 +1388,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	}
 	var hookErrs []string
 	if len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && !opts.NoHooks {
-		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
+		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
 	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
@@ -1832,6 +1832,7 @@ type upgradeHookOptions struct {
 	Host     string
 	Profile  string
 	DryRun   bool
+	Yes      bool
 	Timeout  time.Duration
 	Plan     []resolver.UpgradeAction
 	Skipped  []resolver.SkippedPackage
@@ -1849,6 +1850,7 @@ func runUpgradeHooks(ctx context.Context, f *schema.GenvFile, opts upgradeHookOp
 		DryRun:  opts.DryRun,
 		Env:     upgradeHookEnv(opts),
 		Timeout: opts.Timeout,
+		Stdin:   os.Stdin,
 	}
 	var err error
 	switch opts.Phase {
@@ -1872,7 +1874,7 @@ func upgradeHookEnv(opts upgradeHookOptions) []string {
 	if opts.Phase == "post" {
 		phase = "post-upgrade"
 	}
-	return hookEnv(hookContext{Event: "upgrade", Phase: phase, Host: opts.Host, Profile: opts.Profile, DryRun: opts.DryRun, Upgraded: upgradePackageIDs(opts.Upgraded), Failed: opts.Failed, Skipped: upgradeSkippedIDs(opts.Skipped), UpgradeManagers: upgradePlanManagers(opts.Plan)})
+	return hookEnv(hookContext{Event: "upgrade", Phase: phase, Host: opts.Host, Profile: opts.Profile, DryRun: opts.DryRun, Yes: opts.Yes, Upgraded: upgradePackageIDs(opts.Upgraded), Failed: opts.Failed, Skipped: upgradeSkippedIDs(opts.Skipped), UpgradeManagers: upgradePlanManagers(opts.Plan)})
 }
 
 func upgradePlanManagers(plan []resolver.UpgradeAction) []string {
@@ -3583,7 +3585,7 @@ func upgradeCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters)
+		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters)
 	}
 
 	for _, s := range skipped {
@@ -3597,7 +3599,7 @@ func upgradeCmd(args []string) int {
 	if len(plan) == 0 {
 		if !*dryRun && !*noHooks {
 			ctx := context.Background()
-			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 			hookOpts.Phase = "pre"
 			failedHooks := runUpgradeHooks(ctx, f, hookOpts)
 			hookOpts.Phase = "post"
@@ -3633,7 +3635,7 @@ func upgradeCmd(args []string) int {
 
 	ctx := context.Background()
 	if !*noHooks {
-		preHookOpts := upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+		preHookOpts := upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 		failedHooks := runUpgradeHooks(ctx, f, preHookOpts)
 		if len(failedHooks) > 0 {
 			for _, e := range failedHooks {
@@ -3664,6 +3666,7 @@ func upgradeCmd(args []string) int {
 			Phase:    "post",
 			Host:     hostName,
 			Profile:  lf.ActiveProfile,
+			Yes:      *yes,
 			Timeout:  hookTimeout,
 			Plan:     plan,
 			Skipped:  skipped,
@@ -3731,7 +3734,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // all subprocess and hook output to stderr so stdout stays one JSON object,
 // then reports executed batches, refreshed versions, and failed hooks while
 // preserving the human path's exit codes.
-func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters) int {
+func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -3756,7 +3759,7 @@ func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Durati
 		ctx := context.Background()
 		var failedHooks []output.UpgradeHookResult
 		if !filters.HooksSkipped {
-			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 			hookOpts.Phase = "pre"
 			failedHooks = runUpgradeHooksJSON(ctx, f, hookOpts)
 			hookOpts.Phase = "post"
@@ -3781,7 +3784,7 @@ func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Durati
 	var errs []string
 	var preHooks []output.UpgradeHookResult
 	if !filters.HooksSkipped {
-		preHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Timeout: hookTimeout, Plan: plan, Skipped: skipped})
+		preHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped})
 	}
 	if len(preHooks) > 0 {
 		errs = append(errs, upgradeHookErrorStrings(preHooks)...)
@@ -3831,6 +3834,7 @@ func upgradeJSON(dryRun bool, hostName, lockPath string, hookTimeout time.Durati
 			Phase:    "post",
 			Host:     hostName,
 			Profile:  lf.ActiveProfile,
+			Yes:      yes,
 			Timeout:  hookTimeout,
 			Plan:     plan,
 			Skipped:  skipped,
@@ -3884,6 +3888,7 @@ func runUpgradeHooksJSON(ctx context.Context, f *schema.GenvFile, opts upgradeHo
 		Host:    opts.Host,
 		Env:     upgradeHookEnv(opts),
 		Timeout: opts.Timeout,
+		Stdin:   os.Stdin,
 	}
 	var err error
 	switch opts.Phase {
