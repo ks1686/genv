@@ -50,7 +50,82 @@ In the repository settings → Actions → General, confirm:
 - "Allow all actions" or allow the specific actions used
 - "Read and write permissions" for the default `GITHUB_TOKEN` (needed to create releases)
 
-### 2. Homebrew tap
+### 2. Apple Developer ID signing and notarization
+
+Darwin release binaries are signed with a **Developer ID Application** certificate
+and notarized via App Store Connect (GoReleaser → anchore/quill on `ubuntu-latest`).
+Cosign continues to sign `checksums.txt` separately.
+
+Without these secrets, GoReleaser skips `notarize.macos` and ships adhoc-signed
+Darwin binaries (the pre-v4.1 behavior).
+
+**2a. Create a Developer ID Application certificate**
+
+1. Open [Certificates](https://developer.apple.com/account/resources/certificates/list).
+2. Create a certificate of type **Developer ID Application**.
+3. Upload a Certificate Signing Request (CSR). Generate one locally:
+
+   ```bash
+   mkdir -p .local/apple-signing
+   openssl req -new -newkey rsa:2048 -nodes \
+     -keyout .local/apple-signing/DeveloperID.key \
+     -out .local/apple-signing/DeveloperID.csr \
+     -subj "/emailAddress=YOU@example.com/CN=Developer ID Application/C=US"
+   ```
+
+4. Download the `.cer`, double-click to import into Keychain Access (keep the
+   private key that matched the CSR on the same Mac).
+5. In Keychain Access, select the **Developer ID Application** identity →
+   Export → `.p12`, and choose a strong password. Store the `.p12` and password
+   outside the repo (`.local/` is gitignored).
+
+**2b. Create an App Store Connect API key**
+
+1. Open [Users and Access → Integrations → Team Keys](https://appstoreconnect.apple.com/access/integrations/api).
+2. Generate a key with **Developer** access (or App Manager).
+3. Download the `.p8` once (`AuthKey_<KEY_ID>.p8`). Note the **Key ID** and
+   **Issuer ID** (UUID on the same page).
+
+**2c. Add GitHub Actions secrets**
+
+Encode and upload (or use the helper):
+
+```bash
+./scripts/set-macos-signing-secrets.sh \
+  --p12 /path/to/Certificates.p12 \
+  --p12-password 'your-export-password' \
+  --p8 /path/to/AuthKey_XXXXXXXXXX.p8 \
+  --key-id XXXXXXXXXX \
+  --issuer-id 00000000-0000-0000-0000-000000000000
+```
+
+Secrets created:
+
+| Secret | Contents |
+| --- | --- |
+| `MACOS_SIGN_P12` | base64 of the `.p12` |
+| `MACOS_SIGN_PASSWORD` | password that opens the `.p12` |
+| `MACOS_NOTARY_KEY` | base64 of the `.p8` |
+| `MACOS_NOTARY_KEY_ID` | API Key ID |
+| `MACOS_NOTARY_ISSUER_ID` | Issuer UUID |
+
+**2d. Verify a Darwin artifact after the next release**
+
+Team ID for this project: `7R2VPW8GH4`  
+Identity: `Developer ID Application: KARIM SMIRES (7R2VPW8GH4)`
+
+```bash
+codesign -dv --verbose=4 ./genv
+# Expect: Authority=Developer ID Application: KARIM SMIRES (7R2VPW8GH4)
+#         TeamIdentifier=7R2VPW8GH4
+
+# Bare CLI tools often report "does not seem to be an app" from spctl -a;
+# that is normal. Prefer exec assessment / successful launch under quarantine:
+spctl -a -t exec -vv ./genv
+./genv version
+```
+
+### 3. Homebrew tap
 
 GoReleaser pushes the formula to a separate `homebrew-tap` repo.
 
@@ -68,7 +143,7 @@ brew tap ks1686/tap
 brew install genv
 ```
 
-### 3. AUR (`genv-bin` and `genv`)
+### 4. AUR (`genv-bin` and `genv`)
 
 Two AUR packages are published on every stable release. Both use the same `AUR_KEY` secret.
 
@@ -78,9 +153,9 @@ Two AUR packages are published on every stable release. Both use the same `AUR_K
 The two packages `conflict` with each other so users can only have one installed at a time.
 Each CI script updates an existing AUR package — it does not create a new one. The first publish of each must be done manually.
 
-**3a. Create an AUR account** at <https://aur.archlinux.org/> if you don't have one.
+**4a. Create an AUR account** at <https://aur.archlinux.org/> if you don't have one.
 
-**3b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
+**4b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
 
 ```bash
 ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
@@ -89,7 +164,7 @@ ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
 
 Add the public key to your AUR account: <https://aur.archlinux.org/account/> → SSH keys.
 
-**3c. Create the `genv-bin` package on AUR** (one-time manual step):
+**4c. Create the `genv-bin` package on AUR** (one-time manual step):
 
 ```bash
 # Clone the (empty) AUR repo — this creates the package namespace
@@ -133,7 +208,7 @@ git push
 > `checksums.txt` before pushing. AUR will flag the package as untrustworthy
 > if SKIP is left in place.
 
-**3c-2. Create the `genv` source package on AUR** (one-time manual step):
+**4c-2. Create the `genv` source package on AUR** (one-time manual step):
 
 ```bash
 git clone ssh://aur@aur.archlinux.org/genv.git /tmp/genv-src-aur
@@ -170,7 +245,7 @@ git commit -m "Initial release v0.2.0"
 git push
 ```
 
-**3d. Add the AUR SSH private key as a repository secret:**
+**4d. Add the AUR SSH private key as a repository secret:**
 
 In `ks1686/genv` → Settings → Secrets and variables → Actions, add a secret named
 **`AUR_KEY`** containing the contents of `~/.ssh/aur` (the private key).
