@@ -48,7 +48,7 @@ genv version
 
 Publishing the **genv binary** itself to winget/scoop/choco is deferred. Once installed, genv still **manages packages** through those managers when they are on `PATH`.
 
-Release archives are cosign-signed (keyless). Bundles and `checksums.txt` ship with every GitHub release — see [SECURITY.md](SECURITY.md).
+Release archives ship cosign-signed checksums (keyless). Darwin binaries are also Developer ID signed and notarized when Apple secrets are configured — see [SECURITY.md](SECURITY.md).
 
 Platform walkthroughs: [macOS](docs/macos-install.md) · [Windows](docs/windows-install.md) · [WSL2](docs/wsl2-install.md) · [multi-machine](docs/multi-machine.md)
 
