@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.10 - 2026-08-12
+
 ### Added
 
 - Darwin release binaries are signed with a Developer ID Application certificate and notarized via App Store Connect (GoReleaser `notarize.macos` / quill) when `MACOS_*` GitHub Actions secrets are set. See [RELEASING.md](RELEASING.md).
@@ -11,6 +13,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Homebrew cask `post_install` no longer strips `com.apple.quarantine` (notarized binaries do not need it). It still re-runs `genv updates start` when the updates LaunchAgent is present so launchd picks up the new Caskroom path after upgrades.
+
+## v4.0.9 - 2026-08-01
 
 ### Fixed
 
