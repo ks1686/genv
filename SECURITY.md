@@ -24,7 +24,9 @@ Expect acknowledgement within **72 hours** and a status update at least every **
 
 ## Verifying Release Integrity
 
-Every release binary is signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless signing. Sigstore bundles and `checksums.txt` attach to each GitHub release.
+### Cosign (all platforms)
+
+Every release ships `checksums.txt` signed with [cosign](https://docs.sigstore.dev/cosign/overview/) using keyless (OIDC) signing. Sigstore bundles attach to each GitHub release.
 
 ```bash
 # Example for the linux/amd64 archive of tag v4.0.0
@@ -38,6 +40,20 @@ sha256sum --check --ignore-missing checksums.txt
 ```
 
 Adjust the tag and archive names for the asset you downloaded. See the release assets list for exact filenames (`genv_<version>_<os>_<arch>.tar.gz` or `.zip`).
+
+### Apple Developer ID (macOS)
+
+Darwin release binaries are signed with a **Developer ID Application** certificate and notarized by Apple when the `MACOS_*` GitHub Actions secrets are configured (see [RELEASING.md](RELEASING.md)). Verify a downloaded binary:
+
+```bash
+codesign -dv --verbose=4 ./genv
+# Expect: Authority=Developer ID Application: … and TeamIdentifier=<TEAMID>
+
+spctl -a -vv ./genv
+# Expect: accepted / source=Notarized Developer ID
+```
+
+Cosign checksum verification and Apple notarization are complementary: cosign proves the GitHub Actions build provenance; Gatekeeper/notarization proves Apple accepted the Darwin binary.
 
 ## Trust boundaries
 

@@ -32,6 +32,13 @@ go.work.sum
 .env.*
 !.env.example
 
+# Local Apple signing material (CSR, private key, .p12, .p8) — never commit
+.local/
+*.p12
+*.p8
+AuthKey_*.p8
+ApiKey_*.p8
+
 # =============================================================================
 # Editor — VS Code
 # Shared project config (.vscode/settings.json, extensions.json) IS tracked.

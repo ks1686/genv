@@ -64,3 +64,4 @@ For Linux/Windows siblings of the same repo, see [multi-machine.md](multi-machin
 - Large formulae can take minutes — that is Homebrew, not genv.
 - Some names exist as both formula and cask; genv uses Homebrew’s own resolution. Prefer explicit `managers` / manual cask install when you need a specific variant.
 - Apple Silicon (`/opt/homebrew`) and Intel (`/usr/local`) are both detected via `PATH`.
+- Official Homebrew cask / GitHub Release Darwin binaries are **Developer ID signed and notarized**. After `brew install` / `brew upgrade`, you should not need to clear quarantine for Gatekeeper or for `genv updates` LaunchAgents. If you build from source (`go install` / `go build`), the binary is not Apple-notarized.
