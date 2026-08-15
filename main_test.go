@@ -22,6 +22,7 @@ import (
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/service"
+	"github.com/ks1686/genv/internal/testutil"
 	"github.com/ks1686/genv/internal/upgrade"
 )
 
@@ -59,21 +60,7 @@ func writeLock(t *testing.T, lockPath string, pkgs []genvfile.LockedPackage) {
 
 func withInstalledBrew(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	script := `#!/bin/sh
-case "$1" in
-install|uninstall|upgrade|cleanup|list)
-	exit 0
-	;;
-*)
-	exit 0
-	;;
-esac
-`
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake brew: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew", `case "$1" in install|uninstall|upgrade|cleanup|list) exit 0 ;; *) exit 0 ;; esac`)
 }
 
 func withNoPackageManagers(t *testing.T) {
@@ -83,21 +70,7 @@ func withNoPackageManagers(t *testing.T) {
 
 func withFailingBrewInstall(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	script := `#!/bin/sh
-case "$1" in
-install)
-	exit 1
-	;;
-*)
-	exit 0
-	;;
-esac
-`
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write failing brew: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew", `case "$1" in install) exit 1 ;; *) exit 0 ;; esac`)
 }
 
 // ---- basic routing ----------------------------------------------------------
@@ -421,6 +394,7 @@ func TestAddCmd_InvalidFileFails(t *testing.T) {
 }
 
 func TestAddCmd_IOError(t *testing.T) {
+	skipIfWindowsNoUnixPerms(t)
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
@@ -601,6 +575,7 @@ func TestRemoveCmd_MissingID(t *testing.T) {
 }
 
 func TestRemoveCmd_IOError(t *testing.T) {
+	skipIfWindowsNoUnixPerms(t)
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
@@ -972,6 +947,7 @@ func TestListCmd_ShowsLockedPackages(t *testing.T) {
 }
 
 func TestListCmd_IOError(t *testing.T) {
+	skipIfWindowsNoUnixPerms(t)
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
@@ -1132,7 +1108,7 @@ func TestApply_CreatesLinks(t *testing.T) {
 	if err := os.WriteFile(sourcePath, []byte("hello\n"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":"` + targetPath + `"}]}}`
+	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":` + jsonString(targetPath) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(writeSpec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -1169,7 +1145,7 @@ func TestApply_DryRunJSON_IncludesFilePlan(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 	targetPath := filepath.Join(dir, "target.txt")
-	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":"` + targetPath + `"}]}}`
+	writeSpec := `{"schemaVersion":"5","files":{"links":[{"source":"source.txt","target":` + jsonString(targetPath) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(writeSpec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -1771,7 +1747,7 @@ func TestStatusFiles_DispatchesFilesOnlyMode(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
-	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","files":{"dirs":[{"target":"`+filepath.Join(dir, "managed")+`"}]}}`), 0o644); err != nil {
+	if err := os.WriteFile(specPath, []byte(`{"schemaVersion":"5","files":{"dirs":[{"target":`+jsonString(filepath.Join(dir, "managed"))+`}]}}`), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
 
@@ -1952,8 +1928,8 @@ func TestApply_LifecycleHooks_receive_env_context(t *testing.T) {
 		t.Fatalf("read hook log: %v", err)
 	}
 	want := "apply:pre-apply:ci:alpha:work\napply:post-apply:ci:alpha:work\n"
-	if string(got) != want {
-		t.Fatalf("hook log = %q, want %q", string(got), want)
+	if normalizeHookLog(got) != want {
+		t.Fatalf("hook log = %q, want %q", got, want)
 	}
 }
 
@@ -2017,8 +1993,8 @@ func TestRemove_LifecycleHooks_receive_removed_env(t *testing.T) {
 		t.Fatalf("read hook log: %v", err)
 	}
 	want := "remove:pre-remove:alpha\nremove:post-remove:alpha\n"
-	if string(got) != want {
-		t.Fatalf("hook log = %q, want %q", string(got), want)
+	if normalizeHookLog(got) != want {
+		t.Fatalf("hook log = %q, want %q", got, want)
 	}
 }
 
@@ -3334,8 +3310,8 @@ func TestApply_LifecycleHooks_receive_GENV_YES_when_yes_flag_set(t *testing.T) {
 		t.Fatalf("read hook log: %v", err)
 	}
 	want := "true\ntrue\n"
-	if string(got) != want {
-		t.Fatalf("hook log = %q, want %q", string(got), want)
+	if normalizeHookLog(got) != want {
+		t.Fatalf("hook log = %q, want %q", got, want)
 	}
 }
 
