@@ -18,7 +18,7 @@ func TestRenderString_Home(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderString error = %v", err)
 	}
-	want := filepath.Join(home, ".config")
+	want := home + "/.config"
 	if got != "path = "+want {
 		t.Fatalf("RenderString = %q, want %q", got, "path = "+want)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -154,7 +155,7 @@ func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 		`{"source":`+jsonString(goodSource)+`,"target":`+jsonString(goodTarget)+`,"mode":"link"},`+
 		`{"source":`+jsonString(badSource)+`,"target":`+jsonString(badTarget)+`,"mode":"link"}`+
 		`]},`+
-		`"hooks":{"postApply":[{"command":"printf ran >> `+hookLog+`"}]}`+
+		`"hooks":{"postApply":[{"command":`+jsonString("printf ran >> "+strconv.Quote(hookLog))+`}]}`+
 		`}`)
 
 	var code int
