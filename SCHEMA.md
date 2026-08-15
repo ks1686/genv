@@ -38,7 +38,7 @@ Older versions still load. Prefer **v8** for new multi-machine specs. Convert wi
       "packages": [{ "id": "ripgrep", "prefer": "brew" }]
     },
     "ubuntu": {
-      "packages": [{ "id": "ripgrep", "prefer": "snap" }],
+      "packages": [{ "id": "ripgrep", "prefer": "apt" }],
       "env": { "EDITOR": null }
     }
   },
@@ -137,4 +137,4 @@ Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_form
 
 ## Profiles
 
-Named profiles live in `profiles/<name>.json` beside the base spec. `genv profile switch` merges the profile over the base, applies, and stores `activeProfile` in the lock.
+Named profiles live in `profiles/<name>.json` beside the base spec on schema v1–v7. `genv profile switch` merges the profile over the base, applies, and stores `activeProfile` in the lock. Schema v8 refuses named profiles — use `defaults` plus `targets.*` instead.

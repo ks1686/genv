@@ -31,7 +31,7 @@ wsl --install
 Download the latest Linux binary from the [Releases](https://github.com/ks1686/genv/releases/latest) page:
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.0_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 rm genv.tar.gz
@@ -59,8 +59,8 @@ For schema v8 configs, WSL2 is classified by its Linux userland:
 
 Manager availability is detected separately from the target.
 
-**Ubuntu / non-Arch WSL2** installs through `snap` or `linuxbrew` (Homebrew on
-Linux). genv does not use `apt`:
+**Ubuntu / non-Arch WSL2** prefers native `apt` when it is available, then
+`snap` or `linuxbrew` (Homebrew on Linux):
 
 ```bash
 mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
@@ -71,8 +71,9 @@ mkdir -p ~/.config/genv && cat > ~/.config/genv/genv.json << 'EOF'
       "packages": [
         {
           "id": "jq",
-          "prefer": "snap",
+          "prefer": "apt",
           "managers": {
+            "apt": "jq",
             "snap": "jq",
             "linuxbrew": "jq"
           }
@@ -131,7 +132,7 @@ common parts in `defaults`:
       "packages": [{ "id": "jq", "prefer": "pacman" }]
     },
     "ubuntu": {
-      "packages": [{ "id": "jq", "prefer": "snap" }]
+      "packages": [{ "id": "jq", "prefer": "apt" }]
     },
     "wsl-arch": {
       "packages": [{ "id": "jq", "prefer": "pacman" }]
@@ -172,7 +173,7 @@ Confirm genv tracked it:
 genv list
 ```
 
-- `apply` output should show `snap` or `linuxbrew` as the adapter (`pacman`/`paru`/`yay` on Arch-based WSL2) ✅
+- `apply` output should show `apt`, `snap`, or `linuxbrew` as the adapter (`pacman`/`paru`/`yay` on Arch-based WSL2)
 - `jq --version` should print a version number ✅
 - `genv list` should show `jq` as an installed package ✅
 

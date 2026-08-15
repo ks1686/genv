@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.11 - 2026-08-15
+
 ### Fixed
 
 - `genv add` now installs first and only then writes `genv.json` / the lock. Unresolved or failed installs leave the spec unchanged and exit `4`. Use `genv adopt` to track without installing.
@@ -12,17 +14,19 @@ All notable changes to this project will be documented in this file.
 - `apk` name/version split now understands `-rN` releases. `pip-user` and `volta` implement `OutdatedLister`. `krew` availability requires the krew plugin, not just `kubectl`.
 - Apply unit tests that plant brew locks now seed schemaVersion 1 so Linux CI is not refused by the v8 foreign-lock gate. E2E spec assertions read v8 `targets.*` packages. Adapter `installFakeBinary` works on Windows (`PathListSeparator` + `.cmd` shim).
 - CI `govulncheck` sets `GOTOOLCHAIN=auto` so the scanner can build on Go 1.25 while unit tests stay on go.mod 1.24.3.
-- Windows unit tests isolate `USERPROFILE` (not only `HOME`), JSON-escape file paths, and treat execute-bit checks as Unix-only. Portable path helpers (`isAbsolutePath`, `brewStableBin`) no longer follow host `filepath` rules for POSIX/Homebrew strings.
+- Windows unit tests isolate `USERPROFILE` (not only `HOME`), JSON-escape file paths, and treat execute-bit checks as Unix-only. Portable path helpers (`isAbsolutePath`, `brewStableBin`) no longer follow host `filepath` rules for POSIX/Homebrew strings. Completion search on Windows now stays inside a timeout instead of hanging on live `npm` queries.
 
 ### Added
 
 - Native `apt`, `dnf`, and `apk` adapters (install/uninstall/query/search/outdated, default-fallback eligible). Ubuntu mapping prefers `apt` ahead of snap/linuxbrew.
 - GoReleaser stubs for winget / scoop / chocolatey (skip upload until store tokens are set).
 - `Regression` GitHub Actions workflow: fail-closed add, v8 defaults, safety, adapter, files e2e, and actionlint.
+- MIT `LICENSE` and `contents: read` on non-release CI workflows.
 
 ### Changed
 
-- README install lines use `brew install --cask genv` and current `v4.0.10` archive names.
+- Install docs use `brew install --cask genv` and current `v4.0.11` archive names. WSL Ubuntu examples prefer native `apt`.
+- Removed leftover Superpowers/handoff session notes and the historical `SECURITY_AUDIT.md` dump. Live security policy remains [SECURITY.md](SECURITY.md).
 
 ## v4.0.10 - 2026-08-12
 

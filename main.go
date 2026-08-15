@@ -4151,6 +4151,7 @@ Commands:
   updates     Check for available updates to genv-tracked packages
   export      Build a single-target portable snapshot and report
   map         Print assist-only manager mapping suggestions for a target
+  profile     Named overlays (list/create/switch; refused on schemaVersion 8)
   init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
@@ -4159,7 +4160,7 @@ Flags common to all commands:
   --file <path>   Path to genv.json (default: $XDG_CONFIG_HOME/genv/genv.json or ~/.config/genv/genv.json, falling back to ./genv.json)
 
 Host-specific flags (used by apply, status, upgrade, updates check/start, adopt):
-  --host <name>   Host name for host-specific records (default: $GENV_HOST or os.Hostname())
+  --host <name>   Legacy host filter for v1–v7 records (default: host classification, not hostname)
   --target <id>   Portable target id for schemaVersion 8 specs (default: $GENV_TARGET or host classification)
 
 Add/Adopt-specific flags:

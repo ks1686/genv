@@ -34,7 +34,7 @@ Search [existing issues](https://github.com/ks1686/genv/issues) first to avoid
 duplicates. A good bug report includes:
 
 - `genv version` output
-- Operating system and package manager(s) in use (macOS / Arch / WSL2 / native Windows, and which of `pacman`/`paru`/`yay`/`snap`/`brew`/`linuxbrew`/`bun`/`uv`/`winget`/`scoop`/`choco`)
+- Operating system and package manager(s) in use (macOS / Arch / Ubuntu / WSL2 / native Windows, and which of `pacman`/`paru`/`yay`/`apt`/`dnf`/`apk`/`snap`/`brew`/`linuxbrew`/`bun`/`uv`/`winget`/`scoop`/`choco`)
 - The `genv.json` content (or a minimal reproduction)
 - The exact command you ran
 - The actual output vs. what you expected
