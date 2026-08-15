@@ -119,25 +119,13 @@ snapcrafts:
 
 
 
-# Windows store publishers stay skipped until tokens exist.
-wingets:
-  - name: genv
-    publisher: ks1686
-    short_description: Track, sync, and reproduce your software environment.
-    license: MIT
-    skip_upload: true
-
+# Scoop stays unpublished until a bucket token exists.
+# winget and Chocolatey publishers are GoReleaser Pro-only; do not declare them
+# here or OSS goreleaser check / CI fails to parse the config.
 scoops:
   - name: genv
     description: Track, sync, and reproduce your software environment.
     license: MIT
-    skip_upload: true
-
-chocolateys:
-  - name: genv
-    owners: ks1686
-    title: genv
-    description: Track, sync, and reproduce your software environment.
     skip_upload: true
 
 changelog:

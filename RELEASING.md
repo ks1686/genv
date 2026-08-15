@@ -31,7 +31,8 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.8` | `add`/`adopt` Tab completions via `genv __complete repo-packages` (cached dumps + search fallback) |
 | `v4.0.9` | Lifecycle hooks inherit stdin + receive `GENV_YES` when `--yes` is set |
 | `v4.0.10` | Darwin GitHub Release / Homebrew binaries are Developer ID signed and notarized |
-| `v4.0.11` | Fail-closed `add`, schema v8 defaults, native apt/dnf/apk, Windows CI/test hardening |
+| `v4.0.11` | Fail-closed `add`, schema v8 defaults, native apt/dnf/apk, Windows CI/test hardening (tag exists; GitHub Release aborted on Pro-only GoReleaser keys) |
+| `v4.0.12` | Drop Pro-only winget/chocolatey GoReleaser keys so OSS publish can succeed |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
@@ -367,7 +368,7 @@ is clear demand; it is not tied to a specific version milestone.
 
 | Channel | Status | Notes |
 | --- | --- | --- |
-| Scoop | Configured, unpublished | GoReleaser `scoops` block is present with `skip_upload: true` until a token exists |
-| winget | Configured, unpublished | GoReleaser `wingets` block is present with `skip_upload: true` until a token exists |
-| Chocolatey | Configured, unpublished | GoReleaser `chocolateys` block is present with `skip_upload: true` until a token exists |
+| Scoop | Configured, unpublished | OSS GoReleaser `scoops` block is present with `skip_upload: true` until a token exists |
+| winget | Deferred | Publisher is GoReleaser Pro-only; not declared in OSS config |
+| Chocolatey | Deferred | Publisher is GoReleaser Pro-only; not declared in OSS config |
 | apt PPA | Deferred | `.deb` artifacts already ship via GitHub Releases |
