@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Native `apt`, `dnf`, and `apk` adapters (install/uninstall/query/search/outdated, default-fallback eligible). Ubuntu mapping prefers `apt` ahead of snap/linuxbrew.
+- GoReleaser stubs for winget / scoop / chocolatey (skip upload until store tokens are set).
+
+### Changed
+
+- README install lines use `brew install --cask genv` and current `v4.0.10` archive names.
+
 ## v4.0.10 - 2026-08-12
 
 ### Added

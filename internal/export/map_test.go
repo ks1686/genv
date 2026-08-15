@@ -38,6 +38,7 @@ func TestMapSuggestsUbuntuMappingForMacOSOnlyMASPackageWithoutMutation(t *testin
 		t.Fatalf("suggestion class = %q, want %q", item.Class, ClassSuggestion)
 	}
 	if !strings.Contains(item.Message, "ubuntu") ||
+		!strings.Contains(item.Message, "apt") ||
 		!strings.Contains(item.Message, "snap") ||
 		!strings.Contains(item.Message, "linuxbrew") ||
 		!strings.Contains(item.Message, "mas") {

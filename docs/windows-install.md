@@ -5,7 +5,7 @@ Native Windows is the `windows` target (not WSL). Use a separate Linux install i
 ## 1. Download genv
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.0_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .\genv
 New-Item -ItemType Directory -Force $HOME\bin
 Copy-Item .\genv\genv.exe $HOME\bin\genv.exe
@@ -15,7 +15,7 @@ genv version
 
 Update the version segment when a newer release is current.
 
-Publishing genv itself to winget/scoop/choco is deferred; those managers remain available for **packages** genv manages.
+Store installers for genv itself (`winget install ks1686.genv`, `scoop install genv`, `choco install genv`) are prepared in release config and stay unpublished until the matching tokens exist. Those managers remain available for **packages** genv manages.
 
 ## 2. Install a Windows package manager
 

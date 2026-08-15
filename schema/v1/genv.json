@@ -37,7 +37,7 @@
         },
         "prefer": {
           "type": "string",
-          "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas", "bun", "npm", "pnpm", "yarn", "deno", "volta", "uv", "pipx", "pip-user", "poetry", "conda", "mamba", "pixi", "cargo", "go", "rustup", "gem", "composer", "dotnet-tool", "ghcup", "stack", "opam", "juliaup", "sdkman", "asdf", "mise", "krew", "helm", "vscode", "winget", "scoop", "choco"],
+          "enum": ["apt", "dnf", "apk", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas", "bun", "npm", "pnpm", "yarn", "deno", "volta", "uv", "pipx", "pip-user", "poetry", "conda", "mamba", "pixi", "cargo", "go", "rustup", "gem", "composer", "dotnet-tool", "ghcup", "stack", "opam", "juliaup", "sdkman", "asdf", "mise", "krew", "helm", "vscode", "winget", "scoop", "choco"],
           "description": "Preferred package manager for this package."
         },
         "managers": {
@@ -45,7 +45,7 @@
           "description": "Manager-specific package identifiers (for packages with different names across managers).",
           "additionalProperties": { "type": "string" },
           "propertyNames": {
-            "enum": ["apt", "dnf", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas", "bun", "npm", "pnpm", "yarn", "deno", "volta", "uv", "pipx", "pip-user", "poetry", "conda", "mamba", "pixi", "cargo", "go", "rustup", "gem", "composer", "dotnet-tool", "ghcup", "stack", "opam", "juliaup", "sdkman", "asdf", "mise", "krew", "helm", "vscode", "winget", "scoop", "choco"]
+            "enum": ["apt", "dnf", "apk", "pacman", "flatpak", "snap", "brew", "linuxbrew", "mas", "bun", "npm", "pnpm", "yarn", "deno", "volta", "uv", "pipx", "pip-user", "poetry", "conda", "mamba", "pixi", "cargo", "go", "rustup", "gem", "composer", "dotnet-tool", "ghcup", "stack", "opam", "juliaup", "sdkman", "asdf", "mise", "krew", "helm", "vscode", "winget", "scoop", "choco"]
           }
         }
       }
