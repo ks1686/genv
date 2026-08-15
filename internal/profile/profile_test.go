@@ -1,6 +1,7 @@
 package profile_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,6 +125,21 @@ func TestLoadAndCreate(t *testing.T) {
 	}
 	if merged.SchemaVersion != schema.Version6 {
 		t.Errorf("expected schema version 6, got %s", merged.SchemaVersion)
+	}
+}
+
+func TestCreate_V8Refused(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "genv.json")
+	v8 := `{"schemaVersion":"8","targets":{"macos":{}}}`
+	if err := os.WriteFile(specPath, []byte(v8), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := profile.Create(specPath, "work"); !errors.Is(err, profile.ErrV8ProfilesUnsupported) {
+		t.Fatalf("Create v8 = %v, want ErrV8ProfilesUnsupported", err)
+	}
+	if _, err := profile.LoadMerged(specPath, "work"); !errors.Is(err, profile.ErrV8ProfilesUnsupported) {
+		t.Fatalf("LoadMerged v8 = %v, want ErrV8ProfilesUnsupported", err)
 	}
 }
 

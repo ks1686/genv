@@ -127,6 +127,7 @@ _genv() {
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--dry-run[Print the upgrade commands without executing]' \
 				'--yes[Skip the confirmation prompt]' \
+				'--all[Upgrade every unconstrained tracked package]' \
 				'--no-hooks[Skip pre-upgrade and post-upgrade hooks]' \
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--only=[Package IDs or names to upgrade]:packages:' \

@@ -93,6 +93,16 @@ func (PipUser) ListInstalledVersions() (map[string]string, error) {
 	return versions, nil
 }
 
+func (PipUser) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := PipUser{}.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	return listRegistryOutdated(versionMapOf(entries, func(e pythonEntry) (string, string) {
+		return e.name, e.version
+	}), pkgNames, PythonBasePackageName, pypiLatestVersion)
+}
+
 func (PipUser) listEntries() ([]pythonEntry, error) {
 	out, err := exec.Command("python3", "-m", "pip", "list", "--user", "--format=json").Output()
 	if err != nil {

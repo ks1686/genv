@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -8,6 +9,29 @@ import (
 
 func isFailingCloudCommand(args []string) bool {
 	return len(args) >= 4 && args[0] == "sh" && args[1] == "-c" && strings.Contains(args[2], "exit 1")
+}
+
+func TestKrew_Available_requiresKrewPlugin(t *testing.T) {
+	orig := lookPath
+	origProbe := krewProbe
+	t.Cleanup(func() {
+		lookPath = orig
+		krewProbe = origProbe
+	})
+	lookPath = func(file string) (string, error) {
+		if file == "kubectl" {
+			return "/usr/bin/kubectl", nil
+		}
+		return "", os.ErrNotExist
+	}
+	krewProbe = func() error { return os.ErrNotExist }
+	if (Krew{}).Available() {
+		t.Fatal("Available() = true with kubectl but no krew plugin")
+	}
+	krewProbe = func() error { return nil }
+	if !(Krew{}).Available() {
+		t.Fatal("Available() = false when krew plugin probe succeeds")
+	}
 }
 
 func TestKrew_PlanCommands_whenPluginTracked(t *testing.T) {

@@ -52,7 +52,7 @@ Target outcomes:
 Checklist:
 
 - [x] Build adapter interface: detect, query, plan install, plan uninstall, plan cache clean, and normalize package IDs.
-- [x] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `flatpak`, `snap`.
+- [x] Implement Linux adapters: `apt`, `dnf`, `pacman`, `paru`, `yay`, `snap`. (`flatpak` was planned historically and is not shipped.)
 - [x] Implement macOS adapters: `brew` (formulae and casks).
 - [x] Implement Linuxbrew path support where available.
 - [x] Implement host manager detection and capability reporting.
@@ -274,9 +274,9 @@ Target outcomes:
 
 Checklist:
 
-- [x] Implement Linux adapter: `zypper` (openSUSE / SLES).
-- [x] Implement Linux adapter: `xbps` (Void Linux).
-- [x] Implement Linux adapter: `emerge` (Gentoo).
+- [ ] Implement Linux adapter: `zypper` (openSUSE / SLES). Historical checklist item — not in `KnownManagers`.
+- [ ] Implement Linux adapter: `xbps` (Void Linux). Historical checklist item — not in `KnownManagers`.
+- [ ] Implement Linux adapter: `emerge` (Gentoo). Historical checklist item — not in `KnownManagers`.
 - [x] Publish genv as `.deb` and `.rpm` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and zypper direct-install).
 - [x] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
 - [x] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.

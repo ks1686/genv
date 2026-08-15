@@ -209,3 +209,20 @@ jobs:
 
       - name: E2E test — TestE2EBrew
         run: go test -tags integration -race -v -run TestE2EBrew ./e2e/
+
+  # Hermetic files-block e2e (no live package manager required).
+  files:
+    name: ubuntu-latest (files e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Files e2e
+        run: go test -tags integration -race -v -run TestFiles_ ./e2e/

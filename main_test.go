@@ -75,6 +75,30 @@ esac
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+func withNoPackageManagers(t *testing.T) {
+	t.Helper()
+	t.Setenv("PATH", t.TempDir())
+}
+
+func withFailingBrewInstall(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+install)
+	exit 1
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write failing brew: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // ---- basic routing ----------------------------------------------------------
 
 func TestRun_NoArgs(t *testing.T) {
@@ -239,9 +263,8 @@ func TestMutationRemoveCommands_V8UseActiveTarget(t *testing.T) {
 }
 
 // ---- genv add ----------------------------------------------------------------
-// add writes to genv.json and attempts a best-effort installation.
-// Installation failure is non-fatal (no package manager in CI), so all spec-update
-// tests expect exitOK regardless of whether the installation succeeds.
+// add installs first, then persists the spec and lock. Unresolved or failed
+// installs leave the spec unchanged and return exitLogic. Track-only is adopt.
 
 func TestAddCmd_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
@@ -430,6 +453,59 @@ func TestAddCmd_UnknownManagerKeyInFlagFails(t *testing.T) {
 	code := run([]string{"add", "--file", path, "--manager", "yum:git", "git"})
 	if code != exitUsage {
 		t.Errorf("unknown manager key: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestAddCmd_UnresolvedLeavesSpecUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	withNoPackageManagers(t)
+	path := filepath.Join(dir, "genv.json")
+
+	code := run([]string{"add", "--file", path, "--no-search", "git"})
+	if code != exitLogic {
+		t.Fatalf("unresolved add: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unresolved add must not create spec, stat err = %v", err)
+	}
+}
+
+func TestAddCmd_InstallFailureLeavesSpecUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	withFailingBrewInstall(t)
+	path := filepath.Join(dir, "genv.json")
+
+	code := run([]string{"add", "--file", path, "--prefer", "brew", "--no-search", "git"})
+	if code != exitLogic {
+		t.Fatalf("failed install: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed install must not create spec, stat err = %v", err)
+	}
+}
+
+func TestAddCmd_ExistingSpecUnchangedOnUnresolved(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	withNoPackageManagers(t)
+	path := filepath.Join(dir, "genv.json")
+	original := `{"schemaVersion":"1","packages":[{"id":"ripgrep"}]}`
+	if err := os.WriteFile(path, []byte(original+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	code := run([]string{"add", "--file", path, "--no-search", "git"})
+	if code != exitLogic {
+		t.Fatalf("unresolved add: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(got), `"ripgrep"`) || strings.Contains(string(got), `"git"`) {
+		t.Fatalf("existing spec mutated on unresolved add: %s", got)
 	}
 }
 

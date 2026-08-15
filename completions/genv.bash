@@ -85,7 +85,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete packages ${file_arg} 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --dry-run --yes --no-hooks --json --only --skip --only-manager --skip-manager --hook-timeout --debug --host --target"
+		opts="--file --lock-file --dry-run --yes --all --no-hooks --json --only --skip --only-manager --skip-manager --hook-timeout --debug --host --target"
 		;;
 	updates)
 		local updates_sub=""

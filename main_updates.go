@@ -9,6 +9,7 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
+	"github.com/ks1686/genv/internal/profile"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/upgrade"
 )
@@ -69,7 +70,13 @@ func updatesCheckCmd(args []string) int {
 		return exitUsage
 	}
 
-	f, err := genvfile.Read(*file)
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lfPreview, _ := genvfile.ReadLock(lockPath)
+	profileName := ""
+	if lfPreview != nil {
+		profileName = lfPreview.ActiveProfile
+	}
+	f, err := profile.LoadMerged(*file, profileName)
 	if err != nil {
 		return updatesCheckReadSpecError(*file, *jsonOut, err)
 	}
@@ -78,7 +85,6 @@ func updatesCheckCmd(args []string) int {
 		return code
 	}
 
-	lockPath := lockPathForSpec(*file, *lockFile)
 	if _, err := os.Stat(lockPath); err != nil {
 		return updatesCheckReadLockError(*jsonOut, err)
 	}

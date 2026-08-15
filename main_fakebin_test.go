@@ -23,7 +23,7 @@ me=$(basename "$0")
 
 case "$me" in
 sudo)
-	# Only pacman's mutating commands are sudo-prefixed; just succeed.
+	# pacman/apt/dnf/apk mutating commands are sudo-prefixed; just succeed.
 	exit 0
 	;;
 brew)
@@ -53,6 +53,30 @@ pacman|paru|yay)
 		exit 0
 		;;
 	esac
+	exit 0
+	;;
+apt-get|apt)
+	case "$1" in
+	install|remove|purge|upgrade|update|autoclean|clean|search)
+		exit 0
+		;;
+esac
+	exit 0
+	;;
+dnf)
+	case "$1" in
+	install|remove|upgrade|makecache|clean|search)
+		exit 0
+		;;
+esac
+	exit 0
+	;;
+apk)
+	case "$1" in
+	add|del|upgrade|cache|search|info)
+		exit 0
+		;;
+esac
 	exit 0
 	;;
 snap)
@@ -99,7 +123,7 @@ exit 0
 // is redirected away from the real system. It prepends the fake directory
 // to PATH so the fakes shadow the real binaries.
 func installFakeManagers() error {
-	names := []string{"brew", "pacman", "paru", "yay", "snap", "bun", "uv", "sudo"}
+	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo"}
 
 	dir, err := os.MkdirTemp("", "genv-test-fakebin-*")
 	if err != nil {

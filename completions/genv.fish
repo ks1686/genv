@@ -170,6 +170,7 @@ complete -c genv -n '__fish_genv_using_command upgrade' \
 complete -c genv -n '__fish_genv_using_command upgrade' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_using_command upgrade' -l dry-run -d 'Print the upgrade commands without executing'
 complete -c genv -n '__fish_genv_using_command upgrade' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command upgrade' -l all -d 'Upgrade every unconstrained tracked package'
 complete -c genv -n '__fish_genv_using_command upgrade' -l no-hooks -d 'Skip pre-upgrade and post-upgrade hooks'
 complete -c genv -n '__fish_genv_using_command upgrade' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command upgrade' -l only -d 'Package IDs or names to upgrade' -x

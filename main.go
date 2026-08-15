@@ -335,29 +335,33 @@ func materializedHooks(commandName, file, hostFlag, targetFlag string) (*schema.
 	return effective.Hooks, exitOK
 }
 
-// addToSpec reads or creates the spec at file, records the package, and writes
-// it back. Prints "created <file>" when the file is brand-new. Returns an exit
-// code; exitOK means success.
-func addToSpec(file, id, version, prefer string, managers map[string]string, targetFlag string) int {
+// prepareAddSpec reads or creates the spec in memory and records the package
+// without writing. Callers persist with writePreparedAdd after a successful
+// install so unresolved/failed adds leave the file unchanged.
+func prepareAddSpec(file, id, version, prefer string, managers map[string]string, targetFlag string) (*schema.GenvFile, bool, int) {
 	f, isNew, err := genvfile.ReadOrNew(file)
 	if err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return exitValidation
+			return nil, false, exitValidation
 		}
-		return exitIO
+		return nil, false, exitIO
 	}
 	targetID, exit := resolveMutationTarget("add", file, f, targetFlag)
 	if exit != exitOK {
-		return exit
+		return nil, false, exit
 	}
 	if err := commands.Add(f, id, version, prefer, managers, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		if errors.Is(err, commands.ErrAlreadyTracked) {
-			return exitLogic
+			return nil, false, exitLogic
 		}
-		return exitUsage
+		return nil, false, exitUsage
 	}
+	return f, isNew, exitOK
+}
+
+func writePreparedAdd(file string, f *schema.GenvFile, isNew bool) int {
 	if err := genvfile.Write(file, f); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitIO
@@ -366,6 +370,16 @@ func addToSpec(file, id, version, prefer string, managers map[string]string, tar
 		fprintf(os.Stdout, "created %s\n", file)
 	}
 	return exitOK
+}
+
+// addToSpec records a package and writes immediately. Used by adopt, which has
+// already verified the package is installed.
+func addToSpec(file, id, version, prefer string, managers map[string]string, targetFlag string) int {
+	f, isNew, exit := prepareAddSpec(file, id, version, prefer, managers, targetFlag)
+	if exit != exitOK {
+		return exit
+	}
+	return writePreparedAdd(file, f, isNew)
 }
 
 // appendLockEntry reads the lock at lockPath, appends lp, and writes it back.
@@ -429,7 +443,8 @@ func removeFromSpecAndReadLock(file, id, lockFile, targetFlag string) (*genvfile
 }
 
 // addCmd implements `genv add <id> [flags]`.
-// Adds the package to genv.json and immediately installs it, then updates the lock.
+// Resolves and installs the package first, then records it in genv.json and
+// the lock. Unresolved or failed installs leave the spec unchanged.
 func addCmd(args []string) int {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -522,31 +537,35 @@ func addCmd(args []string) int {
 		}
 	}
 
-	// 1. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
+	// 1. Validate and stage the spec in memory. Do not write until install succeeds.
+	prepared, isNew, exit := prepareAddSpec(*file, id, *version, *prefer, managers, *targetFlag)
+	if exit != exitOK {
 		return exit
 	}
 
-	// 2. Resolve and install the package.
+	// 2. Resolve and install. Track-only is `genv adopt`.
 	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
 	action := resolver.ResolveOne(pkg, available)
 	if !action.Resolved() {
-		fprintf(os.Stdout, "added %s to spec (no manager available to install it now; run 'genv apply' after installing a compatible package manager)\n", id)
-		return exitOK
+		fprintf(os.Stderr, "genv add: no manager available to install %q; spec unchanged (use 'genv adopt' to track without installing)\n", id)
+		return exitLogic
 	}
 
-	fprintf(os.Stdout, "added %s — installing via %s\n", id, action.Manager)
+	fprintf(os.Stdout, "installing %s via %s\n", id, action.Manager)
 	fprintf(os.Stdout, "\n==> %s\n", strings.Join(action.Cmd, " "))
 	if err := runForegroundCommand(action.Cmd); err != nil {
-		// Installation failure is non-fatal: the spec was already updated.
-		// The user can run 'genv apply' to retry.
-		fprintf(os.Stderr, "genv: installation failed: %v\n", err)
-		fPrintln(os.Stderr, "Package was added to spec. Run 'genv apply' to retry.")
-		return exitOK
+		fprintf(os.Stderr, "genv add: installation failed: %v\n", err)
+		fPrintln(os.Stderr, "Spec unchanged. Fix the install error and retry, or use 'genv adopt' to track an already-installed package.")
+		return exitLogic
 	}
 
-	// 3. Update lock file.
-	exit := appendLockEntry(lockPath, genvfile.LockedPackage{
+	// 3. Persist only after a successful install.
+	if exit := writePreparedAdd(*file, prepared, isNew); exit != exitOK {
+		return exit
+	}
+
+	// 4. Update lock file.
+	exit = appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
@@ -1157,9 +1176,11 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 				fprintf(os.Stderr, "Back up or remove %s, or rerun with --force-new-lock to move it aside and create a new local lock.\n", lockPath)
 				return exitLogic
 			}
-			backupPath := lockPath + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
-			if err := os.Rename(lockPath, backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				fprintf(os.Stderr, "genv apply: warning: could not back up foreign lock %s: %v\n", lockPath, err)
+			if !opts.DryRun {
+				backupPath := lockPath + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+				if err := os.Rename(lockPath, backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+					fprintf(os.Stderr, "genv apply: warning: could not back up foreign lock %s: %v\n", lockPath, err)
+				}
 			}
 			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
 		}
@@ -3469,7 +3490,13 @@ func upgradeCmd(args []string) int {
 	}
 
 	hostName := hostForCommand(*hostFlag)
-	f, err := genvfile.Read(*file)
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lfPreview, _ := genvfile.ReadLock(lockPath)
+	profileName := ""
+	if lfPreview != nil {
+		profileName = lfPreview.ActiveProfile
+	}
+	f, err := profile.LoadMerged(*file, profileName)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
 			if *jsonOut {
@@ -3507,7 +3534,6 @@ func upgradeCmd(args []string) int {
 		return code
 	}
 
-	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		if *jsonOut {
@@ -3996,6 +4022,11 @@ func initCmd(args []string) int {
 	fPrintln(os.Stdout)
 
 	f := genvfile.New()
+	targetID, err := target.Resolve("")
+	if err != nil {
+		fprintf(os.Stderr, "genv init: %v\n", err)
+		return exitUsage
+	}
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fprint(os.Stdout, "  package id (or Enter to finish): ")
@@ -4004,7 +4035,7 @@ func initCmd(args []string) int {
 		if id == "" {
 			break
 		}
-		if err := commands.Add(f, id, "", "", nil, ""); err != nil {
+		if err := commands.Add(f, id, "", "", nil, targetID); err != nil {
 			if errors.Is(err, commands.ErrAlreadyTracked) {
 				fprintf(os.Stdout, "  (skipping %q — already added)\n", id)
 				continue
@@ -4015,16 +4046,19 @@ func initCmd(args []string) int {
 		fprintf(os.Stdout, "  added %s\n", id)
 	}
 
-	if len(f.Packages) == 0 {
+	n := 0
+	if b := f.Targets[targetID]; b != nil {
+		n = len(b.Packages)
+	}
+	if n == 0 {
 		fPrintln(os.Stdout, "\nNo packages entered. Run 'genv add <id>' to add packages later.")
-		// Still write an empty spec so the file exists.
 	}
 
 	if err := genvfile.Write(*file, f); err != nil {
 		fprintf(os.Stderr, "genv init: %v\n", err)
 		return exitIO
 	}
-	fprintf(os.Stdout, "\ncreated %s with %d package(s).\n", *file, len(f.Packages))
+	fprintf(os.Stdout, "\ncreated %s with %d package(s).\n", *file, n)
 	if len(f.Packages) > 0 {
 		fPrintln(os.Stdout, "Run 'genv apply' to install them.")
 	}
@@ -4109,9 +4143,9 @@ Commands:
   service     Manage user-space services
   pull        Fetch genv.json from the configured spec repository
   migrate     Convert legacy host predicates to schemaVersion 8 targets
-  completion  Print or install the shell completion script (bash, zsh, or fish)
+  completion  Print or install the shell completion script (bash, zsh, fish, or powershell)
   validate    Validate genv.json against the schema
-  upgrade     Upgrade all tracked packages to their latest versions
+  upgrade     Upgrade outdated tracked packages (--all for every unconstrained package)
   updates     Check for available updates to genv-tracked packages
   export      Build a single-target portable snapshot and report
   map         Print assist-only manager mapping suggestions for a target
@@ -4165,6 +4199,7 @@ Remove-specific flags:
 Upgrade-specific flags:
   --dry-run                 Print the upgrade commands without executing
   --yes                     Skip the confirmation prompt
+  --all                     Upgrade every unconstrained tracked package (skip outdated detection)
   --no-hooks                Skip pre-upgrade and post-upgrade hooks
   --json                    Emit machine-readable JSON to stdout
   --only <ids>              Comma-separated package IDs or names to upgrade
@@ -4195,8 +4230,10 @@ Status-specific flags:
   --debug   Emit debug-level structured logs to stderr
 
 Scan-specific flags:
-  --json    Emit machine-readable JSON to stdout
-  --debug   Emit debug-level structured logs to stderr
+  --dry-run   List packages that would be adopted without writing
+  --yes       Skip the confirmation prompt
+  --json      Emit machine-readable JSON to stdout
+  --debug     Emit debug-level structured logs to stderr
 
 Clean-specific flags:
   --dry-run   Print the clean commands without executing

@@ -193,7 +193,7 @@ Legacy **v1–v7** specs still load. Convert with `genv migrate`. Field-by-field
 5. Reconcile env, shell, files, services, hooks as configured.
 6. Update the lock (v8 records `target` + `goos`).
 
-Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the spec and usually the live system in one step. On v8 they write into `targets.<active>` (`--target` or `$GENV_TARGET` / classification).
+Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the spec and usually the live system in one step. `genv add` installs first and only persists the spec after a successful install (unresolved or failed installs exit `4` and leave the spec unchanged; use `adopt` to track without installing). On v8 they write into `targets.<active>` (`--target` or `$GENV_TARGET` / classification).
 
 `genv pull` fetches `genv.json` **and** relative `files` assets from `repo.url`. It never overwrites the lock or secrets.
 

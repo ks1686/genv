@@ -42,13 +42,76 @@ func TestParseDnfCheckUpdate(t *testing.T) {
 	}
 }
 
+func TestSplitApkNameVersion(t *testing.T) {
+	name, ver := splitApkNameVersion("git-2.45.0-r0")
+	if name != "git" || ver != "2.45.0-r0" {
+		t.Fatalf("splitApkNameVersion(git-2.45.0-r0) = %q, %q", name, ver)
+	}
+	name, ver = splitApkNameVersion("py3-setuptools-70.0.0-r1")
+	if name != "py3-setuptools" || ver != "70.0.0-r1" {
+		t.Fatalf("splitApkNameVersion(py3-setuptools) = %q, %q", name, ver)
+	}
+}
+
 func TestParseApkVersionOutdated(t *testing.T) {
 	got := parseApkVersionOutdated([]string{"git-2.45.0-r0 < git-2.46.0-r1"})
-	if got["git"] != "r1" && got["git-2.46.0"] == "" {
-		// name is split at last hyphen: "git-2.45.0" / "r0"
-		if _, ok := got["git-2.45.0"]; !ok {
-			t.Fatalf("parseApkVersionOutdated = %#v", got)
-		}
+	if got["git"] != "2.46.0-r1" {
+		t.Fatalf("parseApkVersionOutdated = %#v, want git=2.46.0-r1", got)
+	}
+}
+
+func TestApk_Search_stripsVersions(t *testing.T) {
+	installFakeBinary(t, "apk", `if [ "$1" = "search" ]; then echo git-2.45.0-r0; echo git-doc-2.45.0-r0; exit 0; fi; exit 1`)
+	got, err := Apk{}.Search("git")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) == 0 || got[0] != "git" {
+		t.Fatalf("Search = %#v, want git first", got)
+	}
+}
+
+func TestApk_ListOutdated_parse(t *testing.T) {
+	installFakeBinary(t, "apk", `if [ "$1" = "version" ]; then echo 'git-2.45.0-r0 < git-2.46.0-r1'; exit 0; fi; exit 1`)
+	got, err := Apk{}.ListOutdated([]string{"git"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	if got["git"] != "2.46.0-r1" {
+		t.Fatalf("ListOutdated = %#v", got)
+	}
+}
+
+func TestApt_ListOutdated_parse(t *testing.T) {
+	installFakeBinary(t, "apt-get", `if [ "$1" = "-s" ]; then echo 'Inst git [1:2.43.0-1] (1:2.45.2-1ubuntu1 Ubuntu:24.04/noble-updates [amd64])'; exit 0; fi; exit 1`)
+	got, err := Apt{}.ListOutdated([]string{"git"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	if got["git"] != "1:2.45.2-1ubuntu1" {
+		t.Fatalf("ListOutdated = %#v", got)
+	}
+}
+
+func TestDnf_ListOutdated_parse(t *testing.T) {
+	installFakeBinary(t, "dnf", `if [ "$1" = "check-update" ]; then echo 'git.x86_64 2.45.1-1.fc40 updates'; exit 100; fi; exit 1`)
+	got, err := Dnf{}.ListOutdated([]string{"git"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	if got["git"] != "2.45.1-1.fc40" {
+		t.Fatalf("ListOutdated = %#v", got)
+	}
+}
+
+func TestApk_ListNames_stripsVersions(t *testing.T) {
+	installFakeBinary(t, "apk", `if [ "$1" = "search" ] && [ "$2" = "-q" ]; then echo git-2.45.0-r0; echo curl-8.0.0-r1; exit 0; fi; exit 1`)
+	got, err := Apk{}.ListNames()
+	if err != nil {
+		t.Fatalf("ListNames: %v", err)
+	}
+	if len(got) != 2 || got[0] != "git" || got[1] != "curl" {
+		t.Fatalf("ListNames = %#v, want git curl", got)
 	}
 }
 

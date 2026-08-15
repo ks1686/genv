@@ -2,10 +2,9 @@
 
 // Package e2e_test contains end-to-end tests for the genv binary.
 //
-// This file holds the S1-S6 scenarios for the genv files block (schema v5).
-// The tests compile against the current genv binary but exercise CLI flags and
-// schema fields that do not exist yet, so they are expected to be RED until
-// the schema v5, files apply, template renderer, and status --files work land.
+// This file holds the S1–S8 scenarios for the genv files block (schema v5+).
+// The tests build the current genv binary and exercise status --files, apply,
+// and adopt --files against isolated HOME directories.
 package e2e_test
 
 import (

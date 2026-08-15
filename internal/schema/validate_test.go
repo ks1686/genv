@@ -594,6 +594,36 @@ func TestParseAndValidate_RejectsShellSourceMetacharacters(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_AcceptsSafeAliasName(t *testing.T) {
+	input := `{"schemaVersion":"3","packages":[],"shell":{"aliases":{"ll":{"value":"ls"}}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil || len(errs) != 0 {
+		t.Fatalf("safe alias rejected: err=%v errs=%v", err, errs)
+	}
+}
+
+func TestParseAndValidate_RejectsUnsafeAliasName(t *testing.T) {
+	input := `{
+		"schemaVersion":"3",
+		"packages":[],
+		"shell":{"aliases":{"foo;rm":{"value":"ls"}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Field, "aliases") && strings.Contains(e.Message, "invalid") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected invalid alias name error, got: %v", errs)
+	}
+}
+
 func TestParseAndValidate_RejectsShellFunctionMetacharacters(t *testing.T) {
 	input := `{
 		"schemaVersion":"3",

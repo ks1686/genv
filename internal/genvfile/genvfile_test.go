@@ -13,11 +13,14 @@ import (
 
 func TestNew(t *testing.T) {
 	f := New()
-	if f.SchemaVersion != schema.Version {
-		t.Errorf("SchemaVersion = %q, want %q", f.SchemaVersion, schema.Version)
+	if f.SchemaVersion != schema.Version8 {
+		t.Errorf("SchemaVersion = %q, want %q", f.SchemaVersion, schema.Version8)
 	}
-	if f.Packages == nil {
-		t.Error("Packages must be non-nil to marshal as [] not null")
+	if f.Defaults == nil {
+		t.Error("Defaults must be non-nil")
+	}
+	if len(f.Targets) != len(schema.KnownTargets) {
+		t.Errorf("Targets = %d, want %d known targets", len(f.Targets), len(schema.KnownTargets))
 	}
 }
 
@@ -151,7 +154,7 @@ func TestReadOrNew_CreatesNew(t *testing.T) {
 		t.Fatal("expected non-nil GenvFile")
 		return
 	}
-	if f.SchemaVersion != schema.Version {
+	if f.SchemaVersion != schema.Version8 {
 		t.Errorf("SchemaVersion = %q", f.SchemaVersion)
 	}
 }
@@ -525,15 +528,18 @@ func TestWriteLock_InstalledVersion_OmitEmpty(t *testing.T) {
 	}
 }
 
-// TestNew_PackagesNonNil verifies that New() initialises Packages as a non-nil
-// empty slice so that it marshals as "[]" rather than "null".
-func TestNew_PackagesNonNil(t *testing.T) {
-	f := New()
-	if f.Packages == nil {
-		t.Error("New().Packages must be non-nil to serialize as []")
+func TestNew_WritesValidV8(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+	if err := Write(path, New()); err != nil {
+		t.Fatalf("Write New(): %v", err)
 	}
-	if len(f.Packages) != 0 {
-		t.Errorf("New().Packages should be empty, got %d entries", len(f.Packages))
+	got, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got.SchemaVersion != schema.Version8 {
+		t.Fatalf("schemaVersion = %q", got.SchemaVersion)
 	}
 }
 

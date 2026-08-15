@@ -92,11 +92,18 @@ func ReadOrNew(path string) (f *schema.GenvFile, isNew bool, err error) {
 	return f, false, err
 }
 
-// New returns a minimal, valid GenvFile ready to be populated.
+// New returns a minimal, valid schemaVersion 8 GenvFile with empty defaults
+// and a bucket for every known target so first-run add/init can persist
+// without guessing a single host.
 func New() *schema.GenvFile {
+	targets := make(map[string]*schema.TargetBundle, len(schema.KnownTargets))
+	for id := range schema.KnownTargets {
+		targets[id] = &schema.TargetBundle{}
+	}
 	return &schema.GenvFile{
-		SchemaVersion: schema.Version,
-		Packages:      []schema.Package{},
+		SchemaVersion: schema.Version8,
+		Defaults:      &schema.TargetBundle{},
+		Targets:       targets,
 	}
 }
 

@@ -77,6 +77,8 @@ go test -tags integration ./internal/adapter/
 make integration-v8
 ```
 
+GitHub Actions (`CI`, `Integration Tests`, `Regression`) run on every push and pull request. `Regression` pins fail-closed `add`, v8 empty specs, path sandbox, and related review-stack tests.
+
 ---
 
 ## Code style

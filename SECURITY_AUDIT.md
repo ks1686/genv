@@ -13,23 +13,23 @@
 
 | # | Status | Notes |
 |---|---|---|
-| 1 | PARTIAL | Function bodies reject shell metacharacters (`internal/schema/validate.go`); function **names** still lack POSIX identifier checks |
+| 1 | FIXED | Function bodies reject shell metacharacters; alias/function names must match `[A-Za-z_][A-Za-z0-9_.-]*` |
 | 2 | FIXED | Shell `source` entries are single-quoted; schema rejects metacharacters |
 | 3 | SUPERSEDED | `shellQuote`/`singleQuote` use POSIX `'\''` escaping; original quote-injection premise was incorrect |
 | 4 | FIXED | `InjectSourceLine` quotes `fragmentPath` via `shellQuote` |
 | 5 | FIXED | `genvfile.Write` re-validates via `schema.ParseAndValidate` before persist |
 | 6 | FIXED | Service CLI uses `parseCommandWords` instead of `strings.Fields` |
 | 7 | OPEN (by design) | `--file` accepts an explicit filesystem path; not a hidden traversal bypass |
-| 8 | OPEN | Published `schema/v1/genv.json` is still v1-only while code accepts schema versions 1–6 |
+| 8 | PARTIAL | `schema/v8/genv.json` exists (Go `ParseAndValidate` is authoritative); `schema/v1/genv.json` remains a v1 mirror |
 | 9 | OPEN | Package IDs: empty/duplicate checks only |
 | 10 | OPEN | Manager map *values* not content-validated (keys checked against `KnownManagers`) |
 | 11 | OPEN | Version constraint strings lack format/length validation |
-| 12 | OPEN | `runSubcmd` still assumes non-empty argv |
+| 12 | FIXED | `runSubcmd` rejects empty argv |
 | 13 | OPEN | No collection-size bounds in `ParseAndValidate` |
-| 14 | OPEN | Alias (and function) names are not restricted to POSIX identifiers |
-| 15 | SUPERSEDED | Docs/code agree on numeric schema versions `"1"`–`"6"`; finding 8 remains for the published JSON Schema file |
+| 14 | FIXED | Alias and function names must match `[A-Za-z_][A-Za-z0-9_.-]*` |
+| 15 | SUPERSEDED | Code accepts schema versions `"1"`–`"8"`; published mirrors exist for v1 and v8 |
 
-Follow-ups that would close residual risk: POSIX identifier validation for alias/function names, collection bounds, published JSON Schema for current schema versions, and an empty-argv guard in `runSubcmd`.
+Follow-ups that would close residual risk: collection bounds, published JSON Schema enum sync for v1, and package-ID charset/length checks.
 
 ---
 

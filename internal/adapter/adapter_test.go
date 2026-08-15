@@ -269,17 +269,23 @@ func TestPlanClean_ValidCommands(t *testing.T) {
 // true when lookPath finds the binary and false when lookPath returns an error.
 func TestAvailable_AllAdapters_WithMockedLookPath(t *testing.T) {
 	orig := lookPath
-	t.Cleanup(func() { lookPath = orig })
+	origProbe := krewProbe
+	t.Cleanup(func() {
+		lookPath = orig
+		krewProbe = origProbe
+	})
 
 	for _, a := range All {
 		t.Run(a.Name()+"/found", func(t *testing.T) {
 			lookPath = func(string) (string, error) { return "/usr/bin/mgr", nil }
+			krewProbe = func() error { return nil }
 			if !a.Available() {
 				t.Errorf("%s.Available() = false when lookPath succeeds", a.Name())
 			}
 		})
 		t.Run(a.Name()+"/missing", func(t *testing.T) {
 			lookPath = func(string) (string, error) { return "", &os.PathError{Op: "lookpath", Err: os.ErrNotExist} }
+			krewProbe = func() error { return os.ErrNotExist }
 			if a.Available() {
 				t.Errorf("%s.Available() = true when lookPath fails", a.Name())
 			}
