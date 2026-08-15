@@ -193,6 +193,7 @@ func TestBrewStableBin_caskroomAndCellar(t *testing.T) {
 		{exe: "/usr/local/Caskroom/genv/4.0.4/genv", want: "/usr/local/bin/genv"},
 		{exe: "/home/linuxbrew/.linuxbrew/Caskroom/genv/1.0.0/genv", want: "/home/linuxbrew/.linuxbrew/bin/genv"},
 		{exe: "/opt/homebrew/Cellar/genv/4.0.4/bin/genv", want: "/opt/homebrew/bin/genv"},
+		{exe: `C:\homebrew\Caskroom\genv\4.0.4\genv`, want: filepath.FromSlash("C:/homebrew/bin/genv")},
 		{exe: "/tmp/build/genv", want: ""},
 		{exe: "/opt/homebrew/bin/genv", want: ""},
 	}

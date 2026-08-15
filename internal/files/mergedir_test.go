@@ -31,7 +31,7 @@ func setupMergeDirSource(t *testing.T, home, name string, files map[string]strin
 // creates one symlink per file under target, not a single directory symlink.
 func TestMergeDir_CreatesPerFileSymlinks(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	base := setupMergeDirSource(t, home, "zsh-common", map[string]string{
 		"aliases.zsh": "alias ll='ls -la'",
@@ -77,7 +77,7 @@ func TestMergeDir_CreatesPerFileSymlinks(t *testing.T) {
 // alongside the base's files.
 func TestMergeDir_LayersHostSpecificOverBase(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	base := setupMergeDirSource(t, home, "zsh-common", map[string]string{
 		"aliases.zsh": "common aliases",
@@ -116,7 +116,7 @@ func TestMergeDir_LayersHostSpecificOverBase(t *testing.T) {
 	// arch layer must relink aliases.zsh to itself (no --force needed) and
 	// add arch-only.zsh, without touching path.zsh.
 	home2 := t.TempDir()
-	t.Setenv("HOME", home2)
+	setTestHome(t, home2)
 	base2 := setupMergeDirSource(t, home2, "zsh-common", map[string]string{
 		"aliases.zsh": "common aliases",
 		"path.zsh":    "common path",
@@ -169,7 +169,7 @@ func TestMergeDir_LayersHostSpecificOverBase(t *testing.T) {
 // --force, and reported as mismatched.
 func TestMergeDir_RealFileRequiresForce(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	base := setupMergeDirSource(t, home, "zsh-common", map[string]string{
 		"aliases.zsh": "common aliases",
@@ -207,7 +207,7 @@ func TestMergeDir_RealFileRequiresForce(t *testing.T) {
 // without touching the filesystem.
 func TestMergeDir_DryRunWritesNothing(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	base := setupMergeDirSource(t, home, "zsh-common", map[string]string{
 		"aliases.zsh": "common aliases",
@@ -235,7 +235,7 @@ func TestMergeDir_DryRunWritesNothing(t *testing.T) {
 // one unit.
 func TestMergeDir_StatusReportsPerFileEntries(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	base := setupMergeDirSource(t, home, "zsh-common", map[string]string{
 		"aliases.zsh": "common aliases",

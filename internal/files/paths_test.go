@@ -11,7 +11,7 @@ import (
 
 func TestApply_sourceRelativeToSourceRoot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -65,7 +65,7 @@ func TestResolveSource_rejectsDotDotInside(t *testing.T) {
 
 func TestApply_expandsHomeEnvVar(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := filepath.Join(home, "repo", "simple.txt")
 	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {

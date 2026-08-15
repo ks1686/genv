@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestCollectRepoNames_filtersSortsAndDeduplicatesListerResults(t *testing.T) {
@@ -229,18 +230,10 @@ func TestRepoPackagesOnGOOS_usesCachedAutomaticManagers(t *testing.T) {
 
 func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	binDir := t.TempDir()
 	countPath := filepath.Join(t.TempDir(), "calls")
 	t.Setenv("NPM_SEARCH_COUNT", countPath)
-	script := `#!/bin/sh
-echo call >> "$NPM_SEARCH_COUNT"
-printf 'typescript\tdesc\tdate\tver\tkeywords\n'
-`
-	npmPath := filepath.Join(binDir, "npm")
-	if err := os.WriteFile(npmPath, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir)
+	testutil.InstallFakeBinary(t, "npm", `echo call >> "$NPM_SEARCH_COUNT"
+printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 
 	got := repoPackagesOnGOOS(
 		"type",
@@ -262,15 +255,7 @@ printf 'typescript\tdesc\tdate\tver\tkeywords\n'
 
 func TestCollectRepoNames_keepsMasProductIDsMatchedByName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	binDir := t.TempDir()
-	script := `#!/bin/sh
-printf '497799835  Xcode (16.0)\n'
-`
-	masPath := filepath.Join(binDir, "mas")
-	if err := os.WriteFile(masPath, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir)
+	testutil.InstallFakeBinary(t, "mas", `printf '497799835  Xcode (16.0)\n'`)
 
 	mas := adapter.Mas{}
 	got := collectRepoNames("xcode", []repoJob{{

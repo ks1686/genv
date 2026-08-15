@@ -13,7 +13,7 @@ import (
 
 func TestApply_createsMissingTemplate(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -52,7 +52,7 @@ func TestApply_createsMissingTemplate(t *testing.T) {
 
 func TestApply_skipsMatchingTemplate(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -89,7 +89,7 @@ func TestApply_skipsMatchingTemplate(t *testing.T) {
 
 func TestApply_templateMismatchNoForceLeavesTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -134,7 +134,7 @@ func TestApply_templateMismatchNoForceLeavesTarget(t *testing.T) {
 
 func TestApply_templateMismatchForceBackup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -196,7 +196,7 @@ func TestApply_templateMismatchForceBackup(t *testing.T) {
 
 func TestApply_templateDryRunWritesNothing(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -249,7 +249,7 @@ func TestApply_templateDryRunWritesNothing(t *testing.T) {
 
 func TestApply_filtersTemplatesByHost(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -289,7 +289,7 @@ func TestApply_filtersTemplatesByHost(t *testing.T) {
 
 func TestApply_templateS5DriftScenario(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

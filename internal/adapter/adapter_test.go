@@ -362,6 +362,9 @@ func TestRunQuery_MissingBinary(t *testing.T) {
 
 // TestRunListOutput_ReturnsLines verifies that stdout lines are split and trimmed.
 func TestRunListOutput_ReturnsLines(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		installFakeBinary(t, "printf", `printf '%s' "$1"`)
+	}
 	lines, err := runListOutput("printf", "foo\nbar\nbaz\n")
 	if err != nil {
 		t.Fatalf("runListOutput: %v", err)

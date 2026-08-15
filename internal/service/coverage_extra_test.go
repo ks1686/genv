@@ -11,22 +11,17 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
-func installServiceFakeBinary(t *testing.T, name, script string) string {
+func installServiceFakeBinary(t *testing.T, name, script string) {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
-		t.Fatalf("write fake %s: %v", name, err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return path
+	testutil.InstallFakeBinary(t, name, script)
 }
 
 func TestServiceSupervisorHelpers(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	installServiceFakeBinary(t, "systemctl", "exit 0")
 	installServiceFakeBinary(t, "launchctl", "exit 0")
 	ctx := context.Background()
@@ -62,8 +57,11 @@ func TestServiceSupervisorHelpers(t *testing.T) {
 }
 
 func TestScheduledSupervisorHelpersAndHostBackend(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("scheduled host backend is systemd/launchd; Windows has no equivalent in this package")
+	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	installServiceFakeBinary(t, "systemctl", "exit 0")
 	installServiceFakeBinary(t, "launchctl", "exit 0")
 	ctx := context.Background()
@@ -119,7 +117,7 @@ func TestScheduledSupervisorHelpersAndHostBackend(t *testing.T) {
 
 func TestApplyServicesUsesAvailableSupervisor(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	installServiceFakeBinary(t, "systemctl", "exit 0")
 	installServiceFakeBinary(t, "launchctl", "exit 0")
 

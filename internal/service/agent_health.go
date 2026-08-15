@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -97,7 +98,8 @@ func ExecutablePathStatus(path string) error {
 		return fmt.Errorf("%q is a directory", path)
 	}
 	mode := info.Mode()
-	if mode&0o111 == 0 {
+	// Windows does not persist POSIX execute bits; existence is enough.
+	if runtime.GOOS != "windows" && mode&0o111 == 0 {
 		return fmt.Errorf("%q is not executable", path)
 	}
 	return nil

@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestPOSIXBackend_ApplyEnvAndShell(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("SHELL", "/bin/zsh")
 
@@ -49,7 +50,7 @@ func TestPOSIXBackend_ApplyEnvAndShell(t *testing.T) {
 
 func TestPowerShellBackend_ApplyShell(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	eng := Engine{Bin: filepath.Join(home, "powershell.exe")}

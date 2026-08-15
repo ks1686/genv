@@ -70,7 +70,7 @@ func setupSource(t *testing.T, home, name string) string {
 
 func TestApply_createsMissingLink(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")
@@ -100,7 +100,7 @@ func TestApply_createsMissingLink(t *testing.T) {
 
 func TestApply_skipsCorrectLink(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")
@@ -129,7 +129,7 @@ func TestApply_skipsCorrectLink(t *testing.T) {
 
 func TestApply_linkMismatchNoForceLeavesFileUntouched(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")
@@ -169,7 +169,7 @@ func TestApply_linkMismatchNoForceLeavesFileUntouched(t *testing.T) {
 
 func TestApply_linkMismatchForceBackup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")
@@ -218,7 +218,7 @@ func TestApply_linkMismatchForceBackup(t *testing.T) {
 
 func TestApply_managedLinkSelfHealsWrongSymlink(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	wrongSource := setupSource(t, home, "other.txt")
@@ -256,7 +256,7 @@ func TestApply_managedLinkSelfHealsWrongSymlink(t *testing.T) {
 
 func TestApply_managedLinkRequiresForceForRealFile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")

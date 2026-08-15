@@ -11,6 +11,7 @@ import (
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/profile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func writeLegacyProfileBase(t *testing.T, specPath string, pkgs ...schema.Package) {
@@ -98,21 +99,13 @@ func TestProfileCreate(t *testing.T) {
 
 func TestProfileSwitch(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	fakeBin := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(fakeBin, 0755); err != nil {
-		t.Fatal(err)
-	}
-	fakeBrew := filepath.Join(fakeBin, "brew")
-	if err := os.WriteFile(fakeBrew, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew", "exit 0")
 
 	writeLegacyProfileBase(t, specPath, schema.Package{ID: "base-pkg", Prefer: "brew"})
 
@@ -219,7 +212,7 @@ func TestStatusJSONActiveProfile(t *testing.T) {
 
 func TestProfileSwitchFailure(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	specPath := filepath.Join(dir, "genv.json")
@@ -283,7 +276,7 @@ func TestProfileSwitchFailure(t *testing.T) {
 
 func TestProfileSwitchMissing(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	specPath := filepath.Join(dir, "genv.json")
@@ -310,7 +303,7 @@ func TestProfileSwitchMissing(t *testing.T) {
 
 func TestProfileSwitchInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	specPath := filepath.Join(dir, "genv.json")

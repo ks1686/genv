@@ -36,7 +36,7 @@ func TestApply_contextCancelled(t *testing.T) {
 
 func TestApply_filtersLinksAndDirsByHost(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := filepath.Join(home, "repo", "simple.txt")
 	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
@@ -80,7 +80,7 @@ func TestApply_filtersLinksAndDirsByHost(t *testing.T) {
 
 func TestApply_errorUnwrapsToUnderlyingFailure(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	// A merge-dir whose source directory does not exist makes applyMergeDir
 	// return an error wrapping os.ErrNotExist, collected into res.Errors.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ks1686/genv/internal/profilebackend"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 // fakeRunner records command invocations and returns a programmed error.
@@ -404,7 +405,7 @@ func TestHookFile_executes_resolved_script_as_argv_element(t *testing.T) {
 	// Given
 	ctx := context.Background()
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	scriptPath := filepath.Join(dir, "hook.sh")
 	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write script: %v", err)
@@ -431,7 +432,7 @@ func TestHookFile_missing_script_returns_actionable_error(t *testing.T) {
 	// Given
 	ctx := context.Background()
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	e, fr := newTestExecutor(nil, nil)
 
 	// When
