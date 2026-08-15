@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseAndValidate_Valid(t *testing.T) {
@@ -199,6 +200,38 @@ func TestParseAndValidate_SyntaxError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "line") {
 		t.Errorf("expected error to contain line info, got: %v", err)
+	}
+}
+
+func TestParseAndValidate_InvalidWindowsPathDoesNotHang(t *testing.T) {
+	// Unescaped backslashes in a Windows path are invalid JSON and used to
+	// hang locateFields via Decoder.More() before unmarshal ran.
+	input := `{"schemaVersion":"6","packages":[],"repo":{"url":"C:\Users\runneradmin\AppData\Local\Temp\x"}}`
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := ParseAndValidate([]byte(input))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected syntax error for unescaped Windows path")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ParseAndValidate hung on invalid Windows-path JSON")
+	}
+}
+
+func TestLocateFields_InvalidEscapeDoesNotHang(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		locateFields([]byte(`{"repo":{"url":"C:\Users\x"}}`), map[string]Position{})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("locateFields hung on invalid escape")
 	}
 }
 

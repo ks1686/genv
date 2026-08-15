@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -185,4 +186,40 @@ func jsonString(s string) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+func jsonHook(cmd string) string {
+	return `"command":` + jsonString(cmd)
+}
+
+func hookAppend(path, word string) string {
+	if runtime.GOOS == "windows" {
+		return "Add-Content -LiteralPath " + psSingleQuote(path) + " -Value " + psSingleQuote(word) + " -NoNewline"
+	}
+	return "printf " + word + " >> " + strconv.Quote(path)
+}
+
+func hookAppendFail(path, word string) string {
+	return hookAppend(path, word) + "; exit 99"
+}
+
+func hookPrintEnvLine(path string, vars ...string) string {
+	if runtime.GOOS == "windows" {
+		parts := make([]string, len(vars))
+		for i, v := range vars {
+			parts[i] = "$env:" + v
+		}
+		return "Add-Content -LiteralPath " + psSingleQuote(path) + " -Value ((" + strings.Join(parts, ",") + ") -join ':')"
+	}
+	format := strings.Repeat("%s:", len(vars))
+	format = strings.TrimSuffix(format, ":") + `\n`
+	args := make([]string, len(vars))
+	for i, v := range vars {
+		args[i] = `"$` + v + `"`
+	}
+	return "printf '" + format + "' " + strings.Join(args, " ") + " >> " + strconv.Quote(path)
+}
+
+func psSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }

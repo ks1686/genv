@@ -280,10 +280,10 @@ func TestAddRemoveHooks_V8Defaults(t *testing.T) {
 	writeTestFile(t, specPath, `{
 		"schemaVersion":"8",
 		"defaults":{"hooks":{
-			"preAdd":[{"command":"printf preadd >> `+hookLog+`"}],
-			"postAdd":[{"command":"printf postadd >> `+hookLog+`"}],
-			"preRemove":[{"command":"printf preremove >> `+hookLog+`"}],
-			"postRemove":[{"command":"printf postremove >> `+hookLog+`"}]
+			"preAdd":[{`+jsonHook(hookAppend(hookLog, "preadd"))+`}],
+			"postAdd":[{`+jsonHook(hookAppend(hookLog, "postadd"))+`}],
+			"preRemove":[{`+jsonHook(hookAppend(hookLog, "preremove"))+`}],
+			"postRemove":[{`+jsonHook(hookAppend(hookLog, "postremove"))+`}]
 		}},
 		"targets":{"macos":{"packages":[]}}
 	}`)
