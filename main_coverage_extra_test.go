@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestValidateCmd_ValidInvalidAndMissing(t *testing.T) {
@@ -109,13 +110,10 @@ func TestCleanCmd_DryRunPrintsPlan(t *testing.T) {
 
 func TestEditCmdAndShellEditCmd_RunConfiguredEditor(t *testing.T) {
 	dir := t.TempDir()
-	editor := filepath.Join(dir, "vi")
 	record := filepath.Join(dir, "editor-args")
-	script := "#!/bin/sh\nprintf '%s' \"$1\" > \"$EDITOR_RECORD\"\n"
-	if err := os.WriteFile(editor, []byte(script), 0o755); err != nil {
-		t.Fatalf("write editor script: %v", err)
-	}
-	t.Setenv("EDITOR", editor)
+	script := "printf '%s' \"$1\" > \"$EDITOR_RECORD\""
+	testutil.InstallFakeBinary(t, "vi", script)
+	t.Setenv("EDITOR", "vi")
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR_RECORD", record)
 
@@ -170,7 +168,7 @@ func TestPullCmd_ClonesLocalRepositoryAndCopiesSpec(t *testing.T) {
 
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 	dest := filepath.Join(dir, "config", "genv.json")
-	localSpec := `{"schemaVersion":"6","packages":[],"repo":{"url":"` + bare + `","ref":"main"}}`
+	localSpec := `{"schemaVersion":"6","packages":[],"repo":{"url":` + jsonString(bare) + `,"ref":"main"}}`
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		t.Fatalf("create destination directory: %v", err)
 	}
@@ -214,8 +212,11 @@ func TestPullHelpersAndExpandCLIPath(t *testing.T) {
 	}
 
 	t.Setenv("COVERAGE_PATH", filepath.Join(dir, "expanded"))
-	if got, want := expandCLIPath("$COVERAGE_PATH/file"), filepath.Join(dir, "expanded", "file"); got != want {
-		t.Errorf("expandCLIPath = %q, want %q", got, want)
+	got := expandCLIPath("$COVERAGE_PATH/file")
+	wantJoin := filepath.Join(dir, "expanded", "file")
+	wantSlash := filepath.ToSlash(filepath.Join(dir, "expanded")) + "/file"
+	if got != wantJoin && got != wantSlash {
+		t.Errorf("expandCLIPath = %q, want %q or %q", got, wantJoin, wantSlash)
 	}
 	if err := runGit("rev-parse", "--verify", "definitely-not-a-ref"); err == nil {
 		t.Error("runGit expected error for missing ref")

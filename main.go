@@ -1744,7 +1744,9 @@ func filesConfigWithResolvedSources(cfg *schema.FilesConfig, sourceRoot string) 
 
 func resolveCLISource(sourceRoot, source string) string {
 	expanded := expandCLIPath(source)
-	if filepath.IsAbs(expanded) || sourceRoot == "" {
+	// Treat POSIX and Windows absolute paths as absolute even when the host
+	// filepath.IsAbs disagrees (e.g. "/abs" on Windows).
+	if filepath.IsAbs(expanded) || strings.HasPrefix(expanded, "/") || sourceRoot == "" {
 		return expanded
 	}
 	return filepath.Join(sourceRoot, expanded)

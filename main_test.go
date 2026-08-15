@@ -1809,7 +1809,7 @@ func TestUpgrade_RunsHooks(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	marker := filepath.Join(dir, "hook.log")
-	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `"}],"postUpgrade":[{"command":"printf post >> ` + marker + `"}]}}`
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppend(marker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppend(marker, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -1927,7 +1927,7 @@ func TestApply_LifecycleHooks_receive_env_context(t *testing.T) {
 	hookLog := filepath.Join(dir, "hooks.log")
 	installLog := filepath.Join(dir, "install.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
-	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{"command":"printf '%s:%s:%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_HOST\" \"$GENV_INSTALLED\" \"$GENV_PROFILE\" >> ` + hookLog + `"}],"postApply":[{"command":"printf '%s:%s:%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_HOST\" \"$GENV_INSTALLED\" \"$GENV_PROFILE\" >> ` + hookLog + `"}]}}`
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_EVENT", "GENV_PHASE", "GENV_HOST", "GENV_INSTALLED", "GENV_PROFILE")) + `}],"postApply":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_EVENT", "GENV_PHASE", "GENV_HOST", "GENV_INSTALLED", "GENV_PROFILE")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -1966,7 +1966,7 @@ func TestAdd_NoHooks_skips_hooks_but_installs_package(t *testing.T) {
 	hookLog := filepath.Join(dir, "hook.log")
 	installLog := filepath.Join(dir, "install.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
-	spec := `{"schemaVersion":"6","packages":[],"hooks":{"preAdd":[{"command":"printf pre >> ` + hookLog + `; exit 99"}],"postAdd":[{"command":"printf post >> ` + hookLog + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"6","packages":[],"hooks":{"preAdd":[{` + jsonHook(hookAppendFail(hookLog, "pre")) + `}],"postAdd":[{` + jsonHook(hookAppendFail(hookLog, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -1999,7 +1999,7 @@ func TestRemove_LifecycleHooks_receive_removed_env(t *testing.T) {
 	hookLog := filepath.Join(dir, "hooks.log")
 	uninstallLog := filepath.Join(dir, "uninstall.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{uninstallMarker: uninstallLog})
-	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preRemove":[{"command":"printf '%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_REMOVED\" >> ` + hookLog + `"}],"postRemove":[{"command":"printf '%s:%s:%s\n' \"$GENV_EVENT\" \"$GENV_PHASE\" \"$GENV_REMOVED\" >> ` + hookLog + `"}]}}`
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preRemove":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_EVENT", "GENV_PHASE", "GENV_REMOVED")) + `}],"postRemove":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_EVENT", "GENV_PHASE", "GENV_REMOVED")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -2030,7 +2030,7 @@ func TestUpgrade_NoHooks_executes_package_plan_without_running_hooks(t *testing.
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	upgradeMarker := filepath.Join(dir, "upgrade.log")
 	hookMarker := filepath.Join(dir, "hook.log")
-	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + hookMarker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + hookMarker + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppendFail(hookMarker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppendFail(hookMarker, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -2065,7 +2065,7 @@ func TestUpgrade_NoHooks_with_no_upgradeable_packages_does_not_run_hooks(t *test
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	marker := filepath.Join(dir, "hook.log")
-	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + marker + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppendFail(marker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppendFail(marker, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -2128,7 +2128,7 @@ func TestUpgrade_DryRun_does_not_run_hooks_or_write_lock(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	marker := filepath.Join(dir, "hook.log")
-	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + marker + `"}],"postUpgrade":[{"command":"printf post >> ` + marker + `"}]}}`
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppend(marker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppend(marker, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -2424,7 +2424,7 @@ func TestUpdatesCheck_does_not_run_hooks(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	hookMarker := filepath.Join(dir, "hook.log")
-	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{"command":"printf pre >> ` + hookMarker + `; exit 99"}],"postUpgrade":[{"command":"printf post >> ` + hookMarker + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"5","packages":[{"id":"alpha"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppendFail(hookMarker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppendFail(hookMarker, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -3316,7 +3316,7 @@ func TestApply_LifecycleHooks_receive_GENV_YES_when_yes_flag_set(t *testing.T) {
 	hookLog := filepath.Join(dir, "hooks.log")
 	installLog := filepath.Join(dir, "install.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
-	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{"command":"printf '%s\n' \"$GENV_YES\" >> ` + hookLog + `"}],"postApply":[{"command":"printf '%s\n' \"$GENV_YES\" >> ` + hookLog + `"}]}}`
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_YES")) + `}],"postApply":[{` + jsonHook(hookPrintEnvLine(hookLog, "GENV_YES")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
