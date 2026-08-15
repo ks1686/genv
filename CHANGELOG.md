@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 - Files apply rejects relative sources that escape `SourceRoot`. `--force-new-lock --dry-run` no longer renames the lock. Alias/function names are POSIX-safe. `runSubcmd` rejects empty argv.
 - `apk` name/version split now understands `-rN` releases. `pip-user` and `volta` implement `OutdatedLister`. `krew` availability requires the krew plugin, not just `kubectl`.
 - Apply unit tests that plant brew locks now seed schemaVersion 1 so Linux CI is not refused by the v8 foreign-lock gate. E2E spec assertions read v8 `targets.*` packages. Adapter `installFakeBinary` works on Windows (`PathListSeparator` + `.cmd` shim).
-- CI pins `govulncheck@v1.6.0` so the scanner still builds on Go 1.24.3 (`@latest` is now 1.25-only).
+- CI `govulncheck` sets `GOTOOLCHAIN=auto` so the scanner can build on Go 1.25 while unit tests stay on go.mod 1.24.3.
 
 ### Added
 

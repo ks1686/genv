@@ -56,9 +56,12 @@ jobs:
           BENCH_MAX_MS: "400"
 
       - name: govulncheck
-        # v1.7.0+ requires Go 1.25; this module is still on go 1.24.3 and
-        # setup-go sets GOTOOLCHAIN=local, so @latest fails to build.
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+        # setup-go sets GOTOOLCHAIN=local for the 1.24.3 module. Current
+        # govulncheck (v1.6+) requires Go 1.25 to *build*; allow this step
+        # only to download that toolchain. The rest of CI stays on go.mod.
+        env:
+          GOTOOLCHAIN: auto
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   test-windows:
     name: Test (Windows)
