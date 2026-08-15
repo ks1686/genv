@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [v4.0.0](https://github.com/ks1686/genv/releases/tag/v4.0.0) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.0.10+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
 
 ```bash
 genv add git                          # track + install
@@ -22,7 +22,7 @@ genv map --target arch                # assist-only manager suggestions
 
 | Platform | Install |
 | -------- | ------- |
-| macOS | `brew tap ks1686/tap && brew install genv` |
+| macOS | `brew tap ks1686/tap && brew install --cask genv` |
 | Arch / Manjaro | `paru -S genv` or `yay -S genv` (or `genv-bin`) |
 | Other Linux | GitHub release tarball (see below) |
 | Windows | GitHub release zip (see below) |
@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.0_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -40,13 +40,13 @@ genv version
 **Windows (PowerShell):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.0_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
 ```
 
-Publishing the **genv binary** itself to winget/scoop/choco is deferred. Once installed, genv still **manages packages** through those managers when they are on `PATH`.
+Windows package-manager installers for the **genv binary** (winget / scoop / choco) are prepared in GoReleaser and stay unpublished until the corresponding store tokens are configured. Once genv is on `PATH`, it still **manages packages** through those managers.
 
 Release archives ship cosign-signed checksums (keyless). Darwin binaries are also Developer ID signed and notarized when Apple secrets are configured — see [SECURITY.md](SECURITY.md).
 
@@ -99,15 +99,15 @@ Full guide: [docs/multi-machine.md](docs/multi-machine.md).
 | `macos` | macOS | `brew`, `mas` |
 | `windows` | native Windows | `winget`, `scoop`, `choco` |
 | `arch` | native Arch / Arch-like | `pacman`, `paru`, `yay` |
-| `ubuntu` | Ubuntu-like Linux **or** Ubuntu-like WSL2 | `snap`, `linuxbrew` |
+| `ubuntu` | Ubuntu-like Linux **or** Ubuntu-like WSL2 | `apt`, `snap`, `linuxbrew` |
 | `wsl-arch` | Arch-like WSL2 | `pacman`, `paru`, `yay` |
-| `linux` | optional catch-all (set via `--target` / `GENV_TARGET`) | `snap`, `linuxbrew`, … |
+| `linux` | optional catch-all (set via `--target` / `GENV_TARGET`) | `apt`, `dnf`, `apk`, `snap`, `linuxbrew`, … |
 
 WSL2 does **not** inherit native `arch` automatically. Put shared bits in `defaults`; use `targets.ubuntu` or `targets.wsl-arch` for distro-specific packages.
 
 **Also available** (explicit `prefer` / `managers`): `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`, `ghcup`, `stack`, `opam`, `juliaup`, `sdkman`, `asdf`, `mise`, `krew`, `helm`, `vscode`.
 
-Native `apt` / `dnf` / `apk` adapters are deferred. Use `genv map` / `genv export` when moving a spec across Linux families.
+Native `apt`, `dnf`, and `apk` adapters are registered system managers (`prefer: apt|dnf|apk`). Use `genv map` / `genv export` when moving a spec across Linux families.
 
 ---
 
@@ -137,8 +137,8 @@ Recommended shape for new configs:
     },
     "ubuntu": {
       "packages": [
-        { "id": "git", "prefer": "snap" },
-        { "id": "ripgrep", "prefer": "snap" }
+        { "id": "git", "prefer": "apt" },
+        { "id": "ripgrep", "prefer": "apt" }
       ],
       "env": {
         "EDITOR": null
@@ -287,8 +287,8 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 | Schema v7 PowerShell profiles | Stable |
 | Schema v8 portable targets | Stable |
 | Background `updates` + profiles + hooks | Stable |
-| apt / dnf / apk adapters | Deferred |
-| Publish genv to winget / scoop / choco | Deferred |
+| apt / dnf / apk adapters | Stable |
+| Publish genv to winget / scoop / choco | Configured, unpublished until store tokens exist |
 
 Historical milestone checklists: [ROADMAP.md](ROADMAP.md). Release notes: [CHANGELOG.md](CHANGELOG.md). Tag-driven publishing: [RELEASING.md](RELEASING.md).
 

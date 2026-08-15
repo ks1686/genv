@@ -141,7 +141,7 @@ Users install after setup:
 
 ```bash
 brew tap ks1686/tap
-brew install genv
+brew install --cask genv
 ```
 
 ### 4. AUR (`genv-bin` and `genv`)

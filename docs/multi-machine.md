@@ -39,7 +39,7 @@ Schema v8 moves desired state under `defaults` and `targets.*`:
       "packages": [{ "id": "ripgrep", "prefer": "brew" }]
     },
     "ubuntu": {
-      "packages": [{ "id": "ripgrep", "prefer": "snap" }]
+      "packages": [{ "id": "ripgrep", "prefer": "apt" }]
     },
     "wsl-arch": {
       "packages": [{ "id": "ripgrep", "prefer": "pacman" }]

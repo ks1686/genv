@@ -78,12 +78,12 @@ func TestIsAbsolutePathRecognizesTargetPlatformPaths(t *testing.T) {
 	}
 }
 
-func TestBuildReportsAptDNFDeferredSuggestion(t *testing.T) {
+func TestBuildDoesNotDeferNativeLinuxManagers(t *testing.T) {
 	f := &schema.GenvFile{
 		SchemaVersion: schema.Version8,
 		Targets: map[string]*schema.TargetBundle{
 			"ubuntu": {
-				Packages: []schema.Package{{ID: "htop"}},
+				Packages: []schema.Package{{ID: "htop", Prefer: "apt"}},
 			},
 		},
 	}
@@ -92,11 +92,10 @@ func TestBuildReportsAptDNFDeferredSuggestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report) != 1 {
-		t.Fatalf("report length = %d, want 1: %+v", len(report), report)
-	}
-	if report[0].Class != ClassSuggestion || report[0].Code != "apt-dnf-deferred" || report[0].PackageID != "htop" {
-		t.Fatalf("unexpected report: %+v", report)
+	for _, item := range report {
+		if item.Code == "apt-dnf-deferred" || item.Code == "manager-not-supported" {
+			t.Fatalf("unexpected report item: %+v", item)
+		}
 	}
 }
 
