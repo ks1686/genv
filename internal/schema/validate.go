@@ -67,15 +67,16 @@ func unmarshalGenvFile(data []byte) (*GenvFile, map[string]json.RawMessage, []Va
 // Semantic validation problems are returned as a []ValidationError slice
 // alongside a best-effort *GenvFile.  Both can be non-nil at the same time.
 func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
-	// Build a (path → position) index from the raw token stream.
-	// Errors here are non-fatal; the index may be partial on malformed input.
-	positions := make(map[string]Position)
-	locateFields(data, positions)
-
 	f, raw, valErrs, err := unmarshalGenvFile(data)
 	if valErrs != nil || err != nil {
 		return f, valErrs, err
 	}
+
+	// Index field positions only after the document is known-valid JSON.
+	// Walking an invalid token stream can spin in Decoder.More() on some
+	// inputs (for example Windows paths interpolated into JSON unescaped).
+	positions := make(map[string]Position)
+	locateFields(data, positions)
 
 	var errs []ValidationError
 
@@ -159,10 +160,10 @@ func locateFields(data []byte, pos map[string]Position) {
 	walkObjectBody(dec, data, "", pos)
 }
 
-func walkValue(dec *json.Decoder, data []byte, path string, pos map[string]Position) {
+func walkValue(dec *json.Decoder, data []byte, path string, pos map[string]Position) bool {
 	tok, err := dec.Token()
 	if err != nil {
-		return
+		return false
 	}
 	offset := dec.InputOffset()
 	switch v := tok.(type) {
@@ -170,41 +171,50 @@ func walkValue(dec *json.Decoder, data []byte, path string, pos map[string]Posit
 		switch v {
 		case '{':
 			pos[path] = offsetToPosition(data, offset)
-			walkObjectBody(dec, data, path, pos)
+			return walkObjectBody(dec, data, path, pos)
 		case '[':
 			pos[path] = offsetToPosition(data, offset)
-			walkArrayBody(dec, data, path, pos)
+			return walkArrayBody(dec, data, path, pos)
 		}
 	default:
 		pos[path] = offsetToPosition(data, offset)
 	}
+	return true
 }
 
-func walkObjectBody(dec *json.Decoder, data []byte, path string, pos map[string]Position) {
-	for dec.More() {
+func walkObjectBody(dec *json.Decoder, data []byte, path string, pos map[string]Position) bool {
+	// Bound iterations so a decoder that keeps reporting More() after a
+	// syntax error cannot hang ParseAndValidate (seen on Windows CI).
+	for n := 0; n <= len(data) && dec.More(); n++ {
 		keyTok, err := dec.Token()
 		if err != nil {
-			return
+			return false
 		}
 		key, ok := keyTok.(string)
 		if !ok {
-			return
+			return false
 		}
 		childPath := key
 		if path != "" {
 			childPath = path + "." + key
 		}
-		walkValue(dec, data, childPath, pos)
+		if !walkValue(dec, data, childPath, pos) {
+			return false
+		}
 	}
 	_, _ = dec.Token() // consume closing }
+	return true
 }
 
-func walkArrayBody(dec *json.Decoder, data []byte, path string, pos map[string]Position) {
-	for i := 0; dec.More(); i++ {
+func walkArrayBody(dec *json.Decoder, data []byte, path string, pos map[string]Position) bool {
+	for i := 0; i <= len(data) && dec.More(); i++ {
 		childPath := fmt.Sprintf("%s[%d]", path, i)
-		walkValue(dec, data, childPath, pos)
+		if !walkValue(dec, data, childPath, pos) {
+			return false
+		}
 	}
 	_, _ = dec.Token() // consume closing ]
+	return true
 }
 
 func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {

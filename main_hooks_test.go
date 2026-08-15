@@ -18,7 +18,7 @@ func TestApply_NoHooks_skips_hooks_but_runs_primary_op(t *testing.T) {
 	installLog := filepath.Join(dir, "install.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
 
-	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{"command":"printf pre >> ` + hookLog + `; exit 99"}],"postApply":[{"command":"printf post >> ` + hookLog + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preApply":[{` + jsonHook(hookAppendFail(hookLog, "pre")) + `}],"postApply":[{` + jsonHook(hookAppendFail(hookLog, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestRemove_NoHooks_skips_hooks_but_runs_primary_op(t *testing.T) {
 	uninstallLog := filepath.Join(dir, "uninstall.log")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{uninstallMarker: uninstallLog})
 
-	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preRemove":[{"command":"printf pre >> ` + hookLog + `; exit 99"}],"postRemove":[{"command":"printf post >> ` + hookLog + `; exit 99"}]}}`
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"preRemove":[{` + jsonHook(hookAppendFail(hookLog, "pre")) + `}],"postRemove":[{` + jsonHook(hookAppendFail(hookLog, "post")) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}

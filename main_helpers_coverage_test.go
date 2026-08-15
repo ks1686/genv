@@ -86,10 +86,13 @@ func TestFileAndPathHelpers(t *testing.T) {
 			t.Errorf("expandCLIPath = %q", got)
 		}
 	}
-	if got := resolveCLISource("/root", "rel"); got != filepath.Join("/root", "rel") {
+	specDir := t.TempDir()
+	specPath := filepath.Join(specDir, "genv.json")
+	repoRoot := filepath.Join(specDir, "repo")
+	if got := resolveCLISource(specDir, "rel"); got != filepath.Join(specDir, "rel") {
 		t.Errorf("resolve relative = %q", got)
 	}
-	if got := resolveCLISource("/root", "/abs"); got != "/abs" {
+	if got := resolveCLISource(specDir, "/abs"); got != "/abs" {
 		t.Errorf("resolve abs = %q", got)
 	}
 
@@ -97,18 +100,18 @@ func TestFileAndPathHelpers(t *testing.T) {
 		Links:     []schema.FileLink{{Source: "src", Target: "dst"}},
 		Templates: []schema.FileTemplate{{Source: "tpl", Target: "out"}},
 	}
-	resolved := filesConfigWithResolvedSources(cfg, "/repo")
-	if resolved.Links[0].Source != filepath.Join("/repo", "src") {
+	resolved := filesConfigWithResolvedSources(cfg, repoRoot)
+	if resolved.Links[0].Source != filepath.Join(repoRoot, "src") {
 		t.Errorf("resolved link = %q", resolved.Links[0].Source)
 	}
-	if filesConfigWithResolvedSources(nil, "/repo") != nil {
+	if filesConfigWithResolvedSources(nil, repoRoot) != nil {
 		t.Error("nil cfg should stay nil")
 	}
 
-	if sourceRootForSpec("/tmp/genv.json", &schema.GenvFile{Repo: &schema.Repo{URL: "/repo"}}) != "/repo" {
+	if sourceRootForSpec(specPath, &schema.GenvFile{Repo: &schema.Repo{URL: repoRoot}}) != repoRoot {
 		t.Error("repo url should win as source root")
 	}
-	if sourceRootForSpec("/tmp/genv.json", &schema.GenvFile{}) != "/tmp" {
+	if sourceRootForSpec(specPath, &schema.GenvFile{}) != specDir {
 		t.Error("spec dir should be source root")
 	}
 
