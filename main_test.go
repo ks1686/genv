@@ -1078,8 +1078,9 @@ func TestApplyCmd_DryRun_ShowsReconcilePlan(t *testing.T) {
 
 	// Desired: git, neovim. Previously applied: git, htop.
 	// Expected: install neovim, remove htop, git unchanged.
-	run([]string{"add", "--file", path, "git"})
-	run([]string{"add", "--file", path, "neovim"})
+	// Seed a v1 spec so the v8 foreign-lock gate is not in play: these tests
+	// assert reconcile planning, not lock portability.
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"},{"id":"neovim"}]}`)
 	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 		{ID: "htop", Manager: "brew", PkgName: "htop"},
@@ -1097,7 +1098,7 @@ func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 	lockPath := genvfile.LockPathFrom(path)
 
-	run([]string{"add", "--file", path, "git"})
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"}]}`)
 	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
@@ -3346,7 +3347,7 @@ func TestApplyCmd_Yes_AlreadyUpToDate(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 	lockPath := genvfile.LockPathFrom(path)
 
-	run([]string{"add", "--file", path, "git"})
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"}]}`)
 	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 	})
@@ -3418,7 +3419,7 @@ func TestApplyCmd_AlreadyUpToDate_JsonOutput(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 	lockPath := genvfile.LockPathFrom(path)
 
-	run([]string{"add", "--file", path, "git"})
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"}]}`)
 	writeLock(t, lockPath, []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 	})

@@ -113,7 +113,9 @@ func (r *runner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr
 
 // ── spec / lock helpers ───────────────────────────────────────────────────────
 
-// specIDs returns the package IDs currently in genv.json.
+// specIDs returns the package IDs currently in genv.json, including v8
+// defaults and target buckets. New specs write into targets.*, not the
+// legacy top-level packages list.
 func (r *runner) specIDs(t *testing.T) []string {
 	t.Helper()
 	data, err := os.ReadFile(r.genvJSON)
@@ -123,17 +125,29 @@ func (r *runner) specIDs(t *testing.T) []string {
 		}
 		t.Fatalf("read spec: %v", err)
 	}
-	var f struct {
-		Packages []struct {
-			ID string `json:"id"`
-		} `json:"packages"`
-	}
+	var f schema.GenvFile
 	if err := json.Unmarshal(data, &f); err != nil {
 		t.Fatalf("parse spec: %v", err)
 	}
-	ids := make([]string, len(f.Packages))
-	for i, p := range f.Packages {
-		ids[i] = p.ID
+	seen := make(map[string]bool)
+	var ids []string
+	add := func(pkgs []schema.Package) {
+		for _, p := range pkgs {
+			if p.ID == "" || seen[p.ID] {
+				continue
+			}
+			seen[p.ID] = true
+			ids = append(ids, p.ID)
+		}
+	}
+	add(f.Packages)
+	if f.Defaults != nil {
+		add(f.Defaults.Packages)
+	}
+	for _, bundle := range f.Targets {
+		if bundle != nil {
+			add(bundle.Packages)
+		}
 	}
 	return ids
 }

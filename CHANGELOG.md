@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - New specs from `genv init`, first `add`/`scan`, and `genvfile.New` are schemaVersion 8 (`defaults` + known `targets.*`). Named profiles are refused on v8 specs.
 - Files apply rejects relative sources that escape `SourceRoot`. `--force-new-lock --dry-run` no longer renames the lock. Alias/function names are POSIX-safe. `runSubcmd` rejects empty argv.
 - `apk` name/version split now understands `-rN` releases. `pip-user` and `volta` implement `OutdatedLister`. `krew` availability requires the krew plugin, not just `kubectl`.
+- Apply unit tests that plant brew locks now seed schemaVersion 1 so Linux CI is not refused by the v8 foreign-lock gate. E2E spec assertions read v8 `targets.*` packages. Adapter `installFakeBinary` works on Windows (`PathListSeparator` + `.cmd` shim).
 
 ### Added
 
