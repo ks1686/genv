@@ -5,7 +5,7 @@ Native Windows is the `windows` target (not WSL). Use a separate Linux install i
 ## 1. Download genv
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .\genv
 New-Item -ItemType Directory -Force $HOME\bin
 Copy-Item .\genv\genv.exe $HOME\bin\genv.exe

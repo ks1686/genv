@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**genv** is a Go CLI tool that tracks, syncs, and reproduces software environments across Linux, macOS, native Windows, and WSL2. It sits as a thin layer on top of existing package managers (`pacman`, `paru`, `yay`, `snap`, `brew`, `linuxbrew`, `bun`, `uv`, `winget`, `scoop`, `choco`) and uses a declarative model: edit `genv.json`, run `genv apply`, and the tool makes reality match the spec.
+**genv** is a Go CLI tool that tracks, syncs, and reproduces software environments across Linux, macOS, native Windows, and WSL2. It sits as a thin layer on top of existing package managers (`pacman`, `paru`, `yay`, `apt`, `dnf`, `apk`, `snap`, `brew`, `linuxbrew`, `bun`, `uv`, `winget`, `scoop`, `choco`) and uses a declarative model: edit `genv.json`, run `genv apply`, and the tool makes reality match the spec.
 
 ## Architecture
 
@@ -70,12 +70,12 @@ type Adapter interface {
 
 Optional `Searchable`, `VersionLister`, and `BatchUpgrader` extensions are defined in `internal/adapter/adapter.go`.
 
-Adapters are registered in priority order in `internal/adapter/adapter.go:76-82` (`var All`). `adapter.ByName` looks up an adapter by its `Name()`.
+Adapters are registered in priority order in `internal/adapter/adapter.go` (`var All`). `adapter.ByName` looks up an adapter by its `Name()`.
 
 ### Adding a New Package Manager
 
 1. Create `internal/adapter/<manager>.go` implementing `Adapter`.
-2. Add the new type to the `All` slice in `internal/adapter/adapter.go:76-82`.
+2. Add the new type to the `All` slice in `internal/adapter/adapter.go`.
 3. Add the manager name to `schema.KnownManagers` in `internal/schema/schema.go`.
 4. Write unit tests in `internal/adapter/<manager>_test.go`.
 5. Update `README.md` supported platforms table.
@@ -168,7 +168,7 @@ opt-in convenience and is not configured in this repository.
 
 ## Learned Workspace Facts
 
-- `genv upgrade` and `genv updates check` share the upgrade planner; default planning uses outdated detection (`Filters.All` false / `OutdatedLister`). Managers without a lister (or on lister error) keep packages rather than silently skipping them. `OutdatedLister` covers brew/linuxbrew, mas, bun, npm/pnpm/yarn, uv/pipx, cargo, winget/scoop/choco, pacman/paru/yay, and snap; mas also implements `BatchUpgrader`.
+- `genv upgrade` and `genv updates check` share the upgrade planner; default planning uses outdated detection (`Filters.All` false / `OutdatedLister`). Managers without a lister (or on lister error) keep packages rather than silently skipping them. `OutdatedLister` covers brew/linuxbrew, mas, bun, npm/pnpm/yarn, uv/pipx, pip-user, volta, cargo, winget/scoop/choco, pacman/paru/yay, apt/dnf/apk, and snap; mas also implements `BatchUpgrader`.
 - Darwin GitHub Release / Homebrew binaries use Developer ID Application signing and App Store Connect notarization (`APPLE_API_KEY_ID` / `APPLE_API_ISSUER_ID` / `APPLE_API_KEY_PATH`); local codesign on this Mac uses Apple Development only—do not use Development for Gatekeeper / Homebrew / notarized distribution. Never commit `.p8` / `.p12` / private keys; human-readable identity notes live in `~/.appstoreconnect/IDENTITY.md`. Treat GitHub Release + Homebrew as release success; AUR SSH publish may fail—do not re-run the full Release workflow after GoReleaser publishes (`already_exists`); use aur-only repair instead.
 - `make ci` and GitHub CI enforce statement coverage via `cover-gate` (`COVER_MIN` default 80) and cold-start via `bench-gate`. Integration workflow also runs `scripts/docker-v8-command-matrix.sh` (`make integration-v8`) — an Arch Docker job that builds genv and exercises every CLI command against a schemaVersion 8 pacman-backed spec.
 - Schema versions `"1"`–`"8"` are accepted. v7 adds `"shell": "powershell"` targeting. v8 uses portable `defaults` plus `targets.*` (known: `macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`, optional `linux`); top-level desired-state blocks and per-record `host` are invalid in v8. Target overlays support `null` tombstones for inherited `env` / `shell.aliases` / `shell.functions` / `services` (targets only, not defaults). Target selection is `--target`, then `GENV_TARGET`, then host classification.

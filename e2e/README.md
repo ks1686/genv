@@ -45,20 +45,6 @@ Run one adapter suite with the race detector:
 go test -tags integration -race -v -run TestE2EBrew ./e2e/
 ```
 
-Latest local run of the eight files scenarios on macOS (arm64, Go 1.26):
-
-```
---- PASS: TestFiles_S1_FreshEmptyHome (0.28s)
---- PASS: TestFiles_S2_ApplyClean (0.01s)
---- PASS: TestFiles_S3_MismatchNoForce (0.00s)
---- PASS: TestFiles_S4_MismatchForceBackup (0.01s)
---- PASS: TestFiles_S5_CodexTemplatedDrift (0.02s)
---- PASS: TestFiles_S6_DryRun (0.00s)
---- PASS: TestFiles_S7_AdoptFilesRegistersRenderedConfig (0.01s)
---- PASS: TestFiles_S8_AdoptFilesKeepsSpecRepoClean (0.05s)
-ok  	github.com/ks1686/genv/e2e	0.668s
-```
-
 ## Test suites
 
 ### Package-manager command suite (`e2e_test.go`)
