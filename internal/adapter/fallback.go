@@ -30,6 +30,9 @@ func (Pacman) DefaultFallbackEligible()    {}
 func (Paru) DefaultFallbackEligible()      {}
 func (Yay) DefaultFallbackEligible()       {}
 func (Snap) DefaultFallbackEligible()      {}
+func (Apt) DefaultFallbackEligible()       {}
+func (Dnf) DefaultFallbackEligible()       {}
+func (Apk) DefaultFallbackEligible()       {}
 func (Linuxbrew) DefaultFallbackEligible() {}
 func (Winget) DefaultFallbackEligible()    {}
 func (Scoop) DefaultFallbackEligible()     {}

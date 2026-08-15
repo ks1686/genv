@@ -174,14 +174,6 @@ func buildReport(packages []schema.Package, files *schema.FilesConfig, targetID 
 				PackageID: pkg.ID,
 			})
 		}
-		if aptDNFRelevant(targetID, constraints) {
-			report = append(report, ReportItem{
-				Class:     ClassSuggestion,
-				Code:      "apt-dnf-deferred",
-				Message:   fmt.Sprintf("apt/dnf package-manager adapters are deferred for target %q", targetID),
-				PackageID: pkg.ID,
-			})
-		}
 	}
 	if files != nil {
 		for i, link := range files.Links {
@@ -220,13 +212,6 @@ func managerConstraints(pkg schema.Package) map[string]bool {
 	return out
 }
 
-func aptDNFRelevant(targetID string, constraints map[string]bool) bool {
-	if constraints["apt"] || constraints["dnf"] {
-		return true
-	}
-	return len(constraints) == 0 && (targetID == "ubuntu" || targetID == "linux")
-}
-
 func intersects(a, b map[string]bool) bool {
 	for k := range a {
 		if b[k] {
@@ -243,11 +228,11 @@ func managerAllowlist(targetID string) map[string]bool {
 	case "arch", "wsl-arch":
 		return set("pacman", "paru", "yay", "snap", "linuxbrew", universalManagers)
 	case "ubuntu":
-		return set("snap", "linuxbrew", universalManagers)
+		return set("apt", "snap", "linuxbrew", universalManagers)
 	case "windows":
 		return set("winget", "scoop", "choco", universalManagers)
 	case "linux":
-		return set("pacman", "paru", "yay", "snap", "linuxbrew", universalManagers)
+		return set("pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "linuxbrew", universalManagers)
 	default:
 		return set(universalManagers)
 	}

@@ -169,11 +169,11 @@ func preferredManagersForTarget(targetID string, allowed map[string]bool) []stri
 	case "arch", "wsl-arch":
 		preferred = []string{"pacman", "paru", "yay", "snap", "linuxbrew"}
 	case "ubuntu":
-		preferred = []string{"snap", "linuxbrew"}
+		preferred = []string{"apt", "snap", "linuxbrew"}
 	case "windows":
 		preferred = []string{"winget", "scoop", "choco"}
 	case "linux":
-		preferred = []string{"pacman", "paru", "yay", "snap", "linuxbrew"}
+		preferred = []string{"pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "linuxbrew"}
 	}
 	var out []string
 	for _, manager := range preferred {

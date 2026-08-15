@@ -76,7 +76,7 @@ notarize:
 #
 # Install after setup:
 #   brew tap ks1686/tap
-#   brew install genv
+#   brew install --cask genv
 homebrew_casks:
   - name: genv
     repository:
@@ -118,6 +118,27 @@ snapcrafts:
     publish: true
 
 
+
+# Windows store publishers stay skipped until tokens exist.
+wingets:
+  - name: genv
+    publisher: ks1686
+    short_description: Track, sync, and reproduce your software environment.
+    license: MIT
+    skip_upload: true
+
+scoops:
+  - name: genv
+    description: Track, sync, and reproduce your software environment.
+    license: MIT
+    skip_upload: true
+
+chocolateys:
+  - name: genv
+    owners: ks1686
+    title: genv
+    description: Track, sync, and reproduce your software environment.
+    skip_upload: true
 
 changelog:
   sort: asc
