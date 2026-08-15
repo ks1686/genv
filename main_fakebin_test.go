@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 // fakeManagerScript emulates just enough of each real package manager's
@@ -20,6 +21,9 @@ import (
 // TestDisownCmd_Basic really invoked `brew install neovim`.
 const fakeManagerScript = `#!/bin/sh
 me=$(basename "$0")
+me=${me%.cmd}
+me=${me%.exe}
+me=${me%.sh}
 
 case "$me" in
 sudo)
@@ -96,6 +100,28 @@ snap)
 	esac
 	exit 0
 	;;
+winget)
+	case "$1" in
+	install|uninstall|upgrade|search)
+		exit 0
+		;;
+	list)
+		exit 1
+		;;
+	esac
+	exit 0
+	;;
+scoop|choco)
+	case "$1" in
+	install|uninstall|upgrade|update|search)
+		exit 0
+		;;
+	list)
+		exit 0
+		;;
+	esac
+	exit 0
+	;;
 bun)
 	case "$1" in
 	add|remove|update|pm)
@@ -124,6 +150,15 @@ exit 0
 // to PATH so the fakes shadow the real binaries.
 func installFakeManagers() error {
 	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo"}
+	always := map[string]bool{}
+	if runtime.GOOS == "windows" {
+		// Shadow native Windows managers so CLI tests never call live winget.
+		// Also fabricate brew so --prefer brew tests have a manager to resolve.
+		for _, name := range []string{"winget", "scoop", "choco", "brew"} {
+			always[name] = true
+			names = append(names, name)
+		}
+	}
 
 	dir, err := os.MkdirTemp("", "genv-test-fakebin-*")
 	if err != nil {
@@ -131,13 +166,29 @@ func installFakeManagers() error {
 	}
 
 	var shadowed int
+	seen := map[string]bool{}
 	for _, name := range names {
-		if _, err := exec.LookPath(name); err != nil {
-			continue // not really available on this host; don't fabricate it
+		if seen[name] {
+			continue
 		}
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(fakeManagerScript), 0o755); err != nil {
+		seen[name] = true
+		if !always[name] {
+			if _, err := exec.LookPath(name); err != nil {
+				continue // not really available on this host; don't fabricate it
+			}
+		}
+		shPath := filepath.Join(dir, name)
+		if runtime.GOOS == "windows" {
+			shPath = filepath.Join(dir, name+".sh")
+		}
+		if err := os.WriteFile(shPath, []byte(fakeManagerScript), 0o755); err != nil {
 			return fmt.Errorf("installFakeManagers: writing %s: %w", name, err)
+		}
+		if runtime.GOOS == "windows" {
+			shim := "@echo off\r\nbash \"" + shPath + "\" %*\r\n"
+			if err := os.WriteFile(filepath.Join(dir, name+".cmd"), []byte(shim), 0o755); err != nil {
+				return fmt.Errorf("installFakeManagers: writing %s.cmd: %w", name, err)
+			}
 		}
 		shadowed++
 	}

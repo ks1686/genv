@@ -213,10 +213,21 @@ func TestPullHelpersAndExpandCLIPath(t *testing.T) {
 
 	t.Setenv("COVERAGE_PATH", filepath.Join(dir, "expanded"))
 	got := expandCLIPath("$COVERAGE_PATH/file")
-	wantJoin := filepath.Join(dir, "expanded", "file")
-	wantSlash := filepath.ToSlash(filepath.Join(dir, "expanded")) + "/file"
-	if got != wantJoin && got != wantSlash {
-		t.Errorf("expandCLIPath = %q, want %q or %q", got, wantJoin, wantSlash)
+	expanded := filepath.Join(dir, "expanded")
+	wants := []string{
+		filepath.Join(expanded, "file"),
+		filepath.ToSlash(expanded) + "/file",
+		expanded + "/file",
+	}
+	matched := false
+	for _, want := range wants {
+		if got == want {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		t.Errorf("expandCLIPath = %q, want one of %q", got, wants)
 	}
 	if err := runGit("rev-parse", "--verify", "definitely-not-a-ref"); err == nil {
 		t.Error("runGit expected error for missing ref")

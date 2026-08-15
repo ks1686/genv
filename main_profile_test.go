@@ -222,15 +222,7 @@ func TestProfileSwitchFailure(t *testing.T) {
 	// it first on PATH before any switch. Packages explicitly prefer brew so
 	// resolution is deterministic on every platform (the automatic brew/linuxbrew
 	// suggestion is platform-specific, but explicit selection is not).
-	fakeBin := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(fakeBin, 0755); err != nil {
-		t.Fatal(err)
-	}
-	fakeBrew := filepath.Join(fakeBin, "brew")
-	if err := os.WriteFile(fakeBrew, []byte("#!/bin/sh\nif [ \"$2\" = \"pkg-B\" ]; then echo 'mock install failure'; exit 1; fi\nexit 0\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew", `if [ "$2" = "pkg-B" ]; then echo 'mock install failure'; exit 1; fi; exit 0`)
 
 	writeLegacyProfileBase(t, specPath, schema.Package{ID: "base-pkg", Prefer: "brew"})
 

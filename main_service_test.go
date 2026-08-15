@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestServiceCLICommands(t *testing.T) {
@@ -103,17 +104,12 @@ func TestServiceStatus_BrewFormula(t *testing.T) {
 
 	installBrewServicesList := func(t *testing.T, listBody string) {
 		t.Helper()
-		binDir := t.TempDir()
-		script := "#!/bin/sh\n" +
-			"if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then\n" +
-			"  printf '%s\\n' '" + listBody + "'\n" +
-			"  exit 0\n" +
-			"fi\n" +
-			"exit 0\n"
-		if err := os.WriteFile(filepath.Join(binDir, "brew"), []byte(script), 0o755); err != nil {
-			t.Fatalf("write fake brew: %v", err)
-		}
-		t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		testutil.InstallFakeBinary(t, "brew",
+			"if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then\n"+
+				"  printf '%s\\n' '"+listBody+"'\n"+
+				"  exit 0\n"+
+				"fi\n"+
+				"exit 0")
 	}
 
 	t.Run("running", func(t *testing.T) {

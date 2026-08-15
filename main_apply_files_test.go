@@ -203,6 +203,17 @@ func hookAppendFail(path, word string) string {
 	return hookAppend(path, word) + "; exit 99"
 }
 
+func normalizeHookLog(b []byte) string {
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
+}
+
+func skipIfWindowsNoUnixPerms(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file modes are not enforced on Windows")
+	}
+}
+
 func hookPrintEnvLine(path string, vars ...string) string {
 	if runtime.GOOS == "windows" {
 		parts := make([]string, len(vars))
