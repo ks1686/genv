@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.12 - 2026-08-15
+
+### Fixed
+
+- Release config no longer declares GoReleaser Pro-only `wingets` / `chocolateys` keys. OSS GoReleaser 2.17 rejected them and aborted before publishing `v4.0.11`. Scoop remains configured with `skip_upload: true`.
+
 ## v4.0.11 - 2026-08-15
 
 ### Fixed
@@ -19,13 +25,13 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Native `apt`, `dnf`, and `apk` adapters (install/uninstall/query/search/outdated, default-fallback eligible). Ubuntu mapping prefers `apt` ahead of snap/linuxbrew.
-- GoReleaser stubs for winget / scoop / chocolatey (skip upload until store tokens are set).
+- GoReleaser Scoop stub (`skip_upload: true`). winget / Chocolatey publishers are GoReleaser Pro-only and are not declared in OSS config.
 - `Regression` GitHub Actions workflow: fail-closed add, v8 defaults, safety, adapter, files e2e, and actionlint.
 - MIT `LICENSE` and `contents: read` on non-release CI workflows.
 
 ### Changed
 
-- Install docs use `brew install --cask genv` and current `v4.0.11` archive names. WSL Ubuntu examples prefer native `apt`.
+- Install docs use `brew install --cask genv` and current archive names. WSL Ubuntu examples prefer native `apt`.
 - Removed leftover Superpowers/handoff session notes and the historical `SECURITY_AUDIT.md` dump. Live security policy remains [SECURITY.md](SECURITY.md).
 
 ## v4.0.10 - 2026-08-12

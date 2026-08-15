@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.0.11+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.0.12+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
 
 ```bash
 genv add git                          # track + install
@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -40,13 +40,13 @@ genv version
 **Windows (PowerShell):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
 ```
 
-Windows package-manager installers for the **genv binary** (winget / scoop / choco) are prepared in GoReleaser and stay unpublished until the corresponding store tokens are configured. Once genv is on `PATH`, it still **manages packages** through those managers.
+Windows package-manager installers for the **genv binary** (winget / scoop / choco) are not published yet. Scoop is prepared in OSS GoReleaser with upload skipped; winget and Chocolatey need GoReleaser Pro. Once genv is on `PATH`, it still **manages packages** through those managers.
 
 Release archives ship cosign-signed checksums (keyless). Darwin binaries are also Developer ID signed and notarized when Apple secrets are configured — see [SECURITY.md](SECURITY.md).
 
@@ -288,7 +288,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 | Schema v8 portable targets | Stable |
 | Background `updates` + profiles + hooks | Stable |
 | apt / dnf / apk adapters | Stable |
-| Publish genv to winget / scoop / choco | Configured, unpublished until store tokens exist |
+| Publish genv to winget / scoop / choco | Not published; Scoop stub skipped in OSS, winget/choco need GoReleaser Pro |
 
 Historical milestone checklists: [ROADMAP.md](ROADMAP.md). Release notes: [CHANGELOG.md](CHANGELOG.md). Tag-driven publishing: [RELEASING.md](RELEASING.md).
 
