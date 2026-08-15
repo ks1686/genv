@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1850,7 +1851,7 @@ func (a upgradeNoHooksAdapter) PlanUninstall(pkgName string) []string {
 }
 
 func (a upgradeNoHooksAdapter) PlanUpgrade(pkgName string) []string {
-	return []string{"sh", "-c", "printf upgrade >> " + a.marker}
+	return shellAppendMarker("upgrade", a.marker)
 }
 func (a upgradeNoHooksAdapter) PlanClean() [][]string              { return nil }
 func (a upgradeNoHooksAdapter) Query(pkgName string) (bool, error) { return true, nil }
@@ -1877,15 +1878,15 @@ func (a lifecycleHookAdapter) NormalizeID(id string, managers map[string]string)
 }
 
 func (a lifecycleHookAdapter) PlanInstall(pkgName string) []string {
-	return []string{"sh", "-c", "printf install >> " + a.installMarker}
+	return shellAppendMarker("install", a.installMarker)
 }
 
 func (a lifecycleHookAdapter) PlanUninstall(pkgName string) []string {
-	return []string{"sh", "-c", "printf uninstall >> " + a.uninstallMarker}
+	return shellAppendMarker("uninstall", a.uninstallMarker)
 }
 
 func (a lifecycleHookAdapter) PlanUpgrade(pkgName string) []string {
-	return []string{"sh", "-c", "printf upgrade >> " + a.upgradeMarker}
+	return shellAppendMarker("upgrade", a.upgradeMarker)
 }
 func (a lifecycleHookAdapter) PlanClean() [][]string              { return nil }
 func (a lifecycleHookAdapter) Query(pkgName string) (bool, error) { return true, nil }
@@ -1893,6 +1894,10 @@ func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return []str
 
 func (a lifecycleHookAdapter) QueryVersion(pkgName string) (string, error) {
 	return "2.0.0", nil
+}
+
+func shellAppendMarker(word, marker string) []string {
+	return []string{"sh", "-c", "printf " + word + " >> " + strconv.Quote(marker)}
 }
 
 func registerLifecycleHookAdapter(t *testing.T, a lifecycleHookAdapter) {
