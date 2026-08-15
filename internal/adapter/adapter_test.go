@@ -3,6 +3,9 @@ package adapter
 import (
 	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -450,6 +453,11 @@ func TestWslSafeLookPath_NonWSL(t *testing.T) {
 func TestAllAdapters_MethodsNoPanic(t *testing.T) {
 	const absentPkg = "__genv_nonexistent_pkg__"
 	for _, a := range All {
+		// Windows CI has live winget/choco; those list/query calls can hang
+		// for minutes. Cover the missing-binary path only on that OS.
+		if runtime.GOOS == "windows" && a.Available() {
+			continue
+		}
 		t.Run(a.Name()+"/Query", func(t *testing.T) {
 			_, _ = a.Query(absentPkg)
 		})
@@ -504,17 +512,32 @@ func TestParu_Query_And_Version(t *testing.T) {
 
 // installFakeBinary writes a shell script to dir/<name> that outputs body
 // on stdout and makes it executable, then adds dir to the front of PATH.
-// It returns a cleanup function that restores the original PATH.
+// On Windows it also writes a .cmd shim so exec.LookPath finds the fake
+// before later PATH entries such as winget.exe.
 func installFakeBinary(t *testing.T, name, body string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("bash"); err != nil {
+			t.Skip("installFakeBinary requires bash on Windows")
+		}
+	}
 	dir := t.TempDir()
-	path := dir + "/" + name
 	script := "#!/bin/sh\n" + body + "\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	shPath := filepath.Join(dir, name)
+	if runtime.GOOS == "windows" {
+		shPath = filepath.Join(dir, name+".sh")
+	}
+	if err := os.WriteFile(shPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("installFakeBinary(%q): WriteFile: %v", name, err)
 	}
+	if runtime.GOOS == "windows" {
+		shim := "@echo off\r\nbash \"" + shPath + "\" %*\r\n"
+		if err := os.WriteFile(filepath.Join(dir, name+".cmd"), []byte(shim), 0o755); err != nil {
+			t.Fatalf("installFakeBinary(%q): WriteFile cmd: %v", name, err)
+		}
+	}
 	orig := os.Getenv("PATH")
-	t.Setenv("PATH", dir+":"+orig)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+orig)
 }
 
 // assertContainsArg fails t if want is not present in args.
