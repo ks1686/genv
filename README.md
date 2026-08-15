@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.0.10+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.0.11+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
 
 ```bash
 genv add git                          # track + install
@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -40,7 +40,7 @@ genv version
 **Windows (PowerShell):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.10_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.11_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
@@ -212,7 +212,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade outdated tracked packages (`--all`, `--target`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target` on check/start) |
-| `profile` | Named overlays (`list` / `create` / `switch`) |
+| `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
 | `pull` | Fetch spec + file assets from `repo` |
 | `migrate` | v1–v7 → v8 targets |
 | `export` | Single-target snapshot + report + assets |
@@ -274,7 +274,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 
 **Install resolution:** detect available managers → honor `prefer` → try `managers` map → fall back to system managers using the package `id`. Language / toolchain / plugin managers are **explicit-only** (must set `prefer` or `managers`) so `git` never silently resolves through npm.
 
-**Upgrades:** `genv upgrade` and `genv updates check` share a planner. By default they plan packages with a detected update; `--all` plans every unconstrained tracked package. Version-constrained packages are skipped unless an adapter can guarantee a compatible target. Batched where the manager allows (`brew`, `pacman`/`paru`/`yay`, `mas`, `snap`, `scoop`, `choco`, …).
+**Upgrades:** `genv upgrade` and `genv updates check` share a planner. By default they plan packages with a detected update; `--all` plans every unconstrained tracked package. Version-constrained packages are skipped unless an adapter can guarantee a compatible target. Batched where the manager allows (`brew`, `pacman`/`paru`/`yay`, `apt`/`dnf`/`apk`, `mas`, `snap`, `scoop`, `choco`, …).
 
 ---
 

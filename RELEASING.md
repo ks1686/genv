@@ -31,6 +31,7 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.8` | `add`/`adopt` Tab completions via `genv __complete repo-packages` (cached dumps + search fallback) |
 | `v4.0.9` | Lifecycle hooks inherit stdin + receive `GENV_YES` when `--yes` is set |
 | `v4.0.10` | Darwin GitHub Release / Homebrew binaries are Developer ID signed and notarized |
+| `v4.0.11` | Fail-closed `add`, schema v8 defaults, native apt/dnf/apk, Windows CI/test hardening |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
@@ -366,7 +367,7 @@ is clear demand; it is not tied to a specific version milestone.
 
 | Channel | Status | Notes |
 | --- | --- | --- |
-| Scoop | Deferred | GoReleaser supports it; not wired |
-| winget | Deferred | GoReleaser supports it; not wired |
-| Chocolatey | Deferred | Separate packaging work; adapters already manage *other* packages via choco |
+| Scoop | Configured, unpublished | GoReleaser `scoops` block is present with `skip_upload: true` until a token exists |
+| winget | Configured, unpublished | GoReleaser `wingets` block is present with `skip_upload: true` until a token exists |
+| Chocolatey | Configured, unpublished | GoReleaser `chocolateys` block is present with `skip_upload: true` until a token exists |
 | apt PPA | Deferred | `.deb` artifacts already ship via GitHub Releases |
