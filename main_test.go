@@ -1233,40 +1233,35 @@ func TestParseManagerFlag(t *testing.T) {
 // t.Parallel() in tests that use this helper.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stdout
-	rp, wp, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	os.Stdout = wp
-	fn()
-	_ = wp.Close()
-	os.Stdout = old
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, rp); err != nil {
-		t.Fatalf("io.Copy: %v", err)
-	}
-	_ = rp.Close()
-	return buf.String()
+	return captureFD(t, &os.Stdout, fn)
 }
 
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stderr
+	return captureFD(t, &os.Stderr, fn)
+}
+
+// captureFD drains the pipe in a goroutine so a large write cannot fill the
+// Windows pipe buffer and deadlock (bash completion scripts are several KB).
+func captureFD(t *testing.T, fd **os.File, fn func()) string {
+	t.Helper()
+	old := *fd
 	rp, wp, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	os.Stderr = wp
+	*fd = wp
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, rp)
+		_ = rp.Close()
+		done <- buf.String()
+	}()
 	fn()
 	_ = wp.Close()
-	os.Stderr = old
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, rp); err != nil {
-		t.Fatalf("io.Copy: %v", err)
-	}
-	_ = rp.Close()
-	return buf.String()
+	*fd = old
+	return <-done
 }
 
 // ---- genv scan ---------------------------------------------------------------
