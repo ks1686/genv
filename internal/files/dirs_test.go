@@ -11,7 +11,7 @@ import (
 
 func TestApply_createsMissingDirectory(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	target := filepath.Join(home, ".config", "foo")
 	cfg := &schema.FilesConfig{
@@ -32,7 +32,7 @@ func TestApply_createsMissingDirectory(t *testing.T) {
 
 func TestApply_skipsExistingDirectory(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	target := filepath.Join(home, ".config", "foo")
 	if err := os.MkdirAll(target, 0o755); err != nil {
@@ -56,7 +56,7 @@ func TestApply_skipsExistingDirectory(t *testing.T) {
 
 func TestApply_dirMismatchReplacesFileWithForceAndBackup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	target := filepath.Join(home, ".config", "foo")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {

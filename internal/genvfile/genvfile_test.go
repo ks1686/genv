@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestNew(t *testing.T) {
@@ -217,6 +219,9 @@ func TestRead_SyntaxError(t *testing.T) {
 }
 
 func TestRead_PermissionError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0200 does not deny the file owner on Windows")
+	}
 	// Write a valid file then remove all permissions so os.ReadFile returns a
 	// permission-denied error, which is neither ErrNotFound nor ErrInvalidFile.
 	dir := t.TempDir()
@@ -312,8 +317,8 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLockPathFrom(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
-	want := "/custom/config/genv/genv.lock.json"
+	t.Setenv("XDG_CONFIG_HOME", filepath.FromSlash("/custom/config"))
+	want := filepath.Join(filepath.FromSlash("/custom/config"), "genv", "genv.lock.json")
 	for _, specPath := range []string{"genv.json", "/tmp/repo/genv.json", "/any/path.json"} {
 		got := LockPathFrom(specPath)
 		if got != want {
@@ -324,9 +329,10 @@ func TestLockPathFrom(t *testing.T) {
 
 func TestLockPathFrom_FallsBackToHomeConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("HOME", "/home/testuser")
+	home := filepath.FromSlash("/home/testuser")
+	testutil.SetHome(t, home)
 	got := LockPathFrom("/ignored/path/genv.json")
-	want := "/home/testuser/.config/genv/genv.lock.json"
+	want := filepath.Join(home, ".config", "genv", "genv.lock.json")
 	if got != want {
 		t.Errorf("LockPathFrom fallback = %q, want %q", got, want)
 	}
@@ -337,13 +343,14 @@ func TestLockPathFrom_FallsBackToHomeConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDefaultDir_UsesXDG(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	xdg := filepath.FromSlash("/custom/config")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
 	dir, err := DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultDir: %v", err)
 	}
-	if !strings.HasPrefix(dir, "/custom/config") {
-		t.Errorf("DefaultDir with XDG_CONFIG_HOME: got %q, expected prefix /custom/config", dir)
+	if !strings.HasPrefix(dir, xdg) {
+		t.Errorf("DefaultDir with XDG_CONFIG_HOME: got %q, expected prefix %s", dir, xdg)
 	}
 }
 

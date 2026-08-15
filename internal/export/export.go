@@ -291,9 +291,8 @@ func rewriteAndCopyFileAssets(files *schema.FilesConfig, baseDir, outDir string)
 }
 
 func isAbsolutePath(path string) bool {
-	if filepath.IsAbs(path) {
-		return true
-	}
+	// Host-independent: filepath.IsAbs follows GOOS and would treat
+	// incomplete UNC (\\server) or "1:\\Users" as absolute on Windows.
 	if strings.HasPrefix(path, "/") {
 		return true
 	}

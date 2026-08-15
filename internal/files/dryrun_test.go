@@ -12,7 +12,7 @@ import (
 
 func TestApply_dryRunWritesNothing(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	source := filepath.Join(home, "repo", "simple.txt")
 	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {

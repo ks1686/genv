@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,7 @@ func TestIsWindowsMountPath(t *testing.T) {
 // ---- sanitizePathForWSL -----------------------------------------------------
 
 func TestSanitizePathForWSL(t *testing.T) {
+	sep := string(filepath.ListSeparator)
 	input := strings.Join([]string{
 		"/usr/local/sbin",
 		"/usr/local/bin",
@@ -45,10 +47,10 @@ func TestSanitizePathForWSL(t *testing.T) {
 		"/mnt/c/Program Files/Git/cmd",
 		"/mnt/d/tools",
 		"/home/user/.local/bin",
-	}, ":")
+	}, sep)
 
 	got := sanitizePathForWSL(input)
-	parts := strings.Split(got, ":")
+	parts := strings.Split(got, sep)
 
 	wantPresent := []string{"/usr/local/sbin", "/usr/local/bin", "/usr/bin", "/home/user/.local/bin"}
 	wantAbsent := []string{"/mnt/c/Windows/System32", "/mnt/c/Program Files/Git/cmd", "/mnt/d/tools"}
@@ -82,7 +84,8 @@ func TestSanitizePathForWSL_EmptyPath(t *testing.T) {
 }
 
 func TestSanitizePathForWSL_NoWindowsPaths(t *testing.T) {
-	input := "/usr/bin:/usr/local/bin:/home/user/.local/bin"
+	sep := string(filepath.ListSeparator)
+	input := strings.Join([]string{"/usr/bin", "/usr/local/bin", "/home/user/.local/bin"}, sep)
 	got := sanitizePathForWSL(input)
 	if got != input {
 		t.Errorf("sanitizePathForWSL with no Windows paths modified the PATH: got %q, want %q", got, input)

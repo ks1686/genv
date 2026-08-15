@@ -11,7 +11,7 @@ import (
 func TestStatus_reportsOK_whenTargetsMatchSpec(t *testing.T) {
 	// Given
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	source := setupSource(t, home, "simple.txt")
 	target := filepath.Join(home, ".genv-test", "simple.txt")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -40,7 +40,7 @@ func TestStatus_reportsOK_whenTargetsMatchSpec(t *testing.T) {
 func TestStatus_reportsProblemKinds_whenTargetsDiffer(t *testing.T) {
 	// Given
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatalf("mkdir repo: %v", err)

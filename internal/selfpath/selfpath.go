@@ -5,6 +5,7 @@ package selfpath
 import (
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -54,22 +55,27 @@ func PreferStable(exe, arg0 string, lookPath func(string) (string, error)) strin
 // brewStableBin maps Homebrew versioned install paths to <prefix>/bin/<name>.
 // Returns "" when exe is not under Caskroom or Cellar.
 func brewStableBin(exe string) string {
-	exe = filepath.Clean(exe)
-	base := filepath.Base(exe)
+	// Homebrew layouts are POSIX. Normalize both separators so unit tests on
+	// Windows and a Windows-style string on Unix still match Caskroom/Cellar.
+	slash := path.Clean(strings.ReplaceAll(exe, "\\", "/"))
+	base := path.Base(slash)
 	if base == "" || base == "." {
 		return ""
 	}
-	const sep = string(filepath.Separator)
-	for _, marker := range []string{sep + "Caskroom" + sep, sep + "Cellar" + sep} {
-		idx := strings.Index(exe, marker)
+	for _, marker := range []string{"/Caskroom/", "/Cellar/"} {
+		idx := strings.Index(slash, marker)
 		if idx < 0 {
 			continue
 		}
-		prefix := exe[:idx]
+		prefix := slash[:idx]
 		if prefix == "" {
 			continue
 		}
-		return filepath.Join(prefix, "bin", base)
+		out := prefix + "/bin/" + base
+		if strings.Contains(exe, "\\") && !strings.Contains(exe, "/") {
+			return filepath.FromSlash(out)
+		}
+		return out
 	}
 	return ""
 }

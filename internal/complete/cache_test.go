@@ -3,6 +3,7 @@ package complete
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -108,6 +109,9 @@ func TestReadDump_expired(t *testing.T) {
 }
 
 func TestReadDump_corrupt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0 does not deny the file owner on Windows")
+	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	dir, err := CacheDir()
 	if err != nil {

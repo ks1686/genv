@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,9 @@ func TestExecutablePathStatus_emptyAndDirectory(t *testing.T) {
 	path := filepath.Join(dir, "noexec")
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if err := ExecutablePathStatus(path); err == nil {
 		t.Fatal("expected not-executable error")

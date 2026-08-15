@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - `apk` name/version split now understands `-rN` releases. `pip-user` and `volta` implement `OutdatedLister`. `krew` availability requires the krew plugin, not just `kubectl`.
 - Apply unit tests that plant brew locks now seed schemaVersion 1 so Linux CI is not refused by the v8 foreign-lock gate. E2E spec assertions read v8 `targets.*` packages. Adapter `installFakeBinary` works on Windows (`PathListSeparator` + `.cmd` shim).
 - CI `govulncheck` sets `GOTOOLCHAIN=auto` so the scanner can build on Go 1.25 while unit tests stay on go.mod 1.24.3.
+- Windows unit tests isolate `USERPROFILE` (not only `HOME`), JSON-escape file paths, and treat execute-bit checks as Unix-only. Portable path helpers (`isAbsolutePath`, `brewStableBin`) no longer follow host `filepath` rules for POSIX/Homebrew strings.
 
 ### Added
 
