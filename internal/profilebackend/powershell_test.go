@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestWriteEnvPS1_ContentAndEscaping(t *testing.T) {
@@ -105,7 +106,7 @@ func TestInjectProfileLine_Idempotent(t *testing.T) {
 
 func TestPowerShellBackend_ApplyEnvUsesProfile(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	eng := Engine{Bin: filepath.Join(home, "pwsh")}

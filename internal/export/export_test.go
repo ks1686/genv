@@ -115,6 +115,7 @@ func assertGoldenFile(t *testing.T, gotPath, wantPath string) {
 }
 
 func normalizePathSeparators(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
 	return strings.ReplaceAll(s, "\\", "/")
 }
 

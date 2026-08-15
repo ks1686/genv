@@ -1,16 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestApply_FileMismatchDoesNotAbortPackages(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	sourcePath := filepath.Join(dir, "source.txt")
@@ -21,11 +24,11 @@ func TestApply_FileMismatchDoesNotAbortPackages(t *testing.T) {
 	writeTestFile(t, targetPath, "blocking-real-file\n")
 	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
 
-	writeTestFile(t, specPath, `{
-		"schemaVersion":"6",
-		"packages":[{"id":"alpha","prefer":"test-hook-manager"}],
-		"files":{"links":[{"source":"`+sourcePath+`","target":"`+targetPath+`","mode":"link"}]}
-	}`)
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"6",`+
+		`"packages":[{"id":"alpha","prefer":"test-hook-manager"}],`+
+		`"files":{"links":[{"source":`+jsonString(sourcePath)+`,"target":`+jsonString(targetPath)+`,"mode":"link"}]}`+
+		`}`)
 
 	var code int
 	var stdout, stderr string
@@ -64,7 +67,7 @@ func TestApply_FileMismatchDoesNotAbortPackages(t *testing.T) {
 func TestApply_DryRunTextShowsFilePaths(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	sourcePath := filepath.Join(dir, "source.txt")
@@ -72,10 +75,10 @@ func TestApply_DryRunTextShowsFilePaths(t *testing.T) {
 
 	writeTestFile(t, sourcePath, "desired\n")
 	writeTestFile(t, targetPath, "blocking\n")
-	writeTestFile(t, specPath, `{
-		"schemaVersion":"5",
-		"files":{"links":[{"source":"`+sourcePath+`","target":"`+targetPath+`","mode":"link"}]}
-	}`)
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"5",`+
+		`"files":{"links":[{"source":`+jsonString(sourcePath)+`,"target":`+jsonString(targetPath)+`,"mode":"link"}]}`+
+		`}`)
 
 	var code int
 	stdout := captureStdout(t, func() {
@@ -97,7 +100,7 @@ func TestApply_DryRunTextShowsFilePaths(t *testing.T) {
 func TestApply_ForceBackupFlagBacksUpWithoutPerEntryBackup(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	sourcePath := filepath.Join(dir, "source.txt")
@@ -105,10 +108,10 @@ func TestApply_ForceBackupFlagBacksUpWithoutPerEntryBackup(t *testing.T) {
 
 	writeTestFile(t, sourcePath, "desired\n")
 	writeTestFile(t, targetPath, "old-content\n")
-	writeTestFile(t, specPath, `{
-		"schemaVersion":"5",
-		"files":{"links":[{"source":"`+sourcePath+`","target":"`+targetPath+`","mode":"link"}]}
-	}`)
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"5",`+
+		`"files":{"links":[{"source":`+jsonString(sourcePath)+`,"target":`+jsonString(targetPath)+`,"mode":"link"}]}`+
+		`}`)
 
 	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--force", "--backup", "--yes", "--no-hooks"})
 	if code != exitOK {
@@ -133,7 +136,7 @@ func TestApply_ForceBackupFlagBacksUpWithoutPerEntryBackup(t *testing.T) {
 func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 	goodSource := filepath.Join(dir, "good-src.txt")
@@ -145,14 +148,14 @@ func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 	writeTestFile(t, goodSource, "good\n")
 	writeTestFile(t, badSource, "desired\n")
 	writeTestFile(t, badTarget, "blocking\n")
-	writeTestFile(t, specPath, `{
-		"schemaVersion":"6",
-		"files":{"links":[
-			{"source":"`+goodSource+`","target":"`+goodTarget+`","mode":"link"},
-			{"source":"`+badSource+`","target":"`+badTarget+`","mode":"link"}
-		]},
-		"hooks":{"postApply":[{"command":"printf ran >> `+hookLog+`"}]}
-	}`)
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"6",`+
+		`"files":{"links":[`+
+		`{"source":`+jsonString(goodSource)+`,"target":`+jsonString(goodTarget)+`,"mode":"link"},`+
+		`{"source":`+jsonString(badSource)+`,"target":`+jsonString(badTarget)+`,"mode":"link"}`+
+		`]},`+
+		`"hooks":{"postApply":[{"command":"printf ran >> `+hookLog+`"}]}`+
+		`}`)
 
 	var code int
 	var stderr string
@@ -173,4 +176,12 @@ func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 	if !strings.Contains(stderr, "skipping post-apply hooks") || !strings.Contains(stderr, "mismatch") {
 		t.Fatalf("stderr should explain skipped hooks due to mismatches; got %q", stderr)
 	}
+}
+
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }

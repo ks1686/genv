@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestDetectEngine_PreferPwsh(t *testing.T) {
@@ -98,7 +100,7 @@ func TestSelectBackends_WindowsWithEngine(t *testing.T) {
 	}
 	t.Setenv("SHELL", "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	// No POSIX rc → PowerShell only.
 	backends := SelectBackends("windows")
 	if len(backends) != 1 || backends[0].Name() != "powershell" {
@@ -122,7 +124,7 @@ func TestSelectBackends_WindowsNoEngine(t *testing.T) {
 	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	t.Setenv("SHELL", "")
 	backends := SelectBackends("windows")
 	if len(backends) != 0 {

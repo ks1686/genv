@@ -12,6 +12,7 @@ import (
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 // planAll skips outdated detection so planner unit tests exercise filter/constraint
@@ -55,13 +56,8 @@ func TestBuildUpgradePlan_FiltersAll_skipsOutdatedDetection(t *testing.T) {
 
 func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
 	// Given: two tracked brew packages, but a fake `brew outdated` reports only git.
-	dir := t.TempDir()
-	script := "#!/bin/sh\n" +
-		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi` + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake brew: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi`)
 
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{

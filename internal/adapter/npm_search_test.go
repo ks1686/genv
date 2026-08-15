@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -30,6 +31,9 @@ printf 'unrelated\tdescription mentions lodash\tdate\tver\t\n'`)
 }
 
 func TestNpm_SearchContext_killsTimedOutCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cmd.exe .cmd shims do not reliably kill the bash child on deadline")
+	}
 	marker := filepath.Join(t.TempDir(), "completed")
 	t.Setenv("NPM_COMPLETION_MARKER", marker)
 	installFakeBinary(t, "npm", `sleep 1

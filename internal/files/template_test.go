@@ -12,7 +12,7 @@ import (
 
 func TestRenderString_Home(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	got, err := RenderString("path = __HOME__/.config")
 	if err != nil {
@@ -39,7 +39,7 @@ func TestRenderString_UnknownPlaceholderLeftLiteral(t *testing.T) {
 
 func TestRenderString_AllPlaceholders(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	input := "home=__HOME__ user=__USER__ host=__HOST__ os=__OS__ arch=__ARCH__"
 	got, err := RenderString(input)
@@ -62,7 +62,7 @@ func TestRenderString_AllPlaceholders(t *testing.T) {
 
 func TestRenderTemplate_CreatesMissingTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -89,14 +89,14 @@ func TestRenderTemplate_CreatesMissingTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat dst: %v", err)
 	}
-	if fi.Mode().Perm() != 0o640 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
 		t.Fatalf("dst mode = %o, want 640", fi.Mode().Perm())
 	}
 }
 
 func TestRenderTemplate_SkipsMatchingContent(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -122,7 +122,7 @@ func TestRenderTemplate_SkipsMatchingContent(t *testing.T) {
 
 func TestRenderTemplate_MismatchNoForce(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -157,7 +157,7 @@ func TestRenderTemplate_MismatchNoForce(t *testing.T) {
 
 func TestRenderTemplate_MismatchForceBackup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "repo", "codex-config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -209,7 +209,7 @@ func TestRenderTemplate_MismatchForceBackup(t *testing.T) {
 
 func TestRenderTemplate_MismatchForceNoBackup(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -242,7 +242,7 @@ func TestRenderTemplate_MismatchForceNoBackup(t *testing.T) {
 
 func TestRenderTemplate_DryRun(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -283,7 +283,7 @@ func TestRenderTemplate_DryRun(t *testing.T) {
 
 func TestRenderTemplate_ExpandsHomeInTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	src := filepath.Join(home, "src", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
@@ -305,7 +305,7 @@ func TestRenderTemplate_ExpandsHomeInTarget(t *testing.T) {
 
 func TestRenderTemplate_S5DriftScenario(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	repo := filepath.Join(home, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {

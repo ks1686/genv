@@ -16,6 +16,7 @@ import (
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestParseCommaListAndOptionalDuration(t *testing.T) {
@@ -78,7 +79,7 @@ func TestFileAndPathHelpers(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	if got := expandCLIPath("~/dot"); got != filepath.Join(home, "dot") && got != home+"/dot" {
 		// expand uses home + path[1:], so ~/dot → home + /dot
 		if !strings.HasSuffix(got, "dot") {
@@ -243,7 +244,7 @@ func TestCompletionCmdIncludesPortabilityEntries(t *testing.T) {
 
 func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	lf := &genvfile.LockFile{SchemaVersion: "1"}
@@ -308,7 +309,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("HOME", dir)
+	testutil.SetHome(t, dir)
 
 	src := filepath.Join(dir, "src.txt")
 	dst := filepath.Join(dir, "dst.txt")
@@ -320,7 +321,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 	}
 
 	specPath := filepath.Join(dir, "genv.json")
-	spec := `{"schemaVersion":"6","files":{"links":[{"source":"` + src + `","target":"` + dst + `"}]}}`
+	spec := `{"schemaVersion":"6","files":{"links":[{"source":` + jsonString(src) + `,"target":` + jsonString(dst) + `}]}}`
 	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}

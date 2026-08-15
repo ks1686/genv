@@ -1,6 +1,9 @@
 package adapter
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestApt_PlanInstall(t *testing.T) {
 	got := Apt{}.PlanInstall("git")
@@ -72,6 +75,9 @@ func TestApk_Search_stripsVersions(t *testing.T) {
 }
 
 func TestApk_ListOutdated_parse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("apk version -l < is a cmd.exe metacharacter; parse coverage is in TestParseApkVersionOutdated")
+	}
 	installFakeBinary(t, "apk", `if [ "$1" = "version" ]; then echo 'git-2.45.0-r0 < git-2.46.0-r1'; exit 0; fi; exit 1`)
 	got, err := Apk{}.ListOutdated([]string{"git"})
 	if err != nil {
