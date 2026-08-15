@@ -47,6 +47,22 @@ func TestApply_sourceRelativeToSourceRoot(t *testing.T) {
 	}
 }
 
+func TestResolveSource_rejectsRelativeEscape(t *testing.T) {
+	root := t.TempDir()
+	_, err := resolveSource(root, "../secret.txt")
+	if err == nil {
+		t.Fatal("expected relative source escaping SourceRoot to fail")
+	}
+}
+
+func TestResolveSource_rejectsDotDotInside(t *testing.T) {
+	root := t.TempDir()
+	_, err := resolveSource(root, "ok/../../outside.txt")
+	if err == nil {
+		t.Fatal("expected nested ../ source to fail")
+	}
+}
+
 func TestApply_expandsHomeEnvVar(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

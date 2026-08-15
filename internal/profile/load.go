@@ -14,6 +14,10 @@ import (
 // ErrProfileNotFound is returned when a requested profile does not exist.
 var ErrProfileNotFound = errors.New("profile not found")
 
+// ErrV8ProfilesUnsupported is returned when named profiles are used with a
+// schemaVersion 8 spec. v8 uses defaults/targets instead.
+var ErrV8ProfilesUnsupported = errors.New("named profiles are not supported on schemaVersion 8; use targets, or migrate/export")
+
 // Dir returns the directory where profiles are stored, given the base spec path.
 func Dir(specPath string) string {
 	return filepath.Join(filepath.Dir(specPath), "profiles")
@@ -67,6 +71,9 @@ func LoadMerged(specPath, name string) (*schema.GenvFile, error) {
 	if name == "" || name == "base" {
 		return base, nil
 	}
+	if base.SchemaVersion == schema.Version8 {
+		return nil, ErrV8ProfilesUnsupported
+	}
 	ext, err := Load(specPath, name)
 	if err != nil {
 		return nil, err
@@ -76,6 +83,9 @@ func LoadMerged(specPath, name string) (*schema.GenvFile, error) {
 
 // Create scaffolds a new empty profile.
 func Create(specPath, name string) error {
+	if base, err := genvfile.Read(specPath); err == nil && base.SchemaVersion == schema.Version8 {
+		return ErrV8ProfilesUnsupported
+	}
 	path := Path(specPath, name)
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("profile %q already exists", name)

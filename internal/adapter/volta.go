@@ -67,6 +67,14 @@ func (v Volta) ListInstalledVersions() (map[string]string, error) {
 	return entriesVersions(entries), nil
 }
 
+func (v Volta) ListOutdated(pkgNames []string) (map[string]string, error) {
+	entries, err := v.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	return listJSOutdated(entriesVersions(entries), pkgNames)
+}
+
 func (Volta) listEntries() ([]jsPackageEntry, error) {
 	lines, err := runListOutput("volta", "list", "all")
 	if err != nil {

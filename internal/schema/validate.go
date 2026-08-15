@@ -469,6 +469,11 @@ func validateShellEntries(shells map[string]string, fieldPrefix, singularName st
 				Field:   fieldPrefix,
 				Message: singularName + " name must not be empty",
 			})
+		} else if !validShellIdent(name) {
+			errs = append(errs, ValidationError{
+				Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
+				Message: fmt.Sprintf("invalid %s name %q: must match [A-Za-z_][A-Za-z0-9_.-]*", singularName, name),
+			})
 		}
 		if sh != "" && !KnownShellTargets[sh] {
 			errs = append(errs, ValidationError{
@@ -1172,4 +1177,19 @@ func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[s
 
 func containsShellMeta(s string) bool {
 	return strings.ContainsAny(s, "\r\n;&|`$<>()")
+}
+
+func validShellIdent(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+		case i > 0 && ((r >= '0' && r <= '9') || r == '.' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
 }

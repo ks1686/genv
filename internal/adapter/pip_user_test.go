@@ -36,3 +36,11 @@ func TestPipUser_Available_requiresPythonAndPip(t *testing.T) {
 		t.Error("PipUser.Available() = true when python3 is missing")
 	}
 }
+
+func TestPipUser_ListOutdated_empty(t *testing.T) {
+	got, err := PipUser{}.ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	_ = got
+}

@@ -60,11 +60,8 @@ func (Apk) SearchContext(ctx context.Context, query string) ([]string, error) {
 		if name == "" {
 			continue
 		}
-		// apk search may print name-version; strip the last -<version> segment when present.
-		if i := strings.LastIndex(name, "-"); i > 0 {
-			if looksLikeApkVersion(name[i+1:]) {
-				name = name[:i]
-			}
+		if pkg, _ := splitApkNameVersion(name); pkg != "" {
+			name = pkg
 		}
 		if containsFold(name, query) {
 			names = append(names, name)
@@ -77,12 +74,19 @@ func looksLikeApkVersion(s string) bool {
 	if s == "" {
 		return false
 	}
+	return s[0] >= '0' && s[0] <= '9'
+}
+
+func looksLikeApkRelease(s string) bool {
+	if s == "" {
+		return false
+	}
 	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			return true
+		if r < '0' || r > '9' {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func (Apk) ListNames() ([]string, error) {
@@ -90,7 +94,21 @@ func (Apk) ListNames() ([]string, error) {
 }
 
 func (Apk) ListNamesContext(ctx context.Context) ([]string, error) {
-	return runListOutputContext(ctx, "apk", "search", "-q")
+	lines, err := runListOutputContext(ctx, "apk", "search", "-q")
+	if err != nil {
+		return lines, err
+	}
+	names := make([]string, 0, len(lines))
+	seen := map[string]bool{}
+	for _, line := range lines {
+		name, _ := splitApkNameVersion(strings.TrimSpace(line))
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 func (Apk) ListInstalled() ([]string, error) {
@@ -121,7 +139,17 @@ func splitApkNameVersion(s string) (name, ver string) {
 	if i <= 0 {
 		return s, ""
 	}
-	return s[:i], s[i+1:]
+	last := s[i+1:]
+	if strings.HasPrefix(last, "r") && looksLikeApkRelease(last[1:]) {
+		j := strings.LastIndex(s[:i], "-")
+		if j > 0 && looksLikeApkVersion(s[j+1:i]) {
+			return s[:j], s[j+1:]
+		}
+	}
+	if looksLikeApkVersion(last) {
+		return s[:i], last
+	}
+	return s, ""
 }
 
 func (Apk) QueryVersion(pkgName string) (string, error) {

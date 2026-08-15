@@ -404,8 +404,17 @@ func TestInitCmd_CreatesSpecFromStdin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(spec.Packages) != 2 {
-		t.Fatalf("packages = %#v, want git+curl", spec.Packages)
+	if spec.SchemaVersion != schema.Version8 {
+		t.Fatalf("schemaVersion = %q, want 8", spec.SchemaVersion)
+	}
+	n := 0
+	for _, b := range spec.Targets {
+		if b != nil {
+			n += len(b.Packages)
+		}
+	}
+	if n != 2 {
+		t.Fatalf("target packages = %d (%#v), want git+curl", n, spec.Targets)
 	}
 
 	if code := run([]string{"init", "--file", path}); code != exitLogic {

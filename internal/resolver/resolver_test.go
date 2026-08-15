@@ -12,6 +12,16 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+func TestRunSubcmd_EmptyArgv(t *testing.T) {
+	err := runSubcmd(context.Background(), nil, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected empty argv to fail")
+	}
+	if !strings.Contains(err.Error(), "empty command") {
+		t.Fatalf("error = %v, want empty command", err)
+	}
+}
+
 func TestPlan_PreferredManagerAvailable(t *testing.T) {
 	f := &schema.GenvFile{
 		Packages: []schema.Package{

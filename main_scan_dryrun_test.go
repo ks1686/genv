@@ -125,7 +125,18 @@ func TestScanCmd_YesWritesSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spec: %v", err)
 	}
-	if len(f.Packages) != 1 || f.Packages[0].ID != "jq" {
-		t.Fatalf("packages = %+v, want jq", f.Packages)
+	n := 0
+	id := ""
+	for _, b := range f.Targets {
+		if b == nil {
+			continue
+		}
+		n += len(b.Packages)
+		if len(b.Packages) > 0 {
+			id = b.Packages[0].ID
+		}
+	}
+	if f.SchemaVersion != "8" || n != 1 || id != "jq" {
+		t.Fatalf("scan wrote schema %q packages=%d id=%q targets=%+v", f.SchemaVersion, n, id, f.Targets)
 	}
 }
