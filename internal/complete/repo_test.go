@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -232,8 +233,18 @@ func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	countPath := filepath.Join(t.TempDir(), "calls")
 	t.Setenv("NPM_SEARCH_COUNT", countPath)
-	testutil.InstallFakeBinary(t, "npm", `echo call >> "$NPM_SEARCH_COUNT"
+	if runtime.GOOS == "windows" {
+		// A native .cmd stays under SearchTimeout; the bash shim is too slow.
+		dir := t.TempDir()
+		shim := "@echo off\r\n>>\"%NPM_SEARCH_COUNT%\" echo call\r\necho typescript\tdesc\tdate\tver\tkeywords\r\n"
+		if err := os.WriteFile(filepath.Join(dir, "npm.cmd"), []byte(shim), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	} else {
+		testutil.InstallFakeBinary(t, "npm", `echo call >> "$NPM_SEARCH_COUNT"
 printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
+	}
 
 	got := repoPackagesOnGOOS(
 		"type",
@@ -248,7 +259,7 @@ printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls := strings.Count(string(content), "call\n"); calls != 1 {
+	if calls := strings.Count(string(content), "call"); calls != 1 {
 		t.Fatalf("npm search calls = %d, want 1", calls)
 	}
 }
