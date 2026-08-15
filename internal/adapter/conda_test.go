@@ -43,8 +43,9 @@ func TestCondaPlanInstall(t *testing.T) {
 	}
 
 	cmdErr := c.PlanInstall("mypkg")
-	if len(cmdErr) != 3 || cmdErr[0] != "sh" || cmdErr[1] != "-c" {
-		t.Errorf("expected error command, got %v", cmdErr)
+	wantErr := []string{"sh", "-c", "printf '%s\n' 'genv: conda/mamba requires env-qualified format <env>:<pkg>' >&2; exit 1", "genv-conda-invalid", "mypkg"}
+	if !reflect.DeepEqual(cmdErr, wantErr) {
+		t.Errorf("got %v, want %v", cmdErr, wantErr)
 	}
 }
 
@@ -57,8 +58,22 @@ func TestMambaPlanInstall(t *testing.T) {
 	}
 
 	cmdErr := m.PlanInstall("mypkg")
-	if len(cmdErr) != 3 || cmdErr[0] != "sh" || cmdErr[1] != "-c" {
-		t.Errorf("expected error command, got %v", cmdErr)
+	wantErr := []string{"sh", "-c", "printf '%s\n' 'genv: conda/mamba requires env-qualified format <env>:<pkg>' >&2; exit 1", "genv-conda-invalid", "mypkg"}
+	if !reflect.DeepEqual(cmdErr, wantErr) {
+		t.Errorf("got %v, want %v", cmdErr, wantErr)
+	}
+}
+
+func TestCondaInvalidPlans(t *testing.T) {
+	want := condaInvalidCommand("mypkg")
+	if !reflect.DeepEqual(Conda{}.PlanUninstall("mypkg"), want) {
+		t.Fatalf("PlanUninstall invalid = %v", Conda{}.PlanUninstall("mypkg"))
+	}
+	if !reflect.DeepEqual(Conda{}.PlanUpgrade("mypkg"), want) {
+		t.Fatalf("PlanUpgrade invalid = %v", Conda{}.PlanUpgrade("mypkg"))
+	}
+	if !reflect.DeepEqual(Mamba{}.PlanUninstall("mypkg"), want) {
+		t.Fatalf("Mamba PlanUninstall invalid = %v", Mamba{}.PlanUninstall("mypkg"))
 	}
 }
 

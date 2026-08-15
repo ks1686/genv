@@ -35,7 +35,7 @@ func (Conda) NormalizeID(id string, managers map[string]string) (string, bool) {
 func (Conda) PlanInstall(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"conda", "install", "-y", "-n", env, pkg}
 }
@@ -43,7 +43,7 @@ func (Conda) PlanInstall(pkgName string) []string {
 func (Conda) PlanUninstall(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"conda", "remove", "-y", "-n", env, PythonBasePackageName(pkg)}
 }
@@ -51,9 +51,13 @@ func (Conda) PlanUninstall(pkgName string) []string {
 func (Conda) PlanUpgrade(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"conda", "update", "-y", "-n", env, PythonBasePackageName(pkg)}
+}
+
+func condaInvalidCommand(pkgName string) []string {
+	return []string{"sh", "-c", "printf '%s\n' 'genv: conda/mamba requires env-qualified format <env>:<pkg>' >&2; exit 1", "genv-conda-invalid", pkgName}
 }
 
 func (Conda) PlanClean() [][]string {

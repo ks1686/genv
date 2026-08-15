@@ -152,6 +152,9 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 // stdin/stdout/stderr, logs timing via slog, and returns any execution error.
 // Shared by Execute and ExecuteApply to avoid repeating the logging boilerplate.
 func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) == 0 || args[0] == "" {
+		return fmt.Errorf("empty command")
+	}
 	fprintf(stdout, "\n==> %s\n", strings.Join(args, " "))
 	slog.Debug("spawn", "cmd", strings.Join(args, " "))
 	start := time.Now()

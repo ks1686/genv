@@ -13,15 +13,23 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+func writeLegacyProfileBase(t *testing.T, specPath string, pkgs ...schema.Package) {
+	t.Helper()
+	base := &schema.GenvFile{SchemaVersion: schema.Version6, Packages: pkgs}
+	if base.Packages == nil {
+		base.Packages = []schema.Package{}
+	}
+	if err := genvfile.Write(specPath, base); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProfileList(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	base := genvfile.New()
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath)
 	if err := profile.Create(specPath, "work"); err != nil {
 		t.Fatal(err)
 	}
@@ -64,10 +72,7 @@ func TestProfileCreate(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "genv.json")
 
-	base := genvfile.New()
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath)
 
 	out := captureStdout(t, func() {
 		code := run([]string{"profile", "create", "dev", "-file", specPath})
@@ -109,11 +114,7 @@ func TestProfileSwitch(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
 
-	base := genvfile.New()
-	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg", Prefer: "brew"})
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath, schema.Package{ID: "base-pkg", Prefer: "brew"})
 
 	if err := profile.Create(specPath, "A"); err != nil {
 		t.Fatal(err)
@@ -183,10 +184,7 @@ func TestStatusJSONActiveProfile(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	base := genvfile.New()
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath)
 	if err := profile.Create(specPath, "work"); err != nil {
 		t.Fatal(err)
 	}
@@ -241,11 +239,7 @@ func TestProfileSwitchFailure(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
 
-	base := genvfile.New()
-	base.Packages = append(base.Packages, schema.Package{ID: "base-pkg", Prefer: "brew"})
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath, schema.Package{ID: "base-pkg", Prefer: "brew"})
 
 	if err := profile.Create(specPath, "A"); err != nil {
 		t.Fatal(err)
@@ -295,10 +289,7 @@ func TestProfileSwitchMissing(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	base := genvfile.New()
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath)
 
 	out := captureStderr(t, func() {
 		code := run([]string{"profile", "switch", "missing", "-file", specPath, "-lock-file", lockPath, "-yes"})
@@ -325,10 +316,7 @@ func TestProfileSwitchInvalidJSON(t *testing.T) {
 	specPath := filepath.Join(dir, "genv.json")
 	lockPath := filepath.Join(dir, "genv.lock.json")
 
-	base := genvfile.New()
-	if err := genvfile.Write(specPath, base); err != nil {
-		t.Fatal(err)
-	}
+	writeLegacyProfileBase(t, specPath)
 
 	if err := profile.Create(specPath, "bad"); err != nil {
 		t.Fatal(err)
@@ -347,9 +335,44 @@ func TestProfileSwitchInvalidJSON(t *testing.T) {
 	if !strings.Contains(out, "invalid character") {
 		t.Errorf("expected json parse error, got %q", out)
 	}
+}
 
-	// Lock file should not be created
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Errorf("expected lock file to not exist, got %v", err)
+func TestProfileSwitch_V8Refused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	if err := genvfile.Write(specPath, genvfile.New()); err != nil {
+		t.Fatal(err)
+	}
+	lf := &genvfile.LockFile{SchemaVersion: schema.Version8, ActiveProfile: "work"}
+	if err := genvfile.WriteLock(lockPath, lf); err != nil {
+		t.Fatal(err)
+	}
+	errOut := captureStderr(t, func() {
+		code := run([]string{"profile", "switch", "work", "-file", specPath, "-lock-file", lockPath, "-yes"})
+		if code == exitOK {
+			t.Fatalf("expected v8 profile switch to fail")
+		}
+	})
+	if !strings.Contains(errOut, "not supported") && !strings.Contains(errOut, "schemaVersion 8") {
+		t.Fatalf("expected v8 refuse, got %q", errOut)
+	}
+}
+
+func TestProfileCreate_V8Refused(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "genv.json")
+	if err := genvfile.Write(specPath, genvfile.New()); err != nil {
+		t.Fatal(err)
+	}
+	errOut := captureStderr(t, func() {
+		code := run([]string{"profile", "create", "work", "-file", specPath})
+		if code == exitOK {
+			t.Fatalf("expected v8 profile create to fail")
+		}
+	})
+	if !strings.Contains(errOut, "schemaVersion 8") && !strings.Contains(errOut, "not supported") {
+		t.Fatalf("expected v8 refuse message, got %q", errOut)
 	}
 }

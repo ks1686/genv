@@ -26,7 +26,13 @@ func resolveSource(sourceRoot, source string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(rootExpanded, expanded), nil
+	rootClean := filepath.Clean(rootExpanded)
+	joined := filepath.Join(rootClean, expanded)
+	rel, err := filepath.Rel(rootClean, joined)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("source %q escapes SourceRoot %s", source, rootClean)
+	}
+	return joined, nil
 }
 
 func expandPath(s string) (string, error) {

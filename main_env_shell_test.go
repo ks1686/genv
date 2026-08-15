@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,10 +10,18 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 )
 
+func writeEmptyV1Spec(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1","packages":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEnvSetWritesSpec(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"env", "set", "--file", path, "FOO", "bar"}); code != exitOK {
 		t.Fatalf("env set: expected exitOK, got %d", code)
@@ -31,6 +40,7 @@ func TestEnvListJSONRedactsSensitiveValue(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"env", "set", "--file", path, "--sensitive", "SECRET", "x"}); code != exitOK {
 		t.Fatalf("env set: expected exitOK, got %d", code)
@@ -72,6 +82,7 @@ func TestEnvUnsetRemovesVariableAndReportsMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"env", "set", "--file", path, "FOO", "bar"}); code != exitOK {
 		t.Fatalf("env set: expected exitOK, got %d", code)
@@ -117,6 +128,7 @@ func TestShellAliasSetWritesSpec(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"shell", "alias", "set", "--file", path, "ll", "ls -la"}); code != exitOK {
 		t.Fatalf("shell alias set: expected exitOK, got %d", code)
@@ -135,6 +147,7 @@ func TestShellAliasUnsetRemovesAliasAndReportsMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"shell", "alias", "set", "--file", path, "ll", "ls -la"}); code != exitOK {
 		t.Fatalf("shell alias set: expected exitOK, got %d", code)
@@ -159,6 +172,7 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{"shell", "alias", "set", "--file", path, "ll", "ls -la"}); code != exitOK {
 		t.Fatalf("shell alias set: expected exitOK, got %d", code)

@@ -134,8 +134,7 @@ Shared behavior across modes:
 - `backup` (per record, or `--backup` on apply) preserves the old target as
   `target.backup.<timestamp>` instead of deleting it.
 - `--dry-run` reports the plan and writes nothing.
-- Legacy `host` filters (schema v1–v7) select records by classified host; v4.0.0+ prefers schema v8 `targets.*` (`macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`). Classification no longer returns `wsl2`.
-  WSL2 inherits every `host:"arch"` record.
+- Legacy `host` filters (schema v1–v7) select records by classified host; v4.0.0+ prefers schema v8 `targets.*` (`macos`, `windows`, `arch`, `ubuntu`, `wsl-arch`). Classification no longer returns `wsl2`. Ubuntu-like WSL2 maps to `ubuntu`; Arch-like WSL2 maps to `wsl-arch` and does not inherit native `arch`.
 
 ## Commands and flags exercised
 

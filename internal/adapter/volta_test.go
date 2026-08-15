@@ -61,6 +61,17 @@ fi`)
 	}
 }
 
+func TestVolta_ListOutdated_noTools(t *testing.T) {
+	installFakeBinary(t, "volta", `echo '⚡️ User toolchain:'; echo '    node@22.11.0'`)
+	got, err := Volta{}.ListOutdated(nil)
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ListOutdated = %#v, want nil", got)
+	}
+}
+
 func assertNoBroadJSUpdate(t *testing.T, args []string) {
 	t.Helper()
 	joined := strings.Join(args, " ")

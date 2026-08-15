@@ -55,8 +55,11 @@ jobs:
           # for BenchmarkDetect). Keep a regression gate with headroom for noise.
           BENCH_MAX_MS: "400"
 
-  build-windows:
-    name: Build (Windows)
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  test-windows:
+    name: Test (Windows)
     runs-on: windows-latest
 
     steps:
@@ -74,3 +77,6 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./...

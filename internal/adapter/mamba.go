@@ -1,9 +1,5 @@
 package adapter
 
-import (
-	"fmt"
-)
-
 // Mamba is the adapter for mamba environments.
 type Mamba struct{}
 
@@ -21,7 +17,7 @@ func (Mamba) NormalizeID(id string, managers map[string]string) (string, bool) {
 func (Mamba) PlanInstall(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"mamba", "install", "-y", "-n", env, pkg}
 }
@@ -29,7 +25,7 @@ func (Mamba) PlanInstall(pkgName string) []string {
 func (Mamba) PlanUninstall(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"mamba", "remove", "-y", "-n", env, PythonBasePackageName(pkg)}
 }
@@ -37,7 +33,7 @@ func (Mamba) PlanUninstall(pkgName string) []string {
 func (Mamba) PlanUpgrade(pkgName string) []string {
 	env, pkg, err := parseCondaEnvPkg(pkgName)
 	if err != nil {
-		return []string{"sh", "-c", fmt.Sprintf("echo %q >&2; exit 1", err.Error())}
+		return condaInvalidCommand(pkgName)
 	}
 	return []string{"mamba", "update", "-y", "-n", env, PythonBasePackageName(pkg)}
 }

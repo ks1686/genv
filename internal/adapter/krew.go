@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"os/exec"
 	"slices"
 	"strings"
 )
@@ -12,10 +13,15 @@ type Krew struct{}
 
 func (Krew) Name() string { return "krew" }
 
+var krewProbe = func() error {
+	return exec.Command("kubectl", "krew", "version").Run()
+}
+
 func (Krew) Available() bool {
-	// krew is a kubectl plugin invoked as `kubectl krew`, so kubectl must exist.
-	_, err := lookPath("kubectl")
-	return err == nil
+	if _, err := lookPath("kubectl"); err != nil {
+		return false
+	}
+	return krewProbe() == nil
 }
 
 func (Krew) NormalizeID(id string, managers map[string]string) (string, bool) {

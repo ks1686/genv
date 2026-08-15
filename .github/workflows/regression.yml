@@ -1,0 +1,60 @@
+name: Regression
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+# Pins the 2026-08 review-stack behaviors so later iterations cannot silently
+# restore persist-before-install add, v1 empty specs, lock-mutating dry-run,
+# or the other correctness/safety fixes.
+jobs:
+  review-stack:
+    name: Review-stack unit regressions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Fail-closed add + v8 defaults + profile refuse
+        run: |
+          go test -count=1 -race -timeout 5m -run 'TestAddCmd_|TestInitCmd_|TestProfileCreate_V8Refused|TestProfileSwitch_V8Refused|TestNew$|TestNew_WritesValidV8|TestReadOrNew_CreatesNew' .
+          go test -count=1 -race -timeout 2m -run 'TestNew$|TestNew_WritesValidV8|TestReadOrNew_CreatesNew' ./internal/genvfile
+          go test -count=1 -race -timeout 2m -run 'TestCreate_V8Refused' ./internal/profile
+      - name: Safety (paths, argv, conda, alias names, dry-run lock)
+        run: |
+          go test -count=1 -race -timeout 3m -run 'TestResolveSource_rejects|TestApply_ForceNewLockAllowsDryRunWithoutForeignUninstall' .
+          go test -count=1 -race -timeout 2m -run 'TestResolveSource_rejects' ./internal/files
+          go test -count=1 -race -timeout 2m -run 'TestRunSubcmd_EmptyArgv' ./internal/resolver
+          go test -count=1 -race -timeout 2m -run 'TestCondaPlanInstall|TestMambaPlanInstall|TestCondaInvalidPlans' ./internal/adapter
+          go test -count=1 -race -timeout 2m -run 'TestParseAndValidate_RejectsUnsafeAliasName|TestParseAndValidate_AcceptsSafeAliasName' ./internal/schema
+      - name: Adapter correctness (apk / apt / dnf / krew / volta)
+        run: |
+          go test -count=1 -race -timeout 3m -run 'TestSplitApkNameVersion|TestParseApkVersionOutdated|TestApk_|TestApt_ListOutdated|TestDnf_ListOutdated|TestKrew_|TestVolta_ListOutdated' ./internal/adapter
+  files-e2e:
+    name: Files e2e (hermetic)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Files e2e
+        run: go test -tags integration -race -timeout 10m -v -run TestFiles_ ./e2e/
+  lint-actions:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.10
+        with:
+          args: -color

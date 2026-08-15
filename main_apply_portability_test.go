@@ -53,15 +53,15 @@ func TestApply_ForceNewLockAllowsDryRunWithoutForeignUninstall(t *testing.T) {
 	if strings.Contains(out, "mas") || strings.Contains(out, "x") {
 		t.Fatalf("force-new-lock dry-run should not plan foreign uninstall, got: %s", out)
 	}
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
-		t.Fatalf("original lock should be moved aside in force-new-lock dry-run, stat err=%v", err)
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("original lock must remain during force-new-lock dry-run, stat err=%v", err)
 	}
 	matches, err := filepath.Glob(lockPath + ".bak-*")
 	if err != nil {
 		t.Fatalf("glob backup: %v", err)
 	}
-	if len(matches) != 1 {
-		t.Fatalf("expected one backup lock, got %d: %v", len(matches), matches)
+	if len(matches) != 0 {
+		t.Fatalf("dry-run must not rename lock, backups=%v", matches)
 	}
 }
 

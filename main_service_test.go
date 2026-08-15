@@ -13,6 +13,7 @@ func TestServiceCLICommands(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
 
 	if code := run([]string{
 		"service", "add", "managed", "--file", path,
