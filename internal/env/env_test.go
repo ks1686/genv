@@ -3,6 +3,7 @@ package env
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -137,6 +138,24 @@ func TestWriteFragment_Deterministic(t *testing.T) {
 	iZZZ := strings.Index(content, "export ZZZ=")
 	if iAAA >= iMMM || iMMM >= iZZZ {
 		t.Errorf("fragment not sorted: AAA@%d MMM@%d ZZZ@%d\n%s", iAAA, iMMM, iZZZ, content)
+	}
+}
+
+func TestWriteFragment_Mode0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not POSIX on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env.sh")
+	if err := WriteFragment(path, map[string]schema.EnvVar{"X": {Value: "1"}}); err != nil {
+		t.Fatalf("WriteFragment: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("fragment mode = %o, want 0600", got)
 	}
 }
 

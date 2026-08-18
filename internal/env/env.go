@@ -64,18 +64,8 @@ func WriteFragment(path string, vars map[string]schema.EnvVar) error {
 
 	sb.WriteString("# END genv env\n")
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating directory %s: %w", dir, err)
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(sb.String()), 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("saving %s: %w", path, err)
+	if err := genvfile.WritePrivate(path, []byte(sb.String())); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil
 }

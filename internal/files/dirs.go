@@ -54,7 +54,7 @@ func applyDir(ctx context.Context, d schema.FileDir, opts ApplyOptions, res *App
 			return err
 		}
 	} else {
-		if err := os.RemoveAll(target); err != nil {
+		if err := os.Remove(target); err != nil {
 			return fmt.Errorf("dir %s: remove existing: %w", target, err)
 		}
 	}

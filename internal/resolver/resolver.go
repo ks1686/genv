@@ -158,7 +158,13 @@ func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	fprintf(stdout, "\n==> %s\n", strings.Join(args, " "))
 	slog.Debug("spawn", "cmd", strings.Join(args, " "))
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	runCtx := ctx
+	cancel := func() {}
+	if d := SubprocessTimeout(ctx); d > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, d)
+	}
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, args[0], args[1:]...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

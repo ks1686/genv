@@ -282,3 +282,88 @@ func TestApply_managedLinkRequiresForceForRealFile(t *testing.T) {
 		t.Fatalf("Mismatched = %v, want [%s]", res.Mismatched, target)
 	}
 }
+
+func TestApply_forceLinkRefusesDirectoryWithoutBackup(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	source := filepath.Join(home, "src.txt")
+	if err := os.WriteFile(source, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	target := filepath.Join(home, ".genv-test", "simple.txt")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	keep := filepath.Join(target, "keep")
+	if err := os.WriteFile(keep, []byte("safe"), 0o644); err != nil {
+		t.Fatalf("write keep: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Links: []schema.FileLink{{
+			Source: source,
+			Target: "~/.genv-test/simple.txt",
+			Mode:   "link",
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{Force: true})
+	if err == nil {
+		t.Fatal("error = nil, want refusing directory")
+	}
+	var msg string
+	if res != nil && len(res.Errors) > 0 {
+		msg = res.Errors[0].Error()
+	} else {
+		msg = err.Error()
+	}
+	if !strings.Contains(msg, "refusing to replace directory") {
+		t.Fatalf("error = %v, want refusing directory", msg)
+	}
+	if _, statErr := os.Stat(keep); statErr != nil {
+		t.Fatalf("directory contents were deleted: %v", statErr)
+	}
+}
+
+func TestApply_forceLinkReplacesFileWithoutBackup(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	source := filepath.Join(home, "src.txt")
+	if err := os.WriteFile(source, []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	target := filepath.Join(home, ".genv-test", "simple.txt")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatalf("write planted file: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Links: []schema.FileLink{{
+			Source: source,
+			Target: "~/.genv-test/simple.txt",
+			Mode:   "link",
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{Force: true})
+	if err != nil {
+		t.Fatalf("Apply error = %v, want nil", err)
+	}
+	if len(res.Updated) != 1 || res.Updated[0] != target {
+		t.Fatalf("Updated = %v, want [%s]", res.Updated, target)
+	}
+	got, err := os.Readlink(target)
+	if err != nil {
+		t.Fatalf("Readlink: %v", err)
+	}
+	if got != source {
+		t.Fatalf("symlink points to %q, want %q", got, source)
+	}
+	matches, _ := filepath.Glob(target + ".backup.*")
+	if len(matches) != 0 {
+		t.Fatalf("expected no backup without --backup, got %v", matches)
+	}
+}

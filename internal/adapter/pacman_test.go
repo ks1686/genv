@@ -27,7 +27,7 @@ func TestPacman_PlanInstall(t *testing.T) {
 
 func TestPacman_PlanUninstall(t *testing.T) {
 	args := Pacman{}.PlanUninstall("git")
-	want := []string{"sudo", "pacman", "-Rcs", "--noconfirm", "git"}
+	want := []string{"sudo", "pacman", "-Rs", "--noconfirm", "git"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanUninstall: got %v, want %v", args, want)
 	}

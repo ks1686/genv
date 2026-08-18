@@ -554,6 +554,31 @@ func TestWriteLock_Mode0600(t *testing.T) {
 	}
 }
 
+func TestWritePrivate_Mode0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not POSIX on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested", "secret")
+	if err := WritePrivate(path, []byte("ok\n")); err != nil {
+		t.Fatalf("WritePrivate: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != "ok\n" {
+		t.Fatalf("content = %q, want %q", got, "ok\n")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("mode = %o, want 0600", perm)
+	}
+}
+
 func TestNew_WritesValidV8(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.json")
