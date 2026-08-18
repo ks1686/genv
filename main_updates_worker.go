@@ -15,6 +15,7 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
+	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/service"
 	"github.com/ks1686/genv/internal/upgrade"
@@ -74,7 +75,7 @@ func updatesRunOnceCmd(args []string) int {
 }
 
 func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.GenvFile, cfg *schema.UpdatesConfig, file, lockFile, hostFlag, targetFlag string) int {
-	f, _, code := materializeSpecForCommand("updates", file, f, hostFlag, targetFlag)
+	f, activeTarget, code := materializeSpecForCommand("updates", file, f, hostFlag, targetFlag)
 	if code != exitOK {
 		logger.Warn("updates.check.target", slog.Int("exit", code))
 		return code
@@ -84,6 +85,14 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 	if err != nil {
 		logger.Warn("updates.check.lock", slog.Any("err", err))
 		return exitIO
+	}
+	if f.SchemaVersion == schema.Version8 {
+		available := resolver.Detect()
+		_, code := applyLockGate("updates", lockPath, lf, activeTarget, available, true, false, true, "")
+		if code != exitOK {
+			logger.Warn("updates.check.lock", slog.Int("exit", code), slog.String("reason", "foreign lock refused"))
+			return code
+		}
 	}
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
 	planStarted := time.Now()

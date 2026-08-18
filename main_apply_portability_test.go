@@ -111,6 +111,80 @@ func TestApply_LegacySuccessfulWriteDoesNotStampTargetMetadata(t *testing.T) {
 	}
 }
 
+func TestApply_MissingLockMetadataRefused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+
+	writeTestFile(t, specPath, `{"schemaVersion":"8","targets":{"arch":{"packages":[{"id":"git","prefer":"mas"}]}}}`)
+	writeTestFile(t, lockPath, `{"schemaVersion":"1","packages":[{"id":"x","manager":"mas","pkgName":"1"}]}`)
+
+	var code int
+	errOut := captureStderr(t, func() {
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--target", "arch", "--yes", "--dry-run"})
+	})
+
+	if code != exitLogic {
+		t.Fatalf("apply missing lock metadata: expected exitLogic (%d), got %d; stderr=%s", exitLogic, code, errOut)
+	}
+	if !strings.Contains(errOut, "foreign lock") || !strings.Contains(errOut, "target/goos") {
+		t.Fatalf("missing metadata message, got: %s", errOut)
+	}
+}
+
+func TestUpgrade_ForeignLockRefused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+
+	writeTestFile(t, specPath, `{"schemaVersion":"8","targets":{"arch":{"packages":[{"id":"git","prefer":"pacman"}]}}}`)
+	writeTestFile(t, lockPath, `{"schemaVersion":"8","target":"macos","goos":"darwin","packages":[{"id":"git","manager":"brew","pkgName":"git"}]}`)
+
+	var code int
+	errOut := captureStderr(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--target", "arch", "--dry-run"})
+	})
+
+	if code != exitLogic {
+		t.Fatalf("upgrade foreign lock: expected exitLogic (%d), got %d; stderr=%s", exitLogic, code, errOut)
+	}
+	if !strings.Contains(errOut, "foreign lock") {
+		t.Fatalf("upgrade foreign lock message missing, got: %s", errOut)
+	}
+	if strings.Contains(errOut, "--force-new-lock") {
+		t.Fatalf("upgrade should not suggest --force-new-lock, got: %s", errOut)
+	}
+}
+
+func TestRemove_UninstallFailureLeavesLock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{failUninstall: true})
+
+	writeTestFile(t, specPath, `{"schemaVersion":"7","packages":[{"id":"alpha","prefer":"test-hook-manager"}]}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-hook-manager", PkgName: "alpha"}})
+
+	var code int
+	errOut := captureStderr(t, func() {
+		code = run([]string{"remove", "--file", specPath, "--lock-file", lockPath, "--no-hooks", "alpha"})
+	})
+	if code != exitLogic {
+		t.Fatalf("remove uninstall failure: expected exitLogic (%d), got %d; stderr=%s", exitLogic, code, errOut)
+	}
+
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.Packages) != 1 || lf.Packages[0].ID != "alpha" {
+		t.Fatalf("lock packages = %+v, want alpha retained", lf.Packages)
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

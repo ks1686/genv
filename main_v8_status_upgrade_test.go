@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -120,9 +121,16 @@ func TestStatusUpgradeUpdates_V8TargetPackagesMatchLock(t *testing.T) {
 	upgradeMarker := filepath.Join(dir, "upgrade.log")
 
 	writeTestFile(t, specPath, `{"schemaVersion":"8","targets":{"macos":{"packages":[{"id":"alpha"}]}}}`)
-	writeLock(t, lockPath, []genvfile.LockedPackage{
-		{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"},
-	})
+	if err := genvfile.WriteLock(lockPath, &genvfile.LockFile{
+		SchemaVersion: schema.Version8,
+		Target:        "macos",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "alpha", Manager: "test-upgrade-no-hooks", PkgName: pkgNameForTest, InstalledVersion: "1.0.0"},
+		},
+	}); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
 
 	originalAll := adapter.All
 	adapter.All = append([]adapter.Adapter{upgradeNoHooksAdapter{marker: upgradeMarker}}, originalAll...)
