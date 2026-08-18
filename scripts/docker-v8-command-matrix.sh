@@ -114,7 +114,7 @@ write_v8_spec() {
   "schemaVersion": "8",
   "defaults": {
     "env": { "EDITOR": { "value": "nvim" } },
-    "shell": { "aliases": { "ll": { "command": "ls -la" } } },
+    "shell": { "aliases": { "ll": { "value": "ls -la" } } },
     "hooks": {
       "preAdd": [{ "command": "printf preadd >> $HOOK_LOG" }],
       "postAdd": [{ "command": "printf postadd >> $HOOK_LOG" }],
