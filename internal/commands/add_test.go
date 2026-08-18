@@ -43,10 +43,17 @@ func TestAdd_WithPreferAndManagers(t *testing.T) {
 	}
 }
 
-func TestAdd_EmptyID(t *testing.T) {
+func TestAdd_LeadingDashID(t *testing.T) {
 	f := newFile()
-	if err := Add(f, "", "*", "", nil, ""); err == nil {
-		t.Fatal("expected error for empty id")
+	if err := Add(f, "--asdeps", "", "", nil, ""); err == nil {
+		t.Fatal("expected error for leading-dash id")
+	}
+}
+
+func TestAdd_LeadingDashManagerValue(t *testing.T) {
+	f := newFile()
+	if err := Add(f, "git", "", "", map[string]string{"pacman": "--help"}, ""); err == nil {
+		t.Fatal("expected error for leading-dash manager value")
 	}
 }
 
