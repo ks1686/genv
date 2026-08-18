@@ -65,7 +65,9 @@ type ServiceStatusEntry struct {
 }
 
 // ServiceStatus computes the two-way diff between the spec services block and
-// the lock services entries.
+// the lock services entries. When probe is true, each in-spec service is also
+// checked for liveness (brew, a custom status command, or systemd). When
+// probe is false, Running is always false and no subprocesses are spawned.
 func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfile.LockedService, probe bool) []ServiceStatusEntry {
 	lockByName := make(map[string]genvfile.LockedService, len(lockServices))
 	for _, ls := range lockServices {
