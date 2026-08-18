@@ -128,9 +128,12 @@ func isASCIIAlpha(b byte) bool {
 func copyBundleAsset(cacheDir, destDir, rel string) error {
 	src := filepath.Join(cacheDir, filepath.FromSlash(rel))
 	dst := filepath.Join(destDir, filepath.FromSlash(rel))
-	info, err := os.Stat(src)
+	info, err := os.Lstat(src)
 	if err != nil {
 		return fmt.Errorf("copying bundle asset %s: %w", rel, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("copying bundle asset %s: symlinks are not allowed", rel)
 	}
 	if info.IsDir() {
 		return copyBundleDir(src, dst, rel)
@@ -147,14 +150,18 @@ func copyBundleDir(srcRoot, dstRoot, relRoot string) error {
 		if err != nil {
 			return err
 		}
+		nestedRel := relRoot
 		if rel != "." {
-			nestedRel := path.Join(relRoot, filepath.ToSlash(rel))
+			nestedRel = path.Join(relRoot, filepath.ToSlash(rel))
 			if shouldSkipBundlePath(nestedRel) {
 				if d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("copying bundle asset %s: symlinks are not allowed", nestedRel)
 		}
 		dst := filepath.Join(dstRoot, rel)
 		if d.IsDir() {

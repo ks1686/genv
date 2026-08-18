@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
@@ -44,6 +45,37 @@ func TestCopyBundleAssetsV7CopiesRelativeFileAssets(t *testing.T) {
 	assertFileContent(t, filepath.Join(destDir, "templates", "app.tmpl"), "template")
 	assertNotExists(t, filepath.Join(destDir, "secrets", "token"))
 	assertNotExists(t, filepath.Join(destDir, "genv.lock.json"))
+}
+
+func TestCopyBundleAssets_RejectsSymlink(t *testing.T) {
+	cacheDir := t.TempDir()
+	destDir := t.TempDir()
+	target := filepath.Join(cacheDir, "real")
+	if err := os.WriteFile(target, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	link := filepath.Join(cacheDir, "assets", "profile")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	f := &schema.GenvFile{
+		SchemaVersion: schema.Version7,
+		Files: &schema.FilesConfig{
+			Links: []schema.FileLink{{Source: "assets/profile", Target: "~/.profile"}},
+		},
+	}
+	_, err := CopyBundleAssets(cacheDir, destDir, f)
+	if err == nil {
+		t.Fatal("expected symlink copy to fail")
+	}
+	if !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("error = %v, want symlink mention", err)
+	}
+	assertNotExists(t, filepath.Join(destDir, "assets", "profile"))
 }
 
 func TestCopyBundleAssetsV8UnionsDefaultsAndTargets(t *testing.T) {

@@ -151,7 +151,7 @@ func TestPullCmd_ClonesLocalRepositoryAndCopiesSpec(t *testing.T) {
 	runGitCommand(t, "-C", work, "config", "commit.gpgsign", "false")
 	runGitCommand(t, "-C", work, "config", "tag.gpgsign", "false")
 
-	remoteSpec := `{"schemaVersion":"6","packages":[],"repo":{"url":"local","ref":"main"}}`
+	remoteSpec := `{"schemaVersion":"6","packages":[],"repo":{"url":"https://example.com/spec.git","ref":"main"}}`
 	if err := os.WriteFile(filepath.Join(work, "genv.json"), []byte(remoteSpec), 0o644); err != nil {
 		t.Fatalf("write remote spec: %v", err)
 	}

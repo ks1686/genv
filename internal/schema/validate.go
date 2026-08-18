@@ -845,12 +845,21 @@ func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[str
 				Field:    "repo",
 				Message:  "repo block must be an object with a url field",
 			})
-		} else if f.Repo.URL == "" {
+		} else if err := ValidRepoURL(f.Repo.URL); err != nil {
 			errs = append(errs, ValidationError{
 				Position: positions["repo.url"],
 				Field:    "repo.url",
-				Message:  "required field is missing or empty",
+				Message:  err.Error(),
 			})
+		}
+		if f.Repo != nil && f.Repo.Ref != "" {
+			if err := ValidGitRef(f.Repo.Ref); err != nil {
+				errs = append(errs, ValidationError{
+					Position: positions["repo.ref"],
+					Field:    "repo.ref",
+					Message:  err.Error(),
+				})
+			}
 		}
 	}
 	return errs
