@@ -246,11 +246,15 @@ func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
 printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 	}
 
-	got := repoPackagesOnGOOS(
+	// Production Tab-complete budgets (150ms search / 300ms overall) are too
+	// tight for Windows CI process spawn. The bun/npm skip is what this test
+	// covers; collectRepoNames with a 1s budget still exercises the real npm
+	// Search parser and the one-call invariant.
+	got := collectRepoNames(
 		"type",
-		map[string]bool{"bun": true, "npm": true},
-		"darwin",
-		time.Now(),
+		repoJobs(map[string]bool{"bun": true, "npm": true}, "darwin"),
+		time.Second,
+		time.Second,
 	)
 	if !slices.Equal(got, []string{"typescript"}) {
 		t.Fatalf("got %v want [typescript]", got)
