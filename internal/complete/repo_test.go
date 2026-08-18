@@ -266,7 +266,17 @@ printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 
 func TestCollectRepoNames_keepsMasProductIDsMatchedByName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	testutil.InstallFakeBinary(t, "mas", `printf '497799835  Xcode (16.0)\n'`)
+	if runtime.GOOS == "windows" {
+		// A native .cmd stays under the search timeout; the bash shim is too slow.
+		dir := t.TempDir()
+		shim := "@echo off\r\necho 497799835  Xcode ^(16.0^)\r\n"
+		if err := os.WriteFile(filepath.Join(dir, "mas.cmd"), []byte(shim), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	} else {
+		testutil.InstallFakeBinary(t, "mas", `printf '497799835  Xcode (16.0)\n'`)
+	}
 
 	mas := adapter.Mas{}
 	got := collectRepoNames("xcode", []repoJob{{
