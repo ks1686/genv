@@ -3582,6 +3582,22 @@ func TestResolvePullSource(t *testing.T) {
 			name:    "empty repo and no flags errors",
 			wantErr: true,
 		},
+		{
+			name:    "ext helper url is rejected",
+			urlFlag: "ext::sh -c evil",
+			wantErr: true,
+		},
+		{
+			name:    "leading dash url is rejected",
+			urlFlag: "-u",
+			wantErr: true,
+		},
+		{
+			name:    "leading dash ref is rejected",
+			urlFlag: "https://example.com/repo.git",
+			refFlag: "-evil",
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -3625,6 +3641,66 @@ func TestPullCmd_NoURLError(t *testing.T) {
 	code := run([]string{"pull", "--file", path})
 	if code != exitUsage {
 		t.Errorf("no url: expected exitUsage (%d), got %d", exitUsage, code)
+	}
+}
+
+func TestPullCmd_RejectsExtURL(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"5","packages":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var code int
+	errOut := captureStderr(t, func() {
+		code = run([]string{"pull", "--file", path, "--url", "ext::sh -c evil"})
+	})
+	if code != exitUsage {
+		t.Fatalf("ext url: expected exitUsage (%d), got %d; stderr=%s", exitUsage, code, errOut)
+	}
+	if !strings.Contains(errOut, "ext::") {
+		t.Fatalf("stderr = %q, want ext:: mention", errOut)
+	}
+}
+
+func TestPullCmd_InvalidRemoteSpecLeavesLocal(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "remote")
+	destDir := filepath.Join(dir, "dest")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+	runGitForTest(t, repoDir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoDir, "genv.json"), []byte(`{"schemaVersion":"99"}`), 0o644); err != nil {
+		t.Fatalf("write remote spec: %v", err)
+	}
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=genv test", "-c", "user.email=test@example.com", "commit", "-m", "bad spec")
+
+	specPath := filepath.Join(destDir, "genv.json")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("mkdir dest: %v", err)
+	}
+	localSpec := fmt.Sprintf(`{"schemaVersion":"7","packages":[{"id":"keep-me"}],"repo":{"url":%q,"ref":"main"}}`, repoDir)
+	if err := os.WriteFile(specPath, []byte(localSpec), 0o644); err != nil {
+		t.Fatalf("write local spec: %v", err)
+	}
+
+	code := run([]string{"pull", "--file", specPath})
+	if code != exitValidation {
+		t.Fatalf("pull invalid remote: expected exitValidation (%d), got %d", exitValidation, code)
+	}
+	got, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read local spec: %v", err)
+	}
+	if !strings.Contains(string(got), "keep-me") {
+		t.Fatalf("local spec was overwritten: %s", got)
 	}
 }
 
