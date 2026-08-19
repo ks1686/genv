@@ -5,8 +5,11 @@
   "description": "genv portable targets manifest - schema version 8",
   "type": "object",
   "required": ["schemaVersion", "targets"],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "type": "string"
+    },
     "schemaVersion": {
       "type": "string",
       "const": "8"
@@ -45,12 +48,15 @@
     },
     "hooks": {
       "type": "null"
+    },
+    "updates": {
+      "type": "object"
     }
   },
   "$defs": {
     "defaultBundle": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "packages": {
           "type": "array",
@@ -83,7 +89,7 @@
     },
     "targetBundle": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "packages": {
           "type": "array",
@@ -142,7 +148,7 @@
     "package": {
       "type": "object",
       "required": ["id"],
-      "additionalProperties": true,
+      "additionalProperties": false,
       "not": {
         "required": ["host"]
       },

@@ -1411,3 +1411,135 @@ func TestParseAndValidate_UpdatesDisabledUnknownManager(t *testing.T) {
 		t.Errorf("expected unknown manager error even when disabled, got: %v", errs)
 	}
 }
+
+func TestParseAndValidate_UnknownField(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantField string
+		wantKey   string
+	}{
+		{
+			name:      "top-level typo",
+			json:      `{"schemaVersion":"1","packages":[],"enviroment":{"FOO":{"value":"x"}}}`,
+			wantField: "enviroment",
+			wantKey:   "enviroment",
+		},
+		{
+			name:      "package typo",
+			json:      `{"schemaVersion":"1","packages":[{"id":"git","idd":"git"}]}`,
+			wantField: "packages[0].idd",
+			wantKey:   "idd",
+		},
+		{
+			name:      "nested defaults typo",
+			json:      `{"schemaVersion":"8","defaults":{"packges":[]},"targets":{"macos":{"packages":[{"id":"git"}]}}}`,
+			wantField: "defaults.packges",
+			wantKey:   "packges",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs, err := ParseAndValidate([]byte(tc.json))
+			if err != nil {
+				t.Fatalf("unexpected fatal error: %v", err)
+			}
+			found := false
+			for _, e := range errs {
+				if e.Field == tc.wantField && strings.Contains(e.Message, tc.wantKey) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected unknown field %q, got: %v", tc.wantField, errs)
+			}
+		})
+	}
+}
+
+func TestParseAndValidate_DollarSchemaAllowed(t *testing.T) {
+	input := `{"$schema":"https://github.com/ks1686/genv/schema/v8/genv.json","schemaVersion":"1","packages":[]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("$schema should be allowed, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_V8EnvTombstoneNotUnknown(t *testing.T) {
+	input := `{
+		"schemaVersion":"8",
+		"defaults":{"env":{"EDITOR":{"value":"vim"}}},
+		"targets":{"macos":{"packages":[{"id":"git"}],"env":{"EDITOR":null}}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	for _, e := range errs {
+		if strings.Contains(e.Message, "unknown field") {
+			t.Fatalf("tombstone should not be unknown field, got: %v", errs)
+		}
+	}
+}
+
+func TestParseAndValidate_LeadingDashPackageID(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"--asdeps"}]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "packages[0].id" && strings.Contains(e.Message, "invalid package id") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected invalid package id, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_LeadingDashManagerValue(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"git","managers":{"pacman":"--help"}}]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "packages[0].managers.pacman" && strings.Contains(e.Message, "invalid package name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected invalid package name, got: %v", errs)
+	}
+}
+
+func TestValidPackageName(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"git", true},
+		{"@scope/pkg", true},
+		{"441258766", true},
+		{"python3.12", true},
+		{"--asdeps", false},
+		{"-h", false},
+		{"", false},
+		{"has space", false},
+		{"git\n", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ValidPackageName(tc.name); got != tc.ok {
+				t.Fatalf("ValidPackageName(%q)=%v, want %v", tc.name, got, tc.ok)
+			}
+		})
+	}
+}
