@@ -95,17 +95,16 @@ func pullCmd(args []string) int {
 	}
 
 	src := filepath.Join(cacheDir, "genv.json")
-	if err := copyFile(src, *file); err != nil {
-		fprintf(os.Stderr, "genv pull: writing spec: %v\n", err)
-		return exitIO
-	}
-
 	remote, err := genvfile.Read(src)
 	if err != nil {
 		fprintf(os.Stderr, "genv pull: reading remote spec: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
 			return exitValidation
 		}
+		return exitIO
+	}
+	if err := copyFile(src, *file); err != nil {
+		fprintf(os.Stderr, "genv pull: writing spec: %v\n", err)
 		return exitIO
 	}
 	copiedAssets, err := pullassets.CopyBundleAssets(cacheDir, filepath.Dir(*file), remote)
@@ -142,6 +141,13 @@ func resolvePullSource(repo *schema.Repo, urlFlag, refFlag string) (url, ref str
 		ref = repo.Ref
 	} else {
 		ref = "main"
+	}
+
+	if err := schema.ValidRepoURL(url); err != nil {
+		return "", "", err
+	}
+	if err := schema.ValidGitRef(ref); err != nil {
+		return "", "", err
 	}
 
 	return url, ref, nil
@@ -202,7 +208,7 @@ func updateRepoCache(cacheDir, url, ref string) error {
 		if err := os.MkdirAll(filepath.Dir(cacheDir), 0o700); err != nil {
 			return fmt.Errorf("creating cache directory: %w", err)
 		}
-		if err := runGit("clone", url, cacheDir); err != nil {
+		if err := runGit("clone", "--", url, cacheDir); err != nil {
 			return fmt.Errorf("cloning repo: %w", err)
 		}
 		return runGit("-C", cacheDir, "checkout", ref)
