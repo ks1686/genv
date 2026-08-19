@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Scoop publisher uses the same env-token template as Homebrew. `envOrDefault`
+  is not a GoReleaser function, so the v4.0.13 scoop upload aborted after the
+  GitHub Release and Homebrew tap had already published.
+
 ## v4.0.13 - 2026-08-19
 
 ### Added
