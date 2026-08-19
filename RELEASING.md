@@ -1,8 +1,9 @@
 # Releasing genv
 
-This repository publishes GitHub releases, a Homebrew cask, and an AUR package
-automatically when an annotated tag is pushed. GoReleaser handles GitHub releases,
-Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-off required.
+This repository publishes GitHub releases, a Homebrew cask, a Scoop manifest,
+and an AUR package automatically when an annotated tag is pushed. GoReleaser
+handles GitHub releases, Homebrew, Scoop, AUR, and the Snap Store automatically
+— no external reviewer sign-off required.
 
 ---
 
@@ -35,9 +36,9 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.12` | Drop Pro-only winget/chocolatey GoReleaser keys so OSS publish can succeed |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
-validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
-publishers for pre-release tags automatically, so only stable tags reach those
-channels.
+validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,
+and AUR publishers for pre-release tags automatically, so only stable tags
+reach those channels.
 
 ---
 
@@ -162,7 +163,7 @@ not create that repo; create it first (`gh repo create`). The release workflow
      on `scoop-bucket`.
    - Do not put a `gh` OAuth token (`gho_…`) into Actions secrets.
 3. Leave `scoops.directory` unset so manifests live at the bucket root
-   (`scoop bucket list` reports 0 otherwise).
+   (`scoop install genv` cannot find the manifest otherwise).
 4. If the secret is missing, GoReleaser skips the Scoop upload (`skip_upload: true`)
    and the rest of the release still publishes. With the secret set, `skip_upload`
    is `auto` (stable tags upload; prereleases do not).
@@ -324,6 +325,7 @@ paru -S genv       # builds from source
    - Generate `checksums.txt`
    - Publish a GitHub Release with all artifacts
    - Push the Homebrew formula to `ks1686/homebrew-tap`
+   - Push `genv.json` to `ks1686/scoop-bucket` (Scoop pipe continues on error — confirm the file landed)
    - Push updated PKGBUILDs to AUR (`genv-bin` pre-compiled and `genv` source)
 
    If GitHub/Homebrew succeeded but AUR failed (transient `aur.archlinux.org` SSH),
@@ -349,7 +351,16 @@ paru -S genv       # builds from source
    genv version
    ```
 
-8. **Verify AUR** (on any Arch machine):
+8. **Verify Scoop** (on Windows, after the bucket has `genv.json`):
+
+   ```powershell
+   scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
+   scoop update
+   scoop install genv
+   genv version
+   ```
+
+9. **Verify AUR** (on any Arch machine):
 
    ```bash
    paru -Sy genv-bin && genv version   # pre-compiled
@@ -357,7 +368,7 @@ paru -S genv       # builds from source
    paru -Sy genv && genv version       # from source
    ```
 
-9. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
+10. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
 
 ---
 
@@ -389,13 +400,12 @@ Artifacts land in `./dist/`. Nothing is published.
 
 ## Future distribution channels
 
-Scoop is a self-hosted bucket (`ks1686/scoop-bucket`), not Scoop extras.
+Scoop is live as a self-hosted bucket (`ks1686/scoop-bucket`), not Scoop extras.
 winget and Chocolatey stay unpublished (community review + GoReleaser Pro).
 GitHub Release zips remain a supported Windows path.
 
 | Channel | Status | Notes |
 | --- | --- | --- |
-| Scoop | Self-hosted bucket | Uploads from the release workflow when `SCOOP_BUCKET_GITHUB_TOKEN` is set |
 | winget | Deferred | Publisher is GoReleaser Pro-only; default source needs microsoft/winget-pkgs review |
 | Chocolatey | Deferred | Publisher is GoReleaser Pro-only; community repo has the same review gate |
 | apt PPA | Deferred | `.deb` artifacts already ship via GitHub Releases |

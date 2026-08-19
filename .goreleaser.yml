@@ -127,7 +127,7 @@ snapcrafts:
 # Contents: read+write on the scoop-bucket repo).
 #
 # Manifests stay at the bucket root (do not set directory) so
-# `scoop bucket list` counts them.
+# `scoop install genv` can find them.
 #
 # Install after setup:
 #   scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket

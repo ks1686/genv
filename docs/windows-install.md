@@ -12,8 +12,7 @@ scoop install genv
 ```
 
 `scoop install genv` needs a `genv.json` manifest on that bucket, which the
-release workflow writes when `SCOOP_BUCKET_GITHUB_TOKEN` is set. Until then,
-use the zip:
+first stable tag after merge uploads. Until then, use the zip:
 
 ```powershell
 Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_windows_amd64.zip -OutFile genv.zip

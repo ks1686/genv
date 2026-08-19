@@ -44,9 +44,9 @@ scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
 scoop install genv
 ```
 
-The bucket is self-hosted (not Scoop extras). The first `scoop install genv` that
-succeeds is the release after `SCOOP_BUCKET_GITHUB_TOKEN` is configured; until
-then use the zip below.
+The bucket is self-hosted (not Scoop extras). `scoop install genv` needs a root
+`genv.json` on that bucket, which the first stable tag after merge uploads.
+Until then use the zip below.
 
 **Windows (PowerShell zip):**
 
