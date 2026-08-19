@@ -1840,6 +1840,7 @@ type lifecycleHookAdapter struct {
 	installMarker   string
 	uninstallMarker string
 	upgradeMarker   string
+	failUninstall   bool
 }
 
 func (a lifecycleHookAdapter) Name() string    { return "test-hook-manager" }
@@ -1853,6 +1854,9 @@ func (a lifecycleHookAdapter) PlanInstall(pkgName string) []string {
 }
 
 func (a lifecycleHookAdapter) PlanUninstall(pkgName string) []string {
+	if a.failUninstall {
+		return []string{"sh", "-c", "exit 1"}
+	}
 	return shellAppendMarker("uninstall", a.uninstallMarker)
 }
 

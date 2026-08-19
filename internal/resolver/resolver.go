@@ -413,6 +413,7 @@ type ReconcileResult struct {
 	ToInstall []Action
 	ToRemove  []Action // UninstallCmd populated; Pkg.ID identifies the package
 	Unchanged []genvfile.LockedPackage
+	Warnings  []string
 }
 
 // Reconcile computes the delta between the desired packages (from genv.json)
@@ -461,11 +462,14 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 
 	var toRemove []Action
 	var unchanged []genvfile.LockedPackage
+	var warnings []string
 	for _, lp := range managed {
 		if !desiredByID[lp.ID] {
 			a := getAdapter(lp.Manager)
 			if a == nil {
-				continue // adapter no longer registered; skip silently
+				unchanged = append(unchanged, lp)
+				warnings = append(warnings, fmt.Sprintf("lock package %q uses unregistered manager %q; skipping uninstall", lp.ID, lp.Manager))
+				continue
 			}
 			toRemove = append(toRemove, Action{
 				Pkg:          schema.Package{ID: lp.ID},
@@ -482,7 +486,7 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 		unchanged = append(unchanged, lp)
 	}
 
-	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged}
+	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged, Warnings: warnings}
 }
 
 // PrintReconcilePlan writes a human-readable apply plan to w. Each line is

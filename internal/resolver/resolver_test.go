@@ -482,8 +482,14 @@ func TestReconcile_RemovalPathSkipsMissingManagers(t *testing.T) {
 	if got := result.ToRemove[0].Manager; got != "brew" {
 		t.Fatalf("expected brew removal action, got %q", got)
 	}
-	if len(result.Unchanged) != 0 {
-		t.Fatalf("expected no unchanged packages, got %d", len(result.Unchanged))
+	if len(result.Unchanged) != 1 {
+		t.Fatalf("expected missing manager to stay locked, got %d unchanged", len(result.Unchanged))
+	}
+	if got := result.Unchanged[0].ID; got != "legacy" {
+		t.Fatalf("expected legacy to remain in lock, got %q", got)
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(result.Warnings), result.Warnings)
 	}
 }
 

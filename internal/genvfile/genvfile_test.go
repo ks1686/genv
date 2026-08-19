@@ -535,6 +535,25 @@ func TestWriteLock_InstalledVersion_OmitEmpty(t *testing.T) {
 	}
 }
 
+func TestWriteLock_Mode0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not POSIX on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	lf := &LockFile{SchemaVersion: schema.Version, Packages: []LockedPackage{}}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("lock mode = %o, want 0600", got)
+	}
+}
+
 func TestNew_WritesValidV8(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.json")
