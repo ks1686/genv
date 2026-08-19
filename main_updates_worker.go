@@ -81,6 +81,12 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		return code
 	}
 	lockPath := lockPathForSpec(file, lockFile)
+	unlock, err := genvfile.LockMutation(lockPath)
+	if err != nil {
+		logger.Warn("updates.check.lock", slog.Any("err", err))
+		return exitIO
+	}
+	defer unlock()
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		logger.Warn("updates.check.lock", slog.Any("err", err))

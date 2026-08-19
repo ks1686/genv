@@ -1149,9 +1149,7 @@ func runApply(opts applyOptions) int {
 
 	ctx := context.Background()
 	if opts.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-		defer cancel()
+		ctx = resolver.WithSubprocessTimeout(ctx, opts.Timeout)
 	}
 
 	lockPath := lockPathForSpec(opts.File, opts.LockFile)
@@ -1282,15 +1280,26 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
 	errs := errStrings(execResult.Errors)
 
-	envApplied, envRemoved := applyEnvVars(f, lf, false)
-	shellApplied, shellRemoved := applyShellCfg(f, lf, false)
-	_, _, svcErrs := applyServices(ctx, f, lf, false)
+	var envApplied, envRemoved, shellApplied, shellRemoved []string
 	failedHooks := []string(nil)
 	filePlan := &files.ApplyResult{}
 	filePlanErr := error(nil)
 	if len(errs) == 0 {
-		if len(svcErrs) > 0 {
-			errs = append(errs, errStrings(svcErrs)...)
+		var envErr, shellErr error
+		envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
+		if envErr != nil {
+			errs = append(errs, envErr.Error())
+		} else {
+			shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
+			if shellErr != nil {
+				errs = append(errs, shellErr.Error())
+			}
+		}
+		if len(errs) == 0 {
+			_, _, svcErrs := applyServices(ctx, f, lf, false)
+			if len(svcErrs) > 0 {
+				errs = append(errs, errStrings(svcErrs)...)
+			}
 		}
 	}
 	if len(errs) == 0 {
@@ -1376,7 +1385,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	var serviceChanges int
-	for _, e := range service.ServiceStatus(f.Services, lf.Services) {
+	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
 		if e.Kind != service.ServiceStatusOK {
 			serviceChanges++
 		}
@@ -1468,22 +1477,28 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
 
-	// Apply env, shell and services (update lf in memory), then write lock once.
-	applyEnvVars(f, lf, !opts.Quiet)
-	applyShellCfg(f, lf, !opts.Quiet)
-	_, _, svcErrs := applyServices(ctx, f, lf, !opts.Quiet)
+	var svcErrs []error
 	var fileErrs []error
 	var appliedFiles *files.ApplyResult
 	if len(execResult.Errors) == 0 {
-		var filePlanErr error
-		appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
-		if filePlanErr != nil {
-			fileErrs = append(fileErrs, filePlanErr)
-		}
-		if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
-			writeFileMismatchGuidance(os.Stderr, appliedFiles)
-			if !opts.NoHooks && hasPostApplyHooks(f) {
-				fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
+		if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
+			fileErrs = append(fileErrs, err)
+		} else if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
+			fileErrs = append(fileErrs, err)
+		} else {
+			_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
+			if len(svcErrs) == 0 {
+				var filePlanErr error
+				appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
+				if filePlanErr != nil {
+					fileErrs = append(fileErrs, filePlanErr)
+				}
+				if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
+					writeFileMismatchGuidance(os.Stderr, appliedFiles)
+					if !opts.NoHooks && hasPostApplyHooks(f) {
+						fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
+					}
+				}
 			}
 		}
 	}
@@ -1584,9 +1599,9 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 // names. The caller is responsible for persisting the lock file (avoiding a
 // double-write when packages and env vars are both applied in the same run).
 // If verbose is true, it prints progress lines to stdout.
-func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
 	if len(f.Env) == 0 && len(lf.Env) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Use EnvStatus to determine what changed, avoiding duplicated diff logic.
@@ -1608,7 +1623,7 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 	for _, b := range backends {
 		if err := b.ApplyEnv(f.Env); err != nil {
 			fprintf(os.Stderr, "genv: writing env fragment (%s): %v\n", b.Name(), err)
-			return applied, removed
+			return applied, removed, err
 		}
 		lastFrag = b.Name()
 	}
@@ -1642,7 +1657,7 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 	}
 	lf.Env = newEnv
 
-	return applied, removed
+	return applied, removed, nil
 }
 
 // buildPlanResult converts a ReconcileResult into the stable JSON PlanResult type.
@@ -1675,7 +1690,7 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 	}
 
 	var toStart, toStop []string
-	for _, e := range service.ServiceStatus(f.Services, lf.Services) {
+	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
 		switch e.Kind {
 		case service.ServiceStatusMissing, service.ServiceStatusModified:
 			toStart = append(toStart, e.Name)
@@ -2496,9 +2511,9 @@ func shellEditCmd(args []string) int {
 // applyShellCfg writes managed shell fragments via selected profile backends,
 // updates lf.Shell in memory, and returns lists of applied and removed entry
 // names. The caller writes the lock. If verbose is true, it prints progress.
-func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string) {
+func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
 	if f.Shell == nil && lf.Shell == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Use ShellStatus to determine what changed, avoiding duplicated diff logic.
@@ -2546,7 +2561,7 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 	for _, b := range backends {
 		if err := b.ApplyShell(cfg); err != nil {
 			fprintf(os.Stderr, "genv: writing shell fragment (%s): %v\n", b.Name(), err)
-			return applied, removed
+			return applied, removed, err
 		}
 	}
 
@@ -2572,7 +2587,7 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 	// Update lf.Shell in memory; caller writes the lock once.
 	lf.Shell = shellcfg.SpecToLock(f.Shell)
 
-	return applied, removed
+	return applied, removed, nil
 }
 
 // scanCmd implements `genv scan`.
@@ -2905,7 +2920,7 @@ func statusCmd(args []string) int {
 	entries := commands.Status(f, lf)
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
-	serviceEntries := service.ServiceStatus(f.Services, lf.Services)
+	serviceEntries := service.ServiceStatus(f.Services, lf.Services, true)
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -3110,9 +3125,9 @@ func applyServices(ctx context.Context, f *schema.GenvFile, lf *genvfile.LockFil
 	}
 
 	applied, removed, errs = service.ApplyServices(ctx, f.Services, lf.Services, verbose)
-
-	// Update lf.Services in memory; caller writes the lock once.
-	lf.Services = service.SpecToLock(f.Services)
+	if len(errs) == 0 {
+		lf.Services = service.SpecToLock(f.Services)
+	}
 
 	return applied, removed, errs
 }

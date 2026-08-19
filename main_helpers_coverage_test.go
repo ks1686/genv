@@ -264,7 +264,10 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		},
 	}
 
-	applied, removed := applyEnvVars(f, lf, true)
+	applied, removed, err := applyEnvVars(f, lf, true)
+	if err != nil {
+		t.Fatalf("applyEnvVars: %v", err)
+	}
 	if len(applied) != 1 || applied[0] != "FOO" || len(removed) != 0 {
 		t.Fatalf("applyEnvVars = %v %v", applied, removed)
 	}
@@ -274,12 +277,18 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 
 	// Removal path: clear spec env while lock still has FOO.
 	f.Env = map[string]schema.EnvVar{}
-	applied, removed = applyEnvVars(f, lf, true)
+	applied, removed, err = applyEnvVars(f, lf, true)
+	if err != nil {
+		t.Fatalf("applyEnvVars remove: %v", err)
+	}
 	if len(removed) != 1 || removed[0] != "FOO" {
 		t.Fatalf("env remove = %v %v", applied, removed)
 	}
 
-	applied, removed = applyShellCfg(f, lf, true)
+	applied, removed, err = applyShellCfg(f, lf, true)
+	if err != nil {
+		t.Fatalf("applyShellCfg: %v", err)
+	}
 	if len(applied) == 0 {
 		t.Fatalf("applyShellCfg applied nothing: %v %v", applied, removed)
 	}
@@ -287,7 +296,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		t.Fatal("expected lock shell updated")
 	}
 	if !strings.Contains(captureStdout(t, func() {
-		_, _ = applyShellCfg(f, lf, false)
+		_, _, _ = applyShellCfg(f, lf, false)
 	}), "") {
 		// fish note only prints when hasFishEntries; force by keeping fish alias
 	}
@@ -295,17 +304,17 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 	out := captureStdout(t, func() {
 		f2 := &schema.GenvFile{Shell: f.Shell}
 		lf2 := &genvfile.LockFile{}
-		_, _ = applyShellCfg(f2, lf2, false)
+		_, _, _ = applyShellCfg(f2, lf2, false)
 	})
 	if !strings.Contains(out, "fish-specific") {
 		t.Errorf("expected fish note, got %q", out)
 	}
 
-	if a, r := applyEnvVars(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil {
-		t.Errorf("empty env apply = %v %v", a, r)
+	if a, r, err := applyEnvVars(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil || err != nil {
+		t.Errorf("empty env apply = %v %v %v", a, r, err)
 	}
-	if a, r := applyShellCfg(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil {
-		t.Errorf("empty shell apply = %v %v", a, r)
+	if a, r, err := applyShellCfg(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil || err != nil {
+		t.Errorf("empty shell apply = %v %v %v", a, r, err)
 	}
 }
 

@@ -142,12 +142,23 @@ func replaceLinkAt(target, source string, backup bool, opts ApplyOptions, res *A
 	if err := ensureParentDir(target); err != nil {
 		return err
 	}
-	if backup {
-		if err := backupExisting(target); err != nil {
-			return err
-		}
-	} else {
-		if err := os.RemoveAll(target); err != nil {
+	info, err := os.Lstat(target)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("link %s: %w", target, err)
+	}
+	if err == nil {
+		if info.IsDir() {
+			if !backup {
+				return fmt.Errorf("link %s: refusing to replace directory without --backup", target)
+			}
+			if err := backupExisting(target); err != nil {
+				return err
+			}
+		} else if backup {
+			if err := backupExisting(target); err != nil {
+				return err
+			}
+		} else if err := os.Remove(target); err != nil {
 			return fmt.Errorf("link %s: remove existing: %w", target, err)
 		}
 	}

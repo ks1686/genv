@@ -65,8 +65,10 @@ type ServiceStatusEntry struct {
 }
 
 // ServiceStatus computes the two-way diff between the spec services block and
-// the lock services entries.
-func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfile.LockedService) []ServiceStatusEntry {
+// the lock services entries. When probe is true, each in-spec service is also
+// checked for liveness (brew, a custom status command, or systemd). When
+// probe is false, Running is always false and no subprocesses are spawned.
+func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfile.LockedService, probe bool) []ServiceStatusEntry {
 	lockByName := make(map[string]genvfile.LockedService, len(lockServices))
 	for _, ls := range lockServices {
 		lockByName[ls.Name] = ls
@@ -104,14 +106,14 @@ func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfi
 		}
 
 		running := false
-		if inSpec && svc.BrewFormula != "" {
+		if probe && inSpec && svc.BrewFormula != "" {
 			running = BrewServicesRunning(svc.BrewFormula)
-		} else if inSpec && len(svc.Status) > 0 {
+		} else if probe && inSpec && len(svc.Status) > 0 {
 			cmd := exec.Command(svc.Status[0], svc.Status[1:]...)
 			if err := cmd.Run(); err == nil {
 				running = true
 			}
-		} else if inSpec && IsSystemdAvailable() {
+		} else if probe && inSpec && IsSystemdAvailable() {
 			cmd := exec.Command("systemctl", "--user", "is-active", "--quiet", systemdUnitName(name))
 			if err := cmd.Run(); err == nil {
 				running = true
@@ -139,7 +141,7 @@ func compareServices(s schema.Service, l genvfile.LockedService) bool {
 // ApplyServices reconciles the system state with the desired services.
 // It starts missing/modified services and stops extra services.
 func ApplyServices(ctx context.Context, specServices map[string]schema.Service, lockServices []genvfile.LockedService, verbose bool) (applied, removed []string, errs []error) {
-	statusEntries := ServiceStatus(specServices, lockServices)
+	statusEntries := ServiceStatus(specServices, lockServices, true)
 
 	for _, e := range statusEntries {
 		switch e.Kind {

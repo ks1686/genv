@@ -3,9 +3,12 @@ package resolver
 import (
 	"bytes"
 	"context"
+	"io"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
@@ -19,6 +22,22 @@ func TestRunSubcmd_EmptyArgv(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty command") {
 		t.Fatalf("error = %v, want empty command", err)
+	}
+}
+
+func TestRunSubcmd_PerSpawnTimeout(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not in PATH")
+	}
+	ctx := WithSubprocessTimeout(context.Background(), 50*time.Millisecond)
+	err := runSubcmd(ctx, []string{"sleep", "5"}, nil, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("expected sleep to hit per-spawn timeout")
+	}
+	// `true` is not reliable on Windows CI (LookPath can find a non-POSIX
+	// true.exe that exits 1). `go` is on PATH wherever these tests run.
+	if err := runSubcmd(ctx, []string{"go", "env", "GOVERSION"}, nil, io.Discard, io.Discard); err != nil {
+		t.Fatalf("later command after a timed-out spawn: %v", err)
 	}
 }
 
