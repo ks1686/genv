@@ -25,7 +25,7 @@ genv map --target arch                # assist-only manager suggestions
 | macOS | `brew tap ks1686/tap && brew install --cask genv` |
 | Arch / Manjaro | `paru -S genv` or `yay -S genv` (or `genv-bin`) |
 | Other Linux | GitHub release tarball (see below) |
-| Windows | GitHub release zip (see below) |
+| Windows | Scoop (self-hosted bucket) or GitHub release zip (see below) |
 | Any (from source) | `go install github.com/ks1686/genv@latest` (Go 1.24+) |
 
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
@@ -37,7 +37,18 @@ sudo mv genv /usr/local/bin/
 genv version
 ```
 
-**Windows (PowerShell):**
+**Windows (Scoop, after Scoop itself is installed):**
+
+```powershell
+scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
+scoop install genv
+```
+
+The bucket is self-hosted (not Scoop extras). The first `scoop install genv` that
+succeeds is the release after `SCOOP_BUCKET_GITHUB_TOKEN` is configured; until
+then use the zip below.
+
+**Windows (PowerShell zip):**
 
 ```powershell
 Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_windows_amd64.zip -OutFile genv.zip
@@ -46,7 +57,9 @@ Expand-Archive genv.zip -DestinationPath .
 genv version
 ```
 
-Windows package-manager installers for the **genv binary** (winget / scoop / choco) are not published yet. Scoop is prepared in OSS GoReleaser with upload skipped; winget and Chocolatey need GoReleaser Pro. Once genv is on `PATH`, it still **manages packages** through those managers.
+winget and Chocolatey installers for the **genv binary** are not published
+(GoReleaser Pro). Once genv is on `PATH`, it still **manages packages** through
+winget, Scoop, and Chocolatey.
 
 Release archives ship cosign-signed checksums (keyless). Darwin binaries are also Developer ID signed and notarized when Apple secrets are configured — see [SECURITY.md](SECURITY.md).
 
@@ -288,7 +301,8 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 | Schema v8 portable targets | Stable |
 | Background `updates` + profiles + hooks | Stable |
 | apt / dnf / apk adapters | Stable |
-| Publish genv to winget / scoop / choco | Not published; Scoop stub skipped in OSS, winget/choco need GoReleaser Pro |
+| Publish genv to Scoop | Self-hosted bucket `ks1686/scoop-bucket`; uploads when `SCOOP_BUCKET_GITHUB_TOKEN` is set |
+| Publish genv to winget / choco | Not published; publishers are GoReleaser Pro-only |
 
 Historical milestone checklists: [ROADMAP.md](ROADMAP.md). Release notes: [CHANGELOG.md](CHANGELOG.md). Tag-driven publishing: [RELEASING.md](RELEASING.md).
 

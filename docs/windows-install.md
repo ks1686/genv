@@ -2,7 +2,18 @@
 
 Native Windows is the `windows` target (not WSL). Use a separate Linux install inside WSL — see [wsl2-install.md](wsl2-install.md).
 
-## 1. Download genv
+## 1. Install genv
+
+**Scoop** (self-hosted bucket, not Scoop extras):
+
+```powershell
+scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
+scoop install genv
+```
+
+`scoop install genv` needs a `genv.json` manifest on that bucket, which the
+release workflow writes when `SCOOP_BUCKET_GITHUB_TOKEN` is set. Until then,
+use the zip:
 
 ```powershell
 Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_windows_amd64.zip -OutFile genv.zip
@@ -15,7 +26,9 @@ genv version
 
 Update the version segment when a newer release is current.
 
-Store installers for genv itself (`winget install ks1686.genv`, `scoop install genv`, `choco install genv`) are not published yet. Scoop is prepared in OSS GoReleaser with upload skipped; winget and Chocolatey need GoReleaser Pro. Those managers remain available for **packages** genv manages.
+winget and Chocolatey installers for genv itself (`winget install ks1686.genv`,
+`choco install genv`) are not published (GoReleaser Pro). Those managers remain
+available for **packages** genv manages.
 
 ## 2. Install a Windows package manager
 
