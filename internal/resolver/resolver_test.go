@@ -29,13 +29,15 @@ func TestRunSubcmd_PerSpawnTimeout(t *testing.T) {
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("sleep not in PATH")
 	}
-	ctx := WithSubprocessTimeout(context.Background(), 50*time.Millisecond)
+	ctx := WithSubprocessTimeout(context.Background(), 2*time.Second)
 	err := runSubcmd(ctx, []string{"sleep", "5"}, nil, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("expected sleep to hit per-spawn timeout")
 	}
 	// `true` is not reliable on Windows CI (LookPath can find a non-POSIX
 	// true.exe that exits 1). `go` is on PATH wherever these tests run.
+	// 50ms was too tight: after killing sleep, `go env GOVERSION` often
+	// exceeds 50ms on Windows runners and fails the reuse assertion.
 	if err := runSubcmd(ctx, []string{"go", "env", "GOVERSION"}, nil, io.Discard, io.Discard); err != nil {
 		t.Fatalf("later command after a timed-out spawn: %v", err)
 	}
