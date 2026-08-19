@@ -4,11 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.1.0 - 2026-08-19
+
+### Added
+
+- Self-hosted Scoop install channel on stable tags: GoReleaser publishes
+  `genv.json` to `ks1686/scoop-bucket`. v4.0.13 shipped GitHub/Homebrew; this
+  release is the first tag that uploads the Scoop manifest from CI.
+
 ### Fixed
 
-- Scoop publisher uses the same env-token template as Homebrew. `envOrDefault`
-  is not a GoReleaser function, so the v4.0.13 scoop upload aborted after the
-  GitHub Release and Homebrew tap had already published.
+- Scoop publisher token template matches Homebrew (`{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}`).
+  GoReleaser 2.17 has no `envOrDefault`, which aborted the v4.0.13 scoop upload.
+- `TestRunSubcmd_PerSpawnTimeout` gives the follow-up spawn 2s (not 50ms) so
+  Windows CI does not fail `go env GOVERSION` after killing `sleep`.
 
 ## v4.0.13 - 2026-08-19
 
