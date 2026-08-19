@@ -140,7 +140,7 @@ scoops:
     repository:
       owner: ks1686
       name: scoop-bucket
-      token: '{{ envOrDefault "SCOOP_BUCKET_GITHUB_TOKEN" "" }}'
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
     homepage: "https://github.com/ks1686/genv"
     description: "Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2."
     license: MIT
