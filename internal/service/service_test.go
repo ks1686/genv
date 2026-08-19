@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -45,7 +48,7 @@ func TestServiceStatus(t *testing.T) {
 		},
 	}
 
-	entries := ServiceStatus(spec, lock)
+	entries := ServiceStatus(spec, lock, true)
 
 	expected := map[string]ServiceStatusKind{
 		"ok-service":       ServiceStatusOK,
@@ -67,6 +70,30 @@ func TestServiceStatus(t *testing.T) {
 		if e.Kind != expKind {
 			t.Errorf("service %q: expected kind %s, got %s", e.Name, expKind, e.Kind)
 		}
+	}
+}
+
+func TestServiceStatus_skipProbe(t *testing.T) {
+	if _, err := exec.LookPath("touch"); err != nil {
+		t.Skip("touch not in PATH")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "probed")
+	spec := map[string]schema.Service{
+		"probe-me": {
+			Start:  []string{"true"},
+			Status: []string{"touch", marker},
+		},
+	}
+	entries := ServiceStatus(spec, nil, false)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].Running {
+		t.Fatal("probe=false should not mark the service running")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("status command ran despite probe=false")
 	}
 }
 

@@ -3,6 +3,7 @@ package shellcfg
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,6 +46,15 @@ func TestWriteFragment_Aliases(t *testing.T) {
 	}
 	if err := WriteFragment(path, cfg); err != nil {
 		t.Fatalf("WriteFragment: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("fragment mode = %o, want 0600", got)
+		}
 	}
 
 	data, err := os.ReadFile(path)

@@ -3361,6 +3361,37 @@ func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 	}
 }
 
+func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	testutil.SetHome(t, dir)
+	withFailingBrewInstall(t)
+	path := filepath.Join(dir, "genv.json")
+	writeTestFile(t, path, `{
+		"schemaVersion": "6",
+		"packages": [{"id": "git", "prefer": "brew"}],
+		"env": {"FOO": {"value": "bar"}}
+	}`)
+
+	code := run([]string{"apply", "--file", path, "--yes"})
+	if code == exitOK {
+		t.Fatal("expected apply to fail when brew install fails")
+	}
+
+	frag := filepath.Join(dir, "genv", "env.sh")
+	if _, err := os.Stat(frag); err == nil {
+		t.Fatalf("env fragment %s written despite package failure", frag)
+	}
+
+	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(path))
+	if err != nil && !errors.Is(err, genvfile.ErrNotFound) {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	if lf != nil && len(lf.Env) != 0 {
+		t.Fatalf("lock env = %#v, want empty after package failure", lf.Env)
+	}
+}
+
 func TestApplyCmd_DryRun_JsonOutput(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

@@ -1063,7 +1063,7 @@ func TestPlanUninstall_ContainsRemoveVerb(t *testing.T) {
 		{"snap", "remove"},
 		{"brew", "uninstall"},
 		{"uv", "uninstall"},
-		{"pacman", "-Rcs"},
+		{"pacman", "-Rs"},
 		{"linuxbrew", "uninstall"},
 		{"bun", "remove"},
 		{"npm", "uninstall"},

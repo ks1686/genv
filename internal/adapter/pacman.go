@@ -32,7 +32,7 @@ func (Pacman) PlanInstall(pkgName string) []string {
 }
 
 func (Pacman) PlanUninstall(pkgName string) []string {
-	return []string{"sudo", "pacman", "-Rcs", "--noconfirm", pkgName}
+	return []string{"sudo", "pacman", "-Rs", "--noconfirm", pkgName}
 }
 
 // PlanUpgrade reuses PlanInstall: pacman -S upgrades to the latest version.

@@ -47,7 +47,7 @@ brew)
 	;;
 pacman|paru|yay)
 	case "$1" in
-	-S|-Rns|-Rcs|-Sc|-Ss)
+	-S|-Rns|-Rs|-Rcs|-Sc|-Ss)
 		exit 0
 		;;
 	-Qi|-Q)
