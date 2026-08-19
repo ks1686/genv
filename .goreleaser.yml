@@ -121,7 +121,7 @@ snapcrafts:
 
 # ── Scoop bucket ──────────────────────────────────────────────────────────────
 # Publishes a manifest to ks1686/scoop-bucket on every non-prerelease tag
-# when SCOOP_BUCKET_GITHUB_TOKEN is set. Empty secret → skip upload so the
+# Empty or unset SCOOP_BUCKET_GITHUB_TOKEN → skip upload so the
 # rest of the release (GitHub, Homebrew, Snap) still succeeds.
 # Requires secret: SCOOP_BUCKET_GITHUB_TOKEN (fine-grained PAT with
 # Contents: read+write on the scoop-bucket repo).
@@ -140,11 +140,11 @@ scoops:
     repository:
       owner: ks1686
       name: scoop-bucket
-      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+      token: '{{ envOrDefault "SCOOP_BUCKET_GITHUB_TOKEN" "" }}'
     homepage: "https://github.com/ks1686/genv"
     description: "Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2."
     license: MIT
-    skip_upload: '{{ if .Env.SCOOP_BUCKET_GITHUB_TOKEN }}auto{{ else }}true{{ end }}'
+    skip_upload: '{{ if isEnvSet "SCOOP_BUCKET_GITHUB_TOKEN" }}{{ if .Env.SCOOP_BUCKET_GITHUB_TOKEN }}auto{{ else }}true{{ end }}{{ else }}true{{ end }}'
 
 changelog:
   sort: asc
