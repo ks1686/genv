@@ -4,11 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.0.13 - 2026-08-19
+
 ### Added
 
 - Self-hosted Scoop install channel: GoReleaser publishes a manifest to
   `ks1686/scoop-bucket` when `SCOOP_BUCKET_GITHUB_TOKEN` is set, and skips that
-  upload (without failing the rest of the release) when the secret is empty.
+  upload (without failing the rest of the release) when the token is empty or
+  unset.
 
 ## v4.0.12 - 2026-08-15
 
