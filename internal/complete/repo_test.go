@@ -246,11 +246,15 @@ func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
 printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 	}
 
-	got := repoPackagesOnGOOS(
+	// Production Tab-complete budgets (150ms search / 300ms overall) are too
+	// tight for Windows CI process spawn. The bun/npm skip is what this test
+	// covers; collectRepoNames with a 1s budget still exercises the real npm
+	// Search parser and the one-call invariant.
+	got := collectRepoNames(
 		"type",
-		map[string]bool{"bun": true, "npm": true},
-		"darwin",
-		time.Now(),
+		repoJobs(map[string]bool{"bun": true, "npm": true}, "darwin"),
+		time.Second,
+		time.Second,
 	)
 	if !slices.Equal(got, []string{"typescript"}) {
 		t.Fatalf("got %v want [typescript]", got)
@@ -266,7 +270,17 @@ printf 'typescript\tdesc\tdate\tver\tkeywords\n'`)
 
 func TestCollectRepoNames_keepsMasProductIDsMatchedByName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	testutil.InstallFakeBinary(t, "mas", `printf '497799835  Xcode (16.0)\n'`)
+	if runtime.GOOS == "windows" {
+		// A native .cmd stays under the search timeout; the bash shim is too slow.
+		dir := t.TempDir()
+		shim := "@echo off\r\necho 497799835  Xcode ^(16.0^)\r\n"
+		if err := os.WriteFile(filepath.Join(dir, "mas.cmd"), []byte(shim), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	} else {
+		testutil.InstallFakeBinary(t, "mas", `printf '497799835  Xcode (16.0)\n'`)
+	}
 
 	mas := adapter.Mas{}
 	got := collectRepoNames("xcode", []repoJob{{

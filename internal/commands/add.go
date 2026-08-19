@@ -22,6 +22,9 @@ func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]str
 	if id == "" {
 		return fmt.Errorf("package id must not be empty")
 	}
+	if !schema.ValidPackageName(id) {
+		return fmt.Errorf("invalid package id %q: must not start with '-' or contain whitespace", id)
+	}
 
 	packages := &f.Packages
 	if f.SchemaVersion == schema.Version8 {
@@ -42,9 +45,12 @@ func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]str
 		return fmt.Errorf("unknown manager %q for --prefer; valid managers: %s", prefer, KnownManagerList())
 	}
 
-	for mgr := range managers {
+	for mgr, pkgName := range managers {
 		if !schema.KnownManagers[mgr] {
 			return fmt.Errorf("unknown manager %q in --manager; valid managers: %s", mgr, KnownManagerList())
+		}
+		if !schema.ValidPackageName(pkgName) {
+			return fmt.Errorf("invalid package name %q for manager %q: must not be empty, start with '-', or contain whitespace", pkgName, mgr)
 		}
 	}
 

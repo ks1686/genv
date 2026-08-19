@@ -44,6 +44,14 @@ func repoPackagesOnGOOS(
 	goos string,
 	now time.Time,
 ) []string {
+	overall := time.Until(now.Add(OverallTimeout))
+	if overall <= 0 {
+		return nil
+	}
+	return collectRepoNames(prefix, repoJobs(available, goos), overall, SearchTimeout)
+}
+
+func repoJobs(available map[string]bool, goos string) []repoJob {
 	jobs := make([]repoJob, 0, len(adapter.All))
 	for _, candidate := range adapter.All {
 		manager := candidate.Name()
@@ -99,12 +107,7 @@ func repoPackagesOnGOOS(
 		}
 		jobs = append(jobs, job)
 	}
-
-	overall := time.Until(now.Add(OverallTimeout))
-	if overall <= 0 {
-		return nil
-	}
-	return collectRepoNames(prefix, jobs, overall, SearchTimeout)
+	return jobs
 }
 
 func collectRepoNames(

@@ -80,6 +80,7 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 
 	var errs []ValidationError
 
+	errs = append(errs, validateUnknownKeys(raw, positions)...)
 	errs = append(errs, validateSchemaVersion(f, raw, positions)...)
 	errs = append(errs, validatePackages(f, raw, positions)...)
 	errs = append(errs, validateEnv(f, raw, positions)...)
@@ -269,6 +270,13 @@ func validatePackageList(packages []Package, fieldPrefix string, positions map[s
 				Field:    pkgPath + ".id",
 				Message:  fmt.Sprintf("duplicate id %q (first seen at %s[%d])", pkg.ID, fieldPrefix, prev),
 			})
+		} else if !ValidPackageName(pkg.ID) {
+			errs = append(errs, ValidationError{
+				Position: positions[pkgPath+".id"],
+				Field:    pkgPath + ".id",
+				Message:  fmt.Sprintf("invalid package id %q: must not start with '-' or contain whitespace", pkg.ID),
+			})
+			seen[pkg.ID] = i
 		} else {
 			seen[pkg.ID] = i
 		}
@@ -281,13 +289,20 @@ func validatePackageList(packages []Package, fieldPrefix string, positions map[s
 			})
 		}
 
-		for mgr := range pkg.Managers {
+		for mgr, pkgName := range pkg.Managers {
+			field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
 			if !KnownManagers[mgr] {
-				field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
 				errs = append(errs, ValidationError{
 					Position: positions[field],
 					Field:    field,
 					Message:  fmt.Sprintf("unknown manager %q", mgr),
+				})
+			}
+			if !ValidPackageName(pkgName) {
+				errs = append(errs, ValidationError{
+					Position: positions[field],
+					Field:    field,
+					Message:  fmt.Sprintf("invalid package name %q: must not be empty, start with '-', or contain whitespace", pkgName),
 				})
 			}
 		}

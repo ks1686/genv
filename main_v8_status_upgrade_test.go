@@ -225,7 +225,7 @@ func TestEnvListShellStatusServiceList_V8Materialize(t *testing.T) {
 		"schemaVersion":"8",
 		"defaults":{
 			"env":{"EDITOR":{"value":"nvim"}},
-			"shell":{"aliases":{"ll":{"command":"ls -la"}}}
+			"shell":{"aliases":{"ll":{"value":"ls -la"}}}
 		},
 		"targets":{
 			"macos":{
