@@ -1,8 +1,9 @@
 # Releasing genv
 
-This repository publishes GitHub releases, a Homebrew cask, and an AUR package
-automatically when an annotated tag is pushed. GoReleaser handles GitHub releases,
-Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-off required.
+This repository publishes GitHub releases, a Homebrew cask, a Scoop manifest,
+and an AUR package automatically when an annotated tag is pushed. GoReleaser
+handles GitHub releases, Homebrew, Scoop, AUR, and the Snap Store automatically
+— no external reviewer sign-off required.
 
 ---
 
@@ -33,11 +34,12 @@ Homebrew, AUR, and the Snap Store automatically — no external reviewer sign-of
 | `v4.0.10` | Darwin GitHub Release / Homebrew binaries are Developer ID signed and notarized |
 | `v4.0.11` | Fail-closed `add`, schema v8 defaults, native apt/dnf/apk, Windows CI/test hardening (tag exists; GitHub Release aborted on Pro-only GoReleaser keys) |
 | `v4.0.12` | Drop Pro-only winget/chocolatey GoReleaser keys so OSS publish can succeed |
+| `v4.0.13` | Self-hosted Scoop bucket (`ks1686/scoop-bucket`) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
-validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and AUR
-publishers for pre-release tags automatically, so only stable tags reach those
-channels.
+validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,
+and AUR publishers for pre-release tags automatically, so only stable tags
+reach those channels.
 
 ---
 
@@ -146,7 +148,35 @@ brew tap ks1686/tap
 brew install --cask genv
 ```
 
-### 4. AUR (`genv-bin` and `genv`)
+### 4. Scoop bucket
+
+GoReleaser pushes a Scoop manifest to a separate `scoop-bucket` repo. It does
+not create that repo; create it first (`gh repo create`). The release workflow
+`GITHUB_TOKEN` cannot push to another repository.
+
+1. Create the repo **`ks1686/scoop-bucket`** on GitHub (public). Do **not** add
+   the `scoop-bucket` GitHub topic — that lists the bucket on scoop.sh.
+2. In the **`ks1686/genv`** repository settings → Secrets and variables → Actions,
+   add a repository secret named **`SCOOP_BUCKET_GITHUB_TOKEN`**.
+   - Generate a fine-grained PAT at GitHub Settings → Developer Settings → Personal access tokens → Fine-grained tokens.
+   - Grant it **Contents: Read and write** on the `ks1686/scoop-bucket` repository only.
+   - Do not reuse `HOMEBREW_TAP_GITHUB_TOKEN` unless that token is also granted
+     on `scoop-bucket`.
+   - Do not put a `gh` OAuth token (`gho_…`) into Actions secrets.
+3. Leave `scoops.directory` unset so manifests live at the bucket root
+   (`scoop install genv` cannot find the manifest otherwise).
+4. If the secret is missing, GoReleaser skips the Scoop upload (`skip_upload: true`)
+   and the rest of the release still publishes. With the secret set, `skip_upload`
+   is `auto` (stable tags upload; prereleases do not).
+
+Users install after a tagged release has pushed `genv.json`:
+
+```powershell
+scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
+scoop install genv
+```
+
+### 5. AUR (`genv-bin` and `genv`)
 
 Two AUR packages are published on every stable release. Both use the same `AUR_KEY` secret.
 
@@ -156,9 +186,9 @@ Two AUR packages are published on every stable release. Both use the same `AUR_K
 The two packages `conflict` with each other so users can only have one installed at a time.
 Each CI script updates an existing AUR package — it does not create a new one. The first publish of each must be done manually.
 
-**4a. Create an AUR account** at <https://aur.archlinux.org/> if you don't have one.
+**5a. Create an AUR account** at <https://aur.archlinux.org/> if you don't have one.
 
-**4b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
+**5b. Generate an SSH key** for AUR (use a dedicated key, not your main one):
 
 ```bash
 ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
@@ -167,7 +197,7 @@ ssh-keygen -t ed25519 -C "aur" -f ~/.ssh/aur
 
 Add the public key to your AUR account: <https://aur.archlinux.org/account/> → SSH keys.
 
-**4c. Create the `genv-bin` package on AUR** (one-time manual step):
+**5c. Create the `genv-bin` package on AUR** (one-time manual step):
 
 ```bash
 # Clone the (empty) AUR repo — this creates the package namespace
@@ -211,7 +241,7 @@ git push
 > `checksums.txt` before pushing. AUR will flag the package as untrustworthy
 > if SKIP is left in place.
 
-**4c-2. Create the `genv` source package on AUR** (one-time manual step):
+**5c-2. Create the `genv` source package on AUR** (one-time manual step):
 
 ```bash
 git clone ssh://aur@aur.archlinux.org/genv.git /tmp/genv-src-aur
@@ -248,7 +278,7 @@ git commit -m "Initial release v0.2.0"
 git push
 ```
 
-**4d. Add the AUR SSH private key as a repository secret:**
+**5d. Add the AUR SSH private key as a repository secret:**
 
 In `ks1686/genv` → Settings → Secrets and variables → Actions, add a secret named
 **`AUR_KEY`** containing the contents of `~/.ssh/aur` (the private key).
@@ -296,6 +326,7 @@ paru -S genv       # builds from source
    - Generate `checksums.txt`
    - Publish a GitHub Release with all artifacts
    - Push the Homebrew formula to `ks1686/homebrew-tap`
+   - Push `genv.json` to `ks1686/scoop-bucket` (Scoop pipe continues on error — confirm the file landed)
    - Push updated PKGBUILDs to AUR (`genv-bin` pre-compiled and `genv` source)
 
    If GitHub/Homebrew succeeded but AUR failed (transient `aur.archlinux.org` SSH),
@@ -321,7 +352,16 @@ paru -S genv       # builds from source
    genv version
    ```
 
-8. **Verify AUR** (on any Arch machine):
+8. **Verify Scoop** (on Windows, after the bucket has `genv.json`):
+
+   ```powershell
+   scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
+   scoop update
+   scoop install genv
+   genv version
+   ```
+
+9. **Verify AUR** (on any Arch machine):
 
    ```bash
    paru -Sy genv-bin && genv version   # pre-compiled
@@ -329,7 +369,7 @@ paru -S genv       # builds from source
    paru -Sy genv && genv version       # from source
    ```
 
-9. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
+10. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
 
 ---
 
@@ -361,14 +401,12 @@ Artifacts land in `./dist/`. Nothing is published.
 
 ## Future distribution channels
 
-The `genv` binary is **not** published to winget, Scoop, or Chocolatey as an
-install channel today — Windows users should download release archives from
-GitHub Releases (see README). Publishing those channels is deferred until there
-is clear demand; it is not tied to a specific version milestone.
+Scoop is live as a self-hosted bucket (`ks1686/scoop-bucket`), not Scoop extras.
+winget and Chocolatey stay unpublished (community review + GoReleaser Pro).
+GitHub Release zips remain a supported Windows path.
 
 | Channel | Status | Notes |
 | --- | --- | --- |
-| Scoop | Configured, unpublished | OSS GoReleaser `scoops` block is present with `skip_upload: true` until a token exists |
-| winget | Deferred | Publisher is GoReleaser Pro-only; not declared in OSS config |
-| Chocolatey | Deferred | Publisher is GoReleaser Pro-only; not declared in OSS config |
+| winget | Deferred | Publisher is GoReleaser Pro-only; default source needs microsoft/winget-pkgs review |
+| Chocolatey | Deferred | Publisher is GoReleaser Pro-only; community repo has the same review gate |
 | apt PPA | Deferred | `.deb` artifacts already ship via GitHub Releases |
