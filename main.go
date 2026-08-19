@@ -391,13 +391,22 @@ func lockPathForSpec(file, override string) string {
 	return genvfile.LockPathFrom(file)
 }
 
-func appendLockEntry(lockPath string, lp genvfile.LockedPackage) int {
+func stampLockTarget(lf *genvfile.LockFile, targetID string) {
+	if lf == nil || targetID == "" {
+		return
+	}
+	lf.Target = targetID
+	lf.GOOS = runtime.GOOS
+}
+
+func appendLockEntry(lockPath string, lp genvfile.LockedPackage, targetID string) int {
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
 	lf.Packages = append(lf.Packages, lp)
+	stampLockTarget(lf, targetID)
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
@@ -565,11 +574,15 @@ func addCmd(args []string) int {
 	}
 
 	// 4. Update lock file.
+	targetID, code := resolveMutationTarget("add", *file, prepared, *targetFlag)
+	if code != exitOK {
+		return code
+	}
 	exit = appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
-	})
+	}, targetID)
 	if exit != exitOK || *noHooks {
 		return exit
 	}
@@ -718,6 +731,17 @@ func runRemove(opts removeOptions) int {
 	if exit != exitOK {
 		return exit
 	}
+	unlock, err := genvfile.LockMutation(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: locking %s: %v\n", lockPath, err)
+		return exitIO
+	}
+	defer unlock()
+	lf, err = genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
 
 	// 2. Find the package in the lock file to know which manager installed it.
 	var locked *genvfile.LockedPackage
@@ -749,7 +773,7 @@ func runRemove(opts removeOptions) int {
 	uninstallErr := runForegroundCommand(uninstallCmd)
 	if uninstallErr != nil {
 		fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
-		// Still update the lock — the package is removed from the spec.
+		return exitLogic
 	}
 
 	// Cache clean.
@@ -760,15 +784,10 @@ func runRemove(opts removeOptions) int {
 		}
 	}
 
-	// 4. Update lock file (remove the entry regardless of uninstall success).
 	lf.Packages = remaining
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
-	}
-
-	if uninstallErr != nil {
-		return exitLogic
 	}
 	if !opts.NoHooks {
 		hooksCfg, code := materializedHooks("remove", file, opts.Host, opts.Target)
@@ -873,11 +892,19 @@ func adoptCmd(args []string) int {
 	}
 
 	// 4. Update lock file.
+	targetID := ""
+	if prepared, err := genvfile.Read(*file); err == nil {
+		var code int
+		targetID, code = resolveMutationTarget("adopt", *file, prepared, *targetFlag)
+		if code != exitOK {
+			return code
+		}
+	}
 	if exit := appendLockEntry(lockPathForSpec(*file, *lockFile), genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
-	}); exit != exitOK {
+	}, targetID); exit != exitOK {
 		return exit
 	}
 
@@ -1128,6 +1155,12 @@ func runApply(opts applyOptions) int {
 	}
 
 	lockPath := lockPathForSpec(opts.File, opts.LockFile)
+	unlock, err := genvfile.LockMutation(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: locking %s: %v\n", lockPath, err)
+		return exitIO
+	}
+	defer unlock()
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -1158,6 +1191,37 @@ func runApply(opts applyOptions) int {
 	return runApplyWithSpecAndLock(ctx, opts, f, lf, lockPath)
 }
 
+func applyLockGate(cmd, lockPath string, lf *genvfile.LockFile, activeTarget string, available map[string]bool, requireMeta, forceNew, dryRun bool, forceHint string) (*genvfile.LockFile, int) {
+	var decision lockgate.Decision
+	if requireMeta {
+		decision = lockgate.CheckStrict(lf, activeTarget, runtime.GOOS, available)
+	} else {
+		decision = lockgate.Check(lf, activeTarget, runtime.GOOS, available)
+	}
+	for _, mgr := range decision.Unavailable {
+		fprintf(os.Stderr, "genv %s: warning: lock uses unavailable manager %q; skipping its packages\n", cmd, mgr)
+	}
+	if !decision.Foreign {
+		return lf, exitOK
+	}
+	if !forceNew {
+		fprintf(os.Stderr, "genv %s: foreign lock refused: %s\n", cmd, decision.Reason)
+		if forceHint != "" {
+			fprintf(os.Stderr, "Back up or remove %s, or rerun with %s to move it aside and create a new local lock.\n", lockPath, forceHint)
+		} else {
+			fprintf(os.Stderr, "Back up or remove %s and rerun.\n", lockPath)
+		}
+		return lf, exitLogic
+	}
+	if !dryRun {
+		if err := genvfile.RotateBackup(lockPath); err != nil {
+			fprintf(os.Stderr, "genv %s: could not back up foreign lock %s: %v\n", cmd, lockPath, err)
+			return lf, exitIO
+		}
+	}
+	return &genvfile.LockFile{SchemaVersion: schema.Version8}, exitOK
+}
+
 func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
 	available := resolver.Detect()
 	if lf == nil {
@@ -1169,21 +1233,11 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 		return code
 	}
 	if isV8 {
-		decision := lockgate.Check(lf, activeTarget, runtime.GOOS, available)
-		if decision.Foreign {
-			if !opts.ForceNewLock {
-				fprintf(os.Stderr, "genv apply: foreign lock refused: %s\n", decision.Reason)
-				fprintf(os.Stderr, "Back up or remove %s, or rerun with --force-new-lock to move it aside and create a new local lock.\n", lockPath)
-				return exitLogic
-			}
-			if !opts.DryRun {
-				backupPath := lockPath + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
-				if err := os.Rename(lockPath, backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-					fprintf(os.Stderr, "genv apply: warning: could not back up foreign lock %s: %v\n", lockPath, err)
-				}
-			}
-			lf = &genvfile.LockFile{SchemaVersion: schema.Version8}
+		reset, code := applyLockGate("apply", lockPath, lf, activeTarget, available, true, opts.ForceNewLock, opts.DryRun, "--force-new-lock")
+		if code != exitOK {
+			return code
 		}
+		lf = reset
 	}
 	f = effective
 	opts.Target = activeTarget
@@ -1196,6 +1250,7 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 }
 
 func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
+	printReconcileWarnings(result)
 	planData := buildPlanResult(f, lf, result)
 	if opts.DryRun {
 		filePlan, filePlanErr := applyFiles(ctx, opts, f, lf)
@@ -1253,7 +1308,28 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	success := len(errs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
+	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		errs = append(errs, err.Error())
+		installed := make([]string, len(execResult.Installed))
+		for i, lp := range execResult.Installed {
+			installed[i] = lp.ID
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "apply",
+			OK:      false,
+			Data: output.ApplyResult{
+				Installed:    installed,
+				Uninstalled:  execResult.Uninstalled,
+				EnvApplied:   envApplied,
+				EnvRemoved:   envRemoved,
+				ShellApplied: shellApplied,
+				ShellRemoved: shellRemoved,
+			},
+			Errors: errs,
+		})
+	}
 
 	installed := make([]string, len(execResult.Installed))
 	for i, lp := range execResult.Installed {
@@ -1280,6 +1356,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 }
 
 func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
+	printReconcileWarnings(result)
 	planOut := io.Writer(os.Stdout)
 	if opts.Quiet {
 		planOut = io.Discard
@@ -1328,7 +1405,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 					return exitLogic
 				}
 			}
-			writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, true)
+			if err := writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, true); err != nil {
+				fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+				return exitIO
+			}
 		}
 		return exitOK
 	}
@@ -1412,7 +1492,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
-	writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success)
+	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
+		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		return exitIO
+	}
 
 	if !success {
 		for _, e := range execResult.Errors {
@@ -1433,9 +1516,15 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	return exitOK
 }
 
+func printReconcileWarnings(result resolver.ReconcileResult) {
+	for _, w := range result.Warnings {
+		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
+	}
+}
+
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, success bool) {
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, success bool) error {
 	if success && targetProfile != "" {
 		if targetProfile == "base" {
 			lf.ActiveProfile = ""
@@ -1451,23 +1540,43 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	for _, id := range execResult.Uninstalled {
 		uninstalledSet[id] = true
 	}
-	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed))
+	installedSet := make(map[string]bool, len(execResult.Installed))
+	for _, lp := range execResult.Installed {
+		installedSet[lp.ID] = true
+	}
+	prevByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
+	for _, lp := range lf.Packages {
+		prevByID[lp.ID] = lp
+	}
+	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
 	newPkgs = append(newPkgs, result.Unchanged...)
 	newPkgs = append(newPkgs, execResult.Installed...)
+	for _, a := range result.ToInstall {
+		if installedSet[a.Pkg.ID] {
+			continue
+		}
+		if prev, ok := prevByID[a.Pkg.ID]; ok {
+			newPkgs = append(newPkgs, prev)
+		}
+	}
 	for _, a := range result.ToRemove {
 		if !uninstalledSet[a.Pkg.ID] {
-			// Removal failed — keep in lock since it's still installed.
-			newPkgs = append(newPkgs, genvfile.LockedPackage{
-				ID:      a.Pkg.ID,
-				Manager: a.Manager,
-				PkgName: a.PkgName,
-			})
+			if prev, ok := prevByID[a.Pkg.ID]; ok {
+				newPkgs = append(newPkgs, prev)
+			} else {
+				newPkgs = append(newPkgs, genvfile.LockedPackage{
+					ID:      a.Pkg.ID,
+					Manager: a.Manager,
+					PkgName: a.PkgName,
+				})
+			}
 		}
 	}
 	lf.Packages = newPkgs
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
+		return err
 	}
+	return nil
 }
 
 // applyEnvVars writes managed env fragments via selected profile backends,
@@ -2662,6 +2771,7 @@ func scanCmd(args []string) int {
 			fprintf(os.Stderr, "genv: writing spec: %v\n", err)
 			return exitIO
 		}
+		stampLockTarget(lf, targetID)
 		if err := genvfile.WriteLock(lockPath, lf); err != nil {
 			fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 			return exitIO
@@ -3531,10 +3641,26 @@ func upgradeCmd(args []string) int {
 		}
 		return exitIO
 	}
-	f, _, code := materializeSpecForCommand("upgrade", *file, f, *hostFlag, *targetFlag)
+	f, activeTarget, code := materializeSpecForCommand("upgrade", *file, f, *hostFlag, *targetFlag)
 	if code != exitOK {
 		return code
 	}
+
+	unlock, err := genvfile.LockMutation(lockPath)
+	if err != nil {
+		if *jsonOut {
+			_ = writeJSON(os.Stdout, output.Envelope{
+				Version: output.SchemaVersion,
+				Command: "upgrade",
+				OK:      false,
+				Errors:  []string{err.Error()},
+			})
+			return exitIO
+		}
+		fprintf(os.Stderr, "genv upgrade: locking %s: %v\n", lockPath, err)
+		return exitIO
+	}
+	defer unlock()
 
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
@@ -3549,6 +3675,21 @@ func upgradeCmd(args []string) int {
 		}
 		fprintf(os.Stderr, "genv upgrade: reading lock: %v\n", err)
 		return exitIO
+	}
+	if f.SchemaVersion == schema.Version8 {
+		available := resolver.Detect()
+		_, code := applyLockGate("upgrade", lockPath, lf, activeTarget, available, true, false, *dryRun, "")
+		if code != exitOK {
+			if *jsonOut {
+				_ = writeJSON(os.Stdout, output.Envelope{
+					Version: output.SchemaVersion,
+					Command: "upgrade",
+					OK:      false,
+					Errors:  []string{"foreign lock refused"},
+				})
+			}
+			return code
+		}
 	}
 	only := parseCommaList(*onlyFlag)
 	skip := parseCommaList(*skipFlag)
