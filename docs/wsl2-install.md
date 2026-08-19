@@ -31,7 +31,7 @@ wsl --install
 Download the latest Linux binary from the [Releases](https://github.com/ks1686/genv/releases/latest) page:
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.12_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.0.13_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 rm genv.tar.gz
