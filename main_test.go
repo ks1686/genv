@@ -3361,6 +3361,15 @@ func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 	}
 }
 
+func TestApplyCmd_HelpMentionsTenMinuteTimeout(t *testing.T) {
+	errOut := captureStderr(t, func() {
+		_ = run([]string{"apply", "--help"})
+	})
+	if !strings.Contains(errOut, "10m") && !strings.Contains(errOut, "default 10m") {
+		t.Fatalf("apply --help = %q, want default 10m", errOut)
+	}
+}
+
 func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

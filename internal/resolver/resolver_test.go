@@ -43,6 +43,26 @@ func TestRunSubcmd_PerSpawnTimeout(t *testing.T) {
 	}
 }
 
+func TestExecuteApply_TimeoutDoesNotSkipLaterPackages(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not in PATH")
+	}
+	ctx := WithSubprocessTimeout(context.Background(), 2*time.Second)
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "hang"}, Manager: "test", PkgName: "hang", Cmd: []string{"sleep", "20"}},
+			{Pkg: schema.Package{ID: "ok"}, Manager: "test", PkgName: "ok", Cmd: []string{"go", "env", "GOVERSION"}},
+		},
+	}
+	got := ExecuteApply(ctx, result, nil, io.Discard, io.Discard)
+	if len(got.Errors) == 0 {
+		t.Fatal("expected hang to error")
+	}
+	if len(got.Installed) != 1 || got.Installed[0].ID != "ok" {
+		t.Fatalf("Installed=%+v, want ok after hang", got.Installed)
+	}
+}
+
 func TestPlan_PreferredManagerAvailable(t *testing.T) {
 	f := &schema.GenvFile{
 		Packages: []schema.Package{

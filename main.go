@@ -1123,7 +1123,7 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.Yes, "yes", false, "skip the confirmation prompt (for CI and scripts)")
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress plan output (useful in scripts)")
 	fs.BoolVar(&opts.JSONOut, "json", false, "emit machine-readable JSON to stdout instead of human-readable text")
-	fs.DurationVar(&opts.Timeout, "timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
+	fs.DurationVar(&opts.Timeout, "timeout", 10*time.Minute, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout; default 10m)")
 	fs.DurationVar(&opts.HookTimeout, "hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
