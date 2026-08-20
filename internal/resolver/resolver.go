@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -168,6 +169,13 @@ func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("git"); err != nil {
+			if dir := adapter.ScoopGitCmdDir(); dir != "" {
+				cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			}
+		}
+	}
 	err := cmd.Run()
 	slog.Debug("done", "cmd", args[0], "duration", time.Since(start), "err", err)
 	return err
