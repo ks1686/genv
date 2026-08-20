@@ -13,7 +13,7 @@ func TestWinget_Name(t *testing.T) {
 
 func TestWinget_PlanInstall(t *testing.T) {
 	args := Winget{}.PlanInstall("Neovim.Neovim")
-	want := []string{"winget", "install", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--id", "Neovim.Neovim"}
+	want := []string{"winget", "install", "--exact", "--silent", "--disable-interactivity", "--no-upgrade", "--accept-package-agreements", "--accept-source-agreements", "--id", "Neovim.Neovim"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanInstall: got %v, want %v", args, want)
 	}
@@ -26,13 +26,31 @@ func TestWinget_PlanInstall(t *testing.T) {
 
 func TestWinget_PlanUninstall(t *testing.T) {
 	args := Winget{}.PlanUninstall("Neovim.Neovim")
-	want := []string{"winget", "uninstall", "--exact", "--silent", "--id", "Neovim.Neovim"}
+	want := []string{"winget", "uninstall", "--exact", "--silent", "--disable-interactivity", "--id", "Neovim.Neovim"}
 	if len(args) != len(want) {
 		t.Fatalf("PlanUninstall: got %v, want %v", args, want)
 	}
 	for i, w := range want {
 		if args[i] != w {
 			t.Errorf("PlanUninstall[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+}
+
+func TestWinget_PlanUpgrade_DisableInteractivity(t *testing.T) {
+	args := Winget{}.PlanUpgrade("Neovim.Neovim")
+	want := []string{"winget", "upgrade", "--exact", "--silent", "--disable-interactivity", "--accept-package-agreements", "--accept-source-agreements", "--id", "Neovim.Neovim"}
+	if len(args) != len(want) {
+		t.Fatalf("PlanUpgrade: got %v, want %v", args, want)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Errorf("PlanUpgrade[%d] = %q, want %q", i, args[i], w)
+		}
+	}
+	for _, a := range args {
+		if a == "--no-upgrade" {
+			t.Fatal("PlanUpgrade must not pass --no-upgrade")
 		}
 	}
 }

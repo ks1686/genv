@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -168,6 +169,13 @@ func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("git"); err != nil {
+			if dir := adapter.ScoopGitCmdDir(); dir != "" {
+				cmd.Env = append(os.Environ(), "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			}
+		}
+	}
 	err := cmd.Run()
 	slog.Debug("done", "cmd", args[0], "duration", time.Since(start), "err", err)
 	return err
@@ -419,7 +427,56 @@ type ReconcileResult struct {
 	ToInstall []Action
 	ToRemove  []Action // UninstallCmd populated; Pkg.ID identifies the package
 	Unchanged []genvfile.LockedPackage
+	Adopted   []genvfile.LockedPackage // live-installed, not yet in the lock
 	Warnings  []string
+}
+
+// LiveSet is manager name → manager-native package name → installed.
+// Names are matched case-insensitively. A nil LiveSet means lock-only
+// (do not probe the live system).
+type LiveSet map[string]map[string]bool
+
+func (s LiveSet) has(manager, pkgName string) bool {
+	if s == nil || manager == "" || pkgName == "" {
+		return false
+	}
+	names := s[manager]
+	if names[pkgName] {
+		return true
+	}
+	for n := range names {
+		if strings.EqualFold(n, pkgName) {
+			return true
+		}
+	}
+	return false
+}
+
+// LoadLiveSet calls ListInstalled once per available manager. Listing errors
+// become warnings; they never fail the whole apply/status run.
+func LoadLiveSet(available map[string]bool) (LiveSet, []string) {
+	out := make(LiveSet)
+	var warns []string
+	for name, ok := range available {
+		if !ok {
+			continue
+		}
+		mgr := adapter.ByName(name)
+		if mgr == nil {
+			continue
+		}
+		list, err := mgr.ListInstalled()
+		if err != nil {
+			warns = append(warns, fmt.Sprintf("listing %s: %v", name, err))
+			continue
+		}
+		set := make(map[string]bool, len(list))
+		for _, pkgName := range list {
+			set[pkgName] = true
+		}
+		out[name] = set
+	}
+	return out, warns
 }
 
 // Reconcile computes the delta between the desired packages (from genv.json)
@@ -429,7 +486,16 @@ type ReconcileResult struct {
 //   - ToRemove:  in lock but not in desired → uninstall using the manager
 //     recorded in the lock (not re-resolved, preserving the original manager).
 //   - Unchanged: in both desired and lock → nothing to do.
+//
+// Reconcile is lock-only. Prefer ReconcileWith when a live inventory exists.
 func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool) ReconcileResult {
+	return ReconcileWith(desired, managed, available, nil)
+}
+
+// ReconcileWith is Reconcile plus a live inventory. Packages in desired, not in
+// the lock, but already installed under the resolved manager are Adopted
+// instead of ToInstall so apply can lock them without spawning an installer.
+func ReconcileWith(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool, live LiveSet) ReconcileResult {
 	adapters := make(map[string]adapter.Adapter)
 	getAdapter := func(name string) adapter.Adapter {
 		if mgr, ok := adapters[name]; ok {
@@ -452,10 +518,20 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 	}
 
 	var toInstall []Action
+	var adopted []genvfile.LockedPackage
 	for _, pkg := range desired {
 		lp, alreadyManaged := managedByID[pkg.ID]
 		if !alreadyManaged {
-			toInstall = append(toInstall, resolveOnGOOS(pkg, available, runtime.GOOS))
+			action := resolveOnGOOS(pkg, available, runtime.GOOS)
+			if action.Resolved() && live.has(action.Manager, action.PkgName) {
+				adopted = append(adopted, genvfile.LockedPackage{
+					ID:      pkg.ID,
+					Manager: action.Manager,
+					PkgName: action.PkgName,
+				})
+				continue
+			}
+			toInstall = append(toInstall, action)
 			continue
 		}
 		// Package is already in the lock. Check version constraint: if the lock
@@ -492,7 +568,7 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 		unchanged = append(unchanged, lp)
 	}
 
-	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged, Warnings: warnings}
+	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged, Adopted: adopted, Warnings: warnings}
 }
 
 // PrintReconcilePlan writes a human-readable apply plan to w. Each line is
@@ -503,7 +579,8 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	toInstall = len(result.ToInstall)
 	toRemove = len(result.ToRemove)
 	unchanged := len(result.Unchanged)
-	total := toInstall + toRemove + unchanged
+	adopted := len(result.Adopted)
+	total := toInstall + toRemove + unchanged + adopted
 
 	fprintf(w, "Apply plan — %d package", total)
 	if total != 1 {
@@ -515,6 +592,9 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	}
 	if toRemove > 0 {
 		parts = append(parts, fmt.Sprintf("%d to remove", toRemove))
+	}
+	if adopted > 0 {
+		parts = append(parts, fmt.Sprintf("%d already installed", adopted))
 	}
 	if unchanged > 0 {
 		parts = append(parts, fmt.Sprintf("%d up to date", unchanged))
@@ -528,16 +608,19 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range result.ToInstall {
 		if a.Resolved() {
-			fprintf(tw, "  + %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  + %s	via %s	%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
 		} else {
-			fprintf(tw, "  + %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
+			fprintf(tw, "  + %s	unresolved	(no manager available)\n", a.Pkg.ID)
 		}
 	}
 	for _, a := range result.ToRemove {
-		fprintf(tw, "  - %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
+		fprintf(tw, "  - %s	via %s	%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
+	}
+	for _, lp := range result.Adopted {
+		fprintf(tw, "  = %s	via %s	(already installed)\n", lp.ID, lp.Manager)
 	}
 	for _, lp := range result.Unchanged {
-		fprintf(tw, "    %s\tvia %s\t(up to date)\n", lp.ID, lp.Manager)
+		fprintf(tw, "    %s	via %s	(up to date)\n", lp.ID, lp.Manager)
 	}
 	_ = tw.Flush()
 	fPrintln(w)
@@ -607,6 +690,25 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 	for _, a := range result.ToInstall {
 		if !a.Resolved() {
 			continue
+		}
+		if mgr := getAdapter(a.Manager); mgr != nil {
+			if _, trackOnly := mgr.(adapter.TrackOnly); trackOnly {
+				installed, qerr := mgr.Query(a.PkgName)
+				if qerr != nil {
+					out.Errors = append(out.Errors, fmt.Errorf("query %q (via %s): %w", a.Pkg.ID, a.Manager, qerr))
+					continue
+				}
+				if !installed {
+					out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): not on PATH — install it with the official installer, then re-run apply", a.Pkg.ID, a.Manager))
+					continue
+				}
+				out.Installed = append(out.Installed, genvfile.LockedPackage{
+					ID:      a.Pkg.ID,
+					Manager: a.Manager,
+					PkgName: a.PkgName,
+				})
+				continue
+			}
 		}
 		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): %w", a.Pkg.ID, a.Manager, err))

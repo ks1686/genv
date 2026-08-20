@@ -44,6 +44,7 @@ type PlanResult struct {
 	ToInstall       []PlanPackage   `json:"toInstall"`
 	ToRemove        []PlanPackage   `json:"toRemove"`
 	Unchanged       []PlanPackage   `json:"unchanged"`
+	Adopted         []PlanPackage   `json:"adopted,omitempty"`
 	Unresolved      int             `json:"unresolved"`
 	ServicesToStart []string        `json:"servicesToStart,omitempty"`
 	ServicesToStop  []string        `json:"servicesToStop,omitempty"`
@@ -55,7 +56,7 @@ type PlanResult struct {
 type StatusEntry struct {
 	ID               string `json:"id"`
 	Manager          string `json:"manager,omitempty"`
-	Kind             string `json:"kind"` // "ok" | "drift" | "missing" | "extra"
+	Kind             string `json:"kind"` // "ok" | "drift" | "missing" | "present" | "extra"
 	SpecVersion      string `json:"specVersion,omitempty"`
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }

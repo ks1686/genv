@@ -410,11 +410,11 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 		r.assertInSpec(t, cfg.testPkg)
 	})
 
-	// status on a spec with no lock entry should report "missing"
+	// status on a spec with no lock: missing when the package is not on the machine.
+	// Use a name no manager will have installed, so live probe cannot report present.
 	t.Run("status_package_in_spec_not_in_lock", func(t *testing.T) {
 		r2 := newRunner(t, cfg.preferFlag)
-		r2.writeSpec(t, cfg.testPkg)
-		// no lock written — package is in spec but not yet installed/tracked
+		r2.writeSpec(t, "genv-e2e-not-installed")
 		stdout, _, code := r2.genv("", "status")
 		if code != 0 {
 			t.Fatalf("genv status: exit %d, want 0", code)

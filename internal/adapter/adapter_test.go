@@ -12,6 +12,13 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+func skipTrackOnly(t *testing.T, a Adapter) {
+	t.Helper()
+	if _, ok := a.(TrackOnly); ok {
+		t.Skip("track-only adapter has no install/upgrade argv")
+	}
+}
+
 // TestAllAdapterNames verifies that every adapter in the registry has a
 // non-empty, unique name and is reachable via ByName.
 func TestAllAdapterNames(t *testing.T) {
@@ -120,6 +127,7 @@ func TestNormalizeID_FallbackToID(t *testing.T) {
 func TestPlanInstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
+			skipTrackOnly(t, a)
 			pkg := planTestPackage(a.Name())
 			args := a.PlanInstall(pkg)
 			if len(args) == 0 {
@@ -190,6 +198,7 @@ func TestPlanInstall_ExpectedBinaries(t *testing.T) {
 func TestPlanUninstall_NonEmpty(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
+			skipTrackOnly(t, a)
 			pkg := planTestPackage(a.Name())
 			args := a.PlanUninstall(pkg)
 			if len(args) == 0 {
@@ -287,6 +296,9 @@ func TestAvailable_AllAdapters_WithMockedLookPath(t *testing.T) {
 			}
 		})
 		t.Run(a.Name()+"/missing", func(t *testing.T) {
+			if _, ok := a.(TrackOnly); ok {
+				t.Skip("track-only is always available")
+			}
 			lookPath = func(string) (string, error) { return "", &os.PathError{Op: "lookpath", Err: os.ErrNotExist} }
 			krewProbe = func() error { return os.ErrNotExist }
 			if a.Available() {
@@ -743,6 +755,7 @@ func TestPlanUpgrade_ExpectedBinaries(t *testing.T) {
 func TestPlanUpgrade_PkgNamePresent(t *testing.T) {
 	for _, a := range All {
 		t.Run(a.Name(), func(t *testing.T) {
+			skipTrackOnly(t, a)
 			pkg := planTestPackage(a.Name())
 			assertContainsArg(t, a.PlanUpgrade(pkg), planTestPackageSuffix(a.Name(), pkg))
 		})

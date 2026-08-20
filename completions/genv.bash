@@ -113,7 +113,7 @@ _genv() {
 		fi
 		;;
 	apply)
-		opts="--file --lock-file --dry-run --force --backup --strict --yes --quiet --json --timeout --no-hooks --hook-timeout --debug --host --target --force-new-lock"
+		opts="--file --lock-file --dry-run --force --backup --strict --yes --quiet --json --timeout --no-hooks --skip-packages --hook-timeout --debug --host --target --force-new-lock"
 		;;
 	migrate)
 		opts="--file --write"

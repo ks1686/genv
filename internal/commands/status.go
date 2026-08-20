@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"strings"
+
+	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/version"
@@ -18,9 +21,13 @@ const (
 	// InstalledVersion does not satisfy the spec version constraint.
 	StatusDrift StatusKind = "drift"
 
-	// StatusMissing means the package is in the spec but has no lock entry —
-	// it has never been installed by genv (run 'genv apply').
+	// StatusMissing means the package is in the spec but has no lock entry and
+	// is not installed on the live system (run 'genv apply').
 	StatusMissing StatusKind = "missing"
+
+	// StatusPresent means the package is in the spec, not in the lock, but
+	// already installed via its manager. Apply will adopt it without installing.
+	StatusPresent StatusKind = "present"
 
 	// StatusExtra means the package is in the lock but not in the spec —
 	// it was removed from the spec without being uninstalled (run 'genv apply').
@@ -40,13 +47,13 @@ type StatusEntry struct {
 // Status computes the three-way diff between the spec (genv.json) and the lock
 // file (genv.lock.json). It does not query the live system — the lock file is
 // the record of what genv last installed.
-//
-// Categories:
-//   - ok:      in spec and lock, version constraint satisfied (or unconstrained)
-//   - drift:   in spec and lock, but InstalledVersion fails the spec constraint
-//   - missing: in spec only (genv apply needed)
-//   - extra:   in lock only (removed from spec without genv remove / genv apply)
 func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
+	return StatusWithLive(f, lf, nil)
+}
+
+// StatusWithLive is Status plus a live inventory (manager → native names).
+// Unlocked spec packages that are live-installed are StatusPresent.
+func StatusWithLive(f *schema.GenvFile, lf *genvfile.LockFile, live map[string]map[string]bool) []StatusEntry {
 	lockByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
 	for _, lp := range lf.Packages {
 		lockByID[lp.ID] = lp
@@ -58,10 +65,19 @@ func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
 
 	var entries []StatusEntry
 
-	// Spec-side pass: ok, drift, or missing.
 	for _, pkg := range f.Packages {
 		lp, inLock := lockByID[pkg.ID]
 		if !inLock {
+			if mgr, name, ok := liveMatch(pkg, live); ok {
+				entries = append(entries, StatusEntry{
+					ID:          pkg.ID,
+					Manager:     mgr,
+					PkgName:     name,
+					Kind:        StatusPresent,
+					SpecVersion: pkg.Version,
+				})
+				continue
+			}
 			entries = append(entries, StatusEntry{
 				ID:          pkg.ID,
 				Kind:        StatusMissing,
@@ -70,7 +86,6 @@ func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
 			continue
 		}
 		kind := StatusOK
-		// Only report drift when an installed version is actually recorded.
 		if lp.InstalledVersion != "" && !version.Satisfies(pkg.Version, lp.InstalledVersion) {
 			kind = StatusDrift
 		}
@@ -84,7 +99,6 @@ func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
 		})
 	}
 
-	// Lock-side pass: extra entries not in spec.
 	for _, lp := range lf.Packages {
 		if !specByID[lp.ID] {
 			entries = append(entries, StatusEntry{
@@ -98,4 +112,47 @@ func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
 	}
 
 	return entries
+}
+
+func liveMatch(pkg schema.Package, live map[string]map[string]bool) (manager, pkgName string, ok bool) {
+	if live == nil {
+		return "", "", false
+	}
+	try := func(mgr string) (string, string, bool) {
+		if mgr == "" {
+			return "", "", false
+		}
+		name := pkg.ID
+		if a := adapter.ByName(mgr); a != nil {
+			name, _ = a.NormalizeID(pkg.ID, pkg.Managers)
+		} else if n, exists := pkg.Managers[mgr]; exists {
+			name = n
+		}
+		if liveHas(live, mgr, name) {
+			return mgr, name, true
+		}
+		return "", "", false
+	}
+	if mgr, name, ok := try(pkg.Prefer); ok {
+		return mgr, name, true
+	}
+	for mgr := range pkg.Managers {
+		if m, name, ok := try(mgr); ok {
+			return m, name, true
+		}
+	}
+	return "", "", false
+}
+
+func liveHas(live map[string]map[string]bool, manager, pkgName string) bool {
+	names := live[manager]
+	if names[pkgName] {
+		return true
+	}
+	for n := range names {
+		if strings.EqualFold(n, pkgName) {
+			return true
+		}
+	}
+	return false
 }

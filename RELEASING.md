@@ -36,6 +36,7 @@ handles GitHub releases, Homebrew, Scoop, AUR, and the Snap Store automatically
 | `v4.0.12` | Drop Pro-only winget/chocolatey GoReleaser keys so OSS publish can succeed |
 | `v4.0.13` | Self-hosted Scoop bucket (`ks1686/scoop-bucket`) |
 | `v4.1.0` | First tagged Scoop upload from CI (token template matches Homebrew) |
+| `v4.2.0` | Windows apply skip-if-present, 10m timeout, live status, `--skip-packages`, `external` manager |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,

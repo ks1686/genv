@@ -283,6 +283,7 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 func materializeSpecForCommand(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag string) (*schema.GenvFile, string, int) {
 	effective, targetID, err := resolveEffectiveSpec(f, hostForCommand(hostFlag), targetFlag)
 	if err == nil {
+		effective = schema.DropInapplicable(effective, runtime.GOOS)
 		return effective, targetID, exitOK
 	}
 	msg := err.Error()
@@ -865,16 +866,47 @@ func adoptCmd(args []string) int {
 	hostName := hostForCommand(*hostFlag)
 	slog.Debug("adopt host", "host", hostName)
 
-	// 1. Resolve to find which manager handles this package.
+	specPkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
+	inSpec := false
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if !errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %v\n", err)
+			if errors.Is(err, genvfile.ErrInvalidFile) {
+				return exitValidation
+			}
+			return exitIO
+		}
+	} else {
+		effective, _, code := materializeSpecForCommand("adopt", *file, f, *hostFlag, *targetFlag)
+		if code != exitOK {
+			return code
+		}
+		for _, p := range effective.Packages {
+			if p.ID != id {
+				continue
+			}
+			inSpec = true
+			if *version == "" {
+				specPkg.Version = p.Version
+			}
+			if *prefer == "" {
+				specPkg.Prefer = p.Prefer
+			}
+			if len(managers) == 0 {
+				specPkg.Managers = p.Managers
+			}
+			break
+		}
+	}
+
 	available := resolver.Detect()
-	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
-	action := resolver.ResolveOne(pkg, available)
+	action := resolver.ResolveOne(specPkg, available)
 	if !action.Resolved() {
 		fprintf(os.Stderr, "genv adopt: no available manager for %q — install a compatible package manager first\n", id)
 		return exitLogic
 	}
 
-	// 2. Verify the package is actually installed.
 	mgr := adapter.ByName(action.Manager)
 	installed, err := mgr.Query(action.PkgName)
 	if err != nil {
@@ -886,12 +918,25 @@ func adoptCmd(args []string) int {
 		return exitLogic
 	}
 
-	// 3. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
-		return exit
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+	for i := range lf.Packages {
+		if lf.Packages[i].ID == id {
+			fprintf(os.Stderr, "genv: package already tracked: %q\n", id)
+			return exitLogic
+		}
 	}
 
-	// 4. Update lock file.
+	if !inSpec {
+		if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
+			return exit
+		}
+	}
+
 	targetID := ""
 	if prepared, err := genvfile.Read(*file); err == nil {
 		var code int
@@ -900,7 +945,7 @@ func adoptCmd(args []string) int {
 			return code
 		}
 	}
-	if exit := appendLockEntry(lockPathForSpec(*file, *lockFile), genvfile.LockedPackage{
+	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
@@ -1102,6 +1147,7 @@ type applyOptions struct {
 	ForceNewLock  bool
 	NoHooks       bool
 	HookTimeout   time.Duration
+	SkipPackages  bool
 }
 
 func applyCmd(args []string) int {
@@ -1123,9 +1169,10 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.Yes, "yes", false, "skip the confirmation prompt (for CI and scripts)")
 	fs.BoolVar(&opts.Quiet, "quiet", false, "suppress plan output (useful in scripts)")
 	fs.BoolVar(&opts.JSONOut, "json", false, "emit machine-readable JSON to stdout instead of human-readable text")
-	fs.DurationVar(&opts.Timeout, "timeout", 0, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout)")
+	fs.DurationVar(&opts.Timeout, "timeout", 10*time.Minute, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout; default 10m)")
 	fs.DurationVar(&opts.HookTimeout, "hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
+	fs.BoolVar(&opts.SkipPackages, "skip-packages", false, "skip package install/remove; still apply env, shell, files, and services")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
@@ -1239,7 +1286,16 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
-	result := resolver.Reconcile(f.Packages, lf.Packages, available)
+	live, liveWarns := resolver.LoadLiveSet(available)
+	for _, w := range liveWarns {
+		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
+	}
+	result := resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
+	if opts.SkipPackages {
+		result.ToInstall = nil
+		result.ToRemove = nil
+		result.Adopted = nil
+	}
 
 	if opts.JSONOut {
 		return runApplyJSON(ctx, opts, lockPath, f, lf, result)
@@ -1284,37 +1340,30 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	failedHooks := []string(nil)
 	filePlan := &files.ApplyResult{}
 	filePlanErr := error(nil)
-	if len(errs) == 0 {
-		var envErr, shellErr error
-		envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
-		if envErr != nil {
-			errs = append(errs, envErr.Error())
-		} else {
-			shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
-			if shellErr != nil {
-				errs = append(errs, shellErr.Error())
-			}
-		}
-		if len(errs) == 0 {
-			_, _, svcErrs := applyServices(ctx, f, lf, false)
-			if len(svcErrs) > 0 {
-				errs = append(errs, errStrings(svcErrs)...)
-			}
-		}
+	var envErr, shellErr error
+	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
+	if envErr != nil {
+		errs = append(errs, envErr.Error())
 	}
-	if len(errs) == 0 {
-		filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
-		if filePlanErr != nil {
-			errs = append(errs, filePlanErr.Error())
-			if !opts.NoHooks && hasPostApplyHooks(f) {
-				skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
-				errs = append(errs, skipMsg)
-				fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
-			}
-		} else if !opts.NoHooks {
-			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
-			errs = append(errs, failedHooks...)
+	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
+	if shellErr != nil {
+		errs = append(errs, shellErr.Error())
+	}
+	_, _, svcErrs := applyServices(ctx, f, lf, false)
+	if len(svcErrs) > 0 {
+		errs = append(errs, errStrings(svcErrs)...)
+	}
+	filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
+	if filePlanErr != nil {
+		errs = append(errs, filePlanErr.Error())
+		if !opts.NoHooks && hasPostApplyHooks(f) {
+			skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
+			errs = append(errs, skipMsg)
+			fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
 		}
+	} else if !opts.NoHooks {
+		failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
+		errs = append(errs, failedHooks...)
 	}
 	success := len(errs) == 0
 	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
@@ -1480,26 +1529,22 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	var svcErrs []error
 	var fileErrs []error
 	var appliedFiles *files.ApplyResult
-	if len(execResult.Errors) == 0 {
-		if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
-			fileErrs = append(fileErrs, err)
-		} else if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
-			fileErrs = append(fileErrs, err)
-		} else {
-			_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
-			if len(svcErrs) == 0 {
-				var filePlanErr error
-				appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
-				if filePlanErr != nil {
-					fileErrs = append(fileErrs, filePlanErr)
-				}
-				if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
-					writeFileMismatchGuidance(os.Stderr, appliedFiles)
-					if !opts.NoHooks && hasPostApplyHooks(f) {
-						fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
-					}
-				}
-			}
+	if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
+		fileErrs = append(fileErrs, err)
+	}
+	if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
+		fileErrs = append(fileErrs, err)
+	}
+	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
+	var filePlanErr error
+	appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
+	if filePlanErr != nil {
+		fileErrs = append(fileErrs, filePlanErr)
+	}
+	if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
+		writeFileMismatchGuidance(os.Stderr, appliedFiles)
+		if !opts.NoHooks && hasPostApplyHooks(f) {
+			fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
 		}
 	}
 	var hookErrs []string
@@ -1563,8 +1608,9 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	for _, lp := range lf.Packages {
 		prevByID[lp.ID] = lp
 	}
-	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
+	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(result.Adopted)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
 	newPkgs = append(newPkgs, result.Unchanged...)
+	newPkgs = append(newPkgs, result.Adopted...)
 	newPkgs = append(newPkgs, execResult.Installed...)
 	for _, a := range result.ToInstall {
 		if installedSet[a.Pkg.ID] {
@@ -1688,6 +1734,10 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 	for _, lp := range result.Unchanged {
 		unchanged = append(unchanged, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
 	}
+	adopted := make([]output.PlanPackage, 0, len(result.Adopted))
+	for _, lp := range result.Adopted {
+		adopted = append(adopted, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
+	}
 
 	var toStart, toStop []string
 	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
@@ -1703,6 +1753,7 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 		ToInstall:       toInstall,
 		ToRemove:        toRemove,
 		Unchanged:       unchanged,
+		Adopted:         adopted,
 		Unresolved:      unresolved,
 		ServicesToStart: toStart,
 		ServicesToStop:  toStop,
@@ -2833,8 +2884,9 @@ func statusCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv status [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and recorded versions.")
-		fPrintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
+		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and the live system.")
+		fPrintln(os.Stderr, "Unlocked packages that are already installed are reported as present.")
+		fPrintln(os.Stderr, "Use --offline to compare spec vs lock only.")
 		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
@@ -2846,6 +2898,7 @@ func statusCmd(args []string) int {
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem only")
+	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
@@ -2918,6 +2971,14 @@ func statusCmd(args []string) int {
 	}
 
 	entries := commands.Status(f, lf)
+	if !*offline {
+		available := resolver.Detect()
+		live, liveWarns := resolver.LoadLiveSet(available)
+		for _, w := range liveWarns {
+			fprintf(os.Stderr, "genv status: warning: %s\n", w)
+		}
+		entries = commands.StatusWithLive(f, lf, live)
+	}
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
 	serviceEntries := service.ServiceStatus(f.Services, lf.Services, true)
@@ -2987,6 +3048,9 @@ func statusCmd(args []string) int {
 	if n := counts[commands.StatusOK]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d ok", n))
 	}
+	if n := counts[commands.StatusPresent]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d present", n))
+	}
 	if n := counts[commands.StatusDrift]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d drift", n))
 	}
@@ -3014,7 +3078,10 @@ func statusCmd(args []string) int {
 			if v == "" {
 				v = "*"
 			}
-			fprintf(tw, "  ok\t%s\t%s\t%s\n", e.ID, mgr, v)
+			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, v)
+		case commands.StatusPresent:
+			note := "(installed, not in lock — apply will adopt)"
+			fprintf(tw, "  present	%s	%s	%s\n", e.ID, mgr, note)
 		case commands.StatusDrift:
 			fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
 				e.ID, mgr, e.SpecVersion, e.InstalledVersion)
@@ -4334,8 +4401,9 @@ Apply-specific flags:
   --yes                Skip the confirmation prompt (for CI and scripts)
   --quiet              Suppress plan output (useful in scripts)
   --json               Emit machine-readable JSON to stdout
-  --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none)
+  --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none; default 10m)
   --no-hooks           Skip apply lifecycle hooks without skipping apply
+  --skip-packages      Skip package install/remove; still apply env, shell, files, services
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
   --target <id>        Portable target id for schemaVersion 8 specs

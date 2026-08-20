@@ -95,7 +95,7 @@ function script:Get-GenvCompletions {
 	switch ($cmd) {
 		{ $_ -in 'apply' } {
 			$flags = @('--file', '--lock-file', '--dry-run', '--force', '--backup', '--strict', '--yes',
-				'--quiet', '--json', '--timeout', '--no-hooks', '--hook-timeout', '--debug',
+				'--quiet', '--json', '--timeout', '--no-hooks', '--skip-packages', '--hook-timeout', '--debug',
 				'--host', '--target', '--force-new-lock')
 			return (& $completeCandidates -Candidates $flags)
 		}
