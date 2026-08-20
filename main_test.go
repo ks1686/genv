@@ -739,6 +739,67 @@ func TestAdoptCmd_V8TargetFlagWritesSelectedTarget(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_UsesSpecManagerName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+	  "schemaVersion":"8",
+	  "targets":{
+	    "macos":{},
+	    "windows":{
+	      "packages":[{"id":"cursor","managers":{"winget":"Anysphere.Cursor"}}]
+	    }
+	  }
+	}`)
+	writeLock(t, lockPath, nil)
+	testutil.InstallFakeBinary(t, "winget", `if [ "$1" = "list" ] && echo "$*" | grep -q Anysphere.Cursor; then exit 0; fi
+exit 20`)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "windows", "cursor"})
+	if code != exitOK {
+		t.Fatalf("adopt cursor: got %d, want 0", code)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lf.Packages) != 1 || lf.Packages[0].PkgName != "Anysphere.Cursor" {
+		t.Fatalf("lock = %+v, want Anysphere.Cursor", lf.Packages)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Targets["windows"].Packages) != 1 {
+		t.Fatalf("spec packages mutated: %+v", f.Targets["windows"].Packages)
+	}
+}
+
+func TestAdoptCmd_AlreadyInLock_StillFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+	  "schemaVersion":"8",
+	  "targets":{
+	    "macos":{},
+	    "windows":{
+	      "packages":[{"id":"cursor","managers":{"winget":"Anysphere.Cursor"}}]
+	    }
+	  }
+	}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "cursor", Manager: "winget", PkgName: "Anysphere.Cursor"}})
+	testutil.InstallFakeBinary(t, "winget", `exit 0`)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "windows", "cursor"})
+	if code != exitLogic {
+		t.Fatalf("adopt already locked: got %d, want %d", code, exitLogic)
+	}
+}
+
 // ---- genv disown -------------------------------------------------------------
 // disown removes the package from genv.json and the lock file without uninstalling.
 

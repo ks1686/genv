@@ -865,16 +865,47 @@ func adoptCmd(args []string) int {
 	hostName := hostForCommand(*hostFlag)
 	slog.Debug("adopt host", "host", hostName)
 
-	// 1. Resolve to find which manager handles this package.
+	specPkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
+	inSpec := false
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if !errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %v\n", err)
+			if errors.Is(err, genvfile.ErrInvalidFile) {
+				return exitValidation
+			}
+			return exitIO
+		}
+	} else {
+		effective, _, code := materializeSpecForCommand("adopt", *file, f, *hostFlag, *targetFlag)
+		if code != exitOK {
+			return code
+		}
+		for _, p := range effective.Packages {
+			if p.ID != id {
+				continue
+			}
+			inSpec = true
+			if *version == "" {
+				specPkg.Version = p.Version
+			}
+			if *prefer == "" {
+				specPkg.Prefer = p.Prefer
+			}
+			if len(managers) == 0 {
+				specPkg.Managers = p.Managers
+			}
+			break
+		}
+	}
+
 	available := resolver.Detect()
-	pkg := schema.Package{ID: id, Version: *version, Prefer: *prefer, Managers: managers}
-	action := resolver.ResolveOne(pkg, available)
+	action := resolver.ResolveOne(specPkg, available)
 	if !action.Resolved() {
 		fprintf(os.Stderr, "genv adopt: no available manager for %q — install a compatible package manager first\n", id)
 		return exitLogic
 	}
 
-	// 2. Verify the package is actually installed.
 	mgr := adapter.ByName(action.Manager)
 	installed, err := mgr.Query(action.PkgName)
 	if err != nil {
@@ -886,12 +917,25 @@ func adoptCmd(args []string) int {
 		return exitLogic
 	}
 
-	// 3. Update genv.json.
-	if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
-		return exit
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+	for i := range lf.Packages {
+		if lf.Packages[i].ID == id {
+			fprintf(os.Stderr, "genv: package already tracked: %q\n", id)
+			return exitLogic
+		}
 	}
 
-	// 4. Update lock file.
+	if !inSpec {
+		if exit := addToSpec(*file, id, *version, *prefer, managers, *targetFlag); exit != exitOK {
+			return exit
+		}
+	}
+
 	targetID := ""
 	if prepared, err := genvfile.Read(*file); err == nil {
 		var code int
@@ -900,7 +944,7 @@ func adoptCmd(args []string) int {
 			return code
 		}
 	}
-	if exit := appendLockEntry(lockPathForSpec(*file, *lockFile), genvfile.LockedPackage{
+	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:      action.Pkg.ID,
 		Manager: action.Manager,
 		PkgName: action.PkgName,
