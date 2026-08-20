@@ -66,6 +66,36 @@ func TestApply_FileMismatchDoesNotAbortPackages(t *testing.T) {
 	}
 }
 
+func TestApply_PackageFailureStillAppliesFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	testutil.SetHome(t, dir)
+	withFailingBrewInstall(t)
+	spec := filepath.Join(dir, "genv.json")
+	lock := filepath.Join(dir, "genv.lock.json")
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	writeTestFile(t, src, "hello\n")
+	writeTestFile(t, spec, `{`+
+		`"schemaVersion":"6",`+
+		`"packages":[{"id":"git","prefer":"brew"}],`+
+		`"files":{"links":[{"source":`+jsonString(src)+`,"target":`+jsonString(dst)+`,"mode":"link"}]}`+
+		`}`)
+	writeLock(t, lock, nil)
+
+	code := run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--no-hooks"})
+	if code == exitOK {
+		t.Fatal("expected apply to fail when brew install fails")
+	}
+	fi, err := os.Lstat(dst)
+	if err != nil {
+		t.Fatalf("file not applied after package error (exit %d): %v", code, err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("expected dst to be a symlink")
+	}
+}
+
 func TestApply_DryRunTextShowsFilePaths(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))

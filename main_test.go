@@ -3370,7 +3370,7 @@ func TestApplyCmd_HelpMentionsTenMinuteTimeout(t *testing.T) {
 	}
 }
 
-func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
+func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	testutil.SetHome(t, dir)
@@ -3388,16 +3388,16 @@ func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
 	}
 
 	frag := filepath.Join(dir, "genv", "env.sh")
-	if _, err := os.Stat(frag); err == nil {
-		t.Fatalf("env fragment %s written despite package failure", frag)
+	if _, err := os.Stat(frag); err != nil {
+		t.Fatalf("env fragment %s missing after package failure: %v", frag, err)
 	}
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(path))
-	if err != nil && !errors.Is(err, genvfile.ErrNotFound) {
+	if err != nil {
 		t.Fatalf("ReadLock: %v", err)
 	}
-	if lf != nil && len(lf.Env) != 0 {
-		t.Fatalf("lock env = %#v, want empty after package failure", lf.Env)
+	if lf == nil || len(lf.Env) == 0 {
+		t.Fatalf("lock env empty after package failure, want FOO recorded")
 	}
 }
 

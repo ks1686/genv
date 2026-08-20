@@ -1288,37 +1288,30 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	failedHooks := []string(nil)
 	filePlan := &files.ApplyResult{}
 	filePlanErr := error(nil)
-	if len(errs) == 0 {
-		var envErr, shellErr error
-		envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
-		if envErr != nil {
-			errs = append(errs, envErr.Error())
-		} else {
-			shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
-			if shellErr != nil {
-				errs = append(errs, shellErr.Error())
-			}
-		}
-		if len(errs) == 0 {
-			_, _, svcErrs := applyServices(ctx, f, lf, false)
-			if len(svcErrs) > 0 {
-				errs = append(errs, errStrings(svcErrs)...)
-			}
-		}
+	var envErr, shellErr error
+	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
+	if envErr != nil {
+		errs = append(errs, envErr.Error())
 	}
-	if len(errs) == 0 {
-		filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
-		if filePlanErr != nil {
-			errs = append(errs, filePlanErr.Error())
-			if !opts.NoHooks && hasPostApplyHooks(f) {
-				skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
-				errs = append(errs, skipMsg)
-				fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
-			}
-		} else if !opts.NoHooks {
-			failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
-			errs = append(errs, failedHooks...)
+	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
+	if shellErr != nil {
+		errs = append(errs, shellErr.Error())
+	}
+	_, _, svcErrs := applyServices(ctx, f, lf, false)
+	if len(svcErrs) > 0 {
+		errs = append(errs, errStrings(svcErrs)...)
+	}
+	filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
+	if filePlanErr != nil {
+		errs = append(errs, filePlanErr.Error())
+		if !opts.NoHooks && hasPostApplyHooks(f) {
+			skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
+			errs = append(errs, skipMsg)
+			fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
 		}
+	} else if !opts.NoHooks {
+		failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
+		errs = append(errs, failedHooks...)
 	}
 	success := len(errs) == 0
 	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
@@ -1484,26 +1477,22 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	var svcErrs []error
 	var fileErrs []error
 	var appliedFiles *files.ApplyResult
-	if len(execResult.Errors) == 0 {
-		if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
-			fileErrs = append(fileErrs, err)
-		} else if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
-			fileErrs = append(fileErrs, err)
-		} else {
-			_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
-			if len(svcErrs) == 0 {
-				var filePlanErr error
-				appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
-				if filePlanErr != nil {
-					fileErrs = append(fileErrs, filePlanErr)
-				}
-				if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
-					writeFileMismatchGuidance(os.Stderr, appliedFiles)
-					if !opts.NoHooks && hasPostApplyHooks(f) {
-						fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
-					}
-				}
-			}
+	if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
+		fileErrs = append(fileErrs, err)
+	}
+	if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
+		fileErrs = append(fileErrs, err)
+	}
+	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
+	var filePlanErr error
+	appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
+	if filePlanErr != nil {
+		fileErrs = append(fileErrs, filePlanErr)
+	}
+	if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
+		writeFileMismatchGuidance(os.Stderr, appliedFiles)
+		if !opts.NoHooks && hasPostApplyHooks(f) {
+			fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
 		}
 	}
 	var hookErrs []string
