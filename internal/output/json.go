@@ -44,6 +44,7 @@ type PlanResult struct {
 	ToInstall       []PlanPackage   `json:"toInstall"`
 	ToRemove        []PlanPackage   `json:"toRemove"`
 	Unchanged       []PlanPackage   `json:"unchanged"`
+	Adopted         []PlanPackage   `json:"adopted,omitempty"`
 	Unresolved      int             `json:"unresolved"`
 	ServicesToStart []string        `json:"servicesToStart,omitempty"`
 	ServicesToStop  []string        `json:"servicesToStop,omitempty"`

@@ -1865,7 +1865,7 @@ func (a lifecycleHookAdapter) PlanUpgrade(pkgName string) []string {
 }
 func (a lifecycleHookAdapter) PlanClean() [][]string              { return nil }
 func (a lifecycleHookAdapter) Query(pkgName string) (bool, error) { return true, nil }
-func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return []string{pkgNameForTest}, nil }
+func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return nil, nil }
 
 func (a lifecycleHookAdapter) QueryVersion(pkgName string) (string, error) {
 	return "2.0.0", nil

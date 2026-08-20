@@ -955,6 +955,21 @@ func TestLoadLiveSet_FalseAvailabilitySkipped(t *testing.T) {
 	}
 }
 
+func TestPrintReconcilePlan_ShowsAdopted(t *testing.T) {
+	var buf bytes.Buffer
+	result := ReconcileResult{
+		Adopted: []genvfile.LockedPackage{{ID: "cursor", Manager: "winget", PkgName: "Anysphere.Cursor"}},
+	}
+	_, _, _ = PrintReconcilePlan(result, &buf)
+	out := buf.String()
+	if !strings.Contains(out, "already installed") || !strings.Contains(out, "cursor") {
+		t.Fatalf("plan = %q, want adopted cursor", out)
+	}
+	if !strings.Contains(out, "1 already installed") {
+		t.Fatalf("plan = %q, want summary count", out)
+	}
+}
+
 // TestReconcile_RemovedPackage_ToRemove verifies that a package in the lock
 // but absent from the spec ends up in ToRemove.
 func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {

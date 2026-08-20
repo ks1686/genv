@@ -1239,7 +1239,11 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
-	result := resolver.Reconcile(f.Packages, lf.Packages, available)
+	live, liveWarns := resolver.LoadLiveSet(available)
+	for _, w := range liveWarns {
+		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
+	}
+	result := resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
 
 	if opts.JSONOut {
 		return runApplyJSON(ctx, opts, lockPath, f, lf, result)
@@ -1563,8 +1567,9 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 	for _, lp := range lf.Packages {
 		prevByID[lp.ID] = lp
 	}
-	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
+	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(result.Adopted)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
 	newPkgs = append(newPkgs, result.Unchanged...)
+	newPkgs = append(newPkgs, result.Adopted...)
 	newPkgs = append(newPkgs, execResult.Installed...)
 	for _, a := range result.ToInstall {
 		if installedSet[a.Pkg.ID] {
@@ -1688,6 +1693,10 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 	for _, lp := range result.Unchanged {
 		unchanged = append(unchanged, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
 	}
+	adopted := make([]output.PlanPackage, 0, len(result.Adopted))
+	for _, lp := range result.Adopted {
+		adopted = append(adopted, output.PlanPackage{ID: lp.ID, Manager: lp.Manager})
+	}
 
 	var toStart, toStop []string
 	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
@@ -1703,6 +1712,7 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 		ToInstall:       toInstall,
 		ToRemove:        toRemove,
 		Unchanged:       unchanged,
+		Adopted:         adopted,
 		Unresolved:      unresolved,
 		ServicesToStart: toStart,
 		ServicesToStop:  toStop,

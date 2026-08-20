@@ -571,7 +571,8 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	toInstall = len(result.ToInstall)
 	toRemove = len(result.ToRemove)
 	unchanged := len(result.Unchanged)
-	total := toInstall + toRemove + unchanged
+	adopted := len(result.Adopted)
+	total := toInstall + toRemove + unchanged + adopted
 
 	fprintf(w, "Apply plan — %d package", total)
 	if total != 1 {
@@ -583,6 +584,9 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	}
 	if toRemove > 0 {
 		parts = append(parts, fmt.Sprintf("%d to remove", toRemove))
+	}
+	if adopted > 0 {
+		parts = append(parts, fmt.Sprintf("%d already installed", adopted))
 	}
 	if unchanged > 0 {
 		parts = append(parts, fmt.Sprintf("%d up to date", unchanged))
@@ -596,16 +600,19 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range result.ToInstall {
 		if a.Resolved() {
-			fprintf(tw, "  + %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  + %s	via %s	%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
 		} else {
-			fprintf(tw, "  + %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
+			fprintf(tw, "  + %s	unresolved	(no manager available)\n", a.Pkg.ID)
 		}
 	}
 	for _, a := range result.ToRemove {
-		fprintf(tw, "  - %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
+		fprintf(tw, "  - %s	via %s	%s\n", a.Pkg.ID, a.Manager, strings.Join(a.UninstallCmd, " "))
+	}
+	for _, lp := range result.Adopted {
+		fprintf(tw, "  = %s	via %s	(already installed)\n", lp.ID, lp.Manager)
 	}
 	for _, lp := range result.Unchanged {
-		fprintf(tw, "    %s\tvia %s\t(up to date)\n", lp.ID, lp.Manager)
+		fprintf(tw, "    %s	via %s	(up to date)\n", lp.ID, lp.Manager)
 	}
 	_ = tw.Flush()
 	fPrintln(w)
