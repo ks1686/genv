@@ -683,6 +683,25 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 		if !a.Resolved() {
 			continue
 		}
+		if mgr := getAdapter(a.Manager); mgr != nil {
+			if _, trackOnly := mgr.(adapter.TrackOnly); trackOnly {
+				installed, qerr := mgr.Query(a.PkgName)
+				if qerr != nil {
+					out.Errors = append(out.Errors, fmt.Errorf("query %q (via %s): %w", a.Pkg.ID, a.Manager, qerr))
+					continue
+				}
+				if !installed {
+					out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): not on PATH — install it with the official installer, then re-run apply", a.Pkg.ID, a.Manager))
+					continue
+				}
+				out.Installed = append(out.Installed, genvfile.LockedPackage{
+					ID:      a.Pkg.ID,
+					Manager: a.Manager,
+					PkgName: a.PkgName,
+				})
+				continue
+			}
+		}
 		if err := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr); err != nil {
 			out.Errors = append(out.Errors, fmt.Errorf("install %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {

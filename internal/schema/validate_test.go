@@ -539,6 +539,14 @@ func TestParseAndValidate_PackageWithAllKnownManagers(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_ExternalManagerAccepted(t *testing.T) {
+	input := `{"schemaVersion":"1","packages":[{"id":"hermes-desktop","prefer":"external","managers":{"external":"hermes"}}]}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil || len(errs) > 0 {
+		t.Fatalf("err=%v errs=%v", err, errs)
+	}
+}
+
 // TestParseAndValidate_EmptyInput verifies that completely empty input returns a
 // fatal parse error.
 func TestParseAndValidate_EmptyInput(t *testing.T) {

@@ -76,6 +76,12 @@ type OutdatedLister interface {
 	ListOutdated(pkgNames []string) (map[string]string, error)
 }
 
+// TrackOnly is an optional marker for adapters that record a package in the
+// lock without spawning an installer (official/manual installers).
+type TrackOnly interface {
+	TrackOnly()
+}
+
 // Adapter is the capability contract every package manager must satisfy.
 // Each method maps to one of the four resolver operations: detect, query,
 // plan install, and normalize package IDs.
@@ -170,6 +176,7 @@ var All = []Adapter{
 	Winget{},
 	Scoop{},
 	Choco{},
+	External{},
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.
