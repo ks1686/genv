@@ -283,6 +283,7 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 func materializeSpecForCommand(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag string) (*schema.GenvFile, string, int) {
 	effective, targetID, err := resolveEffectiveSpec(f, hostForCommand(hostFlag), targetFlag)
 	if err == nil {
+		effective = schema.DropInapplicable(effective, runtime.GOOS)
 		return effective, targetID, exitOK
 	}
 	msg := err.Error()
