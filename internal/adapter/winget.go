@@ -24,15 +24,15 @@ func (Winget) NormalizeID(id string, managers map[string]string) (string, bool) 
 }
 
 func (Winget) PlanInstall(pkgName string) []string {
-	return []string{"winget", "install", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--id", pkgName}
+	return []string{"winget", "install", "--exact", "--silent", "--disable-interactivity", "--no-upgrade", "--accept-package-agreements", "--accept-source-agreements", "--id", pkgName}
 }
 
 func (Winget) PlanUninstall(pkgName string) []string {
-	return []string{"winget", "uninstall", "--exact", "--silent", "--id", pkgName}
+	return []string{"winget", "uninstall", "--exact", "--silent", "--disable-interactivity", "--id", pkgName}
 }
 
 func (Winget) PlanUpgrade(pkgName string) []string {
-	return []string{"winget", "upgrade", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--id", pkgName}
+	return []string{"winget", "upgrade", "--exact", "--silent", "--disable-interactivity", "--accept-package-agreements", "--accept-source-agreements", "--id", pkgName}
 }
 
 // PlanClean returns nil: winget has no standalone cache-clean command.

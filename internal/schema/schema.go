@@ -112,6 +112,7 @@ var KnownManagers = map[string]bool{
 	"winget":      true,
 	"scoop":       true,
 	"choco":       true,
+	"external":    true,
 }
 
 // KnownTargets is the set of canonical portable target IDs accepted in v8 specs.

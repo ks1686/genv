@@ -2,7 +2,9 @@ package adapter
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -199,4 +201,41 @@ func stripANSI(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// ScoopGitCmdDir returns the versioned scoop git cmd directory, skipping the
+// "current" junction which OpenSSH sessions often cannot follow.
+func ScoopGitCmdDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	if v := os.Getenv("USERPROFILE"); v != "" {
+		home = v
+	}
+	root := filepath.Join(home, "scoop", "apps", "git")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	var best string
+	for _, e := range entries {
+		name := e.Name()
+		if name == "current" || !e.IsDir() {
+			continue
+		}
+		cmd := filepath.Join(root, name, "cmd")
+		if _, err := os.Stat(filepath.Join(cmd, "git.exe")); err != nil {
+			if _, err2 := os.Stat(filepath.Join(cmd, "git")); err2 != nil {
+				continue
+			}
+		}
+		if best == "" || name > best {
+			best = name
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return filepath.Join(root, best, "cmd")
 }

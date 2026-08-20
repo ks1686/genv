@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.2.0 - 2026-08-20
+
+### Fixed
+
+- `genv apply` no longer treats an empty lock as “install everything”. Packages
+  already present in winget/scoop are adopted into the lock (no upgrade).
+- `winget install` uses `--disable-interactivity --no-upgrade`. Apply’s
+  per-subprocess timeout defaults to 10m (`--timeout 0` disables).
+- A failed or hung package no longer skips env/files.
+- `genv adopt <id>` reads `managers.<mgr>` from the spec (e.g. `Anysphere.Cursor`)
+  and can lock a package that is already listed in the spec.
+- Windows status/apply no longer report zsh aliases or `HOMEBREW_*` as missing.
+- Scoop subprocesses find git via the versioned `scoop/apps/git/<ver>/cmd`
+  directory when the `current` junction is invisible (OpenSSH).
+
+### Added
+
+- `genv apply --skip-packages`
+- `genv status --offline` (lock-only). Default status probes live managers;
+  installed-but-unlocked packages are `present`.
+- `external` manager for apps genv tracks but does not install.
+
 ## v4.1.0 - 2026-08-19
 
 ### Added

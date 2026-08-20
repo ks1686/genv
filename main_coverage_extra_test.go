@@ -239,6 +239,7 @@ func runGitCommand(t *testing.T, args ...string) {
 	cmd := exec.Command("git", append([]string{
 		"-c", "commit.gpgsign=false",
 		"-c", "tag.gpgsign=false",
+		"-c", "core.hooksPath=",
 	}, args...)...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)

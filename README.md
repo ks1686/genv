@@ -258,9 +258,13 @@ Tab completion on `add` / `adopt` suggests package names from available managers
 ### Apply / portability flags worth knowing
 
 ```bash
+genv apply --target windows --yes                 # adopt live apps, install only the missing
+genv apply --skip-packages --yes                  # links + env only
 genv apply --target ubuntu --dry-run --json
 genv apply --force --backup --yes                 # overwrite mismatched files; keep *.backup.*
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
+genv status --target windows                      # present vs missing vs ok
+genv adopt cursor --target windows                # lock Anysphere.Cursor if already installed
 genv export --target macos --out ./dist/macos --strict
 genv migrate --write
 ```

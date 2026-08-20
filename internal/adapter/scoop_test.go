@@ -3,6 +3,7 @@ package adapter
 import (
 	"maps"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -203,5 +204,38 @@ func TestScoop_Available(t *testing.T) {
 	}
 	if (Scoop{}).Available() {
 		t.Error("Available() = true when lookPath fails")
+	}
+}
+
+func TestScoopGitCmdDir_PrefersVersionedNotCurrent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	base := filepath.Join(home, "scoop", "apps", "git")
+	if err := os.MkdirAll(filepath.Join(base, "current", "cmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ver := filepath.Join(base, "2.55.0.2", "cmd")
+	if err := os.MkdirAll(ver, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(""), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(base, "current", "cmd", "git.exe"))
+	write(filepath.Join(ver, "git.exe"))
+	got := ScoopGitCmdDir()
+	if got != ver {
+		t.Fatalf("got %q, want %q", got, ver)
+	}
+}
+
+func TestScoopGitCmdDir_EmptyWhenMissing(t *testing.T) {
+	t.Setenv("USERPROFILE", t.TempDir())
+	if got := ScoopGitCmdDir(); got != "" {
+		t.Fatalf("got %q, want empty", got)
 	}
 }

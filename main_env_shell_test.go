@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -174,7 +175,13 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 	path := filepath.Join(dir, "genv.json")
 	writeEmptyV1Spec(t, path)
 
-	if code := run([]string{"shell", "alias", "set", "--file", path, "ll", "ls -la"}); code != exitOK {
+	setArgs := []string{"shell", "alias", "set", "--file", path, "ll", "ls -la"}
+	shellName := ""
+	if runtime.GOOS == "windows" {
+		shellName = "powershell"
+		setArgs = []string{"shell", "alias", "set", "--file", path, "--shell", shellName, "ll", "ls -la"}
+	}
+	if code := run(setArgs); code != exitOK {
 		t.Fatalf("shell alias set: expected exitOK, got %d", code)
 	}
 	lockPath := genvfile.LockPathFrom(path)
@@ -184,7 +191,7 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 		t.Fatalf("read lock: %v", err)
 	}
 	lock.Shell = &genvfile.LockedShellConfig{
-		Aliases: []genvfile.LockedShellAlias{{Name: "ll", Value: "ls -la"}},
+		Aliases: []genvfile.LockedShellAlias{{Name: "ll", Value: "ls -la", Shell: shellName}},
 	}
 	if err := genvfile.WriteLock(lockPath, lock); err != nil {
 		t.Fatalf("write matching lock: %v", err)
@@ -193,7 +200,11 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 	if code := run([]string{"shell", "status", "--file", path}); code != exitOK {
 		t.Fatalf("matching shell status: expected exitOK, got %d", code)
 	}
-	if code := run([]string{"shell", "alias", "set", "--file", path, "ll", "ls -lh"}); code != exitOK {
+	changeArgs := []string{"shell", "alias", "set", "--file", path, "ll", "ls -lh"}
+	if shellName != "" {
+		changeArgs = []string{"shell", "alias", "set", "--file", path, "--shell", shellName, "ll", "ls -lh"}
+	}
+	if code := run(changeArgs); code != exitOK {
 		t.Fatalf("change shell alias: expected exitOK, got %d", code)
 	}
 	if code := run([]string{"shell", "status", "--file", path}); code != exitLogic {

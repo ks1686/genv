@@ -739,6 +739,67 @@ func TestAdoptCmd_V8TargetFlagWritesSelectedTarget(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_UsesSpecManagerName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+	  "schemaVersion":"8",
+	  "targets":{
+	    "macos":{},
+	    "windows":{
+	      "packages":[{"id":"cursor","managers":{"winget":"Anysphere.Cursor"}}]
+	    }
+	  }
+	}`)
+	writeLock(t, lockPath, nil)
+	testutil.InstallFakeBinary(t, "winget", `if [ "$1" = "list" ] && echo "$*" | grep -q Anysphere.Cursor; then exit 0; fi
+exit 20`)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "windows", "cursor"})
+	if code != exitOK {
+		t.Fatalf("adopt cursor: got %d, want 0", code)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lf.Packages) != 1 || lf.Packages[0].PkgName != "Anysphere.Cursor" {
+		t.Fatalf("lock = %+v, want Anysphere.Cursor", lf.Packages)
+	}
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Targets["windows"].Packages) != 1 {
+		t.Fatalf("spec packages mutated: %+v", f.Targets["windows"].Packages)
+	}
+}
+
+func TestAdoptCmd_AlreadyInLock_StillFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{
+	  "schemaVersion":"8",
+	  "targets":{
+	    "macos":{},
+	    "windows":{
+	      "packages":[{"id":"cursor","managers":{"winget":"Anysphere.Cursor"}}]
+	    }
+	  }
+	}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "cursor", Manager: "winget", PkgName: "Anysphere.Cursor"}})
+	testutil.InstallFakeBinary(t, "winget", `exit 0`)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "windows", "cursor"})
+	if code != exitLogic {
+		t.Fatalf("adopt already locked: got %d, want %d", code, exitLogic)
+	}
+}
+
 // ---- genv disown -------------------------------------------------------------
 // disown removes the package from genv.json and the lock file without uninstalling.
 
@@ -1865,7 +1926,7 @@ func (a lifecycleHookAdapter) PlanUpgrade(pkgName string) []string {
 }
 func (a lifecycleHookAdapter) PlanClean() [][]string              { return nil }
 func (a lifecycleHookAdapter) Query(pkgName string) (bool, error) { return true, nil }
-func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return []string{pkgNameForTest}, nil }
+func (a lifecycleHookAdapter) ListInstalled() ([]string, error)   { return nil, nil }
 
 func (a lifecycleHookAdapter) QueryVersion(pkgName string) (string, error) {
 	return "2.0.0", nil
@@ -3361,7 +3422,16 @@ func TestApplyCmd_Timeout_DryRun_NoCrash(t *testing.T) {
 	}
 }
 
-func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
+func TestApplyCmd_HelpMentionsTenMinuteTimeout(t *testing.T) {
+	errOut := captureStderr(t, func() {
+		_ = run([]string{"apply", "--help"})
+	})
+	if !strings.Contains(errOut, "10m") && !strings.Contains(errOut, "default 10m") {
+		t.Fatalf("apply --help = %q, want default 10m", errOut)
+	}
+}
+
+func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	testutil.SetHome(t, dir)
@@ -3378,17 +3448,21 @@ func TestApplyCmd_PackageFailure_DoesNotApplyEnv(t *testing.T) {
 		t.Fatal("expected apply to fail when brew install fails")
 	}
 
-	frag := filepath.Join(dir, "genv", "env.sh")
-	if _, err := os.Stat(frag); err == nil {
-		t.Fatalf("env fragment %s written despite package failure", frag)
+	fragName := "env.sh"
+	if runtime.GOOS == "windows" {
+		fragName = "env.ps1"
+	}
+	frag := filepath.Join(dir, "genv", fragName)
+	if _, err := os.Stat(frag); err != nil {
+		t.Fatalf("env fragment %s missing after package failure: %v", frag, err)
 	}
 
 	lf, err := genvfile.ReadLock(genvfile.LockPathFrom(path))
-	if err != nil && !errors.Is(err, genvfile.ErrNotFound) {
+	if err != nil {
 		t.Fatalf("ReadLock: %v", err)
 	}
-	if lf != nil && len(lf.Env) != 0 {
-		t.Fatalf("lock env = %#v, want empty after package failure", lf.Env)
+	if lf == nil || len(lf.Env) == 0 {
+		t.Fatalf("lock env empty after package failure, want FOO recorded")
 	}
 }
 
@@ -3946,7 +4020,7 @@ func TestPull_CopiesRelativeFileAssets(t *testing.T) {
 
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", append([]string{"-c", "core.hooksPath="}, args...)...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -43,6 +43,26 @@ func TestRunSubcmd_PerSpawnTimeout(t *testing.T) {
 	}
 }
 
+func TestExecuteApply_TimeoutDoesNotSkipLaterPackages(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not in PATH")
+	}
+	ctx := WithSubprocessTimeout(context.Background(), 2*time.Second)
+	result := ReconcileResult{
+		ToInstall: []Action{
+			{Pkg: schema.Package{ID: "hang"}, Manager: "test", PkgName: "hang", Cmd: []string{"sleep", "20"}},
+			{Pkg: schema.Package{ID: "ok"}, Manager: "test", PkgName: "ok", Cmd: []string{"go", "env", "GOVERSION"}},
+		},
+	}
+	got := ExecuteApply(ctx, result, nil, io.Discard, io.Discard)
+	if len(got.Errors) == 0 {
+		t.Fatal("expected hang to error")
+	}
+	if len(got.Installed) != 1 || got.Installed[0].ID != "ok" {
+		t.Fatalf("Installed=%+v, want ok after hang", got.Installed)
+	}
+}
+
 func TestPlan_PreferredManagerAvailable(t *testing.T) {
 	f := &schema.GenvFile{
 		Packages: []schema.Package{
@@ -876,6 +896,97 @@ func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 	}
 	if len(result.ToRemove) != 0 || len(result.Unchanged) != 0 {
 		t.Errorf("unexpected ToRemove/Unchanged entries")
+	}
+}
+
+func TestReconcileWith_NilLive_SameAsReconcile(t *testing.T) {
+	desired := []schema.Package{{ID: "git"}}
+	got := ReconcileWith(desired, nil, map[string]bool{"brew": true}, nil)
+	want := Reconcile(desired, nil, map[string]bool{"brew": true})
+	if len(got.ToInstall) != len(want.ToInstall) || len(got.Adopted) != 0 {
+		t.Fatalf("nil live: ToInstall=%d Adopted=%d, want ToInstall=%d Adopted=0",
+			len(got.ToInstall), len(got.Adopted), len(want.ToInstall))
+	}
+}
+
+func TestReconcileWith_LiveInstalled_NotInLock_Adopts(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "cursor",
+		Managers: map[string]string{"winget": "Anysphere.Cursor"},
+	}}
+	live := LiveSet{"winget": {"Anysphere.Cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.ToInstall) != 0 {
+		t.Fatalf("ToInstall=%d, want 0 (already installed)", len(got.ToInstall))
+	}
+	if len(got.Adopted) != 1 {
+		t.Fatalf("Adopted=%d, want 1", len(got.Adopted))
+	}
+	if got.Adopted[0].ID != "cursor" || got.Adopted[0].Manager != "winget" || got.Adopted[0].PkgName != "Anysphere.Cursor" {
+		t.Fatalf("Adopted[0]=%+v, want cursor/winget/Anysphere.Cursor", got.Adopted[0])
+	}
+}
+
+func TestReconcileWith_LiveMissing_StillInstalls(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "syncthing",
+		Managers: map[string]string{"winget": "Syncthing.Syncthing"},
+	}}
+	live := LiveSet{"winget": {"Anysphere.Cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.ToInstall) != 1 || got.ToInstall[0].Pkg.ID != "syncthing" {
+		t.Fatalf("ToInstall=%v, want syncthing", got.ToInstall)
+	}
+	if len(got.Adopted) != 0 {
+		t.Fatalf("Adopted=%d, want 0", len(got.Adopted))
+	}
+}
+
+func TestReconcileWith_LiveMatchIsCaseInsensitive(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "cursor",
+		Managers: map[string]string{"winget": "Anysphere.Cursor"},
+	}}
+	live := LiveSet{"winget": {"anysphere.cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.Adopted) != 1 {
+		t.Fatalf("Adopted=%d, want 1 for case-insensitive live match", len(got.Adopted))
+	}
+}
+
+func TestLoadLiveSet_NoManagers(t *testing.T) {
+	got, warns := LoadLiveSet(nil)
+	if len(got) != 0 || len(warns) != 0 {
+		t.Fatalf("got %#v warns %v, want empty", got, warns)
+	}
+}
+
+func TestLoadLiveSet_UnavailableManagerSkipped(t *testing.T) {
+	got, _ := LoadLiveSet(map[string]bool{"not-a-manager": true})
+	if len(got) != 0 {
+		t.Fatalf("got %#v, want empty", got)
+	}
+}
+
+func TestLoadLiveSet_FalseAvailabilitySkipped(t *testing.T) {
+	got, warns := LoadLiveSet(map[string]bool{"brew": false})
+	if len(got) != 0 || len(warns) != 0 {
+		t.Fatalf("got %#v warns %v, want empty", got, warns)
+	}
+}
+
+func TestPrintReconcilePlan_ShowsAdopted(t *testing.T) {
+	var buf bytes.Buffer
+	result := ReconcileResult{
+		Adopted: []genvfile.LockedPackage{{ID: "cursor", Manager: "winget", PkgName: "Anysphere.Cursor"}},
+	}
+	_, _, _ = PrintReconcilePlan(result, &buf)
+	out := buf.String()
+	if !strings.Contains(out, "already installed") || !strings.Contains(out, "cursor") {
+		t.Fatalf("plan = %q, want adopted cursor", out)
+	}
+	if !strings.Contains(out, "1 already installed") {
+		t.Fatalf("plan = %q, want summary count", out)
 	}
 }
 
