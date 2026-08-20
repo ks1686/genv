@@ -419,7 +419,29 @@ type ReconcileResult struct {
 	ToInstall []Action
 	ToRemove  []Action // UninstallCmd populated; Pkg.ID identifies the package
 	Unchanged []genvfile.LockedPackage
+	Adopted   []genvfile.LockedPackage // live-installed, not yet in the lock
 	Warnings  []string
+}
+
+// LiveSet is manager name → manager-native package name → installed.
+// Names are matched case-insensitively. A nil LiveSet means lock-only
+// (do not probe the live system).
+type LiveSet map[string]map[string]bool
+
+func (s LiveSet) has(manager, pkgName string) bool {
+	if s == nil || manager == "" || pkgName == "" {
+		return false
+	}
+	names := s[manager]
+	if names[pkgName] {
+		return true
+	}
+	for n := range names {
+		if strings.EqualFold(n, pkgName) {
+			return true
+		}
+	}
+	return false
 }
 
 // Reconcile computes the delta between the desired packages (from genv.json)
@@ -429,7 +451,16 @@ type ReconcileResult struct {
 //   - ToRemove:  in lock but not in desired → uninstall using the manager
 //     recorded in the lock (not re-resolved, preserving the original manager).
 //   - Unchanged: in both desired and lock → nothing to do.
+//
+// Reconcile is lock-only. Prefer ReconcileWith when a live inventory exists.
 func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool) ReconcileResult {
+	return ReconcileWith(desired, managed, available, nil)
+}
+
+// ReconcileWith is Reconcile plus a live inventory. Packages in desired, not in
+// the lock, but already installed under the resolved manager are Adopted
+// instead of ToInstall so apply can lock them without spawning an installer.
+func ReconcileWith(desired []schema.Package, managed []genvfile.LockedPackage, available map[string]bool, live LiveSet) ReconcileResult {
 	adapters := make(map[string]adapter.Adapter)
 	getAdapter := func(name string) adapter.Adapter {
 		if mgr, ok := adapters[name]; ok {
@@ -452,10 +483,20 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 	}
 
 	var toInstall []Action
+	var adopted []genvfile.LockedPackage
 	for _, pkg := range desired {
 		lp, alreadyManaged := managedByID[pkg.ID]
 		if !alreadyManaged {
-			toInstall = append(toInstall, resolveOnGOOS(pkg, available, runtime.GOOS))
+			action := resolveOnGOOS(pkg, available, runtime.GOOS)
+			if action.Resolved() && live.has(action.Manager, action.PkgName) {
+				adopted = append(adopted, genvfile.LockedPackage{
+					ID:      pkg.ID,
+					Manager: action.Manager,
+					PkgName: action.PkgName,
+				})
+				continue
+			}
+			toInstall = append(toInstall, action)
 			continue
 		}
 		// Package is already in the lock. Check version constraint: if the lock
@@ -492,7 +533,7 @@ func Reconcile(desired []schema.Package, managed []genvfile.LockedPackage, avail
 		unchanged = append(unchanged, lp)
 	}
 
-	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged, Warnings: warnings}
+	return ReconcileResult{ToInstall: toInstall, ToRemove: toRemove, Unchanged: unchanged, Adopted: adopted, Warnings: warnings}
 }
 
 // PrintReconcilePlan writes a human-readable apply plan to w. Each line is

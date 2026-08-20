@@ -879,6 +879,61 @@ func TestReconcile_NewPackage_ToInstall(t *testing.T) {
 	}
 }
 
+func TestReconcileWith_NilLive_SameAsReconcile(t *testing.T) {
+	desired := []schema.Package{{ID: "git"}}
+	got := ReconcileWith(desired, nil, map[string]bool{"brew": true}, nil)
+	want := Reconcile(desired, nil, map[string]bool{"brew": true})
+	if len(got.ToInstall) != len(want.ToInstall) || len(got.Adopted) != 0 {
+		t.Fatalf("nil live: ToInstall=%d Adopted=%d, want ToInstall=%d Adopted=0",
+			len(got.ToInstall), len(got.Adopted), len(want.ToInstall))
+	}
+}
+
+func TestReconcileWith_LiveInstalled_NotInLock_Adopts(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "cursor",
+		Managers: map[string]string{"winget": "Anysphere.Cursor"},
+	}}
+	live := LiveSet{"winget": {"Anysphere.Cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.ToInstall) != 0 {
+		t.Fatalf("ToInstall=%d, want 0 (already installed)", len(got.ToInstall))
+	}
+	if len(got.Adopted) != 1 {
+		t.Fatalf("Adopted=%d, want 1", len(got.Adopted))
+	}
+	if got.Adopted[0].ID != "cursor" || got.Adopted[0].Manager != "winget" || got.Adopted[0].PkgName != "Anysphere.Cursor" {
+		t.Fatalf("Adopted[0]=%+v, want cursor/winget/Anysphere.Cursor", got.Adopted[0])
+	}
+}
+
+func TestReconcileWith_LiveMissing_StillInstalls(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "syncthing",
+		Managers: map[string]string{"winget": "Syncthing.Syncthing"},
+	}}
+	live := LiveSet{"winget": {"Anysphere.Cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.ToInstall) != 1 || got.ToInstall[0].Pkg.ID != "syncthing" {
+		t.Fatalf("ToInstall=%v, want syncthing", got.ToInstall)
+	}
+	if len(got.Adopted) != 0 {
+		t.Fatalf("Adopted=%d, want 0", len(got.Adopted))
+	}
+}
+
+func TestReconcileWith_LiveMatchIsCaseInsensitive(t *testing.T) {
+	desired := []schema.Package{{
+		ID:       "cursor",
+		Managers: map[string]string{"winget": "Anysphere.Cursor"},
+	}}
+	live := LiveSet{"winget": {"anysphere.cursor": true}}
+	got := ReconcileWith(desired, nil, map[string]bool{"winget": true}, live)
+	if len(got.Adopted) != 1 {
+		t.Fatalf("Adopted=%d, want 1 for case-insensitive live match", len(got.Adopted))
+	}
+}
+
 // TestReconcile_RemovedPackage_ToRemove verifies that a package in the lock
 // but absent from the spec ends up in ToRemove.
 func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {
