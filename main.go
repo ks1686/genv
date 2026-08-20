@@ -1286,7 +1286,7 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
-	live, liveWarns := resolver.LoadLiveSet(available)
+	live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
 	for _, w := range liveWarns {
 		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
 	}
@@ -2973,7 +2973,7 @@ func statusCmd(args []string) int {
 	entries := commands.Status(f, lf)
 	if !*offline {
 		available := resolver.Detect()
-		live, liveWarns := resolver.LoadLiveSet(available)
+		live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
 		for _, w := range liveWarns {
 			fprintf(os.Stderr, "genv status: warning: %s\n", w)
 		}

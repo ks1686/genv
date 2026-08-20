@@ -975,6 +975,54 @@ func TestLoadLiveSet_FalseAvailabilitySkipped(t *testing.T) {
 	}
 }
 
+func TestLoadLiveSetOnly_EmptyOnlyListsNothing(t *testing.T) {
+	got, warns := LoadLiveSetOnly(map[string]bool{"brew": true}, map[string]bool{})
+	if len(got) != 0 || len(warns) != 0 {
+		t.Fatalf("got %#v warns %v, want empty when no managers were requested", got, warns)
+	}
+}
+
+func TestManagersToList_EmptyPackages(t *testing.T) {
+	got := ManagersToList(nil, nil, map[string]bool{"brew": true, "composer": true})
+	if len(got) != 0 {
+		t.Fatalf("got %v, want no managers for an empty spec", got)
+	}
+}
+
+func TestManagersToList_UnlockedPrefer(t *testing.T) {
+	pkgs := []schema.Package{{ID: "git", Prefer: "brew"}}
+	got := ManagersToList(pkgs, nil, map[string]bool{"brew": true})
+	if !got["brew"] {
+		t.Fatalf("got %v, want brew for an unlocked preferred package", got)
+	}
+}
+
+func TestManagersToList_SkipsLocked(t *testing.T) {
+	pkgs := []schema.Package{{ID: "git", Prefer: "brew"}}
+	locked := []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}}
+	got := ManagersToList(pkgs, locked, map[string]bool{"brew": true})
+	if len(got) != 0 {
+		t.Fatalf("got %v, want none for a package already in the lock", got)
+	}
+}
+
+func TestListInstalledTimed_Timeout(t *testing.T) {
+	started := time.Now()
+	_, err := listInstalledTimed(func() ([]string, error) {
+		time.Sleep(time.Hour)
+		return []string{"x"}, nil
+	}, 50*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("error = %v, want timed out", err)
+	}
+	if time.Since(started) > 2*time.Second {
+		t.Fatalf("timeout took %s, want well under 2s", time.Since(started))
+	}
+}
+
 func TestPrintReconcilePlan_ShowsAdopted(t *testing.T) {
 	var buf bytes.Buffer
 	result := ReconcileResult{
