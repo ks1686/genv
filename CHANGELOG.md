@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.2.0 - 2026-08-20
+
 ### Fixed
 
 - `genv apply` no longer treats an empty lock as “install everything”. Packages
