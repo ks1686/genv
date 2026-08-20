@@ -934,6 +934,27 @@ func TestReconcileWith_LiveMatchIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestLoadLiveSet_NoManagers(t *testing.T) {
+	got, warns := LoadLiveSet(nil)
+	if len(got) != 0 || len(warns) != 0 {
+		t.Fatalf("got %#v warns %v, want empty", got, warns)
+	}
+}
+
+func TestLoadLiveSet_UnavailableManagerSkipped(t *testing.T) {
+	got, _ := LoadLiveSet(map[string]bool{"not-a-manager": true})
+	if len(got) != 0 {
+		t.Fatalf("got %#v, want empty", got)
+	}
+}
+
+func TestLoadLiveSet_FalseAvailabilitySkipped(t *testing.T) {
+	got, warns := LoadLiveSet(map[string]bool{"brew": false})
+	if len(got) != 0 || len(warns) != 0 {
+		t.Fatalf("got %#v warns %v, want empty", got, warns)
+	}
+}
+
 // TestReconcile_RemovedPackage_ToRemove verifies that a package in the lock
 // but absent from the spec ends up in ToRemove.
 func TestReconcile_RemovedPackage_ToRemove(t *testing.T) {

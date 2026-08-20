@@ -444,6 +444,33 @@ func (s LiveSet) has(manager, pkgName string) bool {
 	return false
 }
 
+// LoadLiveSet calls ListInstalled once per available manager. Listing errors
+// become warnings; they never fail the whole apply/status run.
+func LoadLiveSet(available map[string]bool) (LiveSet, []string) {
+	out := make(LiveSet)
+	var warns []string
+	for name, ok := range available {
+		if !ok {
+			continue
+		}
+		mgr := adapter.ByName(name)
+		if mgr == nil {
+			continue
+		}
+		list, err := mgr.ListInstalled()
+		if err != nil {
+			warns = append(warns, fmt.Sprintf("listing %s: %v", name, err))
+			continue
+		}
+		set := make(map[string]bool, len(list))
+		for _, pkgName := range list {
+			set[pkgName] = true
+		}
+		out[name] = set
+	}
+	return out, warns
+}
+
 // Reconcile computes the delta between the desired packages (from genv.json)
 // and the previously applied state (from genv.lock.json).
 //
