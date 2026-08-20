@@ -135,6 +135,12 @@ Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_form
 
 `prefer` and `managers` accept registered manager IDs (see README table). Without an explicit selection, fallback uses **system** package managers only. Language, toolchain, and plugin managers are explicit-only.
 
+`external` is a track-only manager for apps with an official installer (not winget/scoop). Apply records them when the binary is on PATH; it never installs them.
+
+`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/files without touching packages.
+
+`genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`.
+
 ## Profiles
 
 Named profiles live in `profiles/<name>.json` beside the base spec on schema v1–v7. `genv profile switch` merges the profile over the base, applies, and stores `activeProfile` in the lock. Schema v8 refuses named profiles — use `defaults` plus `targets.*` instead.
