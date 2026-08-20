@@ -179,7 +179,7 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 	shellName := ""
 	if runtime.GOOS == "windows" {
 		shellName = "powershell"
-		setArgs = append(setArgs, "--shell", shellName)
+		setArgs = []string{"shell", "alias", "set", "--file", path, "--shell", shellName, "ll", "ls -la"}
 	}
 	if code := run(setArgs); code != exitOK {
 		t.Fatalf("shell alias set: expected exitOK, got %d", code)
@@ -202,7 +202,7 @@ func TestShellStatusReportsMatchingAndDrift(t *testing.T) {
 	}
 	changeArgs := []string{"shell", "alias", "set", "--file", path, "ll", "ls -lh"}
 	if shellName != "" {
-		changeArgs = append(changeArgs, "--shell", shellName)
+		changeArgs = []string{"shell", "alias", "set", "--file", path, "--shell", shellName, "ll", "ls -lh"}
 	}
 	if code := run(changeArgs); code != exitOK {
 		t.Fatalf("change shell alias: expected exitOK, got %d", code)
