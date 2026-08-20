@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/testutil"
 )
 
@@ -93,6 +94,40 @@ func TestApply_PackageFailureStillAppliesFiles(t *testing.T) {
 	}
 	if fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("expected dst to be a symlink")
+	}
+}
+
+func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	testutil.SetHome(t, dir)
+	spec := filepath.Join(dir, "genv.json")
+	lock := filepath.Join(dir, "genv.lock.json")
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	writeTestFile(t, src, "hello\n")
+	writeTestFile(t, spec, `{`+
+		`"schemaVersion":"6",`+
+		`"packages":[{"id":"cursor","prefer":"brew"}],`+
+		`"files":{"links":[{"source":`+jsonString(src)+`,"target":`+jsonString(dst)+`,"mode":"link"}]}`+
+		`}`)
+	writeLock(t, lock, nil)
+
+	code := run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--no-hooks", "--skip-packages"})
+	if code != exitOK {
+		t.Fatalf("exit %d", code)
+	}
+	if _, err := os.Lstat(dst); err != nil {
+		t.Fatalf("link not applied: %v", err)
+	}
+	lf, err := genvfile.ReadLock(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range lf.Packages {
+		if p.ID == "cursor" {
+			t.Fatal("skip-packages must not lock/install cursor")
+		}
 	}
 }
 

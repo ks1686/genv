@@ -199,6 +199,7 @@ _genv() {
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--timeout=[Per-subprocess timeout]:timeout:' \
 				'--no-hooks[Skip pre-apply and post-apply hooks]' \
+				'--skip-packages[Skip package install/remove; still apply env, shell, files, and services]' \
 				'--hook-timeout=[Per-hook timeout]:timeout:' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:' \

@@ -210,6 +210,7 @@ complete -c genv -n '__fish_genv_using_command apply' -l quiet -d 'Suppress plan
 complete -c genv -n '__fish_genv_using_command apply' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_using_command apply' -l timeout -d 'Per-subprocess timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l no-hooks -d 'Skip pre-apply and post-apply hooks'
+complete -c genv -n '__fish_genv_using_command apply' -l skip-packages -d 'Skip package install/remove; still apply env, shell, files, and services'
 complete -c genv -n '__fish_genv_using_command apply' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x

@@ -1147,6 +1147,7 @@ type applyOptions struct {
 	ForceNewLock  bool
 	NoHooks       bool
 	HookTimeout   time.Duration
+	SkipPackages  bool
 }
 
 func applyCmd(args []string) int {
@@ -1171,6 +1172,7 @@ func applyCmd(args []string) int {
 	fs.DurationVar(&opts.Timeout, "timeout", 10*time.Minute, "per-subprocess timeout, e.g. 5m or 30s (0 means no timeout; default 10m)")
 	fs.DurationVar(&opts.HookTimeout, "hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
+	fs.BoolVar(&opts.SkipPackages, "skip-packages", false, "skip package install/remove; still apply env, shell, files, and services")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
@@ -1289,6 +1291,11 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
 	}
 	result := resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
+	if opts.SkipPackages {
+		result.ToInstall = nil
+		result.ToRemove = nil
+		result.Adopted = nil
+	}
 
 	if opts.JSONOut {
 		return runApplyJSON(ctx, opts, lockPath, f, lf, result)
@@ -4394,8 +4401,9 @@ Apply-specific flags:
   --yes                Skip the confirmation prompt (for CI and scripts)
   --quiet              Suppress plan output (useful in scripts)
   --json               Emit machine-readable JSON to stdout
-  --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none)
+  --timeout <duration> Per-subprocess timeout, e.g. 5m or 30s (0 = none; default 10m)
   --no-hooks           Skip apply lifecycle hooks without skipping apply
+  --skip-packages      Skip package install/remove; still apply env, shell, files, services
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
   --target <id>        Portable target id for schemaVersion 8 specs
