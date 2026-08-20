@@ -2877,8 +2877,9 @@ func statusCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv status [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and recorded versions.")
-		fPrintln(os.Stderr, "Note: status compares spec vs lock data — it does not query the live system.")
+		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and the live system.")
+		fPrintln(os.Stderr, "Unlocked packages that are already installed are reported as present.")
+		fPrintln(os.Stderr, "Use --offline to compare spec vs lock only.")
 		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
@@ -2890,6 +2891,7 @@ func statusCmd(args []string) int {
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem only")
+	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
@@ -2962,6 +2964,14 @@ func statusCmd(args []string) int {
 	}
 
 	entries := commands.Status(f, lf)
+	if !*offline {
+		available := resolver.Detect()
+		live, liveWarns := resolver.LoadLiveSet(available)
+		for _, w := range liveWarns {
+			fprintf(os.Stderr, "genv status: warning: %s\n", w)
+		}
+		entries = commands.StatusWithLive(f, lf, live)
+	}
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
 	serviceEntries := service.ServiceStatus(f.Services, lf.Services, true)
@@ -3031,6 +3041,9 @@ func statusCmd(args []string) int {
 	if n := counts[commands.StatusOK]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d ok", n))
 	}
+	if n := counts[commands.StatusPresent]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d present", n))
+	}
 	if n := counts[commands.StatusDrift]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d drift", n))
 	}
@@ -3058,7 +3071,10 @@ func statusCmd(args []string) int {
 			if v == "" {
 				v = "*"
 			}
-			fprintf(tw, "  ok\t%s\t%s\t%s\n", e.ID, mgr, v)
+			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, v)
+		case commands.StatusPresent:
+			note := "(installed, not in lock — apply will adopt)"
+			fprintf(tw, "  present	%s	%s	%s\n", e.ID, mgr, note)
 		case commands.StatusDrift:
 			fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
 				e.ID, mgr, e.SpecVersion, e.InstalledVersion)

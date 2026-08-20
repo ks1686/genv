@@ -56,7 +56,7 @@ type PlanResult struct {
 type StatusEntry struct {
 	ID               string `json:"id"`
 	Manager          string `json:"manager,omitempty"`
-	Kind             string `json:"kind"` // "ok" | "drift" | "missing" | "extra"
+	Kind             string `json:"kind"` // "ok" | "drift" | "missing" | "present" | "extra"
 	SpecVersion      string `json:"specVersion,omitempty"`
 	InstalledVersion string `json:"installedVersion,omitempty"`
 }

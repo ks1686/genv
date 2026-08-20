@@ -144,3 +144,38 @@ func TestStatus_Mixed(t *testing.T) {
 		}
 	}
 }
+
+func TestStatus_PresentWhenLiveButUnlocked(t *testing.T) {
+	f := &schema.GenvFile{Packages: []schema.Package{{
+		ID: "cursor", Managers: map[string]string{"winget": "Anysphere.Cursor"},
+	}}}
+	lf := &genvfile.LockFile{}
+	live := map[string]map[string]bool{"winget": {"Anysphere.Cursor": true}}
+	entries := StatusWithLive(f, lf, live)
+	if len(entries) != 1 || entries[0].Kind != StatusPresent {
+		t.Fatalf("got %+v, want present", entries)
+	}
+	if entries[0].Manager != "winget" || entries[0].PkgName != "Anysphere.Cursor" {
+		t.Fatalf("got manager/name %+v", entries[0])
+	}
+}
+
+func TestStatus_MissingWhenNotLive(t *testing.T) {
+	f := &schema.GenvFile{Packages: []schema.Package{{
+		ID: "syncthing", Managers: map[string]string{"winget": "Syncthing.Syncthing"},
+	}}}
+	entries := StatusWithLive(f, &genvfile.LockFile{}, map[string]map[string]bool{"winget": {}})
+	if len(entries) != 1 || entries[0].Kind != StatusMissing {
+		t.Fatalf("got %+v, want missing", entries)
+	}
+}
+
+func TestStatus_NilLive_SameAsStatus(t *testing.T) {
+	f := &schema.GenvFile{Packages: []schema.Package{{ID: "curl"}}}
+	lf := &genvfile.LockFile{}
+	got := StatusWithLive(f, lf, nil)
+	want := Status(f, lf)
+	if len(got) != 1 || got[0].Kind != want[0].Kind {
+		t.Fatalf("nil live = %+v, want %+v", got, want)
+	}
+}
