@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.2.1 - 2026-08-20
+
 ### Fixed
 
 - `genv apply` / `genv status` only inventory managers needed by unlocked spec
