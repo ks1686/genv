@@ -4016,7 +4016,7 @@ func TestPull_CopiesRelativeFileAssets(t *testing.T) {
 
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", append([]string{"-c", "core.hooksPath="}, args...)...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
