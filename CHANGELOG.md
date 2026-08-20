@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `genv apply` / `genv status` only inventory managers needed by unlocked spec
+  packages, and each listing times out after 30s. A hung `composer global show`
+  no longer stalls Windows CI or a real apply.
+
 ## v4.2.0 - 2026-08-20
 
 ### Fixed

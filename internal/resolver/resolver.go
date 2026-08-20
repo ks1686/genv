@@ -452,20 +452,86 @@ func (s LiveSet) has(manager, pkgName string) bool {
 	return false
 }
 
+// defaultLiveListTimeout caps each manager inventory so a hung
+// `composer global show` (or similar) cannot stall apply/status.
+const defaultLiveListTimeout = 30 * time.Second
+
+func listInstalledTimed(list func() ([]string, error), d time.Duration) ([]string, error) {
+	if d <= 0 {
+		return list()
+	}
+	type result struct {
+		names []string
+		err   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		names, err := list()
+		ch <- result{names, err}
+	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case r := <-ch:
+		return r.names, r.err
+	case <-timer.C:
+		return nil, fmt.Errorf("timed out after %s", d)
+	}
+}
+
+// ManagersToList is the set of managers apply/status actually need to
+// inventory: unlocked spec packages only. An empty spec yields an empty
+// set, so live listing is skipped entirely.
+func ManagersToList(packages []schema.Package, locked []genvfile.LockedPackage, available map[string]bool) map[string]bool {
+	lockedIDs := make(map[string]bool, len(locked))
+	for _, lp := range locked {
+		lockedIDs[lp.ID] = true
+	}
+	need := make(map[string]bool)
+	for _, pkg := range packages {
+		if lockedIDs[pkg.ID] {
+			continue
+		}
+		if pkg.Prefer != "" {
+			need[pkg.Prefer] = true
+		}
+		for m := range pkg.Managers {
+			need[m] = true
+		}
+		action := resolveOnGOOS(pkg, available, runtime.GOOS)
+		if action.Resolved() {
+			need[action.Manager] = true
+		}
+	}
+	return need
+}
+
 // LoadLiveSet calls ListInstalled once per available manager. Listing errors
 // become warnings; they never fail the whole apply/status run.
 func LoadLiveSet(available map[string]bool) (LiveSet, []string) {
+	return LoadLiveSetOnly(available, nil)
+}
+
+// LoadLiveSetOnly is LoadLiveSet restricted to `only`. A nil `only` lists
+// every available manager (same as LoadLiveSet). An empty `only` lists none.
+func LoadLiveSetOnly(available, only map[string]bool) (LiveSet, []string) {
 	out := make(LiveSet)
 	var warns []string
+	if only != nil && len(only) == 0 {
+		return out, warns
+	}
 	for name, ok := range available {
 		if !ok {
+			continue
+		}
+		if only != nil && !only[name] {
 			continue
 		}
 		mgr := adapter.ByName(name)
 		if mgr == nil {
 			continue
 		}
-		list, err := mgr.ListInstalled()
+		list, err := listInstalledTimed(mgr.ListInstalled, defaultLiveListTimeout)
 		if err != nil {
 			warns = append(warns, fmt.Sprintf("listing %s: %v", name, err))
 			continue
