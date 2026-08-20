@@ -3448,7 +3448,11 @@ func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 		t.Fatal("expected apply to fail when brew install fails")
 	}
 
-	frag := filepath.Join(dir, "genv", "env.sh")
+	fragName := "env.sh"
+	if runtime.GOOS == "windows" {
+		fragName = "env.ps1"
+	}
+	frag := filepath.Join(dir, "genv", fragName)
 	if _, err := os.Stat(frag); err != nil {
 		t.Fatalf("env fragment %s missing after package failure: %v", frag, err)
 	}
