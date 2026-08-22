@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -109,13 +110,17 @@ func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfi
 		if probe && inSpec && svc.BrewFormula != "" {
 			running = BrewServicesRunning(svc.BrewFormula)
 		} else if probe && inSpec && len(svc.Status) > 0 {
-			cmd := exec.Command(svc.Status[0], svc.Status[1:]...)
-			if err := cmd.Run(); err == nil {
+			// Status commands are user-configured; still bound them so a wedged
+			// probe script cannot stall `genv service list`.
+			if err := resolver.RunTimed(func() error {
+				return exec.Command(svc.Status[0], svc.Status[1:]...).Run()
+			}, resolver.DefaultLiveListTimeout); err == nil {
 				running = true
 			}
 		} else if probe && inSpec && IsSystemdAvailable() {
-			cmd := exec.Command("systemctl", "--user", "is-active", "--quiet", systemdUnitName(name))
-			if err := cmd.Run(); err == nil {
+			if err := resolver.RunTimed(func() error {
+				return exec.Command("systemctl", "--user", "is-active", "--quiet", systemdUnitName(name)).Run()
+			}, resolver.DefaultLiveListTimeout); err == nil {
 				running = true
 			}
 		}

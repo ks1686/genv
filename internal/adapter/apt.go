@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 )
 
@@ -107,7 +106,7 @@ func (Apt) QueryVersion(pkgName string) (string, error) {
 }
 
 func (Apt) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("apt-get", "-s", "upgrade").Output()
+	out, err := runProbe("apt-get", "-s", "upgrade")
 	if err != nil {
 		return nil, err
 	}

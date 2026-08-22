@@ -104,7 +104,7 @@ func (Dnf) QueryVersion(pkgName string) (string, error) {
 }
 
 func (Dnf) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("dnf", "check-update", "-q").CombinedOutput()
+	out, err := runProbeCombined("dnf", "check-update", "-q")
 	if err != nil {
 		var exitErr *exec.ExitError
 		// dnf check-update exits 100 when updates are available.

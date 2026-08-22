@@ -18,7 +18,7 @@ type jsListPackage struct {
 }
 
 func runJSONPackageList(cmd string, args ...string) ([]jsPackageEntry, error) {
-	out, err := exec.Command(cmd, args...).Output()
+	out, err := runProbe(cmd, args...)
 	if err != nil {
 		return nil, commandOutputError(err)
 	}

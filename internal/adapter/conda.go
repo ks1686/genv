@@ -105,7 +105,7 @@ func (Conda) QueryVersion(pkgName string) (string, error) {
 }
 
 func listCondaVersions(bin, env string) ([]pythonEntry, error) {
-	out, err := exec.Command(bin, "list", "-n", env, "--json").Output()
+	out, err := runProbe(bin, "list", "-n", env, "--json")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

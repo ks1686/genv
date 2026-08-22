@@ -3,7 +3,6 @@ package adapter
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -125,7 +124,7 @@ func (Scoop) ListInstalledVersions() (map[string]string, error) {
 // ListOutdated reports Scoop apps with an available update, keyed by app name
 // -> target version, intersected with pkgNames.
 func (Scoop) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("scoop", "status").Output()
+	out, err := runProbe("scoop", "status")
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/resolver"
 )
 
 const maxConcurrentSearches = 4
@@ -90,7 +91,9 @@ func runSearches(query string, jobs []searchJob) []searchResult {
 		go func() {
 			defer wg.Done()
 			for job := range jobCh {
-				names, err := job.searchable.Search(query)
+				// Bound each backend like every other manager probe: one
+				// stalled registry query must not hang the whole search.
+				names, err := resolver.CallTimed(func() ([]string, error) { return job.searchable.Search(query) }, resolver.DefaultLiveListTimeout)
 				results[job.index] = searchResult{manager: job.manager, names: names, err: err}
 			}
 		}()

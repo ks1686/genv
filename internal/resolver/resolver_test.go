@@ -1006,9 +1006,9 @@ func TestManagersToList_SkipsLocked(t *testing.T) {
 	}
 }
 
-func TestListInstalledTimed_Timeout(t *testing.T) {
+func TestCallTimed_Timeout(t *testing.T) {
 	started := time.Now()
-	_, err := listInstalledTimed(func() ([]string, error) {
+	_, err := CallTimed(func() ([]string, error) {
 		time.Sleep(time.Hour)
 		return []string{"x"}, nil
 	}, 50*time.Millisecond)

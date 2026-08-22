@@ -99,7 +99,7 @@ func (Gem) listEntries() ([]gemEntry, error) {
 	if !gemManageable() {
 		return nil, nil
 	}
-	out, err := exec.Command("gem", "list", "--local").Output()
+	out, err := runProbe("gem", "list", "--local")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -115,7 +115,7 @@ func (Gem) listEntries() ([]gemEntry, error) {
 // When the directory cannot be determined it returns true, preserving the
 // default "list everything" behavior rather than hiding a writable install.
 var gemManageable = func() bool {
-	out, err := exec.Command("gem", "environment", "gemdir").Output()
+	out, err := runProbe("gem", "environment", "gemdir")
 	if err != nil {
 		return true
 	}

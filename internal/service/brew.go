@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/ks1686/genv/internal/resolver"
 )
 
 // IsBrewServicesAvailable reports whether `brew services` can be used.
@@ -47,8 +49,12 @@ func BrewServicesRestart(ctx context.Context, formula string) error {
 
 // BrewServicesRunning reports whether a brew-managed service is currently running.
 // It parses the output of `brew services list` and looks for a "started" status.
+// The probe is capped like every other manager inventory so a wedged brew
+// cannot stall `genv service list` forever.
 func BrewServicesRunning(formula string) bool {
-	out, err := exec.Command("brew", "services", "list").Output()
+	out, err := resolver.CallTimed(func() ([]byte, error) {
+		return exec.Command("brew", "services", "list").Output()
+	}, resolver.DefaultLiveListTimeout)
 	if err != nil {
 		return false
 	}
@@ -63,8 +69,11 @@ func BrewServicesRunning(formula string) bool {
 }
 
 // BrewServicesList returns the raw output of `brew services list`.
+// Capped like BrewServicesRunning so a wedged brew cannot stall callers.
 func BrewServicesList() (string, error) {
-	out, err := exec.Command("brew", "services", "list").Output()
+	out, err := resolver.CallTimed(func() ([]byte, error) {
+		return exec.Command("brew", "services", "list").Output()
+	}, resolver.DefaultLiveListTimeout)
 	if err != nil {
 		return "", fmt.Errorf("brew services list: %w", err)
 	}

@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 )
 
@@ -116,7 +115,7 @@ func (Apk) ListInstalled() ([]string, error) {
 }
 
 func (Apk) ListInstalledVersions() (map[string]string, error) {
-	out, err := exec.Command("apk", "info", "-v").Output()
+	out, err := runProbe("apk", "info", "-v")
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +161,7 @@ func (Apk) QueryVersion(pkgName string) (string, error) {
 }
 
 func (Apk) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("apk", "version", "-l", "<").Output()
+	out, err := runProbe("apk", "version", "-l", "<")
 	if err != nil {
 		return nil, err
 	}
