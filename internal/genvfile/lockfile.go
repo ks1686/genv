@@ -129,6 +129,14 @@ func WriteLock(path string, lf *LockFile) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("writing %s: %w", tmpName, err)
 	}
+	// Sync while the write handle is still open — on Windows,
+	// FlushFileBuffers denies read-only handles, so this cannot be done via
+	// a reopen.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("syncing %s: %w", tmpName, err)
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("writing %s: %w", tmpName, err)
@@ -137,5 +145,6 @@ func WriteLock(path string, lf *LockFile) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("saving %s: %w", path, err)
 	}
+	syncDir(dir)
 	return nil
 }
