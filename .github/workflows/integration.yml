@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Superseded runs (a new push to the same branch/PR) are cancelled instead of
+# queueing duplicate full runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

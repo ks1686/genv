@@ -237,6 +237,7 @@ complete -c genv -n '__fish_genv_using_command scan' -l dry-run -d 'List package
 complete -c genv -n '__fish_genv_using_command scan' -l yes -d 'Skip the confirmation prompt'
 complete -c genv -n '__fish_genv_using_command scan' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_using_command status' -l files -d 'Check files block against the live filesystem only'
+complete -c genv -n '__fish_genv_using_command status' -l offline -d 'Compare spec vs lock only (skip live manager probe)'
 complete -c genv -n '__fish_genv_using_command status' -l host -d 'Host name for host-specific records' -x
 complete -c genv -n '__fish_genv_using_command status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 
@@ -301,7 +302,7 @@ complete -c genv -n '__fish_genv_seen_sub profile switch' -l debug -d 'Emit debu
 complete -c genv -n '__fish_genv_seen_sub profile switch' -l host -d 'Host name for host-specific records' -x
 
 # completion
-complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a 'bash zsh fish' -d 'Shell type'
+complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a 'bash zsh fish powershell' -d 'Shell type'
 complete -c genv -n '__fish_genv_at_subcommand completion bash zsh fish install' -f -a install -d 'Install the completion into the shell config directory'
-complete -c genv -n '__fish_genv_seen_sub completion install' -f -a 'bash zsh fish' -d 'Shell type'
+complete -c genv -n '__fish_genv_seen_sub completion install' -f -a 'bash zsh fish powershell' -d 'Shell type'
 complete -c genv -n '__fish_genv_seen_sub completion install' -l dir -d 'Target directory (overrides the per-shell default)' -r

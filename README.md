@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.1.0_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.2.1_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -45,13 +45,12 @@ scoop install genv
 ```
 
 The bucket is self-hosted (not Scoop extras). `scoop install genv` needs a root
-`genv.json` on that bucket, which the first stable tag after merge uploads.
-Until then use the zip below.
+`genv.json` on that bucket, which the first stable tag uploaded.
 
 **Windows (PowerShell zip):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.1.0_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.2.1_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
@@ -222,11 +221,11 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `adopt` / `disown` | Track without install / untrack without uninstall |
 | `scan` | Bulk-adopt installed packages (`--dry-run`, `--yes`) |
 | `list` (`ls`) | Show lock-tracked packages |
-| `status` | Spec ↔ lock drift (`--files`, `--target`) |
-| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--target`, `--force-new-lock`) |
+| `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
+| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`) |
 | `validate` | Validate spec + genv-managed agent executables |
-| `upgrade` | Upgrade outdated tracked packages (`--all`, `--target`) |
-| `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target` on check/start) |
+| `upgrade` | Upgrade outdated tracked packages (`--all`, `--only`, `--skip`, `--only-manager`, `--skip-manager`, `--target`) |
+| `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
 | `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
 | `pull` | Fetch spec + file assets from `repo` |
 | `migrate` | v1–v7 → v8 targets |

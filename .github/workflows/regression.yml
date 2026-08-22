@@ -3,6 +3,14 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+
+# Superseded runs (a new push to the same branch/PR) are cancelled instead of
+# queueing duplicate full runs. workflow_dispatch runs are never cancelled —
+# the ref differs from push/PR refs, so they land in their own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 # Pins the 2026-08 review-stack behaviors so later iterations cannot silently

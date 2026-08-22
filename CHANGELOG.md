@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- README now documents every apply/status/upgrade flag it references (including
+  `--skip-packages`, `--timeout`, and the upgrade filter flags), and install
+  examples pin the current release.
+- Shell completions offer `status --offline` and `completion install
+  powershell` in all four shells; six stale `--host` help strings now say the
+  default is host classification, matching reality and the README.
+- CI workflows cancel superseded runs via concurrency groups instead of
+  queueing duplicates.
+- RELEASING.md now describes AUR publishing accurately (separate macOS job,
+  not GoReleaser) and the real changelog exclude filters.
 - Spec and lock file writes are now durable across crashes: both are fsynced
   before the publishing rename (and the directory afterwards), so a power
   loss can no longer leave an empty or partial `genv.json` /

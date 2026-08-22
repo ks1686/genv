@@ -125,7 +125,7 @@ _genv() {
 		opts="--file --target"
 		;;
 	status)
-		opts="--file --lock-file --json --debug --files --host --target"
+		opts="--file --lock-file --json --debug --files --offline --host --target"
 		;;
 	scan)
 		opts="--file --lock-file --json --debug --target --dry-run --yes"
@@ -281,12 +281,12 @@ _genv() {
 		done
 		if [[ "${comp_sub}" == "install" ]]; then
 			if [[ "${cur}" != -* ]]; then
-				mapfile -t COMPREPLY < <(compgen -W "bash zsh fish" -- "${cur}")
+				mapfile -t COMPREPLY < <(compgen -W "bash zsh fish powershell" -- "${cur}")
 				return 0
 			fi
 			opts="--dir"
 		else
-			mapfile -t COMPREPLY < <(compgen -W "bash zsh fish install" -- "${cur}")
+			mapfile -t COMPREPLY < <(compgen -W "bash zsh fish powershell install" -- "${cur}")
 			return 0
 		fi
 		;;
