@@ -138,9 +138,14 @@ func Write(path string, f *schema.GenvFile) error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
+	if err := syncFile(tmp); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("syncing %s: %w", tmp, err)
+	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("saving %s: %w", path, err)
 	}
+	syncDir(dir)
 	return nil
 }
