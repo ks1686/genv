@@ -18,7 +18,10 @@ func (PipUser) Available() bool {
 }
 
 var pipUserProbe = func() error {
-	return exec.Command("python3", "-m", "pip", "--version").Run()
+	// Bounded probe: an ExitError (pip missing) and a timeout both mean
+	// "not usable", so the raw error is enough here.
+	_, err := runProbe("python3", "-m", "pip", "--version")
+	return err
 }
 
 func (PipUser) NormalizeID(id string, managers map[string]string) (string, bool) {
@@ -104,7 +107,7 @@ func (PipUser) ListOutdated(pkgNames []string) (map[string]string, error) {
 }
 
 func (PipUser) listEntries() ([]pythonEntry, error) {
-	out, err := exec.Command("python3", "-m", "pip", "list", "--user", "--format=json").Output()
+	out, err := runProbe("python3", "-m", "pip", "list", "--user", "--format=json")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

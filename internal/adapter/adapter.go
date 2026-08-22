@@ -5,10 +5,12 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Searchable is an optional extension of Adapter for managers that support
@@ -221,11 +223,96 @@ func normalizeID(key, id string, managers map[string]string) (string, bool) {
 	return id, false
 }
 
+// probeTimeout bounds every read-only inventory subprocess (list, query,
+// version, outdated, availability probes). Package managers are external
+// programs that can block indefinitely — winget famously stalls for minutes
+// on fresh profiles while it initializes its sources — and genv must stay
+// responsive instead of wedging behind them. Mutating commands (install,
+// uninstall, upgrade) are deliberately NOT bounded by this constant: they
+// legitimately run long and are governed by the caller-supplied context.
+// Var so tests can shorten the deadline.
+var probeTimeout = 30 * time.Second
+
+// probeWaitDelay bounds how long a probe waits for inherited output pipes to
+// close after the process itself is gone. Without it, a killed manager's
+// grandchildren (shims, `sh -c` wrappers, .cmd→bash chains on Windows) keep
+// the stdout pipe open and the probe still blocks until they exit.
+var probeWaitDelay = 2 * time.Second
+
+// runProbe runs cmd with args under probeTimeout and returns raw stdout.
+// A non-zero child exit code is reported as *exec.ExitError so callers can
+// apply their usual exit-code conventions; a deadline overrun is reported as
+// a distinct timeout error that is never an *exec.ExitError.
+func runProbe(cmd string, args ...string) ([]byte, error) {
+	return runProbeContext(context.Background(), cmd, args...)
+}
+
+// runProbeCombined is runProbe but returns combined stdout+stderr, for
+// managers that print their inventory on stderr (e.g. dnf check-update).
+func runProbeCombined(cmd string, args ...string) ([]byte, error) {
+	return runProbeCombinedContext(context.Background(), cmd, args...)
+}
+
+// runProbeContext is runProbe under a caller-owned context. When that context
+// carries no deadline, probeTimeout is applied — every probe gets SOME bound,
+// whichever entry point it arrives through.
+func runProbeContext(parent context.Context, cmd string, args ...string) ([]byte, error) {
+	ctx, cancel, budget := boundProbe(parent)
+	defer cancel()
+	cmdEx := exec.CommandContext(ctx, cmd, args...)
+	cmdEx.WaitDelay = probeWaitDelay
+	out, err := cmdEx.Output()
+	return checkProbeErr(ctx, budget, cmd, args, out, err)
+}
+
+// runProbeCombinedContext is runProbeCombined under a caller-owned context,
+// with the same no-deadline-means-probeTimeout rule.
+func runProbeCombinedContext(parent context.Context, cmd string, args ...string) ([]byte, error) {
+	ctx, cancel, budget := boundProbe(parent)
+	defer cancel()
+	cmdEx := exec.CommandContext(ctx, cmd, args...)
+	cmdEx.WaitDelay = probeWaitDelay
+	out, err := cmdEx.CombinedOutput()
+	return checkProbeErr(ctx, budget, cmd, args, out, err)
+}
+
+// boundProbe applies probeTimeout when parent has no deadline. It returns the
+// context to run under, a cancel the caller must defer, and the effective
+// budget for error messages. The cancel is a no-op when parent already had a
+// deadline — cancelling an inherited parent is never the probe's call.
+func boundProbe(parent context.Context) (context.Context, context.CancelFunc, time.Duration) {
+	if dl, ok := parent.Deadline(); ok {
+		budget := probeTimeout
+		if remaining := time.Until(dl); remaining > 0 {
+			budget = remaining
+		}
+		return parent, func() {}, budget
+	}
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
+	return ctx, cancel, probeTimeout
+}
+
+// checkProbeErr reclassifies a context-driven kill as a timeout error.
+// CommandContext kills the child on deadline, which surfaces as an
+// ExitError ("signal: killed") rather than context.DeadlineExceeded, so the
+// owning context is the only reliable signal. Without this reclassification,
+// a hung manager would be indistinguishable from "not installed".
+func checkProbeErr(ctx context.Context, budget time.Duration, cmd string, args []string, out []byte, err error) ([]byte, error) {
+	if err == nil {
+		return out, nil
+	}
+	if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, fmt.Errorf("%s %s: timed out after %s", cmd, strings.Join(args, " "), budget)
+	}
+	return out, err
+}
+
 // runQuery executes cmd with args and interprets the exit status as an
 // installed/absent signal. A non-zero exit code means "not installed"
 // (false, nil). Only an OS-level execution failure is returned as an error.
+// Bounded by probeTimeout so a hung manager cannot stall detection.
 func runQuery(cmd string, args ...string) (bool, error) {
-	err := exec.Command(cmd, args...).Run()
+	_, err := runProbe(cmd, args...)
 	if err == nil {
 		return true, nil
 	}
@@ -242,9 +329,10 @@ func runListOutput(cmd string, args ...string) ([]string, error) {
 	return runListOutputContext(context.Background(), cmd, args...)
 }
 
-// runListOutputContext is runListOutput with subprocess cancellation.
+// runListOutputContext is runListOutput with subprocess cancellation. When the
+// caller supplies no deadline, probeTimeout still applies.
 func runListOutputContext(ctx context.Context, cmd string, args ...string) ([]string, error) {
-	out, err := exec.CommandContext(ctx, cmd, args...).Output()
+	out, err := runProbeContext(ctx, cmd, args...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -261,7 +349,7 @@ func runListOutputContext(ctx context.Context, cmd string, args ...string) ([]st
 // runVersionOutput runs cmd and returns trimmed stdout as the version string.
 // A non-zero exit code is treated as "not installed" ("", nil), not an error.
 func runVersionOutput(cmd string, args ...string) (string, error) {
-	out, err := exec.Command(cmd, args...).Output()
+	out, err := runProbe(cmd, args...)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

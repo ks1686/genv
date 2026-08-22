@@ -2745,8 +2745,11 @@ func scanCmd(args []string) int {
 	for _, a := range scanAdaptersOnGOOS(available, scanGOOS) {
 		versions := map[string]string(nil)
 		var pkgs []string
+		// Cap every manager inventory like apply/status do, so one hung
+		// manager (winget's first-run source sync can stall for minutes)
+		// cannot wedge the whole scan.
 		if versionLister, ok := a.(adapter.VersionLister); ok {
-			if listedVersions, err := versionLister.ListInstalledVersions(); err == nil {
+			if listedVersions, err := resolver.CallTimed(versionLister.ListInstalledVersions, resolver.DefaultLiveListTimeout); err == nil {
 				versions = listedVersions
 				for pkgName := range versions {
 					pkgs = append(pkgs, pkgName)
@@ -2755,7 +2758,7 @@ func scanCmd(args []string) int {
 			}
 		}
 		if pkgs == nil {
-			listed, err := a.ListInstalled()
+			listed, err := resolver.CallTimed(a.ListInstalled, resolver.DefaultLiveListTimeout)
 			if err != nil {
 				fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
 				continue

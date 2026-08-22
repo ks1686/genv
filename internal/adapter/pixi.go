@@ -88,7 +88,7 @@ func (Pixi) ListInstalledVersions() (map[string]string, error) {
 }
 
 func (Pixi) listEntries() ([]pythonEntry, error) {
-	out, err := exec.Command("pixi", "global", "list").Output()
+	out, err := runProbe("pixi", "global", "list")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

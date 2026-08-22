@@ -90,7 +90,7 @@ type composerEntry struct {
 }
 
 func (Composer) listEntries() ([]composerEntry, error) {
-	out, err := exec.Command("composer", "global", "show", "--format=json").Output()
+	out, err := runProbe("composer", "global", "show", "--format=json")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

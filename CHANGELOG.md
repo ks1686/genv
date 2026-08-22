@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Every package-manager probe is now bounded. `genv scan`, `genv search`,
+  upgrade version capture, the outdated check, and service status probes cap
+  each manager subprocess (30s default), so a hung manager — winget's
+  first-run source sync can stall for minutes on fresh profiles — can no
+  longer wedge the command. Timed-out probes surface as errors or
+  conservative fallbacks: a timed-out outdated query keeps all packages, so
+  real upgrades are never silently skipped.
+
+### Changed
+
+- `internal/resolver`: exported `DefaultLiveListTimeout` and added `CallTimed`
+  / `RunTimed` helpers so commands that inventory managers directly share the
+  same per-spawn deadline machinery as apply/status.
+- Adapter probes (`ListInstalled`, `QueryVersion`, `Query`, `ListOutdated`,
+  availability checks) run under a shared deadline and set `WaitDelay`, so a
+  killed manager's orphaned children cannot hold output pipes open.
+
 ## v4.2.1 - 2026-08-20
 
 ### Fixed

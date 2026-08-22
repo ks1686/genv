@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 )
 
@@ -133,7 +132,7 @@ func (Snap) QueryVersion(pkgName string) (string, error) {
 // ListOutdated reports snaps with an available refresh, keyed by snap name
 // -> target version, intersected with pkgNames.
 func (Snap) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("snap", "refresh", "--list").Output()
+	out, err := runProbe("snap", "refresh", "--list")
 	if err != nil {
 		return nil, err
 	}

@@ -86,7 +86,7 @@ type dotnetEntry struct {
 }
 
 func (DotnetTool) listEntries() ([]dotnetEntry, error) {
-	out, err := exec.Command("dotnet", "tool", "list", "--global").Output()
+	out, err := runProbe("dotnet", "tool", "list", "--global")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

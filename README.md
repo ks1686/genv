@@ -120,6 +120,8 @@ WSL2 does **not** inherit native `arch` automatically. Put shared bits in `defau
 
 **Also available** (explicit `prefer` / `managers`): `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`, `ghcup`, `stack`, `opam`, `juliaup`, `sdkman`, `asdf`, `mise`, `krew`, `helm`, `vscode`.
 
+`external` is a track-only pseudo-manager: packages installed outside any manager (official installers, vendor downloads). Apply records them in the lock when the binary is on PATH; genv never installs or removes them itself.
+
 Native `apt`, `dnf`, and `apk` adapters are registered system managers (`prefer: apt|dnf|apk`). Use `genv map` / `genv export` when moving a spec across Linux families.
 
 ---
@@ -260,6 +262,7 @@ Tab completion on `add` / `adopt` suggests package names from available managers
 ```bash
 genv apply --target windows --yes                 # adopt live apps, install only the missing
 genv apply --skip-packages --yes                  # links + env only
+genv apply --timeout 30m --hook-timeout 2m        # cap each subprocess / hook (default 10m; 0 disables)
 genv apply --target ubuntu --dry-run --json
 genv apply --force --backup --yes                 # overwrite mismatched files; keep *.backup.*
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
