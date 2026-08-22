@@ -472,7 +472,7 @@ func addCmd(args []string) int {
 	noSearch := fs.Bool("no-search", false, "skip interactive package search and use id as-is")
 	noHooks := fs.Bool("no-hooks", false, "skip pre-add and post-add hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
-	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	id, flagArgs := extractPositional(args)
@@ -625,7 +625,7 @@ func removeCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	noHooks := fs.Bool("no-hooks", false, "skip pre-remove and post-remove hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
-	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
@@ -831,7 +831,7 @@ func adoptCmd(args []string) int {
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
-	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 	filesOnly := fs.Bool("files", false, "adopt matching files block entries into the lock without changing targets")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
@@ -1174,7 +1174,7 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.NoHooks, "no-hooks", false, "skip lifecycle hooks without skipping apply")
 	fs.BoolVar(&opts.SkipPackages, "skip-packages", false, "skip package install/remove; still apply env, shell, files, and services")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
-	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to host classification)")
 	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
 
@@ -2902,7 +2902,7 @@ func statusCmd(args []string) int {
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem only")
 	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
-	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
@@ -3665,7 +3665,7 @@ func upgradeCmd(args []string) int {
 	noHooks := fs.Bool("no-hooks", false, "skip pre-upgrade and post-upgrade hooks")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
-	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
+	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")

@@ -231,6 +231,7 @@ _genv() {
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--files[Check files block against the live filesystem only]' \
+				'--offline[Compare spec vs lock only (skip live manager probe)]' \
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:'
 			;;
@@ -448,7 +449,7 @@ _genv() {
 				'*::arg:->carg'
 			case $state in
 			caction)
-				_values 'action' bash zsh fish install
+				_values 'action' bash zsh fish powershell install
 				;;
 			carg)
 				case ${line[1]} in
@@ -457,7 +458,7 @@ _genv() {
 						'--dir=[Target directory (overrides the per-shell default)]:dir:_files -/' \
 						'1: :->cshell'
 					if [[ $state == cshell ]]; then
-						_values 'shell' bash zsh fish
+						_values 'shell' bash zsh fish powershell
 					fi
 					;;
 				esac
