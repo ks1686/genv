@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.2.2 - 2026-08-22
+
 ### Fixed
 
 - README now documents every apply/status/upgrade flag it references (including
