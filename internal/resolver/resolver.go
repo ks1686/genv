@@ -313,11 +313,11 @@ func FilterOutdated(packages []genvfile.LockedPackage) (kept []genvfile.LockedPa
 			continue
 		}
 		started := time.Now()
-		outdated, err := lister.ListOutdated(g.pkgNames)
+		outdated, err := CallTimed(func() (map[string]string, error) { return lister.ListOutdated(g.pkgNames) }, DefaultLiveListTimeout)
 		elapsed := time.Since(started).Round(time.Millisecond)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("could not determine outdated packages for %s after %s (%v) — keeping all", name, elapsed, err))
-			keep[name] = nil // query failed: keep all conservatively
+			keep[name] = nil // query failed or timed out: keep all conservatively
 			continue
 		}
 		// Timing is logged as a warning so scheduled updates.log and CLI stderr
@@ -373,10 +373,13 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 
 		// Collect current versions for every package in the action. Use a single
 		// ListInstalledVersions call when the adapter supports it, then fall back
-		// to per-package QueryVersion for anything missing.
+		// to per-package QueryVersion for anything missing. Both probes are
+		// capped so a hung manager cannot stall the lock update indefinitely;
+		// a timed-out probe is skipped (version stays empty) rather than
+		// treated as a real version.
 		versions := make(map[string]string, len(a.LPs))
 		if versionLister, ok := a.Mgr.(adapter.VersionLister); ok {
-			if listedVersions, err := versionLister.ListInstalledVersions(); err == nil {
+			if listedVersions, err := CallTimed(versionLister.ListInstalledVersions, DefaultLiveListTimeout); err == nil {
 				for _, lp := range a.LPs {
 					if v, ok := listedVersions[lp.PkgName]; ok {
 						versions[lp.ID] = v
@@ -388,7 +391,7 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 			if _, ok := versions[lp.ID]; ok {
 				continue
 			}
-			if v, err := a.Mgr.QueryVersion(lp.PkgName); err == nil && v != "" {
+			if v, err := CallTimed(func() (string, error) { return a.Mgr.QueryVersion(lp.PkgName) }, DefaultLiveListTimeout); err == nil && v != "" {
 				versions[lp.ID] = v
 			}
 		}
@@ -452,31 +455,44 @@ func (s LiveSet) has(manager, pkgName string) bool {
 	return false
 }
 
-// defaultLiveListTimeout caps each manager inventory so a hung
+// DefaultLiveListTimeout caps each manager inventory so a hung
 // `composer global show` (or similar) cannot stall apply/status.
-const defaultLiveListTimeout = 30 * time.Second
+// Exported so commands that inventory managers directly (scan) share it.
+// Var so tests can shorten the deadline.
+var DefaultLiveListTimeout = 30 * time.Second
 
-func listInstalledTimed(list func() ([]string, error), d time.Duration) ([]string, error) {
+// CallTimed runs f under a wall-clock deadline d. If f has not returned by
+// then, CallTimed returns a timeout error; f keeps running in the background
+// and its eventual result is dropped. Use it to bound calls into adapters,
+// which spawn external package managers that can block indefinitely.
+func CallTimed[T any](f func() (T, error), d time.Duration) (T, error) {
 	if d <= 0 {
-		return list()
+		return f()
 	}
 	type result struct {
-		names []string
+		value T
 		err   error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		names, err := list()
-		ch <- result{names, err}
+		v, err := f()
+		ch <- result{v, err}
 	}()
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case r := <-ch:
-		return r.names, r.err
+		return r.value, r.err
 	case <-timer.C:
-		return nil, fmt.Errorf("timed out after %s", d)
+		var zero T
+		return zero, fmt.Errorf("timed out after %s", d)
 	}
+}
+
+// RunTimed is CallTimed for probes that only report success or failure.
+func RunTimed(f func() error, d time.Duration) error {
+	_, err := CallTimed(func() (struct{}, error) { return struct{}{}, f() }, d)
+	return err
 }
 
 // ManagersToList is the set of managers apply/status actually need to
@@ -531,7 +547,7 @@ func LoadLiveSetOnly(available, only map[string]bool) (LiveSet, []string) {
 		if mgr == nil {
 			continue
 		}
-		list, err := listInstalledTimed(mgr.ListInstalled, defaultLiveListTimeout)
+		list, err := CallTimed(mgr.ListInstalled, DefaultLiveListTimeout)
 		if err != nil {
 			warns = append(warns, fmt.Sprintf("listing %s: %v", name, err))
 			continue

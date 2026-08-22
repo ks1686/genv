@@ -143,7 +143,7 @@ func (Uv) listEntries() ([]uvEntry, error) {
 // preserving leading whitespace so indented entrypoint lines can be detected.
 // A non-zero exit code is treated as "no tools" (nil, nil), not an error.
 func runUvToolList() ([]string, error) {
-	out, err := exec.Command("uv", "tool", "list").Output()
+	out, err := runProbe("uv", "tool", "list")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

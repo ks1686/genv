@@ -1,7 +1,6 @@
 package adapter
 
 import (
-	"os/exec"
 	"slices"
 	"strings"
 )
@@ -14,7 +13,10 @@ type Krew struct{}
 func (Krew) Name() string { return "krew" }
 
 var krewProbe = func() error {
-	return exec.Command("kubectl", "krew", "version").Run()
+	// Bounded probe: an ExitError (krew missing) and a timeout both mean
+	// "not usable", so the raw error is enough here.
+	_, err := runProbe("kubectl", "krew", "version")
+	return err
 }
 
 func (Krew) Available() bool {

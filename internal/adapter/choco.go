@@ -123,7 +123,7 @@ func (Choco) ListInstalledVersions() (map[string]string, error) {
 // ListOutdated reports Chocolatey packages whose available version differs
 // from the installed one, keyed by package name -> target version.
 func (Choco) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("choco", "outdated", "-r").Output()
+	out, err := runProbe("choco", "outdated", "-r")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {

@@ -140,7 +140,7 @@ func listPacmanQuOutdated(cmd string, pkgNames []string) (map[string]string, err
 
 // runPacmanQuOutput runs cmd -Qu. Exit code 1 means the system is up to date.
 func runPacmanQuOutput(cmd string) ([]string, error) {
-	out, err := exec.Command(cmd, "-Qu").Output()
+	out, err := runProbe(cmd, "-Qu")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {

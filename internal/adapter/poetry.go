@@ -88,7 +88,7 @@ func (Poetry) ListInstalledVersions() (map[string]string, error) {
 }
 
 func (Poetry) listEntries() ([]pythonEntry, error) {
-	out, err := exec.Command("poetry", "self", "show", "plugins").Output()
+	out, err := runProbe("poetry", "self", "show", "plugins")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

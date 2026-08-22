@@ -3,7 +3,6 @@ package adapter
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -107,7 +106,7 @@ func isGoSemanticImportSuffix(part string) bool {
 }
 
 func goBinDir() (string, bool) {
-	out, err := exec.Command("go", "env", "GOBIN", "GOPATH").Output()
+	out, err := runProbe("go", "env", "GOBIN", "GOPATH")
 	if err != nil {
 		return "", false
 	}

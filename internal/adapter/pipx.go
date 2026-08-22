@@ -101,7 +101,7 @@ func (Pipx) ListOutdated(pkgNames []string) (map[string]string, error) {
 }
 
 func (Pipx) listEntries() ([]pythonEntry, error) {
-	out, err := exec.Command("pipx", "list", "--json").Output()
+	out, err := runProbe("pipx", "list", "--json")
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {

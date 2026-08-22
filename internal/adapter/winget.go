@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 )
 
@@ -100,7 +99,7 @@ func (Winget) QueryVersion(pkgName string) (string, error) {
 // ListOutdated reports winget package IDs with an available upgrade, keyed by
 // ID -> target version, intersected with pkgNames.
 func (Winget) ListOutdated(pkgNames []string) (map[string]string, error) {
-	out, err := exec.Command("winget", "upgrade").Output()
+	out, err := runProbe("winget", "upgrade")
 	if err != nil {
 		return nil, err
 	}
