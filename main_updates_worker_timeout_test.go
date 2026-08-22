@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,10 +94,12 @@ func TestUpdatesRunOnce_NotificationCompletesBeforeLogCloses(t *testing.T) {
 	// Fake binaries for BOTH notifier branches (LookPath only checks
 	// existence, so shadowing launchctl isn't enough to force the notify-send
 	// branch on darwin): whichever branch runs, the fake sleeps before
-	// dropping the marker.
+	// dropping the marker. The marker path is normalized to forward slashes
+	// because /bin/sh eats backslashes (Windows Temp paths).
+	markerSh := strings.ReplaceAll(marker, "\\", "/")
 	testutil.InstallFakeBinary(t, "launchctl", "exit 1")
-	testutil.InstallFakeBinary(t, "notify-send", "sleep 0.4\ntouch "+marker)
-	testutil.InstallFakeBinary(t, "osascript", "sleep 0.4\ntouch "+marker)
+	testutil.InstallFakeBinary(t, "notify-send", "sleep 0.4\ntouch '"+markerSh+"'")
+	testutil.InstallFakeBinary(t, "osascript", "sleep 0.4\ntouch '"+markerSh+"'")
 
 	// The real planner reports nothing outdated against the fakes; stub a
 	// one-package plan so the check-only path actually notifies.
