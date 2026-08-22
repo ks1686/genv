@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
   default is host classification, matching reality and the README.
 - CI workflows cancel superseded runs via concurrency groups instead of
   queueing duplicates.
+- The scheduled updates worker no longer abandons an in-flight upgrade when
+  its job budget expires: it waits on a short shutdown grace so package
+  managers are not killed mid-transaction, and drains in-flight desktop
+  notifications (bounded by their own 3s timeout) before closing the audit
+  log.
 - RELEASING.md now describes AUR publishing accurately (separate macOS job,
   not GoReleaser) and the real changelog exclude filters.
 - Spec and lock file writes are now durable across crashes: both are fsynced

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ks1686/genv/internal/genvfile"
@@ -27,6 +28,15 @@ var (
 	updatesLookPath   = exec.LookPath
 )
 
+// updatesShutdownGrace is how long the one-shot worker waits for an in-flight
+// upgrade to settle after the job budget expires, before exiting. Var so
+// tests can shorten it.
+var updatesShutdownGrace = 30 * time.Second
+
+// updatesJobTimeout returns the wall-clock budget for a scheduled run. Var so
+// tests can shorten the 60s–300s production range.
+var updatesJobTimeout = service.ScheduledJobTimeOut
+
 func updatesRunOnceCmd(args []string) int {
 	fs := flag.NewFlagSet("updates __run-once", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
@@ -42,6 +52,11 @@ func updatesRunOnceCmd(args []string) int {
 		return exitIO
 	}
 	defer closeLog()
+	// Runs before closeLog (defers are LIFO): gives any in-flight desktop
+	// notification a bounded chance to finish logging against the file.
+	// Each notifier goroutine self-bounds via its own 3s command timeout,
+	// so this cannot hang the worker.
+	defer updatesNotifyWG.Wait()
 	f, err := genvfile.Read(*file)
 	if err != nil {
 		logger.Warn("updates.check.config", slog.Any("err", err))
@@ -52,7 +67,7 @@ func updatesRunOnceCmd(args []string) int {
 		logger.Warn("updates.check.config", slog.Any("err", cfgErr))
 		return exitValidation
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), service.ScheduledJobTimeOut(interval))
+	ctx, cancel := context.WithTimeout(context.Background(), updatesJobTimeout(interval))
 	defer cancel()
 
 	done := make(chan int, 1)
@@ -68,7 +83,19 @@ func updatesRunOnceCmd(args []string) int {
 		case code := <-done:
 			return code
 		default:
-			logger.Warn("updates.check.timeout", slog.Duration("timeout", service.ScheduledJobTimeOut(interval)), slog.Any("err", ctx.Err()))
+		}
+		logger.Warn("updates.check.timeout", slog.Duration("timeout", updatesJobTimeout(interval)), slog.Any("err", ctx.Err()))
+		// Give the in-flight run a short grace period to finish its current
+		// package-manager transaction and settle the lock. Exiting while a
+		// subprocess is mid-upgrade kills it (half-installed packages); the
+		// grace stays well under the supervisor's own SIGTERM budget.
+		graceCtx, graceCancel := context.WithTimeout(context.Background(), updatesShutdownGrace)
+		defer graceCancel()
+		select {
+		case code := <-done:
+			return code
+		case <-graceCtx.Done():
+			logger.Warn("updates.check.shutdown_grace_expired", slog.Duration("grace", updatesShutdownGrace))
 			return exitLogic
 		}
 	}
@@ -244,8 +271,18 @@ func notifyUpdates(_ context.Context, enabled bool, title, message string, logge
 	// Never block the scheduled worker on a desktop notification. Under launchd,
 	// osascript has been observed to ignore CommandContext cancel and hold the
 	// process until the job deadline (exit 4) even after a successful plan.
-	go runNotificationAsync(logger, notifier, path, args...)
+	// The goroutine is tracked in updatesNotifyWG so the worker's exit path
+	// can give it a bounded chance to finish logging before closeLog().
+	updatesNotifyWG.Add(1)
+	go func() {
+		defer updatesNotifyWG.Done()
+		runNotificationAsync(logger, notifier, path, args...)
+	}()
 }
+
+// updatesNotifyWG tracks in-flight notification goroutines. Waited on with a
+// bounded grace at worker exit so they never write to a closed log file.
+var updatesNotifyWG sync.WaitGroup
 
 func runNotificationAsync(logger *slog.Logger, notifier, path string, args ...string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
