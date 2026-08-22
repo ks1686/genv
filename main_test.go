@@ -3283,8 +3283,12 @@ func TestUpdatesRunOnce_hanging_notifier_does_not_block_or_timeout(t *testing.T)
 	if code != exitOK {
 		t.Fatalf("code = %d, want %d (hanging notifier must not force timeout exit 4)", code, exitOK)
 	}
-	if elapsed > 3*time.Second {
-		t.Fatalf("elapsed = %s, want quick return without waiting on notifier", elapsed)
+	// The worker drains in-flight notifications with a bounded wait before
+	// closing the log (they self-timeout at 3s), so a hanging notifier adds
+	// at most ~3s — still far from the 5m launchd hang this regression pins.
+	// What must NOT happen: blocking until the job deadline or exiting 4.
+	if elapsed > 10*time.Second {
+		t.Fatalf("elapsed = %s, want return within the notification self-timeout window", elapsed)
 	}
 	logBytes, err := os.ReadFile(filepath.Join(xdg, "genv", "updates.log"))
 	if err != nil {
