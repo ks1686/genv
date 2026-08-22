@@ -2,7 +2,8 @@
 
 This repository publishes GitHub releases, a Homebrew cask, a Scoop manifest,
 and an AUR package automatically when an annotated tag is pushed. GoReleaser
-handles GitHub releases, Homebrew, Scoop, AUR, and the Snap Store automatically
+handles GitHub releases, Homebrew, Scoop, and the Snap Store automatically; a
+follow-up macOS workflow job publishes the AUR packages.
 — no external reviewer sign-off required.
 
 ---
@@ -41,8 +42,8 @@ handles GitHub releases, Homebrew, Scoop, AUR, and the Snap Store automatically
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,
-and AUR publishers for pre-release tags automatically, so only stable tags
-reach those channels.
+and Snap publishers for pre-release tags, and the AUR publish job skips
+pre-release versions itself — so only stable tags reach those channels.
 
 ---
 
@@ -384,9 +385,10 @@ For each release, the notes should cover:
 - any known limitations or partially-validated surfaces (e.g., adapters not tested in CI)
 - any breaking changes to `genv.json` schema or lock format
 
-GoReleaser auto-generates a changelog from `feat:` and `fix:` commits as the release
-body. Edit it on GitHub after publish, or use `release.notes` in `.goreleaser.yml`
-to provide a custom body before tagging.
+GoReleaser auto-generates a changelog for the release body from commit messages,
+excluding `docs:`, `test:`, and `chore:` commits. Edit it on GitHub after
+publish, or provide a custom body in the GoReleaser changelog config before
+tagging.
 
 ---
 
