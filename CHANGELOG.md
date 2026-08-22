@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
   before the publishing rename (and the directory afterwards), so a power
   loss can no longer leave an empty or partial `genv.json` /
   `genv.lock.json`.
+- `genv pull` writes the pulled spec through a temp file and rename, so an
+  interrupted pull can no longer leave `genv.json` truncated.
 - Every package-manager probe is now bounded. `genv scan`, `genv search`,
   upgrade version capture, the outdated check, and service status probes cap
   each manager subprocess (30s default), so a hung manager — winget's

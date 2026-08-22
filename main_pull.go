@@ -247,7 +247,9 @@ func runGit(args ...string) error {
 	return nil
 }
 
-// copyFile copies src to dst, creating parent directories as needed.
+// copyFile copies src to dst, creating parent directories as needed. The
+// destination is written to a sibling temp file and renamed into place so an
+// interrupted pull cannot leave the live spec truncated or half-written.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -259,16 +261,23 @@ func copyFile(src, dst string) error {
 		return fmt.Errorf("creating parent directory: %w", err)
 	}
 
-	out, err := os.Create(dst)
+	tmp := dst + ".pull-tmp"
+	out, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", dst, err)
+		return fmt.Errorf("creating %s: %w", tmp, err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		_ = out.Close()
-		return fmt.Errorf("copying to %s: %w", dst, err)
+		_ = os.Remove(tmp)
+		return fmt.Errorf("copying to %s: %w", tmp, err)
 	}
 	if err := out.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", dst, err)
+		_ = os.Remove(tmp)
+		return fmt.Errorf("closing %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("publishing %s: %w", dst, err)
 	}
 	return nil
 }
