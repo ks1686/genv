@@ -133,9 +133,14 @@ func WriteLock(path string, lf *LockFile) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("writing %s: %w", tmpName, err)
 	}
+	if err := syncFile(tmpName); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("syncing %s: %w", tmpName, err)
+	}
 	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("saving %s: %w", path, err)
 	}
+	syncDir(dir)
 	return nil
 }
