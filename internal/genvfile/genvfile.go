@@ -135,12 +135,26 @@ func Write(path string, f *schema.GenvFile) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmpF, err := os.Create(tmp)
+	if err != nil {
 		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
-	if err := syncFile(tmp); err != nil {
+	if _, err := tmpF.Write(data); err != nil {
+		_ = tmpF.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("writing %s: %w", tmp, err)
+	}
+	// Sync while the write handle is still open — on Windows,
+	// FlushFileBuffers denies read-only handles, so this cannot be done via
+	// a reopen.
+	if err := tmpF.Sync(); err != nil {
+		_ = tmpF.Close()
 		_ = os.Remove(tmp)
 		return fmt.Errorf("syncing %s: %w", tmp, err)
+	}
+	if err := tmpF.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
