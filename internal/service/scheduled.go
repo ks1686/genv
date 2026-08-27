@@ -29,7 +29,7 @@ type ScheduledJobStatus struct {
 	Detail        string
 }
 
-// ScheduledBackend manages one-shot scheduled jobs via systemd --user or launchd.
+// ScheduledBackend manages one-shot scheduled jobs via systemd --user, launchd, or Windows Task Scheduler.
 type ScheduledBackend interface {
 	Supported() bool
 	Start(ctx context.Context, job ScheduledJob) error
@@ -45,7 +45,7 @@ func NewScheduledBackend() ScheduledBackend {
 }
 
 func (hostScheduledBackend) Supported() bool {
-	return IsSystemdAvailable() || IsLaunchdAvailable()
+	return IsSystemdAvailable() || IsLaunchdAvailable() || IsSchtasksAvailable()
 }
 
 func (hostScheduledBackend) Start(ctx context.Context, job ScheduledJob) error {
@@ -54,8 +54,10 @@ func (hostScheduledBackend) Start(ctx context.Context, job ScheduledJob) error {
 		return startSystemdScheduledJob(ctx, job)
 	case IsLaunchdAvailable():
 		return startLaunchdScheduledJob(ctx, job)
+	case IsSchtasksAvailable():
+		return startSchtasksScheduledJob(ctx, job)
 	default:
-		return fmt.Errorf("scheduled jobs are not supported on this platform: systemd --user or launchd is required")
+		return fmt.Errorf("scheduled jobs are not supported on this platform: systemd --user, launchd, or Task Scheduler (schtasks) is required")
 	}
 }
 
@@ -65,6 +67,8 @@ func (hostScheduledBackend) Stop(ctx context.Context, name string) error {
 		return stopSystemdScheduledJob(ctx, name)
 	case IsLaunchdAvailable():
 		return stopLaunchdScheduledJob(ctx, name)
+	case IsSchtasksAvailable():
+		return stopSchtasksScheduledJob(ctx, name)
 	default:
 		return nil
 	}
@@ -76,8 +80,10 @@ func (hostScheduledBackend) Status(ctx context.Context, name string) (ScheduledJ
 		return systemdScheduledStatus(ctx, systemdTimerName(name), systemdScheduledUnitName(name))
 	case IsLaunchdAvailable():
 		return launchdScheduledStatus(ctx, launchdScheduledLabel(name))
+	case IsSchtasksAvailable():
+		return schtasksScheduledStatus(ctx, schtasksTaskName(name))
 	default:
-		return ScheduledJobStatus{Supported: false, LastRun: ScheduledRunUnknown, Detail: "systemd --user or launchd is required"}, nil
+		return ScheduledJobStatus{Supported: false, LastRun: ScheduledRunUnknown, Detail: "systemd --user, launchd, or Task Scheduler (schtasks) is required"}, nil
 	}
 }
 
@@ -137,8 +143,8 @@ func LaunchdScheduledPlistContent(name string, command []string, interval time.D
 }
 
 // ScheduledJobTimeOut is the wall-clock budget for a scheduled updates run.
-// Matches launchd TimeOut / systemd TimeoutStartSec so Go can exit before the
-// supervisor SIGTERMs a wedged process.
+// Matches launchd TimeOut / systemd TimeoutStartSec / Task Scheduler
+// ExecutionTimeLimit so Go can exit before the supervisor kills a wedged process.
 func ScheduledJobTimeOut(interval time.Duration) time.Duration {
 	return time.Duration(scheduledJobTimeOutSeconds(interval)) * time.Second
 }

@@ -87,6 +87,22 @@ genv list
 genv status
 ```
 
+## 5. Updates checker
+
+`genv updates start` registers a per-user Task Scheduler job (`schtasks`)
+that runs `genv updates __run-once` at logon and then on `updates.interval`.
+`genv updates status` / `stop` talk to the same task. The job is started by
+the scheduler service (not as a child of the current shell) so an OpenSSH
+session teardown cannot kill it.
+
+```powershell
+genv updates start
+genv updates status
+```
+
+Until this is registered, UniGetUI or `genv upgrade` still work as a manual
+workaround.
+
 ## PowerShell env, shell, and hooks
 
 On native Windows, apply prefers **PowerShell 7+ (`pwsh`)**, then Windows PowerShell 5.1:

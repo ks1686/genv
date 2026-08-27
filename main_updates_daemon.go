@@ -56,7 +56,7 @@ func updatesStartCmd(args []string) int {
 	}
 	backend := newUpdatesSupervisor()
 	if !backend.Supported() {
-		fPrintln(os.Stderr, "genv updates start: not supported on this platform (requires systemd --user on Linux or launchd on macOS)")
+		fPrintln(os.Stderr, "genv updates start: not supported on this platform (requires systemd --user on Linux, launchd on macOS, or Task Scheduler on Windows)")
 		return exitLogic
 	}
 	exe, err := updatesExecutable()
@@ -77,9 +77,7 @@ func updatesStartCmd(args []string) int {
 	if strings.TrimSpace(*targetFlag) != "" {
 		command = append(command, "--target", strings.TrimSpace(*targetFlag))
 	}
-	pathValue := os.Getenv("PATH")
-	goos := runtime.GOOS
-	environment := map[string]string{"PATH": service.ScheduledPath(pathValue, goos)}
+	environment := map[string]string{"PATH": updatesCheckerPath()}
 	if target := strings.TrimSpace(os.Getenv("GENV_TARGET")); target != "" && strings.TrimSpace(*targetFlag) == "" {
 		environment["GENV_TARGET"] = target
 	}
@@ -127,7 +125,7 @@ func updatesStatusCmd(args []string) int {
 		return exitIO
 	}
 	if !status.Supported {
-		fPrintln(os.Stdout, "updates checker is not supported on this platform (requires systemd --user on Linux or launchd on macOS); not running.")
+		fPrintln(os.Stdout, "updates checker is not supported on this platform (requires systemd --user on Linux, launchd on macOS, or Task Scheduler on Windows); not running.")
 		return exitOK
 	}
 	if !status.Registered {
@@ -221,6 +219,15 @@ func readUpdatesConfigForLifecycle(file string) (*schema.UpdatesConfig, time.Dur
 		return nil, 0, exitValidation
 	}
 	return cfg, interval, exitOK
+}
+
+func updatesCheckerPath() string {
+	pathValue := os.Getenv("PATH")
+	if runtime.GOOS == "windows" {
+		home, _ := os.UserHomeDir()
+		return service.ScheduledWindowsPath(pathValue, home, os.Getenv("LOCALAPPDATA"), os.Getenv("SCOOP"))
+	}
+	return service.ScheduledPath(pathValue, runtime.GOOS)
 }
 
 func parseEnabledUpdatesConfig(f *schema.GenvFile) (*schema.UpdatesConfig, time.Duration, error) {

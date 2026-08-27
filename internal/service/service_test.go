@@ -340,6 +340,9 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	unit := SystemdScheduledUnitContent("updates", command, environment)
 	timer := SystemdScheduledTimerContent("updates", 2*time.Hour)
 	plist := LaunchdScheduledPlistContent("updates", command, 2*time.Hour, environment)
+	script := `C:\Users\qa\.config\genv\scheduled\genv-updates.cmd`
+	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\cmd.exe`, script, 2*time.Hour)
+	wrapper := SchtasksScheduledCmdContent(ScheduledJob{Name: "updates", Command: command, Environment: environment})
 
 	// Then: both backends run the one-shot command on the configured interval.
 	if !strings.Contains(unit, "Type=oneshot") || !strings.Contains(unit, `ExecStart="/usr/local/bin/genv" "updates" "__run-once"`) {
@@ -356,6 +359,21 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	}
 	if !strings.Contains(plist, "<key>TimeOut</key>") || !strings.Contains(plist, "<integer>300</integer>") {
 		t.Fatalf("launchd plist = %q, want TimeOut so launchd SIGTERMs wedged jobs", plist)
+	}
+	if !strings.Contains(xml, "<LogonTrigger>") || !strings.Contains(xml, "<Interval>PT2H</Interval>") || !strings.Contains(xml, `<URI>\genv-updates</URI>`) {
+		t.Fatalf("schtasks XML = %q, want logon trigger and 2h repetition for genv-updates", xml)
+	}
+	if !strings.Contains(xml, "<ExecutionTimeLimit>PT300S</ExecutionTimeLimit>") {
+		t.Fatalf("schtasks XML = %q, want ExecutionTimeLimit so wedged jobs are killed", xml)
+	}
+	if !strings.Contains(xml, `<Command>C:\Windows\System32\cmd.exe</Command>`) || !strings.Contains(xml, script) {
+		t.Fatalf("schtasks XML = %q, want cmd.exe wrapper over %s", xml, script)
+	}
+	if !strings.Contains(xml, "<DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>") {
+		t.Fatalf("schtasks XML = %q, want remote-session start so SSH logon can still fire the task", xml)
+	}
+	if !strings.Contains(wrapper, `"/usr/local/bin/genv" "updates" "__run-once"`) || !strings.Contains(wrapper, "rem genv-program: /usr/local/bin/genv") {
+		t.Fatalf("schtasks cmd = %q, want one-shot genv updates command", wrapper)
 	}
 }
 
@@ -377,6 +395,14 @@ func TestScheduledJobContent_Environment_is_deterministic_and_escaped(t *testing
 	if !strings.Contains(plist, wantLaunchd) {
 		t.Fatalf("launchd plist = %q, want sorted escaped environment %q", plist, wantLaunchd)
 	}
+
+	wrapper := SchtasksScheduledCmdContent(ScheduledJob{Name: "updates", Command: command, Environment: environment})
+	if !strings.Contains(wrapper, `set "PATH=/custom&bin:/quotedpath"`) {
+		t.Fatalf("schtasks cmd = %q, want quotes stripped from PATH and & preserved", wrapper)
+	}
+	if !strings.Contains(wrapper, `set "Z_VAR=last"`) {
+		t.Fatalf("schtasks cmd = %q, want sorted Z_VAR assignment", wrapper)
+	}
 }
 
 func TestSystemdUnitName_PathTraversal(t *testing.T) {
@@ -389,6 +415,11 @@ func TestSystemdUnitName_PathTraversal(t *testing.T) {
 	plistName := launchdPlistName(name)
 	if strings.Contains(plistName, "/") || strings.Contains(plistName, "\\") {
 		t.Errorf("launchdPlistName(%q) = %q; want no path separator characters", name, plistName)
+	}
+
+	taskName := schtasksTaskName(name)
+	if strings.Contains(taskName, "/") || strings.Contains(taskName, "\\") {
+		t.Errorf("schtasksTaskName(%q) = %q; want no path separator characters", name, taskName)
 	}
 }
 
@@ -452,6 +483,12 @@ func TestSanitizeUnitName(t *testing.T) {
 		wantLaunchd := "genv." + tc.want + ".plist"
 		if gotLaunchd != wantLaunchd {
 			t.Errorf("launchdPlistName(%q) = %q, want %q", tc.name, gotLaunchd, wantLaunchd)
+		}
+
+		gotSchtasks := schtasksTaskName(tc.name)
+		wantSchtasks := "genv-" + tc.want
+		if gotSchtasks != wantSchtasks {
+			t.Errorf("schtasksTaskName(%q) = %q, want %q", tc.name, gotSchtasks, wantSchtasks)
 		}
 	}
 }

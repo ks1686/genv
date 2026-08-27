@@ -2649,7 +2649,7 @@ func TestUpdatesStart_valid_config_registers_scheduler_without_auto_apply(t *tes
 	if !slices.Equal(job.Command, wantCommand) {
 		t.Fatalf("job command = %v, want %v", job.Command, wantCommand)
 	}
-	wantPath := service.ScheduledPath(invokingPath, runtime.GOOS)
+	wantPath := updatesCheckerPath()
 	if got := job.Environment["PATH"]; got != wantPath {
 		t.Fatalf("job PATH = %q, want sanitized augmented PATH %q", got, wantPath)
 	}

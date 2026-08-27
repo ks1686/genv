@@ -275,7 +275,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 
 ### Updates checker
 
-`genv updates start` registers a user systemd timer (Linux) or launchd job (macOS). Default behavior is check / log / notify only. Set `"autoApply": true` in the `updates` block to apply upgrades automatically. Details: [SCHEMA.md](SCHEMA.md#updates).
+`genv updates start` registers a user systemd timer (Linux), launchd job (macOS), or Task Scheduler task (`schtasks`, Windows). Default behavior is check / log / notify only. Set `"autoApply": true` in the `updates` block to apply upgrades automatically. Details: [SCHEMA.md](SCHEMA.md#updates).
 
 ### Exit codes
 

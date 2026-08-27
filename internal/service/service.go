@@ -287,6 +287,17 @@ func IsLaunchdAvailable() bool {
 	return err == nil
 }
 
+// IsSchtasksAvailable reports whether Windows Task Scheduler (schtasks) can
+// register per-user jobs. GOOS-gated so a stray schtasks binary on Unix PATH
+// cannot claim Windows support.
+func IsSchtasksAvailable() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	_, err := exec.LookPath("schtasks")
+	return err == nil
+}
+
 // SystemdUnitContent returns the systemd unit file content for the given service.
 func SystemdUnitContent(name string, svc schema.Service) string {
 	name = stripLineBreaks(name)

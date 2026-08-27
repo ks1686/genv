@@ -20,6 +20,7 @@ type AgentProgramIssue struct {
 var (
 	launchdProgramArgsRE = regexp.MustCompile(`(?s)<key>ProgramArguments</key>\s*<array>\s*<string>([^<]*)</string>`)
 	systemdExecStartRE   = regexp.MustCompile(`(?m)^ExecStart=(.*)$`)
+	schtasksProgramRE    = regexp.MustCompile(`(?m)^rem genv-program: (.+)$`)
 )
 
 // FirstLaunchdProgramArgument returns ProgramArguments[0] from a launchd plist.
@@ -42,6 +43,20 @@ func FirstSystemdExecStartArgument(unit string) (string, error) {
 		return "", fmt.Errorf("ExecStart has no command")
 	}
 	return toks[0], nil
+}
+
+// FirstSchtasksProgramArgument returns the genv executable recorded in a
+// scheduled-task .cmd wrapper.
+func FirstSchtasksProgramArgument(cmd []byte) (string, error) {
+	m := schtasksProgramRE.FindSubmatch(cmd)
+	if m == nil {
+		return "", fmt.Errorf("genv-program marker not found")
+	}
+	prog := strings.TrimSpace(string(m[1]))
+	if prog == "" {
+		return "", fmt.Errorf("genv-program marker is empty")
+	}
+	return prog, nil
 }
 
 func splitSystemdExecStart(line string) []string {
@@ -105,12 +120,14 @@ func ExecutablePathStatus(path string) error {
 	return nil
 }
 
-// ListManagedAgentProgramIssues scans genv-managed launchd plists and systemd
-// units under home for primary executables that are missing or not executable.
+// ListManagedAgentProgramIssues scans genv-managed launchd plists, systemd
+// units, and Windows Task Scheduler wrappers under home for primary
+// executables that are missing or not executable.
 func ListManagedAgentProgramIssues(home string) []AgentProgramIssue {
 	var issues []AgentProgramIssue
 	issues = append(issues, launchdAgentProgramIssues(home)...)
 	issues = append(issues, systemdAgentProgramIssues(home)...)
+	issues = append(issues, schtasksAgentProgramIssues(home)...)
 	return issues
 }
 
@@ -179,6 +196,41 @@ func systemdAgentProgramIssues(home string) []AgentProgramIssue {
 				Label:  label,
 				Path:   prog,
 				Detail: fmt.Sprintf("%s ExecStart[0]=%q: %v", label, prog, err),
+			})
+		}
+	}
+	return issues
+}
+
+func schtasksAgentProgramIssues(home string) []AgentProgramIssue {
+	dir := filepath.Join(home, ".config", "genv", "scheduled")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var issues []AgentProgramIssue
+	for _, ent := range entries {
+		name := ent.Name()
+		if ent.IsDir() || !strings.HasPrefix(name, "genv-") || !strings.HasSuffix(strings.ToLower(name), ".cmd") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		prog, err := FirstSchtasksProgramArgument(content)
+		if err != nil || prog == "" {
+			continue
+		}
+		if prog == "true" || prog == "/usr/bin/true" || prog == "/bin/true" {
+			continue
+		}
+		if err := ExecutablePathStatus(prog); err != nil {
+			label := strings.TrimSuffix(name, filepath.Ext(name))
+			issues = append(issues, AgentProgramIssue{
+				Label:  label,
+				Path:   prog,
+				Detail: fmt.Sprintf("%s genv-program=%q: %v", label, prog, err),
 			})
 		}
 	}
