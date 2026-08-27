@@ -6,9 +6,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +210,52 @@ func TestSchtasksScheduledStatus_is_conservative_when_loaded_output_is_malformed
 	}
 	if !strings.Contains(got.Detail, "malformed schtasks output") {
 		t.Fatalf("detail = %q, want malformed-output explanation", got.Detail)
+	}
+}
+
+func TestParseSchtasksLastResult_does_not_truncate_int32(t *testing.T) {
+	// MaxInt32+1 is a legal int64 / 64-bit int, but wraps to MinInt32 if stored as int32.
+	widerThanInt32 := int64(math.MaxInt32) + 1
+	wrappedInt32 := int32(widerThanInt32)
+	if wrappedInt32 != math.MinInt32 {
+		t.Fatalf("int32(%d) = %d, want MinInt32 so this test still detects truncation", widerThanInt32, wrappedInt32)
+	}
+
+	got, n, err := parseSchtasksLastResult(strconv.FormatInt(widerThanInt32, 10))
+	if widerThanInt32 > math.MaxInt {
+		if err == nil {
+			t.Fatalf("parse(%d) = %d; want range error rather than truncated %d", widerThanInt32, got, int(wrappedInt32))
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("parse(%d): %v", widerThanInt32, err)
+	}
+	if n != widerThanInt32 || int64(got) != widerThanInt32 {
+		t.Fatalf("parse = %d, %d; want %d (int32 truncation would be %d)", got, n, widerThanInt32, wrappedInt32)
+	}
+}
+
+func TestSchtasksScheduledStatus_last_result_wider_than_int32_is_preserved(t *testing.T) {
+	widerThanInt32 := int64(math.MaxInt32) + 1
+	text := strconv.FormatInt(widerThanInt32, 10)
+	got := parseSchtasksScheduledStatus("genv-updates", schtasksListOutput("Ready", "8/27/2026 6:22:00 PM", text))
+
+	if widerThanInt32 > math.MaxInt {
+		if got.ExitCode != nil || !strings.Contains(got.Detail, "invalid Last Result") {
+			t.Fatalf("status = %#v, want malformed Last Result (int32 wrap is %d)", got, int32(widerThanInt32))
+		}
+		return
+	}
+	if got.LastRun != ScheduledRunFailure || got.ExitCode == nil || int64(*got.ExitCode) != widerThanInt32 {
+		t.Fatalf("status = %#v, want failure exit %d (int32 wrap is %d)", got, widerThanInt32, int32(widerThanInt32))
+	}
+}
+
+func TestSchtasksScheduledStatus_last_result_rejects_int64_overflow(t *testing.T) {
+	got := parseSchtasksScheduledStatus("genv-updates", schtasksListOutput("Ready", "8/27/2026 6:22:00 PM", "9223372036854775808"))
+	if got.ExitCode != nil || !strings.Contains(got.Detail, "invalid Last Result") {
+		t.Fatalf("status = %#v, want malformed Last Result for int64 overflow", got)
 	}
 }
 

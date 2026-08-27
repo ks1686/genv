@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -281,12 +282,11 @@ func parseSchtasksScheduledStatus(taskName, output string) ScheduledJobStatus {
 		}
 		return status
 	}
-	result, err := strconv.ParseInt(strings.TrimSpace(resultText), 10, 64)
+	exitCode, result, err := parseSchtasksLastResult(resultText)
 	if err != nil {
 		status.Detail = malformedStatusDetail(taskName, "schtasks", "invalid Last Result")
 		return status
 	}
-	exitCode := int(result)
 	status.ExitCode = &exitCode
 
 	if status.Executing {
@@ -316,6 +316,20 @@ func parseSchtasksScheduledStatus(taskName, output string) ScheduledJobStatus {
 	status.LastRun = ScheduledRunFailure
 	status.LastRunDetail = resultText
 	return status
+}
+
+// parseSchtasksLastResult parses schtasks "Last Result" into an int. CodeQL
+// go/incorrect-integer-conversion requires a visible MaxInt/MinInt guard
+// before narrowing the int64 ParseInt result.
+func parseSchtasksLastResult(text string) (int, int64, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	if n <= math.MaxInt && n >= math.MinInt {
+		return int(n), n, nil
+	}
+	return 0, n, strconv.ErrRange
 }
 
 func parseSchtasksList(output string) map[string]string {
