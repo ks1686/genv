@@ -58,7 +58,7 @@ func TestServiceSupervisorHelpers(t *testing.T) {
 
 func TestScheduledSupervisorHelpersAndHostBackend(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("scheduled host backend is systemd/launchd; Windows has no equivalent in this package")
+		t.Skip("host backend uses schtasks on Windows; see TestSchtasksScheduledJob_registerStatusStop")
 	}
 	home := t.TempDir()
 	testutil.SetHome(t, home)

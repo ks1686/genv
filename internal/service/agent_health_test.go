@@ -22,14 +22,44 @@ func TestFirstLaunchdProgramArgument(t *testing.T) {
 	}
 }
 
-func TestFirstSystemdExecStartArgument(t *testing.T) {
-	unit := SystemdScheduledUnitContent("updates", []string{"/usr/local/bin/genv", "updates", "__run-once"}, nil)
-	got, err := FirstSystemdExecStartArgument(unit)
-	if err != nil {
-		t.Fatalf("FirstSystemdExecStartArgument: %v", err)
+func TestFirstSchtasksProgramArgument(t *testing.T) {
+	job := ScheduledJob{
+		Name:    "updates",
+		Command: []string{`C:\Users\qa\scoop\shims\genv.exe`, "updates", "__run-once"},
 	}
-	if got != "/usr/local/bin/genv" {
-		t.Fatalf("got %q, want /usr/local/bin/genv", got)
+	got, err := FirstSchtasksProgramArgument([]byte(SchtasksScheduledCmdContent(job)))
+	if err != nil {
+		t.Fatalf("FirstSchtasksProgramArgument: %v", err)
+	}
+	if got != `C:\Users\qa\scoop\shims\genv.exe` {
+		t.Fatalf("got %q, want scoop genv.exe", got)
+	}
+	if _, err := FirstSchtasksProgramArgument([]byte("@echo off\r\n")); err == nil {
+		t.Fatal("expected error for missing marker")
+	}
+}
+
+func TestListManagedAgentProgramIssues_reportsMissingSchtasksProgram(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".config", "genv", "scheduled")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(home, "gone", "genv.exe")
+	job := ScheduledJob{Name: "updates", Command: []string{missing, "updates", "__run-once"}}
+	if err := os.WriteFile(filepath.Join(dir, "genv-updates.cmd"), []byte(SchtasksScheduledCmdContent(job)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.cmd"), []byte(SchtasksScheduledCmdContent(job)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issues := ListManagedAgentProgramIssues(home)
+	if len(issues) != 1 {
+		t.Fatalf("issues = %#v, want one", issues)
+	}
+	if issues[0].Label != "genv-updates" || !strings.Contains(issues[0].Detail, missing) {
+		t.Fatalf("issue = %#v, want genv-updates missing path", issues[0])
 	}
 }
 

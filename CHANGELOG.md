@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Native Windows `genv updates start` registers a per-user Task Scheduler
+  job (`schtasks`) so the hourly updates checker has the same start / status /
+  stop lifecycle as systemd --user and launchd. The task runs at logon plus
+  `updates.interval`, sets a PATH that includes scoop/winget shims, and is
+  started through the scheduler service so OpenSSH job objects cannot kill it.
+
 ## v4.2.2 - 2026-08-22
 
 ### Fixed

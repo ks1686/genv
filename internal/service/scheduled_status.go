@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -233,4 +234,143 @@ func unregisteredScheduledStatus(detail string) ScheduledJobStatus {
 
 func malformedStatusDetail(detail, supervisor, reason string) string {
 	return fmt.Sprintf("%s: malformed %s output (%s)", detail, supervisor, reason)
+}
+
+const (
+	schedSTaskReady        = 0x00041300 // 267008
+	schedSTaskRunning      = 0x00041301 // 267009
+	schedSTaskDisabled     = 0x00041302 // 267010
+	schedSTaskHasNotRun    = 0x00041303 // 267011
+	schedSTaskNoMoreRuns   = 0x00041304 // 267012
+	schedSTaskNotScheduled = 0x00041305 // 267013
+	schedSTaskTerminated   = 0x00041306 // 267014
+	schedSTaskNoValidTrig  = 0x00041307 // 267015
+	schedSEventTrigger     = 0x00041308 // 267016
+)
+
+func schtasksScheduledStatus(ctx context.Context, taskName string) (ScheduledJobStatus, error) {
+	output, err := schtasksRun(ctx, "/Query", "/TN", taskName, "/FO", "LIST", "/V")
+	decoded := decodeSchtasksOutput(output)
+	if err != nil {
+		if schtasksTaskMissing(decoded) {
+			return unregisteredScheduledStatus(taskName), nil
+		}
+		return ScheduledJobStatus{}, fmt.Errorf("inspect scheduled task %q: %w\n%s", taskName, err, decoded)
+	}
+	return parseSchtasksScheduledStatus(taskName, decoded), nil
+}
+
+func parseSchtasksScheduledStatus(taskName, output string) ScheduledJobStatus {
+	fields := parseSchtasksList(output)
+	if schtasksTaskMissing(output) {
+		return unregisteredScheduledStatus(taskName)
+	}
+	statusField := fields["status"]
+	if statusField == "" && fields["taskname"] == "" && fields["last result"] == "" {
+		status := registeredScheduledStatus(taskName)
+		status.Detail = malformedStatusDetail(taskName, "schtasks", "missing Status")
+		return status
+	}
+
+	status := registeredScheduledStatus(taskName)
+	status.Executing = strings.EqualFold(statusField, "Running")
+
+	resultText, hasResult := fields["last result"]
+	if !hasResult {
+		if statusField == "" {
+			status.Detail = malformedStatusDetail(taskName, "schtasks", "missing Last Result")
+		}
+		return status
+	}
+	exitCode, result, err := parseSchtasksLastResult(resultText)
+	if err != nil {
+		status.Detail = malformedStatusDetail(taskName, "schtasks", "invalid Last Result")
+		return status
+	}
+	status.ExitCode = &exitCode
+
+	if status.Executing {
+		status.ExitCode = nil
+		return status
+	}
+
+	lastRunTime := fields["last run time"]
+	if schtasksNeverRun(result, lastRunTime) {
+		status.ExitCode = nil
+		return status
+	}
+	if result == 0 {
+		status.LastRun = ScheduledRunSuccess
+		status.ExitCode = &exitCode
+		return status
+	}
+	if result == schedSTaskTerminated {
+		status.LastRun = ScheduledRunFailure
+		status.LastRunDetail = "terminated"
+		return status
+	}
+	if schtasksInformationalResult(result) {
+		status.ExitCode = nil
+		return status
+	}
+	status.LastRun = ScheduledRunFailure
+	status.LastRunDetail = resultText
+	return status
+}
+
+// parseSchtasksLastResult parses schtasks "Last Result" into an int. CodeQL
+// go/incorrect-integer-conversion requires a visible MaxInt/MinInt guard
+// before narrowing the int64 ParseInt result.
+func parseSchtasksLastResult(text string) (int, int64, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	if n <= math.MaxInt && n >= math.MinInt {
+		return int(n), n, nil
+	}
+	return 0, n, strconv.ErrRange
+}
+
+func parseSchtasksList(output string) map[string]string {
+	fields := make(map[string]string)
+	for line := range strings.SplitSeq(output, "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.ToLower(strings.TrimSpace(key))
+		switch key {
+		case "taskname", "status", "last run time", "last result":
+			if _, exists := fields[key]; !exists {
+				fields[key] = strings.TrimSpace(value)
+			}
+		}
+	}
+	return fields
+}
+
+func schtasksNeverRun(result int64, lastRunTime string) bool {
+	if result == schedSTaskHasNotRun {
+		return true
+	}
+	normalized := strings.ToLower(strings.TrimSpace(lastRunTime))
+	if normalized == "" || normalized == "n/a" {
+		return result == 0 || schtasksInformationalResult(result)
+	}
+	// Task Scheduler historically reports 11/30/1999 (or locale equivalent)
+	// when a task has never executed.
+	return strings.Contains(normalized, "1999")
+}
+
+func schtasksInformationalResult(result int64) bool {
+	switch result {
+	case schedSTaskReady, schedSTaskRunning, schedSTaskDisabled,
+		schedSTaskHasNotRun, schedSTaskNoMoreRuns, schedSTaskNotScheduled,
+		schedSTaskNoValidTrig, schedSEventTrigger:
+		return true
+	default:
+		return false
+	}
 }

@@ -100,6 +100,9 @@ Aliases/functions may set `"shell": "powershell"`. Omitted `shell` stays POSIX-o
 
 Tracked packages only; not a system-wide “update everything” tool.
 
+`genv updates start` registers the checker with systemd --user (Linux),
+launchd (macOS), or Task Scheduler / `schtasks` (Windows).
+
 ### Hooks
 
 Phases: `preApply` / `postApply`, `preAdd` / `postAdd`, `preRemove` / `postRemove`, `preUpgrade` / `postUpgrade` (v5 also had `preUpgrade` / `postApply` / `postUpgrade`).
