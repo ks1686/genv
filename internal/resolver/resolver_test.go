@@ -1308,14 +1308,62 @@ func TestExecuteApply_SuccessfulRemoval(t *testing.T) {
 	}
 }
 
+func TestExecuteApply_AlreadyAbsentUninstallIsSuccess(t *testing.T) {
+	orig := adapter.All
+	adapter.All = append([]adapter.Adapter{absentQueryMgr{}}, orig...)
+	t.Cleanup(func() { adapter.All = orig })
+
+	result := ReconcileResult{
+		ToRemove: []Action{
+			{
+				Pkg:          schema.Package{ID: "copilot-cli"},
+				Manager:      "absent-query-mgr",
+				PkgName:      "copilot-cli",
+				UninstallCmd: []string{"false"},
+			},
+		},
+	}
+	exec := ExecuteApply(context.Background(), result, nil, io.Discard, io.Discard)
+	if len(exec.Errors) != 0 {
+		t.Fatalf("already-absent uninstall should not error: %v", exec.Errors)
+	}
+	if len(exec.Uninstalled) != 1 || exec.Uninstalled[0] != "copilot-cli" {
+		t.Fatalf("Uninstalled = %v, want [copilot-cli]", exec.Uninstalled)
+	}
+}
+
+type absentQueryMgr struct{}
+
+func (absentQueryMgr) Name() string    { return "absent-query-mgr" }
+func (absentQueryMgr) Available() bool { return true }
+func (absentQueryMgr) NormalizeID(id string, _ map[string]string) (string, bool) {
+	return id, false
+}
+func (absentQueryMgr) PlanInstall(pkgName string) []string   { return []string{"true"} }
+func (absentQueryMgr) PlanUninstall(pkgName string) []string { return []string{"false"} }
+func (absentQueryMgr) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
+func (absentQueryMgr) PlanClean() [][]string                 { return nil }
+func (absentQueryMgr) Query(string) (bool, error)            { return false, nil }
+func (absentQueryMgr) ListInstalled() ([]string, error)      { return nil, nil }
+func (absentQueryMgr) QueryVersion(string) (string, error)   { return "", nil }
+
+type presentQueryMgr struct{ absentQueryMgr }
+
+func (presentQueryMgr) Name() string               { return "present-query-mgr" }
+func (presentQueryMgr) Query(string) (bool, error) { return true, nil }
+
 // TestExecuteApply_FailedRemoval verifies that a failed removal produces an
 // error and the package is NOT in Uninstalled.
 func TestExecuteApply_FailedRemoval(t *testing.T) {
+	orig := adapter.All
+	adapter.All = append([]adapter.Adapter{presentQueryMgr{}}, orig...)
+	t.Cleanup(func() { adapter.All = orig })
+
 	result := ReconcileResult{
 		ToRemove: []Action{
 			{
 				Pkg:          schema.Package{ID: "stuck-pkg"},
-				Manager:      "snap",
+				Manager:      "present-query-mgr",
 				PkgName:      "stuck-pkg",
 				UninstallCmd: []string{"false"},
 			},

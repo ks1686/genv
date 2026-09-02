@@ -739,7 +739,16 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 	cleanManagers := make(map[string]bool)
 
 	for _, a := range result.ToRemove {
+		mgr := adapter.ByName(a.Manager)
+		if adapter.Absent(mgr, a.PkgName) {
+			out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
+			continue
+		}
 		if err := runSubcmd(ctx, a.UninstallCmd, stdin, stdout, stderr); err != nil {
+			if adapter.Absent(mgr, a.PkgName) {
+				out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
+				continue
+			}
 			out.Errors = append(out.Errors, fmt.Errorf("remove %q (via %s): %w", a.Pkg.ID, a.Manager, err))
 		} else {
 			out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)

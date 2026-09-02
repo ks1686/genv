@@ -73,6 +73,25 @@ func withFailingBrewInstall(t *testing.T) {
 	testutil.InstallFakeBinary(t, "brew", `case "$1" in install) exit 1 ;; *) exit 0 ;; esac`)
 }
 
+func withAbsentBrewPackage(t *testing.T) {
+	t.Helper()
+	// Real Homebrew exits 1 on `brew uninstall` of a missing formula
+	// ("Error: No such keg") and `brew list` of an absent name.
+	testutil.InstallFakeBinary(t, "brew", `
+case "$1" in
+uninstall)
+	echo "Error: No such keg: /opt/homebrew/Cellar/${2:-pkg}" >&2
+	exit 1
+	;;
+list)
+	exit 1
+	;;
+*)
+	exit 0
+	;;
+esac`)
+}
+
 // ---- basic routing ----------------------------------------------------------
 
 func TestRun_NoArgs(t *testing.T) {
@@ -892,6 +911,44 @@ func TestDisownCmd_NotInSpec(t *testing.T) {
 	code := run([]string{"disown", "--file", path, "neovim"})
 	if code != exitLogic {
 		t.Errorf("expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestDisownCmd_LockOnlyLeftoverClearsLock(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"6","packages":[{"id":"neovim"}]}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{
+		{ID: "copilot-cli", Manager: "brew", PkgName: "copilot-cli"},
+		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
+	})
+
+	code := run([]string{"disown", "--file", path, "--lock-file", lockPath, "copilot-cli"})
+	if code != exitOK {
+		t.Fatalf("disown lock-only leftover: expected exitOK, got %d", code)
+	}
+
+	f, err := genvfile.Read(path)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 1 || f.Packages[0].ID != "neovim" {
+		t.Fatalf("spec packages = %+v, want neovim retained", f.Packages)
+	}
+
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	for _, p := range lf.Packages {
+		if p.ID == "copilot-cli" {
+			t.Fatal("lock-only leftover should be dropped by disown")
+		}
+	}
+	if len(lf.Packages) != 1 || lf.Packages[0].ID != "neovim" {
+		t.Fatalf("lock packages = %+v, want neovim retained", lf.Packages)
 	}
 }
 
