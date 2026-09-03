@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `genv updates check` / `genv upgrade` no longer treat VS Code/Cursor
+  extensions as perpetually outdated. The vscode adapter now queries the
+  editor's marketplace (from `product.json`, so Cursor uses
+  marketplace.cursorapi.com) and compares against the newest **stable**
+  version. Pre-release gallery versions are skipped; the emitted command
+  remains `code --install-extension <id> --force`, which cannot install
+  pre-releases. Previously vscode had no `OutdatedLister`, so every
+  tracked extension was kept on every check.
+
 ### Added
 
 - Native Windows `genv updates start` registers a per-user Task Scheduler
