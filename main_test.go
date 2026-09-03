@@ -45,6 +45,11 @@ func TestMain(m *testing.M) {
 		_, _ = os.Stderr.WriteString("genv test: " + err.Error() + "\n")
 		os.Exit(1)
 	}
+	// Hide OS/firmware vendor tools from the upgrade runner. Production still
+	// uses exec.LookPath; tests must not run softwareupdate, pacman -Syu,
+	// apt-get upgrade, fwupdmgr, or Windows Update COM. Do not shadow pwsh
+	// itself — lifecycle hooks on Windows need the real engine.
+	upgradeLookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	os.Exit(m.Run())
 }
 

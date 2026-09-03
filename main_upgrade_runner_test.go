@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -124,5 +125,40 @@ func TestUpgrade_JSON_DryRun_includes_steps_keeps_tracked_batches(t *testing.T) 
 	names := env.Data.Steps[0].Name + " " + env.Data.Steps[1].Name
 	if !strings.Contains(names, "system") || !strings.Contains(names, "firmware") {
 		t.Fatalf("step names = %q", names)
+	}
+}
+
+func TestUpgrade_Yes_with_absent_os_tools_still_runs_tracked_hooks(t *testing.T) {
+	orig := upgradeLookPath
+	upgradeLookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	t.Cleanup(func() { upgradeLookPath = orig })
+
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	marker := filepath.Join(dir, "hook.log")
+	spec := `{"schemaVersion":"5","packages":[{"id":"git"}],"hooks":{"preUpgrade":[{` + jsonHook(hookAppend(marker, "pre")) + `}],"postUpgrade":[{` + jsonHook(hookAppend(marker, "post")) + `}]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "git", Manager: "missing-manager", PkgName: "git"}})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath, "--yes"})
+	})
+	if code != exitOK {
+		t.Fatalf("upgrade --yes with absent OS tools: expected exitOK (%d), got %d\n%s", exitOK, code, out)
+	}
+	if !strings.Contains(out, "system: skipped") {
+		t.Fatalf("expected system step skipped, got:\n%s", out)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("read hook marker: %v", err)
+	}
+	if string(got) != "prepost" {
+		t.Fatalf("hook marker: got %q, want %q", string(got), "prepost")
 	}
 }

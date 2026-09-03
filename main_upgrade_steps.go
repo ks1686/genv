@@ -19,13 +19,18 @@ type extraUpgradeJSON struct {
 	apply func(ctx context.Context) []output.UpgradeStep
 }
 
+// upgradeLookPath is exec.LookPath for OS/firmware tool detection. Tests
+// replace it so CLI upgrade --yes never runs softwareupdate, pacman -Syu,
+// apt-get upgrade, fwupdmgr, or Windows Update COM.
+var upgradeLookPath = exec.LookPath
+
 func upgradeRunnerEnv(targetID string) upgrade.Env {
 	if targetID == "" {
 		if classified, err := host.Classify(); err == nil {
 			targetID = classified
 		}
 	}
-	return upgrade.Env{Target: targetID, GOOS: runtime.GOOS, LookPath: exec.LookPath}
+	return upgrade.Env{Target: targetID, GOOS: runtime.GOOS, LookPath: upgradeLookPath}
 }
 
 func extraUpgradeSteps(env upgrade.Env) []upgrade.Step {
