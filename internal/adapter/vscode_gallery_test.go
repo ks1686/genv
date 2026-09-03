@@ -179,19 +179,17 @@ func TestVscodeGalleryServiceURL_readsProductJSONFromCodeBinary(t *testing.T) {
 	vscodeGalleryBase = ""
 	t.Cleanup(func() { vscodeGalleryBase = orig })
 
-	root := t.TempDir()
-	binDir := filepath.Join(root, "app", "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	// installFakeBinary plants a Windows .cmd shim so LookPath can find `code`.
+	installFakeBinary(t, "code", "")
+	codePath, err := lookPath("code")
+	if err != nil {
+		t.Fatalf("lookPath(code): %v", err)
 	}
 	want := "https://marketplace.cursorapi.com/_apis/public/gallery"
-	if err := os.WriteFile(filepath.Join(root, "app", "product.json"), []byte(`{"extensionsGallery":{"serviceUrl":"`+want+`"}}`), 0o644); err != nil {
+	product := filepath.Join(filepath.Dir(codePath), "product.json")
+	if err := os.WriteFile(product, []byte(`{"extensionsGallery":{"serviceUrl":"`+want+`"}}`), 0o644); err != nil {
 		t.Fatalf("WriteFile product.json: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "code"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile code: %v", err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	if got := vscodeGalleryServiceURL(); got != want {
 		t.Fatalf("vscodeGalleryServiceURL = %q, want Cursor gallery %q", got, want)
@@ -227,8 +225,24 @@ func TestVscodeFindProductJSON_nextToCodeBinary(t *testing.T) {
 	}
 
 	got := vscodeFindProductJSON(codePath)
-	if got != product {
-		t.Fatalf("vscodeFindProductJSON = %q, want %q", got, product)
+	assertSameFile(t, got, product)
+}
+
+func assertSameFile(t *testing.T, got, want string) {
+	t.Helper()
+	if got == "" {
+		t.Fatalf("path is empty, want %q", want)
+	}
+	gotInfo, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("stat got %q: %v", got, err)
+	}
+	wantInfo, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("stat want %q: %v", want, err)
+	}
+	if !os.SameFile(gotInfo, wantInfo) {
+		t.Fatalf("got %q, want same file as %q", got, want)
 	}
 }
 
