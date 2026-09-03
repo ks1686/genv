@@ -112,3 +112,16 @@ func TestStack_PlanCommands_whenTrackedAndUninstallUnsupported(t *testing.T) {
 		t.Errorf("PlanUninstall = %v, want failing unsupported command", got)
 	}
 }
+
+func TestStack_QueryDoesNotClaimAbsent(t *testing.T) {
+	ok, err := Stack{}.Query("hlint")
+	if err == nil {
+		t.Fatal("Query must not claim a confirmed-absent result when inventory is unimplemented")
+	}
+	if ok {
+		t.Fatalf("Query = true, want false with error")
+	}
+	if Absent(Stack{}, "hlint") {
+		t.Fatal("Absent must be false when Query errors — otherwise apply drops the lock without running the failing uninstall")
+	}
+}

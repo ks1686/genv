@@ -31,7 +31,7 @@ func (Stack) PlanUpgrade(pkgName string) []string {
 
 func (Stack) PlanClean() [][]string { return nil }
 
-func (Stack) Query(string) (bool, error) { return false, nil }
+func (Stack) Query(pkgName string) (bool, error) { return queryUnsupported("stack", pkgName) }
 
 func (Stack) ListInstalled() ([]string, error) { return nil, nil }
 

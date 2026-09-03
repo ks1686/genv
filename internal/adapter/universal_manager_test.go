@@ -53,6 +53,32 @@ func TestAsdf_PlanCommands_whenPluginOrToolID(t *testing.T) {
 	}
 }
 
+func TestAsdf_QueryDoesNotClaimAbsent(t *testing.T) {
+	ok, err := Asdf{}.Query("tool:nodejs@22.11.0")
+	if err == nil {
+		t.Fatal("Query must not claim a confirmed-absent result when inventory is unimplemented")
+	}
+	if ok {
+		t.Fatalf("Query = true, want false with error")
+	}
+	if Absent(Asdf{}, "tool:nodejs@22.11.0") {
+		t.Fatal("Absent must be false when Query errors")
+	}
+}
+
+func TestSdkman_QueryDoesNotClaimAbsent(t *testing.T) {
+	ok, err := Sdkman{}.Query("java:21.0.2-tem")
+	if err == nil {
+		t.Fatal("Query must not claim a confirmed-absent result when inventory is unimplemented")
+	}
+	if ok {
+		t.Fatalf("Query = true, want false with error")
+	}
+	if Absent(Sdkman{}, "java:21.0.2-tem") {
+		t.Fatal("Absent must be false when Query errors")
+	}
+}
+
 func TestAsdf_PlanInstall_whenIDInvalidFailsActionably(t *testing.T) {
 	a := Asdf{}
 	for _, id := range []string{"nodejs", "plugin:", "tool:nodejs", "tool:@22", "tool:nodejs@", ""} {

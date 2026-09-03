@@ -46,7 +46,7 @@ func (Sdkman) PlanClean() [][]string {
 	return [][]string{{"sdk", "flush", "temp"}}
 }
 
-func (Sdkman) Query(string) (bool, error) { return false, nil }
+func (Sdkman) Query(pkgName string) (bool, error) { return queryUnsupported("sdkman", pkgName) }
 
 func (Sdkman) ListInstalled() ([]string, error) { return nil, nil }
 

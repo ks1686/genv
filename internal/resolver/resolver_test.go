@@ -3,6 +3,7 @@ package resolver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os/exec"
 	"slices"
@@ -1352,6 +1353,11 @@ type presentQueryMgr struct{ absentQueryMgr }
 func (presentQueryMgr) Name() string               { return "present-query-mgr" }
 func (presentQueryMgr) Query(string) (bool, error) { return true, nil }
 
+type errorQueryMgr struct{ absentQueryMgr }
+
+func (errorQueryMgr) Name() string               { return "error-query-mgr" }
+func (errorQueryMgr) Query(string) (bool, error) { return false, errors.New("query timed out") }
+
 // TestExecuteApply_FailedRemoval verifies that a failed removal produces an
 // error and the package is NOT in Uninstalled.
 func TestExecuteApply_FailedRemoval(t *testing.T) {
@@ -1376,6 +1382,30 @@ func TestExecuteApply_FailedRemoval(t *testing.T) {
 	}
 	if len(exec.Uninstalled) != 0 {
 		t.Errorf("Uninstalled: got %v, want empty (failed removal must not appear)", exec.Uninstalled)
+	}
+}
+
+func TestExecuteApply_QueryErrorDoesNotTreatFailedUninstallAsSuccess(t *testing.T) {
+	orig := adapter.All
+	adapter.All = append([]adapter.Adapter{errorQueryMgr{}}, orig...)
+	t.Cleanup(func() { adapter.All = orig })
+
+	result := ReconcileResult{
+		ToRemove: []Action{
+			{
+				Pkg:          schema.Package{ID: "stuck-pkg"},
+				Manager:      "error-query-mgr",
+				PkgName:      "stuck-pkg",
+				UninstallCmd: []string{"false"},
+			},
+		},
+	}
+	exec := ExecuteApply(context.Background(), result, nil, io.Discard, io.Discard)
+	if len(exec.Errors) == 0 {
+		t.Fatal("Query error must not convert a failed uninstall into success")
+	}
+	if len(exec.Uninstalled) != 0 {
+		t.Errorf("Uninstalled: got %v, want empty (Query error is not confirmed absent)", exec.Uninstalled)
 	}
 }
 
