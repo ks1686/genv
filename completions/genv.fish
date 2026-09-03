@@ -115,7 +115,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover all instal
 complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between genv.json, the lock file, and recorded versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
-complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade all tracked packages to their latest versions'
+complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade tracked packages plus OS vendor updates'
 complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'
 complete -c genv -n __fish_genv_no_subcommand -f -a migrate -d 'Convert legacy host predicates to schemaVersion 8 targets'
 complete -c genv -n __fish_genv_no_subcommand -f -a export -d 'Build a single-target portable snapshot and report'

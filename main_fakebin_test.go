@@ -30,6 +30,9 @@ sudo)
 	# pacman/apt/dnf/apk mutating commands are sudo-prefixed; just succeed.
 	exit 0
 	;;
+fwupdmgr|softwareupdate|pwsh|powershell|powershell.exe)
+	exit 0
+	;;
 brew)
 	case "$1" in
 	install|uninstall|upgrade|cleanup|search)
@@ -149,12 +152,13 @@ exit 0
 // is redirected away from the real system. It prepends the fake directory
 // to PATH so the fakes shadow the real binaries.
 func installFakeManagers() error {
-	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo"}
+	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo", "fwupdmgr", "softwareupdate"}
 	always := map[string]bool{}
 	if runtime.GOOS == "windows" {
 		// Shadow native Windows managers so CLI tests never call live winget.
 		// Also fabricate brew so --prefer brew tests have a manager to resolve.
-		for _, name := range []string{"winget", "scoop", "choco", "brew"} {
+		// Shadow PowerShell so the OS vendor step never talks to Windows Update.
+		for _, name := range []string{"winget", "scoop", "choco", "brew", "pwsh", "powershell", "powershell.exe"} {
 			always[name] = true
 			names = append(names, name)
 		}

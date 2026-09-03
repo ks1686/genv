@@ -152,6 +152,12 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 // runSubcmd prints the command to stdout, spawns it as a subprocess wiring
 // stdin/stdout/stderr, logs timing via slog, and returns any execution error.
 // Shared by Execute and ExecuteApply to avoid repeating the logging boilerplate.
+// RunCommand runs argv with the same stdin/stdout/timeout rules as package
+// install and upgrade actions. The upgrade runner uses it for OS/firmware steps.
+func RunCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return runSubcmd(ctx, args, stdin, stdout, stderr)
+}
+
 func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 || args[0] == "" {
 		return fmt.Errorf("empty command")

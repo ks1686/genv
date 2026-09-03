@@ -11,6 +11,21 @@ All notable changes to this project will be documented in this file.
   stop lifecycle as systemd --user and launchd. The task runs at logon plus
   `updates.interval`, sets a PATH that includes scoop/winget shims, and is
   started through the scheduler service so OpenSSH job objects cannot kill it.
+- `genv upgrade` now runs a named step runner after the existing tracked-package
+  planner: OS vendor updates for the active target, then firmware when a clean
+  tool exists. macOS uses `sudo softwareupdate -i -a`. Windows uses the built-in
+  Windows Update Agent COM API via `pwsh` (else `powershell` / `powershell.exe`)
+  — no extra modules, and not `winget` (which upgrades packages, not the OS).
+  Arch and wsl-arch use `sudo pacman -Syu --noconfirm` (paru/yay stay
+  tracked-package adapters). Ubuntu uses `sudo apt-get update` then
+  `sudo apt-get upgrade -y` (or `apt` if `apt-get` is absent); snap stays
+  tracked-only. Linux firmware is `sudo fwupdmgr update` when `fwupdmgr` is
+  present; macOS firmware is delivered by the system step; Windows firmware is
+  skipped as vendor-specific. Missing tools are skipped with a reason; elevation
+  is part of the planned command, not silently dropped. Step failures do not
+  abort later steps. `genv updates check`, the timer, and `updates.autoApply`
+  remain tracked packages only. Further steps (rustup, editors, containers, and
+  other extra tools) land in follow-ups.
 
 ## v4.2.2 - 2026-08-22
 
@@ -313,7 +328,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Resolver fallback is now restricted to system package managers. Ecosystem, toolchain, and plugin managers such as `npm`, `cargo`, `go`, `krew`, `helm`, and `vscode` remain selectable through `prefer` or `managers`, but are never blind fallback targets.
-- Public docs now explicitly distinguish genv's tracked-only upgrade model from topgrade-style system-wide update-all behavior.
+- Public docs now explicitly distinguish genv's tracked-only updates checker from a full-machine update-all runner.
 - macOS user-facing manager choices dedupe `brew`/`linuxbrew` while preserving existing `linuxbrew` specs and locks.
 
 ### Documentation
