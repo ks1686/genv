@@ -191,6 +191,16 @@ func ByName(name string) Adapter {
 	return nil
 }
 
+// Absent reports whether pkgName is not installed via a. Query errors are not
+// treated as absent — the caller should still attempt the planned mutation.
+func Absent(a Adapter, pkgName string) bool {
+	if a == nil {
+		return false
+	}
+	installed, err := a.Query(pkgName)
+	return err == nil && !installed
+}
+
 // lookPath is the exec.LookPath implementation used by adapters.
 // Replaced in tests to avoid PATH dependence.
 // On WSL2 hosts it uses wslSafeLookPath to prevent Windows-mounted binaries

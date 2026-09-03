@@ -200,6 +200,83 @@ func TestApply_ForceBackupFlagBacksUpWithoutPerEntryBackup(t *testing.T) {
 	}
 }
 
+func TestApply_BrewLockDesyncAlreadyAbsentRecovers(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	withAbsentBrewPackage(t)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, specPath, `{"schemaVersion":"6","packages":[]}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{
+		{ID: "copilot-cli", Manager: "brew", PkgName: "copilot-cli"},
+	})
+
+	var code int
+	var stderr string
+	_ = captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks"})
+		})
+	})
+	if code != exitOK {
+		t.Fatalf("apply brew lock desync: expected exitOK, got %d; stderr=%s", code, stderr)
+	}
+
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	for _, p := range lf.Packages {
+		if p.ID == "copilot-cli" {
+			t.Fatalf("lock still lists copilot-cli after apply; stderr=%s", stderr)
+		}
+	}
+}
+
+func TestApply_PackageRemovalFailureRunsPostApplyWithoutMismatchSkip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	hookLog := filepath.Join(dir, "hook.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{failUninstall: true})
+
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"6",`+
+		`"packages":[],`+
+		`"hooks":{"postApply":[{"command":`+jsonString("printf ran >> "+strconv.Quote(hookLog))+`}]}`+
+		`}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{
+		{ID: "alpha", Manager: "test-hook-manager", PkgName: "alpha"},
+	})
+
+	var code int
+	var stderr string
+	_ = captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes"})
+		})
+	})
+	if code != exitLogic {
+		t.Fatalf("expected exitLogic on uninstall failure, got %d; stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stderr, `remove "alpha"`) && !strings.Contains(stderr, "uninstall") {
+		t.Fatalf("stderr should name the package removal failure; got %q", stderr)
+	}
+	if strings.Contains(stderr, "unresolved file mismatches") {
+		t.Fatalf("package removal failure must not be reported as a file mismatch; stderr=%q", stderr)
+	}
+	got, err := os.ReadFile(hookLog)
+	if err != nil {
+		t.Fatalf("post-apply hook should still run when uninstall fails without a file mismatch: %v; stderr=%s", err, stderr)
+	}
+	if string(got) != "ran" {
+		t.Fatalf("hook log = %q, want ran", got)
+	}
+}
+
 func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))

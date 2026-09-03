@@ -183,6 +183,14 @@ func TestRemove_UninstallFailureLeavesLock(t *testing.T) {
 	if len(lf.Packages) != 1 || lf.Packages[0].ID != "alpha" {
 		t.Fatalf("lock packages = %+v, want alpha retained", lf.Packages)
 	}
+
+	f, err := genvfile.Read(specPath)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if len(f.Packages) != 1 || f.Packages[0].ID != "alpha" {
+		t.Fatalf("spec packages = %+v, want alpha retained after uninstall failure", f.Packages)
+	}
 }
 
 func writeTestFile(t *testing.T, path, content string) {

@@ -415,10 +415,10 @@ func appendLockEntry(lockPath string, lp genvfile.LockedPackage, targetID string
 	return exitOK
 }
 
-// removeFromSpecAndReadLock reads the spec at file, removes id from it, writes
-// it back, then reads and returns the lock file. Returns the lock, the lock
-// path, and an exit code. exitOK means all steps succeeded.
-func removeFromSpecAndReadLock(file, id, lockFile, targetFlag string) (*genvfile.LockFile, string, int) {
+// prepareRemoveSpec reads the spec at file and removes id in memory.
+// Callers persist with genvfile.Write after the corresponding system change
+// succeeds so a failed uninstall cannot desync the spec from the lock.
+func prepareRemoveSpec(file, id, targetFlag string) (*schema.GenvFile, string, int) {
 	f, err := genvfile.Read(file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
@@ -439,17 +439,15 @@ func removeFromSpecAndReadLock(file, id, lockFile, targetFlag string) (*genvfile
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return nil, "", exitLogic
 	}
+	return f, targetID, exitOK
+}
+
+func writePreparedSpec(file string, f *schema.GenvFile) int {
 	if err := genvfile.Write(file, f); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
-		return nil, "", exitIO
+		return exitIO
 	}
-	lockPath := lockPathForSpec(file, lockFile)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
-		return nil, "", exitIO
-	}
-	return lf, lockPath, exitOK
+	return exitOK
 }
 
 // addCmd implements `genv add <id> [flags]`.
@@ -727,8 +725,9 @@ func runRemove(opts removeOptions) int {
 		}
 	}
 
-	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(file, id, opts.LockFile, opts.Target)
+	// 1. Stage the spec removal in memory. Persist only after uninstall
+	//    succeeds so a failed uninstall cannot leave spec and lock desynced.
+	prepared, _, exit := prepareRemoveSpec(file, id, opts.Target)
 	if exit != exitOK {
 		return exit
 	}
@@ -738,7 +737,7 @@ func runRemove(opts removeOptions) int {
 		return exitIO
 	}
 	defer unlock()
-	lf, err = genvfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
@@ -757,6 +756,9 @@ func runRemove(opts removeOptions) int {
 
 	if locked == nil {
 		// Never installed by genv — nothing to uninstall on the system.
+		if exit := writePreparedSpec(file, prepared); exit != exitOK {
+			return exit
+		}
 		fprintf(os.Stdout, "removed %s from spec (was not installed by genv)\n", id)
 		return exitOK
 	}
@@ -768,21 +770,26 @@ func runRemove(opts removeOptions) int {
 		return exitLogic
 	}
 
-	uninstallCmd := mgr.PlanUninstall(locked.PkgName)
-	fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
-	fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
-	uninstallErr := runForegroundCommand(uninstallCmd)
-	if uninstallErr != nil {
-		fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
-		return exitLogic
+	if !adapter.Absent(mgr, locked.PkgName) {
+		uninstallCmd := mgr.PlanUninstall(locked.PkgName)
+		fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
+		fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
+		if uninstallErr := runForegroundCommand(uninstallCmd); uninstallErr != nil && !adapter.Absent(mgr, locked.PkgName) {
+			fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
+			return exitLogic
+		}
+		for _, cleanCmd := range mgr.PlanClean() {
+			fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
+			if err := runForegroundCommand(cleanCmd); err != nil {
+				fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
+			}
+		}
+	} else {
+		fprintf(os.Stdout, "removed %s from spec — already absent via %s\n", id, locked.Manager)
 	}
 
-	// Cache clean.
-	for _, cleanCmd := range mgr.PlanClean() {
-		fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-		if err := runForegroundCommand(cleanCmd); err != nil {
-			fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
-		}
+	if exit := writePreparedSpec(file, prepared); exit != exitOK {
+		return exit
 	}
 
 	lf.Packages = remaining
@@ -1042,13 +1049,35 @@ func disownCmd(args []string) int {
 	}
 	id := fs.Arg(0)
 
-	// 1. Update genv.json and read lock.
-	lf, lockPath, exit := removeFromSpecAndReadLock(*file, id, *lockFile, *targetFlag)
+	f, err := genvfile.Read(*file)
+	if err != nil {
+		if errors.Is(err, genvfile.ErrNotFound) {
+			fprintf(os.Stderr, "genv: %s not found\n", *file)
+			return exitLogic
+		}
+		fprintf(os.Stderr, "genv: %v\n", err)
+		if errors.Is(err, genvfile.ErrInvalidFile) {
+			return exitValidation
+		}
+		return exitIO
+	}
+	targetID, exit := resolveMutationTarget("remove", *file, f, *targetFlag)
 	if exit != exitOK {
 		return exit
 	}
+	specErr := commands.Remove(f, id, targetID)
+	if specErr != nil && !errors.Is(specErr, commands.ErrNotTracked) {
+		fprintf(os.Stderr, "genv: %v\n", specErr)
+		return exitLogic
+	}
 
-	// 2. Remove from lock file without uninstalling.
+	lockPath := lockPathForSpec(*file, *lockFile)
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
+		return exitIO
+	}
+
 	wasTracked := false
 	remaining := make([]genvfile.LockedPackage, 0, len(lf.Packages))
 	for i := range lf.Packages {
@@ -1058,13 +1087,28 @@ func disownCmd(args []string) int {
 			remaining = append(remaining, lf.Packages[i])
 		}
 	}
+
+	if specErr != nil && !wasTracked {
+		fprintf(os.Stderr, "genv: %v\n", specErr)
+		return exitLogic
+	}
+
+	if specErr == nil {
+		if err := genvfile.Write(*file, f); err != nil {
+			fprintf(os.Stderr, "genv: %v\n", err)
+			return exitIO
+		}
+	}
+
 	lf.Packages = remaining
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
 
-	if wasTracked {
+	if wasTracked && specErr != nil {
+		fprintf(os.Stdout, "disowned %s — removed lock leftover (was not in spec)\n", id)
+	} else if wasTracked {
 		fprintf(os.Stdout, "disowned %s — removed from tracking (package remains installed)\n", id)
 	} else {
 		fprintf(os.Stdout, "disowned %s — removed from spec (was not in lock)\n", id)
@@ -1356,6 +1400,8 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	filePlan, filePlanErr = applyFiles(ctx, opts, f, lf)
 	if filePlanErr != nil {
 		errs = append(errs, filePlanErr.Error())
+	}
+	if unresolvedFileMismatch(filePlan) {
 		if !opts.NoHooks && hasPostApplyHooks(f) {
 			skipMsg := "skipping post-apply hooks due to unresolved file mismatches"
 			errs = append(errs, skipMsg)
@@ -1541,14 +1587,14 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if filePlanErr != nil {
 		fileErrs = append(fileErrs, filePlanErr)
 	}
-	if appliedFiles != nil && len(appliedFiles.Mismatched) > 0 {
+	if unresolvedFileMismatch(appliedFiles) {
 		writeFileMismatchGuidance(os.Stderr, appliedFiles)
 		if !opts.NoHooks && hasPostApplyHooks(f) {
 			fPrintln(os.Stderr, "genv apply: skipping post-apply hooks due to unresolved file mismatches")
 		}
 	}
 	var hookErrs []string
-	if len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && !opts.NoHooks {
+	if !unresolvedFileMismatch(appliedFiles) && !opts.NoHooks {
 		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
@@ -1979,6 +2025,10 @@ func writeFileMismatchGuidance(w io.Writer, res *files.ApplyResult) {
 
 func hasPostApplyHooks(f *schema.GenvFile) bool {
 	return f != nil && f.Hooks != nil && len(f.Hooks.PostApply) > 0
+}
+
+func unresolvedFileMismatch(res *files.ApplyResult) bool {
+	return res != nil && len(res.Mismatched) > 0
 }
 
 func filePlanEntries(res *files.ApplyResult) []output.FilePlanEntry {
