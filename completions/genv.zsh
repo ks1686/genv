@@ -19,7 +19,7 @@ _genv() {
 		'status:Show diff between genv.json, the lock file, and recorded versions'
 		'completion:Print shell completion script'
 		'validate:Validate genv.json against the schema'
-		'upgrade:Upgrade all tracked packages to their latest versions'
+		'upgrade:Upgrade tracked packages plus OS vendor updates'
 		'updates:Check available updates for genv-tracked packages'
 		'migrate:Convert legacy host predicates to schemaVersion 8 targets'
 		'export:Build a single-target portable snapshot and report'

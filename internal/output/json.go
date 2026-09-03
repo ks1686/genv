@@ -182,10 +182,20 @@ type UpgradeHookResult struct {
 	Error string `json:"error"`
 }
 
+// UpgradeStep is one named upgrade-runner step (system, firmware, later extras).
+// Tracked packages stay in Batches for compatibility.
+type UpgradeStep struct {
+	Name     string   `json:"name"`
+	Status   string   `json:"status"`
+	Reason   string   `json:"reason,omitempty"`
+	Commands []string `json:"commands,omitempty"`
+}
+
 // UpgradeResult is the Data payload for `genv upgrade [--dry-run] --json`.
 type UpgradeResult struct {
 	DryRun      bool                `json:"dryRun"`
 	Batches     []UpgradeBatch      `json:"batches"`
+	Steps       []UpgradeStep       `json:"steps,omitempty"`
 	Updated     []UpgradePackage    `json:"updated,omitempty"`
 	Skipped     []UpgradeSkipped    `json:"skipped,omitempty"`
 	FailedHooks []UpgradeHookResult `json:"failedHooks,omitempty"`

@@ -96,9 +96,9 @@ Aliases/functions may set `"shell": "powershell"`. Omitted `shell` stays POSIX-o
 - `enabled`, `interval` (positive Go duration, e.g. `"24h"`)
 - `autoApply` (default false — check/log/notify only)
 - `notify`
-- `onlyManagers`, `skipManagers`, `only`, `skip` — same filters as `genv upgrade`
+- `onlyManagers`, `skipManagers`, `only`, `skip` — same filters as `genv upgrade`’s tracked-package step
 
-Tracked packages only; not a system-wide “update everything” tool.
+Tracked packages only; the checker never plans or applies OS vendor or firmware updates. Use `genv upgrade` for those. Not a remote SSH updater.
 
 `genv updates start` registers the checker with systemd --user (Linux),
 launchd (macOS), or Task Scheduler / `schtasks` (Windows).

@@ -224,7 +224,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`) |
 | `validate` | Validate spec + genv-managed agent executables |
-| `upgrade` | Upgrade outdated tracked packages (`--all`, `--only`, `--skip`, `--only-manager`, `--skip-manager`, `--target`) |
+| `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only`, `--skip`, `--only-manager`, `--skip-manager`, `--target`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
 | `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
 | `pull` | Fetch spec + file assets from `repo` |
@@ -275,7 +275,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 
 ### Updates checker
 
-`genv updates start` registers a user systemd timer (Linux), launchd job (macOS), or Task Scheduler task (`schtasks`, Windows). Default behavior is check / log / notify only. Set `"autoApply": true` in the `updates` block to apply upgrades automatically. Details: [SCHEMA.md](SCHEMA.md#updates).
+`genv updates start` registers a user systemd timer (Linux), launchd job (macOS), or Task Scheduler task (`schtasks`, Windows). Default behavior is check / log / notify for **tracked packages only**. Set `"autoApply": true` in the `updates` block to apply those tracked upgrades automatically. OS vendor and firmware updates are not part of the checker — use `genv upgrade` for that. Details: [SCHEMA.md](SCHEMA.md#updates).
 
 ### Exit codes
 
@@ -293,7 +293,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 
 **Install resolution:** detect available managers → honor `prefer` → try `managers` map → fall back to system managers using the package `id`. Language / toolchain / plugin managers are **explicit-only** (must set `prefer` or `managers`) so `git` never silently resolves through npm.
 
-**Upgrades:** `genv upgrade` and `genv updates check` share a planner. By default they plan packages with a detected update; `--all` plans every unconstrained tracked package. Version-constrained packages are skipped unless an adapter can guarantee a compatible target. Batched where the manager allows (`brew`, `pacman`/`paru`/`yay`, `apt`/`dnf`/`apk`, `mas`, `snap`, `scoop`, `choco`, …).
+**Upgrades:** `genv upgrade` applies tracked-package updates, then OS vendor updates for the active target (macOS `softwareupdate`, Windows Update Agent COM via PowerShell, Arch `pacman -Syu`, Ubuntu `apt-get upgrade`). Firmware uses `fwupdmgr` on Linux when present; macOS firmware ships through `softwareupdate`, and Windows firmware is skipped as vendor-specific. `genv updates check` and the timer stay tracked-packages-only and share the tracked planner with `upgrade`. By default they plan packages with a detected update; `--all` on `upgrade` plans every unconstrained tracked package. Version-constrained packages are skipped unless an adapter can guarantee a compatible target. Batched where the manager allows (`brew`, `pacman`/`paru`/`yay`, `apt`/`dnf`/`apk`, `mas`, `snap`, `scoop`, `choco`, …).
 
 ---
 

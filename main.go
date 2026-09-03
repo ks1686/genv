@@ -3853,23 +3853,6 @@ func upgradeCmd(args []string) int {
 		All:          *all,
 	}
 
-	if len(lf.Packages) == 0 {
-		if *jsonOut {
-			return writeJSON(os.Stdout, output.Envelope{
-				Version: output.SchemaVersion,
-				Command: "upgrade",
-				OK:      true,
-				Data: output.UpgradeResult{
-					DryRun:  *dryRun,
-					Batches: []output.UpgradeBatch{},
-					Filters: filters,
-				},
-			})
-		}
-		fPrintln(os.Stdout, "no packages tracked — run 'genv add' or 'genv scan' first.")
-		return exitOK
-	}
-
 	planResult, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{
 		Spec:    f,
 		Lock:    lf,
@@ -3881,6 +3864,12 @@ func upgradeCmd(args []string) int {
 	}
 	plan := planResult.Actions
 	skipped := planResult.Skipped
+	runnerEnv := upgradeRunnerEnv(activeTarget)
+	extraPlan := planExtraUpgrade(runnerEnv)
+	extraJSON := extraUpgradeJSON{
+		steps: jsonUpgradeSteps(extraPlan),
+		apply: extraApplyForJSON(runnerEnv),
+	}
 
 	for _, w := range planResult.Warnings {
 		if *dryRun && !*jsonOut {
@@ -3889,7 +3878,7 @@ func upgradeCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters)
+		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters, extraJSON)
 	}
 
 	for _, s := range skipped {
@@ -3900,7 +3889,20 @@ func upgradeCmd(args []string) int {
 		}
 	}
 
-	if len(plan) == 0 {
+	hasExtra := extraUpgradeHasCommands(extraPlan)
+	if len(plan) > 0 || hasExtra || len(extraPlan) > 0 {
+		fPrintln(os.Stdout, "upgrade plan:")
+		for _, a := range plan {
+			ids := make([]string, len(a.LPs))
+			for i, lp := range a.LPs {
+				ids[i] = lp.ID
+			}
+			fprintf(os.Stdout, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), a.LPs[0].Manager, strings.Join(a.Cmd, " "))
+		}
+		printExtraUpgradePlan(os.Stdout, extraPlan)
+	}
+
+	if len(plan) == 0 && !hasExtra {
 		if !*dryRun && !*noHooks {
 			ctx := context.Background()
 			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
@@ -3919,22 +3921,16 @@ func upgradeCmd(args []string) int {
 		return exitOK
 	}
 
-	fPrintln(os.Stdout, "upgrade plan:")
-	for _, a := range plan {
-		ids := make([]string, len(a.LPs))
-		for i, lp := range a.LPs {
-			ids[i] = lp.ID
-		}
-		fprintf(os.Stdout, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), a.LPs[0].Manager, strings.Join(a.Cmd, " "))
-	}
-
 	if *dryRun {
 		return exitOK
 	}
 
-	if !*yes && !confirm(fmt.Sprintf("\nUpgrade %d package(s)? [y/N] ", len(plan))) {
-		fPrintln(os.Stdout, "Aborted.")
-		return exitOK
+	if !*yes {
+		prompt := upgradeConfirmPrompt(len(plan), hasExtra)
+		if !confirm(prompt) {
+			fPrintln(os.Stdout, "Aborted.")
+			return exitOK
+		}
 	}
 
 	ctx := context.Background()
@@ -3949,14 +3945,17 @@ func upgradeCmd(args []string) int {
 		}
 	}
 
-	runResult := upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
-		Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped, Warnings: planResult.Warnings},
-		Lock:     lf,
-		LockPath: lockPath,
-		Stdin:    os.Stdin,
-		Stdout:   os.Stdout,
-		Stderr:   os.Stderr,
-	})
+	var runResult upgrade.UpgradeRunResult
+	if len(plan) > 0 {
+		runResult = upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
+			Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped, Warnings: planResult.Warnings},
+			Lock:     lf,
+			LockPath: lockPath,
+			Stdin:    os.Stdin,
+			Stdout:   os.Stdout,
+			Stderr:   os.Stderr,
+		})
+	}
 
 	exitCode := exitOK
 	if len(runResult.Errors) > 0 {
@@ -3965,6 +3964,13 @@ func upgradeCmd(args []string) int {
 		}
 		exitCode = exitLogic
 	}
+
+	extraResult := applyExtraUpgrade(ctx, runnerEnv, os.Stdin, os.Stdout, os.Stderr)
+	for _, err := range extraStepErrors(extraResult) {
+		fprintf(os.Stderr, "genv upgrade: %v\n", err)
+		exitCode = exitLogic
+	}
+
 	if !*noHooks {
 		postHookErrs := runUpgradeHooks(ctx, f, upgradeHookOptions{
 			Phase:    "post",
@@ -3993,6 +3999,17 @@ func upgradeCmd(args []string) int {
 		adviseUpdatesReregister(os.Stdout, runResult.Upgraded)
 	}
 	return exitCode
+}
+
+func upgradeConfirmPrompt(planBatches int, hasExtra bool) string {
+	switch {
+	case planBatches > 0 && hasExtra:
+		return fmt.Sprintf("\nUpgrade %d package(s) and apply OS/firmware updates? [y/N] ", planBatches)
+	case hasExtra:
+		return "\nApply OS/firmware updates? [y/N] "
+	default:
+		return fmt.Sprintf("\nUpgrade %d package(s)? [y/N] ", planBatches)
+	}
 }
 
 // upgradeBatchFromAction builds a machine-readable batch descriptor from a
@@ -4038,7 +4055,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // all subprocess and hook output to stderr so stdout stays one JSON object,
 // then reports executed batches, refreshed versions, and failed hooks while
 // preserving the human path's exit codes.
-func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters) int {
+func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -4053,13 +4070,14 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			Data: output.UpgradeResult{
 				DryRun:  true,
 				Batches: batches,
+				Steps:   extras.steps,
 				Skipped: skippedEntries,
 				Filters: filters,
 			},
 		})
 	}
 
-	if len(plan) == 0 {
+	if len(plan) == 0 && !extraJSONHasCommands(extras.steps) {
 		ctx := context.Background()
 		var failedHooks []output.UpgradeHookResult
 		if !filters.HooksSkipped {
@@ -4076,6 +4094,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			Data: output.UpgradeResult{
 				DryRun:      false,
 				Batches:     []output.UpgradeBatch{},
+				Steps:       extras.steps,
 				Skipped:     skippedEntries,
 				FailedHooks: failedHooks,
 				Filters:     filters,
@@ -4099,6 +4118,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			Data: output.UpgradeResult{
 				DryRun:      false,
 				Batches:     []output.UpgradeBatch{},
+				Steps:       extras.steps,
 				Skipped:     skippedEntries,
 				FailedHooks: preHooks,
 				Filters:     filters,
@@ -4107,15 +4127,18 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 		})
 	}
 
-	// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
-	runResult := upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
-		Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped},
-		Lock:     lf,
-		LockPath: lockPath,
-		Stdin:    os.Stdin,
-		Stdout:   os.Stderr,
-		Stderr:   os.Stderr,
-	})
+	var runResult upgrade.UpgradeRunResult
+	if len(plan) > 0 {
+		// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
+		runResult = upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
+			Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped},
+			Lock:     lf,
+			LockPath: lockPath,
+			Stdin:    os.Stdin,
+			Stdout:   os.Stderr,
+			Stderr:   os.Stderr,
+		})
+	}
 	batches := make([]output.UpgradeBatch, 0, len(plan))
 	for _, a := range plan {
 		status := "ok"
@@ -4130,6 +4153,12 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 	}
 	if len(runResult.Errors) > 0 {
 		errs = append(errs, errStrings(runResult.Errors)...)
+	}
+
+	appliedSteps := extras.steps
+	if extras.apply != nil && extraJSONHasCommands(extras.steps) {
+		appliedSteps = extras.apply(ctx)
+		errs = append(errs, extraJSONErrorStrings(appliedSteps)...)
 	}
 
 	var postHooks []output.UpgradeHookResult
@@ -4171,6 +4200,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 		Data: output.UpgradeResult{
 			DryRun:      false,
 			Batches:     batches,
+			Steps:       appliedSteps,
 			Updated:     updated,
 			Skipped:     skippedEntries,
 			FailedHooks: postHooks,
@@ -4423,7 +4453,7 @@ Commands:
   migrate     Convert legacy host predicates to schemaVersion 8 targets
   completion  Print or install the shell completion script (bash, zsh, fish, or powershell)
   validate    Validate genv.json against the schema
-  upgrade     Upgrade outdated tracked packages (--all for every unconstrained package)
+  upgrade     Upgrade tracked packages plus OS vendor updates (--all for every unconstrained package)
   updates     Check for available updates to genv-tracked packages
   export      Build a single-target portable snapshot and report
   map         Print assist-only manager mapping suggestions for a target
