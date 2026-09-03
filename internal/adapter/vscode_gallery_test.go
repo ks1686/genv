@@ -168,6 +168,49 @@ func TestVscodeGalleryURLFromProductJSON_readsCursorGallery(t *testing.T) {
 	}
 }
 
+func TestVscodeGalleryURLFromProductJSON_invalidJSON(t *testing.T) {
+	if got := vscodeGalleryURLFromProductJSON([]byte(`{`)); got != "" {
+		t.Fatalf("vscodeGalleryURLFromProductJSON(invalid) = %q, want empty", got)
+	}
+}
+
+func TestVscodeGalleryServiceURL_readsProductJSONFromCodeBinary(t *testing.T) {
+	orig := vscodeGalleryBase
+	vscodeGalleryBase = ""
+	t.Cleanup(func() { vscodeGalleryBase = orig })
+
+	root := t.TempDir()
+	binDir := filepath.Join(root, "app", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	want := "https://marketplace.cursorapi.com/_apis/public/gallery"
+	if err := os.WriteFile(filepath.Join(root, "app", "product.json"), []byte(`{"extensionsGallery":{"serviceUrl":"`+want+`"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile product.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "code"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile code: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if got := vscodeGalleryServiceURL(); got != want {
+		t.Fatalf("vscodeGalleryServiceURL = %q, want Cursor gallery %q", got, want)
+	}
+}
+
+func TestFetchVscodeLatestStableVersions_serverError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	setVscodeGalleryBase(t, srv.URL)
+
+	_, err := fetchVscodeLatestStableVersions([]string{"golang.go"})
+	if err == nil {
+		t.Fatal("fetchVscodeLatestStableVersions: want error on gallery 500")
+	}
+}
+
 func TestVscodeFindProductJSON_nextToCodeBinary(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "app", "bin")
