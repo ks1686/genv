@@ -201,6 +201,13 @@ func Absent(a Adapter, pkgName string) bool {
 	return err == nil && !installed
 }
 
+// queryUnsupported is for adapters that cannot report installed state.
+// Returning an error (not false, nil) keeps Absent() from treating the
+// package as gone and dropping the lock without an uninstall attempt.
+func queryUnsupported(manager, pkgName string) (bool, error) {
+	return false, fmt.Errorf("%s: cannot determine whether %q is installed", manager, pkgName)
+}
+
 // lookPath is the exec.LookPath implementation used by adapters.
 // Replaced in tests to avoid PATH dependence.
 // On WSL2 hosts it uses wslSafeLookPath to prevent Windows-mounted binaries

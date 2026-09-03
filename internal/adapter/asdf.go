@@ -58,7 +58,7 @@ func (Asdf) PlanUpgrade(pkgName string) []string {
 
 func (Asdf) PlanClean() [][]string { return nil }
 
-func (Asdf) Query(string) (bool, error) { return false, nil }
+func (Asdf) Query(pkgName string) (bool, error) { return queryUnsupported("asdf", pkgName) }
 
 func (Asdf) ListInstalled() ([]string, error) { return nil, nil }
 

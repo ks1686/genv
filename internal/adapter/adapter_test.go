@@ -63,6 +63,42 @@ func TestByName(t *testing.T) {
 	}
 }
 
+type absentQueryStub struct {
+	installed bool
+	err       error
+}
+
+func (absentQueryStub) Name() string    { return "absent-query-stub" }
+func (absentQueryStub) Available() bool { return true }
+func (absentQueryStub) NormalizeID(id string, _ map[string]string) (string, bool) {
+	return id, false
+}
+func (absentQueryStub) PlanInstall(pkgName string) []string   { return []string{"true"} }
+func (absentQueryStub) PlanUninstall(pkgName string) []string { return []string{"true"} }
+func (absentQueryStub) PlanUpgrade(pkgName string) []string   { return []string{"true"} }
+func (absentQueryStub) PlanClean() [][]string                 { return nil }
+func (s absentQueryStub) Query(string) (bool, error)          { return s.installed, s.err }
+func (absentQueryStub) ListInstalled() ([]string, error)      { return nil, nil }
+func (absentQueryStub) QueryVersion(string) (string, error)   { return "", nil }
+
+func TestAbsent_QueryErrorIsNotAbsent(t *testing.T) {
+	if Absent(absentQueryStub{err: errors.New("brew list timed out")}, "jq") {
+		t.Fatal("Query error must not be treated as absent")
+	}
+}
+
+func TestAbsent_ConfirmedAbsent(t *testing.T) {
+	if !Absent(absentQueryStub{}, "jq") {
+		t.Fatal("Query false, nil must be treated as absent")
+	}
+	if Absent(absentQueryStub{installed: true}, "jq") {
+		t.Fatal("Query true, nil must not be treated as absent")
+	}
+	if Absent(nil, "jq") {
+		t.Fatal("nil adapter must not be treated as absent")
+	}
+}
+
 // TestNormalizeID_ExplicitMapping verifies that a manager-specific name in the
 // managers map takes precedence over the canonical ID.
 func TestNormalizeID_ExplicitMapping(t *testing.T) {
