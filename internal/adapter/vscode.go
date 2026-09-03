@@ -5,7 +5,7 @@ import "strings"
 // Vscode manages VS Code extensions via the `code` CLI. Extensions are tracked
 // by their "<publisher>.<name>" id. There is no broad "update all extensions"
 // operation: upgrade reinstalls the tracked id, which installs the latest
-// version for that single extension.
+// stable version for that single extension.
 type Vscode struct{}
 
 func (Vscode) Name() string { return "vscode" }
@@ -28,7 +28,8 @@ func (Vscode) PlanUninstall(pkgName string) []string {
 }
 
 // PlanUpgrade reinstalls the single tracked extension with --force, which pulls
-// the latest version for that id only. It never runs a broad update.
+// the latest *stable* version for that id. It never passes --pre-release and
+// never runs a broad update-all.
 func (Vscode) PlanUpgrade(pkgName string) []string {
 	return []string{"code", "--install-extension", vscodeExtensionID(pkgName), "--force"}
 }
@@ -66,6 +67,49 @@ func (v Vscode) QueryVersion(pkgName string) (string, error) {
 
 func (v Vscode) ListInstalledVersions() (map[string]string, error) {
 	return v.listEntries()
+}
+
+// ListOutdated reports tracked VS Code/Cursor extensions whose installed
+// version differs from the marketplace's newest stable version. Pre-release
+// gallery versions are ignored: PlanUpgrade cannot install them.
+func (v Vscode) ListOutdated(pkgNames []string) (map[string]string, error) {
+	installed, err := v.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	names := pkgNames
+	if len(names) == 0 {
+		names = make([]string, 0, len(installed))
+		for name := range installed {
+			names = append(names, name)
+		}
+	}
+
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		ids = append(ids, vscodeExtensionID(name))
+	}
+	latest, err := fetchVscodeLatestStableVersions(ids)
+	if err != nil {
+		return nil, err
+	}
+
+	outdated := make(map[string]string)
+	for _, name := range names {
+		id := vscodeExtensionID(name)
+		current, ok := installed[strings.ToLower(id)]
+		if !ok {
+			continue
+		}
+		want := latest[strings.ToLower(id)]
+		if want != "" && want != current {
+			outdated[name] = want
+		}
+	}
+	if len(outdated) == 0 {
+		return nil, nil
+	}
+	return outdated, nil
 }
 
 // vscodeExtensionID strips an "@version" suffix, leaving the publisher.name id

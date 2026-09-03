@@ -15,9 +15,14 @@ func TestVscode_PlanCommands_whenExtensionTracked(t *testing.T) {
 	if got, want := a.PlanUninstall("golang.go@0.42.0"), []string{"code", "--uninstall-extension", "golang.go"}; !slices.Equal(got, want) {
 		t.Errorf("PlanUninstall = %v, want %v", got, want)
 	}
-	// Upgrade must reinstall a single id with --force, never a broad update.
+	// Upgrade reinstalls a single id with --force and never opts into
+	// pre-release. `code --install-extension --force` installs latest stable;
+	// pre-release requires an explicit `--pre-release` that genv does not pass.
 	if got, want := a.PlanUpgrade("golang.go"), []string{"code", "--install-extension", "golang.go", "--force"}; !slices.Equal(got, want) {
 		t.Errorf("PlanUpgrade = %v, want %v", got, want)
+	}
+	if slices.Contains(a.PlanUpgrade("golang.go"), "--pre-release") {
+		t.Error("PlanUpgrade must not pass --pre-release; that channel is not the default")
 	}
 }
 
