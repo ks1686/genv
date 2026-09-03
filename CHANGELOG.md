@@ -4,16 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-### Fixed
-
-- `genv updates check` / `genv upgrade` no longer treat VS Code/Cursor
-  extensions as perpetually outdated. The vscode adapter now queries the
-  editor's marketplace (from `product.json`, so Cursor uses
-  marketplace.cursorapi.com) and compares against the newest **stable**
-  version. Pre-release gallery versions are skipped; the emitted command
-  remains `code --install-extension <id> --force`, which cannot install
-  pre-releases. Previously vscode had no `OutdatedLister`, so every
-  tracked extension was kept on every check.
+## v4.3.0 - 2026-09-03
 
 ### Added
 
@@ -37,6 +28,26 @@ All notable changes to this project will be documented in this file.
   abort later steps. `genv updates check`, the timer, and `updates.autoApply`
   remain tracked packages only. Further steps (rustup, editors, containers, and
   other extra tools) land in follow-ups.
+
+### Fixed
+
+- `genv updates check` / `genv upgrade` no longer treat VS Code/Cursor
+  extensions as perpetually outdated. The vscode adapter now queries the
+  editor's marketplace (from `product.json`, so Cursor uses
+  marketplace.cursorapi.com) and compares against the newest **stable**
+  version. Pre-release gallery versions are skipped; the emitted command
+  remains `code --install-extension <id> --force`, which cannot install
+  pre-releases. Previously vscode had no `OutdatedLister`, so every
+  tracked extension was kept on every check.
+- `genv apply` recovers when the lock and the manager disagree: uninstalling
+  a package that is already gone is treated as success and the lock entry is
+  dropped. `genv remove` writes the spec only after uninstall succeeds, and
+  `genv disown` can clear lock-only leftovers. Package removal failures no
+  longer skip post-apply hooks unless there is a real unresolved file mismatch.
+- asdf, sdkman, and stack `Query` no longer report absent for packages they
+  cannot inspect. After apply's Query-based uninstall recovery, that false
+  absent dropped the lock while the package was still installed. Those adapters
+  now return an error so uninstall still runs.
 
 ## v4.2.2 - 2026-08-22
 
