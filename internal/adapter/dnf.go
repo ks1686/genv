@@ -38,6 +38,10 @@ func (Dnf) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+func (Dnf) PlanRefresh() []string {
+	return []string{"sudo", "dnf", "makecache"}
+}
+
 func (Dnf) PlanClean() [][]string {
 	return [][]string{{"sudo", "dnf", "clean", "all"}}
 }

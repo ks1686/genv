@@ -40,6 +40,11 @@ func (Paru) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+// PlanRefresh syncs repos; paru escalates itself (no sudo prefix).
+func (Paru) PlanRefresh() []string {
+	return []string{"paru", "-Sy", "--noconfirm"}
+}
+
 func (Paru) PlanClean() [][]string {
 	return [][]string{{"paru", "-Sc", "--noconfirm"}}
 }

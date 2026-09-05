@@ -40,6 +40,11 @@ func (Yay) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+// PlanRefresh syncs repos; yay escalates itself (no sudo prefix).
+func (Yay) PlanRefresh() []string {
+	return []string{"yay", "-Sy", "--noconfirm"}
+}
+
 func (Yay) PlanClean() [][]string {
 	return [][]string{{"yay", "-Sc", "--noconfirm"}}
 }

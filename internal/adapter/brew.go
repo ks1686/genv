@@ -38,6 +38,12 @@ func (brewBase) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+// PlanRefresh fetches Homebrew's formula/cask index. Brew and Linuxbrew share
+// the same brew binary, so the planner dedupes identical argv to one call.
+func (brewBase) PlanRefresh() []string {
+	return []string{"brew", "update"}
+}
+
 // brewOutdatedEntry mirrors one element of `brew outdated --json=v2`.
 type brewOutdatedEntry struct {
 	Name           string `json:"name"`
@@ -46,14 +52,15 @@ type brewOutdatedEntry struct {
 
 // ListOutdated reports Homebrew formulae and casks with a newer version
 // available, keyed by name -> latest version, intersected with pkgNames.
-// Note: `brew outdated` reflects the state of the last `brew update`; genv does
-// not run `brew update` first to avoid a network fetch on every scheduled check.
+// The upgrade planner runs `brew update` first (PlanRefresh) so this query
+// sees bottles published since the last fetch. --greedy includes
+// auto-updating casks that `brew outdated` otherwise hides.
 func (brewBase) ListOutdated(pkgNames []string) (map[string]string, error) {
 	// Bound brew's HTTPS/trust evaluation so a launchd-session keychain hang
 	// cannot wedge the scheduled updates checker forever.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "brew", "outdated", "--json=v2").Output()
+	out, err := exec.CommandContext(ctx, "brew", "outdated", "--json=v2", "--greedy").Output()
 	if err != nil {
 		return nil, err
 	}

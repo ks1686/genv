@@ -40,6 +40,11 @@ func (Scoop) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+// PlanRefresh fetches scoop buckets before `scoop status`.
+func (Scoop) PlanRefresh() []string {
+	return []string{"scoop", "update"}
+}
+
 // PlanClean clears scoop's downloaded-installer cache for every app.
 func (Scoop) PlanClean() [][]string {
 	return [][]string{{"scoop", "cache", "rm", "*"}}

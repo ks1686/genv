@@ -36,6 +36,10 @@ func (Apk) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+func (Apk) PlanRefresh() []string {
+	return []string{"sudo", "apk", "update"}
+}
+
 func (Apk) PlanClean() [][]string {
 	return [][]string{{"sudo", "apk", "cache", "clean"}}
 }

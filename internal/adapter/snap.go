@@ -130,7 +130,8 @@ func (Snap) QueryVersion(pkgName string) (string, error) {
 }
 
 // ListOutdated reports snaps with an available refresh, keyed by snap name
-// -> target version, intersected with pkgNames.
+// -> target version, intersected with pkgNames. `snap refresh --list` is
+// store-live, so Snap does not implement IndexRefresher.
 func (Snap) ListOutdated(pkgNames []string) (map[string]string, error) {
 	out, err := runProbe("snap", "refresh", "--list")
 	if err != nil {

@@ -47,6 +47,12 @@ func (Pacman) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+// PlanRefresh syncs the official repos only. Do not use -Syu here; that is
+// the genv upgrade OS vendor step, not tracked-package index refresh.
+func (Pacman) PlanRefresh() []string {
+	return []string{"sudo", "pacman", "-Sy", "--noconfirm"}
+}
+
 func (Pacman) PlanClean() [][]string {
 	return [][]string{{"sudo", "pacman", "-Sc", "--noconfirm"}}
 }

@@ -39,6 +39,10 @@ func (Apt) PlanUpgradeBatch(pkgNames []string) []string {
 	return append(args, pkgNames...)
 }
 
+func (Apt) PlanRefresh() []string {
+	return []string{"sudo", "apt-get", "update"}
+}
+
 func (Apt) PlanClean() [][]string {
 	return [][]string{{"sudo", "apt-get", "clean"}}
 }

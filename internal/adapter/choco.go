@@ -122,6 +122,8 @@ func (Choco) ListInstalledVersions() (map[string]string, error) {
 
 // ListOutdated reports Chocolatey packages whose available version differs
 // from the installed one, keyed by package name -> target version.
+// choco outdated already queries configured sources; there is no separate
+// cheap source-refresh command, so Choco does not implement IndexRefresher.
 func (Choco) ListOutdated(pkgNames []string) (map[string]string, error) {
 	out, err := runProbe("choco", "outdated", "-r")
 	if err != nil {

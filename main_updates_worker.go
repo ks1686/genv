@@ -129,7 +129,13 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 	}
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
 	planStarted := time.Now()
-	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
+	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{
+		Spec:    f,
+		Lock:    lf,
+		Filters: filters,
+		Context: ctx,
+		Stdin:   strings.NewReader(""),
+	})
 	planDur := time.Since(planStarted).Round(time.Millisecond)
 	if err != nil {
 		logger.Warn("updates.check.plan", slog.Any("err", err), slog.Duration("duration", planDur))

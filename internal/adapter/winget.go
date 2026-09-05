@@ -34,6 +34,10 @@ func (Winget) PlanUpgrade(pkgName string) []string {
 	return []string{"winget", "upgrade", "--exact", "--silent", "--disable-interactivity", "--accept-package-agreements", "--accept-source-agreements", "--id", pkgName}
 }
 
+func (Winget) PlanRefresh() []string {
+	return []string{"winget", "source", "update"}
+}
+
 // PlanClean returns nil: winget has no standalone cache-clean command.
 func (Winget) PlanClean() [][]string { return nil }
 
