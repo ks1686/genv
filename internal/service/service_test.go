@@ -341,8 +341,10 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	timer := SystemdScheduledTimerContent("updates", 2*time.Hour)
 	plist := LaunchdScheduledPlistContent("updates", command, 2*time.Hour, environment)
 	script := `C:\Users\qa\.config\genv\scheduled\genv-updates.cmd`
-	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\cmd.exe`, script, 2*time.Hour)
+	vbs := `C:\Users\qa\.config\genv\scheduled\genv-updates.vbs`
+	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\wscript.exe`, vbs, 2*time.Hour)
 	wrapper := SchtasksScheduledCmdContent(ScheduledJob{Name: "updates", Command: command, Environment: environment})
+	vbsWrapper := SchtasksScheduledVbsContent(`C:\Windows\System32\cmd.exe`, script)
 
 	// Then: both backends run the one-shot command on the configured interval.
 	if !strings.Contains(unit, "Type=oneshot") || !strings.Contains(unit, `ExecStart="/usr/local/bin/genv" "updates" "__run-once"`) {
@@ -366,8 +368,14 @@ func TestScheduledJobContent_uses_interval_and_one_shot_command(t *testing.T) {
 	if !strings.Contains(xml, "<ExecutionTimeLimit>PT300S</ExecutionTimeLimit>") {
 		t.Fatalf("schtasks XML = %q, want ExecutionTimeLimit so wedged jobs are killed", xml)
 	}
-	if !strings.Contains(xml, `<Command>C:\Windows\System32\cmd.exe</Command>`) || !strings.Contains(xml, script) {
-		t.Fatalf("schtasks XML = %q, want cmd.exe wrapper over %s", xml, script)
+	if !strings.Contains(xml, `<Command>C:\Windows\System32\wscript.exe</Command>`) || !strings.Contains(xml, vbs) {
+		t.Fatalf("schtasks XML = %q, want windowless wscript host over %s", xml, vbs)
+	}
+	if strings.Contains(xml, `/d /c call`) || strings.Contains(strings.ToLower(xml), `cmd.exe</command>`) {
+		t.Fatalf("schtasks XML = %q, visible-window argv (cmd.exe /d /c call) is not allowed", xml)
+	}
+	if !strings.Contains(vbsWrapper, ", 0, True") || !strings.Contains(vbsWrapper, script) {
+		t.Fatalf("schtasks vbs = %q, want hidden Run of %s", vbsWrapper, script)
 	}
 	if !strings.Contains(xml, "<DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>") {
 		t.Fatalf("schtasks XML = %q, want remote-session start so SSH logon can still fire the task", xml)

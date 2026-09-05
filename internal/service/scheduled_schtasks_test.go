@@ -53,6 +53,7 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 	}
 
 	scriptPath := filepath.Join(home, ".config", "genv", "scheduled", "genv-updates.cmd")
+	vbsPath := filepath.Join(home, ".config", "genv", "scheduled", "genv-updates.vbs")
 	xmlPath := filepath.Join(home, ".config", "genv", "scheduled", "genv-updates.xml")
 	script, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -64,6 +65,11 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 	if !bytes.Contains(script, []byte(`set "PATH=C:\Users\qa\scoop\shims;C:\Windows\System32"`)) {
 		t.Fatalf("cmd wrapper = %q, want PATH assignment", script)
 	}
+	vbs, err := os.ReadFile(vbsPath)
+	if err != nil {
+		t.Fatalf("read vbs wrapper: %v", err)
+	}
+	assertSchtasksWindowlessVbs(t, string(vbs), scriptPath)
 	xmlBytes, err := os.ReadFile(xmlPath)
 	if err != nil {
 		t.Fatalf("read XML: %v", err)
@@ -75,8 +81,9 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 	if !strings.Contains(xmlText, "<LogonTrigger>") || !strings.Contains(xmlText, "<Interval>PT1H</Interval>") {
 		t.Fatalf("XML = %q, want logon + hourly repetition", xmlText)
 	}
-	if !strings.Contains(xmlText, scriptPath) && !strings.Contains(xmlText, strings.ReplaceAll(scriptPath, `/`, `\`)) {
-		t.Fatalf("XML = %q, want script path %q", xmlText, scriptPath)
+	assertSchtasksWindowlessXML(t, xmlText, vbsPath)
+	if !strings.Contains(xmlText, "<LogonType>InteractiveToken</LogonType>") {
+		t.Fatalf("XML = %q, want InteractiveToken so desktop notifications still work", xmlText)
 	}
 
 	if len(calls) < 2 || !schtasksCallHas(calls, "/Create", "/TN", "genv-updates", "/XML") || !schtasksCallHas(calls, "/Run", "/TN", "genv-updates") {
@@ -100,8 +107,32 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
 		t.Fatalf("cmd wrapper still exists: %v", err)
 	}
+	if _, err := os.Stat(vbsPath); !os.IsNotExist(err) {
+		t.Fatalf("vbs wrapper still exists: %v", err)
+	}
 	if _, err := os.Stat(xmlPath); !os.IsNotExist(err) {
 		t.Fatalf("XML still exists: %v", err)
+	}
+}
+
+func TestSchtasksScheduledVbsContent_runs_cmd_hidden(t *testing.T) {
+	script := `C:\Users\qa\.config\genv\scheduled\genv-updates.cmd`
+	vbs := SchtasksScheduledVbsContent(`C:\Windows\System32\cmd.exe`, script)
+	assertSchtasksWindowlessVbs(t, vbs, script)
+
+	quoted := SchtasksScheduledVbsContent(`C:\Windows\System32\cmd.exe`, `C:\genv "quoted"\job.cmd`)
+	// cmd doubles " to "", then VBS doubles each of those again.
+	if !strings.Contains(quoted, `C:\genv """"quoted""""\job.cmd`) {
+		t.Fatalf("vbs = %q, want cmd+VBS-escaped quoted path", quoted)
+	}
+}
+
+func TestSchtasksXML_action_is_windowless(t *testing.T) {
+	vbs := `C:\Users\qa\.config\genv\scheduled\genv-updates.vbs`
+	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\wscript.exe`, vbs, time.Hour)
+	assertSchtasksWindowlessXML(t, xml, vbs)
+	if !strings.Contains(xml, "<LogonType>InteractiveToken</LogonType>") || !strings.Contains(xml, "<Hidden>true</Hidden>") {
+		t.Fatalf("XML = %q, want InteractiveToken and Hidden", xml)
 	}
 }
 
@@ -290,7 +321,7 @@ func TestSchtasksStop_missing_task_is_ok(t *testing.T) {
 }
 
 func TestSchtasksXML_clamps_sub_minute_interval(t *testing.T) {
-	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\cmd.exe`, `C:\genv-updates.cmd`, 15*time.Second)
+	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\wscript.exe`, `C:\genv-updates.vbs`, 15*time.Second)
 	if !strings.Contains(xml, "<Interval>PT1M</Interval>") {
 		t.Fatalf("XML = %q, want 1m clamp", xml)
 	}
@@ -351,6 +382,44 @@ func TestSchtasksBackend_realWindowsRegisterStatusStop(t *testing.T) {
 	}
 	if status.Registered {
 		t.Fatalf("status after stop = %#v, want unregistered", status)
+	}
+}
+
+func assertSchtasksWindowlessXML(t *testing.T, xml, vbsPath string) {
+	t.Helper()
+	if !strings.Contains(xml, `<Command>`) || !strings.Contains(strings.ToLower(xml), `wscript.exe</command>`) {
+		t.Fatalf("XML = %q, want wscript.exe as the scheduled action", xml)
+	}
+	if strings.Contains(strings.ToLower(xml), `cmd.exe</command>`) {
+		t.Fatalf("XML = %q, cmd.exe as Exec Command allocates a visible console", xml)
+	}
+	if strings.Contains(xml, `/d /c call`) {
+		t.Fatalf("XML = %q, /d /c call is a visible-window argv; it belongs in the hidden VBS host", xml)
+	}
+	if !strings.Contains(xml, "//B") || !strings.Contains(xml, "//Nologo") {
+		t.Fatalf("XML = %q, want wscript //B //Nologo so script dialogs stay off", xml)
+	}
+	if !strings.Contains(xml, vbsPath) && !strings.Contains(xml, strings.ReplaceAll(vbsPath, `/`, `\`)) {
+		t.Fatalf("XML = %q, want vbs path %q", xml, vbsPath)
+	}
+}
+
+func assertSchtasksWindowlessVbs(t *testing.T, vbs, scriptPath string) {
+	t.Helper()
+	if !strings.Contains(vbs, `CreateObject("WScript.Shell")`) {
+		t.Fatalf("vbs = %q, want WScript.Shell host", vbs)
+	}
+	if !strings.Contains(vbs, ", 0, True") {
+		t.Fatalf("vbs = %q, want WshShell.Run window style 0 (hidden) and wait", vbs)
+	}
+	if strings.Contains(vbs, ", 1,") || strings.Contains(vbs, ", 5,") {
+		t.Fatalf("vbs = %q, window style 1/5 shows a console", vbs)
+	}
+	if !strings.Contains(vbs, scriptPath) && !strings.Contains(vbs, strings.ReplaceAll(scriptPath, `/`, `\`)) {
+		t.Fatalf("vbs = %q, want cmd wrapper path %q", vbs, scriptPath)
+	}
+	if !strings.Contains(strings.ToLower(vbs), "cmd.exe") {
+		t.Fatalf("vbs = %q, want hidden cmd.exe invocation of the existing wrapper", vbs)
 	}
 }
 
