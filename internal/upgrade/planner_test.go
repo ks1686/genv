@@ -29,13 +29,8 @@ func withAvailableManagers(t *testing.T, names ...string) {
 
 func TestBuildUpgradePlan_FiltersAll_skipsOutdatedDetection(t *testing.T) {
 	// Given: brew outdated reports only git, but --all requests every package.
-	dir := t.TempDir()
-	script := "#!/bin/sh\n" +
-		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi` + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake brew: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi`)
 
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
