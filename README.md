@@ -224,7 +224,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `scan` | Bulk-adopt user-facing installs (`--dry-run`, `--yes`; `--all` / `--deps` for full trees) |
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
-| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`) |
+| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`, `--source-root <dir>`) |
 | `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
@@ -268,6 +268,7 @@ genv apply --timeout 30m --hook-timeout 2m        # cap each subprocess / hook (
 genv apply --target ubuntu --dry-run --json
 genv apply --force --backup --yes                 # overwrite mismatched files; keep *.backup.*
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
+genv apply --dry-run --file ./worktree/genv.json --source-root ~/.config/genv
 genv status --target windows                      # present vs missing vs ok
 genv adopt cursor --target windows                # lock Anysphere.Cursor if already installed
 genv export --target macos --out ./dist/macos --strict

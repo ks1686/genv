@@ -413,6 +413,149 @@ func TestApply_FileMismatchSkipsPostApplyHooksWithMessage(t *testing.T) {
 	}
 }
 
+func TestApply_DryRunSourceRootUsesCanonicalTree(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+
+	liveDir := filepath.Join(dir, "live")
+	workDir := filepath.Join(dir, "work")
+	keepSrc := filepath.Join(liveDir, "keep.txt")
+	hushSrc := filepath.Join(liveDir, "hushlogin")
+	keepTarget := filepath.Join(dir, "home-keep")
+	hushTarget := filepath.Join(dir, "home-hush")
+	writeTestFile(t, keepSrc, "keep\n")
+	writeTestFile(t, hushSrc, "new hush\n")
+	if err := os.Symlink(keepSrc, keepTarget); err != nil {
+		t.Fatalf("symlink keep: %v", err)
+	}
+	writeTestFile(t, hushTarget, "old hush\n")
+
+	spec := `{` +
+		`"schemaVersion":"5",` +
+		`"files":{"links":[` +
+		`{"source":"keep.txt","target":` + jsonString(keepTarget) + `,"mode":"managed-link"},` +
+		`{"source":"hushlogin","target":` + jsonString(hushTarget) + `,"mode":"link"}` +
+		`]}}`
+	writeTestFile(t, filepath.Join(liveDir, "genv.json"), spec)
+	writeTestFile(t, filepath.Join(workDir, "genv.json"), spec)
+
+	workSpec := filepath.Join(workDir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+
+	var code int
+	stdout := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", workSpec, "--lock-file", lockPath, "--dry-run", "--json", "--yes"})
+		})
+	})
+	if code != exitOK && code != exitLogic {
+		t.Fatalf("dry-run without source-root: exit %d\n%s", code, stdout)
+	}
+	kinds := applyJSONFileKinds(t, stdout)
+	if kinds[keepTarget] == "ok" {
+		t.Fatalf("without --source-root, keep link should resolve to the spec copy and not be ok; got %#v\n%s", kinds, stdout)
+	}
+
+	stdout = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", workSpec, "--lock-file", lockPath, "--source-root", liveDir, "--dry-run", "--json", "--yes"})
+		})
+	})
+	if code != exitOK && code != exitLogic {
+		t.Fatalf("dry-run with source-root: exit %d\n%s", code, stdout)
+	}
+	kinds = applyJSONFileKinds(t, stdout)
+	if kinds[keepTarget] != "ok" {
+		t.Fatalf("with --source-root, existing keep link should be ok; got %#v\n%s", kinds, stdout)
+	}
+	if kinds[hushTarget] != "mismatch" {
+		t.Fatalf("real content mismatch should still show; got %#v\n%s", kinds, stdout)
+	}
+}
+
+func TestApply_WetApplyHonorsSourceRoot(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+
+	liveDir := filepath.Join(dir, "live")
+	workDir := filepath.Join(dir, "work")
+	liveSrc := filepath.Join(liveDir, "src.txt")
+	workSrc := filepath.Join(workDir, "src.txt")
+	target := filepath.Join(dir, "linked.txt")
+	writeTestFile(t, liveSrc, "from-live\n")
+	writeTestFile(t, workSrc, "from-work\n")
+
+	spec := `{` +
+		`"schemaVersion":"5",` +
+		`"files":{"links":[{"source":"src.txt","target":` + jsonString(target) + `,"mode":"link"}]}` +
+		`}`
+	writeTestFile(t, filepath.Join(workDir, "genv.json"), spec)
+
+	code := run([]string{
+		"apply", "--file", filepath.Join(workDir, "genv.json"),
+		"--lock-file", filepath.Join(dir, "genv.lock.json"),
+		"--source-root", liveDir, "--yes", "--no-hooks",
+	})
+	if code != exitOK {
+		t.Fatalf("wet apply --source-root: expected exitOK, got %d", code)
+	}
+	got, err := os.Readlink(target)
+	if err != nil {
+		t.Fatalf("target should be a symlink: %v", err)
+	}
+	if got != liveSrc {
+		t.Fatalf("symlink points to %q, want live tree %q", got, liveSrc)
+	}
+}
+
+func TestApply_SourceRootMissingIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	specPath := filepath.Join(dir, "genv.json")
+	writeTestFile(t, specPath, `{"schemaVersion":"5","packages":[]}`)
+
+	var code int
+	stderr := captureStderr(t, func() {
+		_ = captureStdout(t, func() {
+			code = run([]string{
+				"apply", "--file", specPath,
+				"--lock-file", filepath.Join(dir, "genv.lock.json"),
+				"--source-root", filepath.Join(dir, "missing-root"),
+				"--dry-run", "--yes",
+			})
+		})
+	})
+	if code == exitOK {
+		t.Fatalf("missing --source-root should fail; stderr=%s", stderr)
+	}
+	if !strings.Contains(stderr, "source-root") {
+		t.Fatalf("error should name --source-root; stderr=%s", stderr)
+	}
+}
+
+func applyJSONFileKinds(t *testing.T, stdout string) map[string]string {
+	t.Helper()
+	var env struct {
+		Data struct {
+			Files []struct {
+				Target string `json:"target"`
+				Kind   string `json:"kind"`
+			} `json:"files"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("apply --json: %v\n%s", err, stdout)
+	}
+	out := make(map[string]string, len(env.Data.Files))
+	for _, f := range env.Data.Files {
+		out[f.Target] = f.Kind
+	}
+	return out
+}
+
 func jsonString(s string) string {
 	b, err := json.Marshal(s)
 	if err != nil {

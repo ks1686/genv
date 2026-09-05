@@ -218,6 +218,7 @@ complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-le
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
 complete -c genv -n '__fish_genv_using_command apply' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_using_command apply' -l force-new-lock -d 'Back up a foreign lock and start a new local lock'
+complete -c genv -n '__fish_genv_using_command apply' -l source-root -d 'Resolve files.links/templates sources relative to this directory' -r
 
 # migrate
 complete -c genv -n '__fish_genv_using_command migrate' -l write -d 'Overwrite genv.json with the migrated schemaVersion 8 spec'

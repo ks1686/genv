@@ -206,7 +206,8 @@ _genv() {
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
-				'--force-new-lock[Back up a foreign lock and start a new local lock]'
+				'--force-new-lock[Back up a foreign lock and start a new local lock]' \
+				'--source-root=[Resolve files.links/templates sources relative to this directory]:path:_files -/'
 			;;
 		migrate)
 			_arguments \
