@@ -1053,7 +1053,7 @@ func adoptFilesCmd(file, lockFile, stateDir, hostFlag, targetFlag string, jsonOu
 		return code
 	}
 	statusCfg := filesConfigWithResolvedSources(filtered.Files, sourceRootForSpec(file, f))
-	res, err := files.Status(statusCfg, hostName)
+	res, err := files.StatusWithHashes(statusCfg, hostName, nil)
 	if jsonOut {
 		errs := []string(nil)
 		if err != nil {
@@ -1084,12 +1084,13 @@ func adoptFilesCmd(file, lockFile, stateDir, hostFlag, targetFlag string, jsonOu
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
-	lf.Files = mergeLockedFiles(lf.Files, lockedFilesFromSpec(filtered.Files))
+	adopted := lockedFilesFromSpec(filtered.Files, hostName, sourceRootForSpec(file, f))
+	lf.Files = mergeLockedFiles(lf.Files, adopted)
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
-	fprintf(os.Stdout, "adopted %d file entry/entries into %s\n", len(lockedFilesFromSpec(filtered.Files)), lockPath)
+	fprintf(os.Stdout, "adopted %d file entry/entries into %s\n", len(adopted), lockPath)
 	return exitOK
 }
 
@@ -1600,6 +1601,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 					return exitLogic
 				}
 			}
+			refreshLockedFileHashes(f, lf, hostForCommand(opts.Host), applySourceRoot(opts, f))
 			if err := writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, opts.SkipPackages, true); err != nil {
 				fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 				return exitIO
@@ -2043,7 +2045,7 @@ func expandCLIPath(path string) string {
 	return os.Expand(path, os.Getenv)
 }
 
-func lockedFilesFromSpec(cfg *schema.FilesConfig) []genvfile.LockedFile {
+func lockedFilesFromSpec(cfg *schema.FilesConfig, hostName, sourceRoot string) []genvfile.LockedFile {
 	if cfg == nil {
 		return nil
 	}
@@ -2053,10 +2055,20 @@ func lockedFilesFromSpec(cfg *schema.FilesConfig) []genvfile.LockedFile {
 		if mode == "" {
 			mode = "link"
 		}
-		locked = append(locked, genvfile.LockedFile{Source: l.Source, Target: l.Target, Mode: mode})
+		entry := genvfile.LockedFile{Source: l.Source, Target: l.Target, Mode: mode}
+		if files.HashableLinkMode(mode) {
+			if hash, err := files.HashLinkSource(sourceRoot, l.Source); err == nil {
+				entry.ContentHash = hash
+			}
+		}
+		locked = append(locked, entry)
 	}
 	for _, tmpl := range cfg.Templates {
-		locked = append(locked, genvfile.LockedFile{Source: tmpl.Source, Target: tmpl.Target, Mode: "copy"})
+		entry := genvfile.LockedFile{Source: tmpl.Source, Target: tmpl.Target, Mode: "copy"}
+		if hash, err := files.HashTemplate(sourceRoot, tmpl.Source, hostName); err == nil {
+			entry.ContentHash = hash
+		}
+		locked = append(locked, entry)
 	}
 	for _, d := range cfg.Dirs {
 		locked = append(locked, genvfile.LockedFile{Target: d.Target, Mode: "dir"})
@@ -2064,20 +2076,46 @@ func lockedFilesFromSpec(cfg *schema.FilesConfig) []genvfile.LockedFile {
 	return locked
 }
 
+func fileLockKey(f genvfile.LockedFile) string {
+	return f.Source + "\x00" + f.Target + "\x00" + f.Mode
+}
+
 func mergeLockedFiles(existing, adopted []genvfile.LockedFile) []genvfile.LockedFile {
 	merged := append([]genvfile.LockedFile(nil), existing...)
-	seen := make(map[genvfile.LockedFile]bool, len(existing)+len(adopted))
-	for _, f := range existing {
-		seen[f] = true
+	index := make(map[string]int, len(existing)+len(adopted))
+	for i, f := range existing {
+		index[fileLockKey(f)] = i
 	}
 	for _, f := range adopted {
-		if seen[f] {
+		key := fileLockKey(f)
+		if i, ok := index[key]; ok {
+			if f.ContentHash != "" {
+				merged[i].ContentHash = f.ContentHash
+			}
 			continue
 		}
+		index[key] = len(merged)
 		merged = append(merged, f)
-		seen[f] = true
 	}
 	return merged
+}
+
+func fileContentHashes(locked []genvfile.LockedFile) map[string]string {
+	if len(locked) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(locked))
+	for _, f := range locked {
+		if f.ContentHash == "" {
+			continue
+		}
+		target, err := files.ExpandTarget(f.Target)
+		if err != nil {
+			continue
+		}
+		out[target] = f.ContentHash
+	}
+	return out
 }
 
 func filesConfigWithResolvedSources(cfg *schema.FilesConfig, sourceRoot string) *schema.FilesConfig {
@@ -2198,16 +2236,25 @@ func fileStatusEntries(res *files.StatusResult) []output.FilePlanEntry {
 }
 
 func applyFiles(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile) (*files.ApplyResult, error) {
-	res, err := files.Apply(ctx, f.Files, hostForCommand(opts.Host), files.ApplyOptions{
-		SourceRoot: applySourceRoot(opts, f),
+	hostName := hostForCommand(opts.Host)
+	sourceRoot := applySourceRoot(opts, f)
+	res, err := files.Apply(ctx, f.Files, hostName, files.ApplyOptions{
+		SourceRoot: sourceRoot,
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
 		Backup:     opts.Backup,
 	})
 	if err == nil && !opts.DryRun {
-		lf.Files = lockedFilesFromSpec(f.Files)
+		refreshLockedFileHashes(f, lf, hostName, sourceRoot)
 	}
 	return res, err
+}
+
+func refreshLockedFileHashes(f *schema.GenvFile, lf *genvfile.LockFile, hostName, sourceRoot string) {
+	if f == nil || lf == nil {
+		return
+	}
+	lf.Files = lockedFilesFromSpec(f.Files, hostName, sourceRoot)
 }
 
 type upgradeHookOptions struct {
@@ -3161,7 +3208,8 @@ func statusCmd(args []string) int {
 		fPrintln(os.Stderr, "Show the diff between genv.json, the lock file, and the live system.")
 		fPrintln(os.Stderr, "Unlocked packages that are already installed are reported as present.")
 		fPrintln(os.Stderr, "Use --offline to compare spec vs lock only.")
-		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown.")
+		fPrintln(os.Stderr, "Use --files to check live file topology and content hashes (drifted).")
+		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown. File content drift is reported only; apply does not revert bodies.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -3171,7 +3219,7 @@ func statusCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
-	filesOnly := fs.Bool("files", false, "check files block against the live filesystem only")
+	filesOnly := fs.Bool("files", false, "check files block against the live filesystem (topology plus content hashes)")
 	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
@@ -3210,7 +3258,11 @@ func statusCmd(args []string) int {
 
 	if *filesOnly {
 		statusCfg := filesConfigWithResolvedSources(f.Files, sourceRootForSpec(*file, f))
-		res, err := files.Status(statusCfg, hostName)
+		var hashes map[string]string
+		if lf != nil {
+			hashes = fileContentHashes(lf.Files)
+		}
+		res, err := files.StatusWithHashes(statusCfg, hostName, hashes)
 		if *jsonOut {
 			errs := []string(nil)
 			if err != nil {

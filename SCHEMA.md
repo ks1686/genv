@@ -83,6 +83,8 @@ Merge order: copy `defaults`, overlay `targets.<id>`. Arrays defined on the targ
 
 `~/.config/genv/genv.lock.json` is machine-local. v8 locks may record `target` and `goos`. A foreign lock is refused; use `genv apply --force-new-lock` to back it up and start fresh. Never commit locks.
 
+Each applied `files.links[]` (`link` / `managed-link`) and `files.templates[]` entry may record `contentHash` (`sha256:<hex>` of the link source or rendered template). `genv status --files` reports `drifted` when the live hash differs. Older locks omit the field and stay topology-only. Apply refreshes the hash after a successful link/template op and never reverts the body.
+
 Guide: [docs/multi-machine.md](docs/multi-machine.md).
 
 ## v7 — PowerShell

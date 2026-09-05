@@ -127,6 +127,88 @@ func registerSkipPackagesListAdapter(t *testing.T, a *skipPackagesListAdapter) {
 	})
 }
 
+func TestApplyAndStatus_recordsAndReportsManagedLinkContentHash(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	spec := filepath.Join(dir, "genv.json")
+	lock := filepath.Join(dir, "genv.lock.json")
+	src := filepath.Join(dir, "npmrc")
+	dst := filepath.Join(dir, ".npmrc")
+	writeTestFile(t, src, "registry=https://registry.npmjs.org/\n")
+	writeTestFile(t, spec, `{`+
+		`"schemaVersion":"6",`+
+		`"files":{"links":[{"source":`+jsonString(src)+`,"target":`+jsonString(dst)+`,"mode":"managed-link"}]}`+
+		`}`)
+
+	if code := run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--skip-packages"}); code != exitOK {
+		t.Fatalf("apply: expected exitOK (%d), got %d", exitOK, code)
+	}
+	lf, err := genvfile.ReadLock(lock)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.Files) != 1 || lf.Files[0].ContentHash == "" {
+		t.Fatalf("lock files = %#v, want one entry with contentHash", lf.Files)
+	}
+	appliedHash := lf.Files[0].ContentHash
+
+	var statusCode int
+	statusOut := captureStdout(t, func() {
+		statusCode = run([]string{"status", "--files", "--file", spec, "--lock-file", lock})
+	})
+	if statusCode != exitOK {
+		t.Fatalf("status after apply: exit %d, want 0\n%s", statusCode, statusOut)
+	}
+
+	writeTestFile(t, src, "registry=https://registry.npmjs.org/\n# jamf\n")
+	statusOut = captureStdout(t, func() {
+		statusCode = run([]string{"status", "--files", "--file", spec, "--lock-file", lock})
+	})
+	if statusCode != exitLogic {
+		t.Fatalf("status after source edit: exit %d, want %d\n%s", statusCode, exitLogic, statusOut)
+	}
+	if !strings.Contains(statusOut, "drifted") {
+		t.Fatalf("status after source edit: expected drifted, got %q", statusOut)
+	}
+	if !strings.Contains(statusOut, dst) && !strings.Contains(statusOut, filepath.Base(dst)) {
+		t.Fatalf("status after source edit: expected path %q in output %q", dst, statusOut)
+	}
+
+	got, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if !strings.Contains(string(got), "jamf") {
+		t.Fatalf("apply must not revert source; got %q", got)
+	}
+
+	if code := run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--skip-packages"}); code != exitOK {
+		t.Fatalf("re-apply: expected exitOK, got %d", code)
+	}
+	got, err = os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read source after re-apply: %v", err)
+	}
+	if !strings.Contains(string(got), "jamf") {
+		t.Fatalf("re-apply reverted source to %q", got)
+	}
+	lf, err = genvfile.ReadLock(lock)
+	if err != nil {
+		t.Fatalf("read lock after re-apply: %v", err)
+	}
+	if len(lf.Files) != 1 || lf.Files[0].ContentHash == "" || lf.Files[0].ContentHash == appliedHash {
+		t.Fatalf("re-apply should refresh contentHash; before=%q after=%#v", appliedHash, lf.Files)
+	}
+
+	statusOut = captureStdout(t, func() {
+		statusCode = run([]string{"status", "--files", "--file", spec, "--lock-file", lock})
+	})
+	if statusCode != exitOK {
+		t.Fatalf("status after re-apply: exit %d, want 0\n%s", statusCode, statusOut)
+	}
+}
+
 func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
