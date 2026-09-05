@@ -31,7 +31,7 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 			return nil, errors.New("missing schtasks args")
 		}
 		switch args[0] {
-		case "/Create", "/Run", "/Delete":
+		case "/Create", "/Run", "/End", "/Delete":
 			return []byte("SUCCESS\n"), nil
 		case "/Query":
 			return []byte(queryOutput), nil
@@ -100,6 +100,9 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 
 	if err := stopSchtasksScheduledJob(ctx, job.Name); err != nil {
 		t.Fatalf("stopSchtasksScheduledJob: %v", err)
+	}
+	if !schtasksCallHas(calls, "/End", "/TN", "genv-updates") {
+		t.Fatalf("schtasks calls = %#v, want /End of genv-updates before delete", calls)
 	}
 	if !schtasksCallHas(calls, "/Delete", "/TN", "genv-updates", "/F") {
 		t.Fatalf("schtasks calls = %#v, want /Delete of genv-updates", calls)
@@ -382,6 +385,45 @@ func TestSchtasksBackend_realWindowsRegisterStatusStop(t *testing.T) {
 	}
 	if status.Registered {
 		t.Fatalf("status after stop = %#v, want unregistered", status)
+	}
+}
+
+func TestRemoveScheduledArtifact_retriesBusyThenSucceeds(t *testing.T) {
+	origDelay := scheduledRemoveRetryDelay
+	scheduledRemoveRetryDelay = 0
+	t.Cleanup(func() { scheduledRemoveRetryDelay = origDelay })
+
+	n := 0
+	err := removeScheduledArtifactWith(func(string) error {
+		n++
+		if n < 3 {
+			return &os.PathError{
+				Op:   "remove",
+				Path: "genv-updates.vbs",
+				Err:  errors.New("The process cannot access the file because it is being used by another process."),
+			}
+		}
+		return nil
+	}, "genv-updates.vbs", time.Second)
+	if err != nil {
+		t.Fatalf("remove after retries: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("attempts = %d, want 3", n)
+	}
+}
+
+func TestRemoveScheduledArtifact_nonBusyFailsImmediately(t *testing.T) {
+	n := 0
+	err := removeScheduledArtifactWith(func(string) error {
+		n++
+		return &os.PathError{Op: "remove", Path: "genv-updates.vbs", Err: errors.New("access is denied")}
+	}, "genv-updates.vbs", time.Second)
+	if err == nil || !strings.Contains(err.Error(), "access is denied") {
+		t.Fatalf("error = %v, want access is denied", err)
+	}
+	if n != 1 {
+		t.Fatalf("attempts = %d, want 1 (no retry)", n)
 	}
 }
 

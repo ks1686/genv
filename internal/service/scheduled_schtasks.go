@@ -20,6 +20,13 @@ const (
 	schtasksRepetitionDuration = "P3650D"
 )
 
+// wscript can keep the .vbs mapped for a short time after schtasks /Delete.
+// Retry just long enough for the host to exit; do not block stop on a wedged job.
+var (
+	scheduledRemoveRetryDelay  = 50 * time.Millisecond
+	scheduledRemoveRetryBudget = 2 * time.Second
+)
+
 // schtasksRun invokes schtasks.exe. Tests replace it so Linux CI can cover
 // register/status/stop without a Windows host.
 var schtasksRun = func(ctx context.Context, args ...string) ([]byte, error) {
@@ -105,6 +112,7 @@ func startSchtasksScheduledJob(ctx context.Context, job ScheduledJob) error {
 
 func stopSchtasksScheduledJob(ctx context.Context, name string) error {
 	taskName := schtasksTaskName(name)
+	_, _ = schtasksRun(ctx, "/End", "/TN", taskName)
 	if out, err := schtasksRun(ctx, "/Delete", "/TN", taskName, "/F"); err != nil {
 		decoded := decodeSchtasksOutput(out)
 		if !schtasksTaskMissing(decoded) {
@@ -120,11 +128,40 @@ func stopSchtasksScheduledJob(ctx context.Context, name string) error {
 		filepath.Join(dir, schtasksVbsFileName(name)),
 		filepath.Join(dir, schtasksXMLFileName(name)),
 	} {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("removing scheduled task file %q: %w", path, err)
+		if err := removeScheduledArtifact(path); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func removeScheduledArtifact(path string) error {
+	return removeScheduledArtifactWith(os.Remove, path, scheduledRemoveRetryBudget)
+}
+
+func removeScheduledArtifactWith(remove func(string) error, path string, budget time.Duration) error {
+	deadline := time.Now().Add(budget)
+	for {
+		err := remove(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if !isBusyFile(err) || !time.Now().Before(deadline) {
+			return fmt.Errorf("removing scheduled task file %q: %w", path, err)
+		}
+		if scheduledRemoveRetryDelay > 0 {
+			time.Sleep(scheduledRemoveRetryDelay)
+		}
+	}
+}
+
+func isBusyFile(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "used by another process") ||
+		strings.Contains(msg, "sharing violation")
 }
 
 // SchtasksScheduledVbsContent renders a windowless WSH host that runs

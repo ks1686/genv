@@ -26,6 +26,8 @@ All notable changes to this project will be documented in this file.
   `WshShell.Run`s the existing `.cmd` with window style 0. `<Hidden>true</Hidden>`
   alone does not hide `cmd.exe`. `updates.log` and one completion notification
   are unchanged. Do not flip `genv.exe` to the Windows GUI subsystem.
+  `updates stop` now ends the running task before delete and retries removing
+  the `.vbs` host if `wscript` still has it open (sharing violation).
 - The `vscode` adapter now prefers `cursor` on PATH, then `code`. Cursor-only
   hosts can scan, adopt, and upgrade extensions without a `code` shim.
   VS Code-only hosts (`code`, no `cursor`) are unchanged.
