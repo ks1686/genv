@@ -187,6 +187,42 @@ func TestAdoptCmd_File_ReadsLockNextToSpec(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_Files_WritesLockNextToSpec(t *testing.T) {
+	live := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", live)
+	testutil.SetHome(t, live)
+
+	sandbox := t.TempDir()
+	src := filepath.Join(sandbox, "src.txt")
+	dst := filepath.Join(sandbox, "dst.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	spec := filepath.Join(sandbox, "genv.json")
+	writeTestFile(t, spec, `{
+		"schemaVersion": "6",
+		"files": {"links": [{"source": `+jsonString(src)+`, "target": `+jsonString(dst)+`}]}
+	}`)
+
+	code := run([]string{"adopt", "--file", spec, "--files"})
+	if code != exitOK {
+		t.Fatalf("adopt --files --file: got exit %d, want %d", code, exitOK)
+	}
+	lf, err := genvfile.ReadLock(filepath.Join(sandbox, "genv.lock.json"))
+	if err != nil {
+		t.Fatalf("read sandbox lock: %v", err)
+	}
+	if len(lf.Files) != 1 {
+		t.Fatalf("sandbox lock files = %+v, want one entry", lf.Files)
+	}
+	if _, err := os.Stat(filepath.Join(live, "genv", "genv.lock.json")); err == nil {
+		t.Fatal("adopt --files wrote the default config lock")
+	}
+}
+
 func TestApplyCmd_StateDir_OverridesLockAndFragments(t *testing.T) {
 	live := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", live)
