@@ -313,13 +313,18 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LockPathFrom — lock lives in the genv config directory, ignoring spec path.
+// LockPathFrom — lock lives next to the spec (absolute).
 // ---------------------------------------------------------------------------
 
 func TestLockPathFrom(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.FromSlash("/custom/config"))
-	got := LockPathFrom("/tmp/repo/genv.json")
-	want := filepath.Join(filepath.FromSlash("/tmp/repo"), "genv.lock.json")
+	spec := filepath.FromSlash("/tmp/repo/genv.json")
+	got := filepath.Clean(LockPathFrom(spec))
+	absSpec, err := filepath.Abs(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Clean(filepath.Join(filepath.Dir(absSpec), "genv.lock.json"))
 	if got != want {
 		t.Errorf("LockPathFrom(spec) = %q, want lock next to spec %q", got, want)
 	}
