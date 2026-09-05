@@ -149,6 +149,7 @@ complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_comman
 complete -c genv -n '__fish_genv_using_command add' -f -a '(__fish_genv_repo_packages)' -d 'Package'
 complete -c genv -n '__fish_genv_using_command adopt' -f -a '(__fish_genv_repo_packages)' -d 'Package'
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_using_command adopt' -l state-dir -d 'Directory for lock and env/shell fragments' -r
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l version -d 'Version constraint' -x
 complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' \
     -l prefer -d 'Preferred manager' -x -a '(__fish_genv_managers)'
@@ -201,6 +202,7 @@ complete -c genv -n '__fish_genv_seen_sub updates start' -l target -d 'Portable 
 
 # apply
 complete -c genv -n '__fish_genv_using_command apply' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_using_command apply' -l state-dir -d 'Directory for lock and env/shell fragments' -r
 complete -c genv -n '__fish_genv_using_command apply' -l dry-run -d 'Print the reconcile plan without executing'
 complete -c genv -n '__fish_genv_using_command apply' -l force -d 'Overwrite mismatched managed files'
 complete -c genv -n '__fish_genv_using_command apply' -l backup -d 'Back up mismatched files before overwrite'

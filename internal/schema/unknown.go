@@ -43,7 +43,7 @@ var (
 	tmplFields    = strSet("source", "target", "host", "backup", "perm")
 	dirFields     = strSet("target", "host", "perm")
 	hooksFields   = strSet("preApply", "postApply", "preAdd", "postAdd", "preRemove", "postRemove", "preUpgrade", "postUpgrade")
-	hookFields    = strSet("command", "file", "host")
+	hookFields    = strSet("command", "file", "host", "name", "continueOnError")
 	repoFields    = strSet("url", "ref")
 	updatesFields = strSet("enabled", "interval", "autoApply", "notify", "onlyManagers", "skipManagers", "only", "skip")
 	bundleFields  = strSet("packages", "env", "shell", "services", "files", "hooks")

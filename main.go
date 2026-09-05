@@ -386,10 +386,74 @@ func addToSpec(file, id, version, prefer string, managers map[string]string, tar
 // appendLockEntry reads the lock at lockPath, appends lp, and writes it back.
 // Returns an exit code; exitOK means success.
 func lockPathForSpec(file, override string) string {
+	return lockPathForState(file, "", override)
+}
+
+func lockPathForState(file, stateDir, override string) string {
 	if override != "" {
 		return override
 	}
-	return genvfile.LockPathFrom(file)
+	dir, err := genvfile.ResolveStateDir(file, stateDir)
+	if err != nil {
+		return "genv.lock.json"
+	}
+	return genvfile.LockPathIn(dir)
+}
+
+func resolveApplyState(opts applyOptions) (stateDir, lockPath string, err error) {
+	stateDir, err = genvfile.ResolveStateDir(opts.File, opts.StateDir)
+	if err != nil {
+		return "", "", err
+	}
+	return stateDir, lockPathForState(opts.File, opts.StateDir, opts.LockFile), nil
+}
+
+func applyStatePaths(stateDir, lockPath string) output.StatePaths {
+	if stateDir == "" {
+		if dir, err := genvfile.DefaultDir(); err == nil {
+			stateDir = dir
+		}
+	}
+	envName, shellName := "env.sh", "shell.sh"
+	if runtime.GOOS == "windows" {
+		envName, shellName = "env.ps1", "shell.ps1"
+	}
+	return output.StatePaths{
+		Dir:   stateDir,
+		Lock:  lockPath,
+		Env:   filepath.Join(stateDir, envName),
+		Shell: filepath.Join(stateDir, shellName),
+	}
+}
+
+func printApplyStatePlan(w io.Writer, state output.StatePaths) {
+	fPrintln(w, "state:")
+	fprintf(w, "  lock: %s\n", state.Lock)
+	if state.Env != "" {
+		fprintf(w, "  env: %s\n", state.Env)
+	}
+	if state.Shell != "" {
+		fprintf(w, "  shell: %s\n", state.Shell)
+	}
+	fPrintln(w)
+}
+
+func guardApplyStateWrites(opts applyOptions, stateDir, lockPath string) error {
+	allowed, err := genvfile.ResolveStateDir(opts.File, opts.StateDir)
+	if err != nil {
+		return err
+	}
+	state := applyStatePaths(stateDir, lockPath)
+	if opts.LockFile == "" && !genvfile.WithinDir(allowed, lockPath) {
+		return fmt.Errorf("refusing to write lock %s outside %s (pass --lock-file or --state-dir)", lockPath, allowed)
+	}
+	if !genvfile.WithinDir(allowed, state.Env) {
+		return fmt.Errorf("refusing to write env fragment %s outside %s (pass --state-dir)", state.Env, allowed)
+	}
+	if !genvfile.WithinDir(allowed, state.Shell) {
+		return fmt.Errorf("refusing to write shell fragment %s outside %s (pass --state-dir)", state.Shell, allowed)
+	}
+	return nil
 }
 
 func stampLockTarget(lf *genvfile.LockFile, targetID string) {
@@ -535,7 +599,7 @@ func addCmd(args []string) int {
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
 				Hooks:   hooksCfg.PreAdd,
-				Context: hookContext{Event: "add", Phase: "pre-add", Host: hostName, Profile: profileName, Installed: []string{id}},
+				Context: hookContext{Event: "add", Phase: "pre-add", Host: hostName, Profile: profileName, Installed: []string{id}}.withFiles(*file, lockPath),
 				Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
 			if len(errs) > 0 {
@@ -598,7 +662,7 @@ func addCmd(args []string) int {
 	}
 	errs := runHookPhase(context.Background(), hookPhaseRun{
 		Hooks:   hooksCfg.PostAdd,
-		Context: hookContext{Event: "add", Phase: "post-add", Host: hostName, Profile: profileName, Installed: []string{id}},
+		Context: hookContext{Event: "add", Phase: "post-add", Host: hostName, Profile: profileName, Installed: []string{id}}.withFiles(*file, lockPath),
 		Timeout: *hookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 	})
 	if len(errs) > 0 {
@@ -715,7 +779,7 @@ func runRemove(opts removeOptions) int {
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
 				Hooks:   hooksCfg.PreRemove,
-				Context: hookContext{Event: "remove", Phase: "pre-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
+				Context: hookContext{Event: "remove", Phase: "pre-remove", Host: hostName, Profile: profileName, Removed: []string{id}}.withFiles(file, lockPath),
 				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
 			if len(errs) > 0 {
@@ -809,7 +873,7 @@ func runRemove(opts removeOptions) int {
 			}
 			errs := runHookPhase(context.Background(), hookPhaseRun{
 				Hooks:   hooksCfg.PostRemove,
-				Context: hookContext{Event: "remove", Phase: "post-remove", Host: hostName, Profile: profileName, Removed: []string{id}},
+				Context: hookContext{Event: "remove", Phase: "post-remove", Host: hostName, Profile: profileName, Removed: []string{id}}.withFiles(file, lockPath),
 				Timeout: opts.HookTimeout, Stdout: os.Stdout, Stderr: os.Stderr,
 			})
 			if len(errs) > 0 {
@@ -835,6 +899,7 @@ func adoptCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	stateDir := fs.String("state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
@@ -861,7 +926,7 @@ func adoptCmd(args []string) int {
 		}
 	}
 	if *filesOnly {
-		return adoptFilesCmd(*file, *lockFile, *hostFlag, *targetFlag, *jsonOut)
+		return adoptFilesCmd(*file, *lockFile, *stateDir, *hostFlag, *targetFlag, *jsonOut)
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
@@ -924,8 +989,12 @@ func adoptCmd(args []string) int {
 		fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
 		return exitLogic
 	}
+	installedVersion := ""
+	if v, err := mgr.QueryVersion(action.PkgName); err == nil {
+		installedVersion = v
+	}
 
-	lockPath := lockPathForSpec(*file, *lockFile)
+	lockPath := lockPathForState(*file, *stateDir, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -953,9 +1022,10 @@ func adoptCmd(args []string) int {
 		}
 	}
 	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
-		ID:      action.Pkg.ID,
-		Manager: action.Manager,
-		PkgName: action.PkgName,
+		ID:               action.Pkg.ID,
+		Manager:          action.Manager,
+		PkgName:          action.PkgName,
+		InstalledVersion: installedVersion,
 	}, targetID); exit != exitOK {
 		return exit
 	}
@@ -964,7 +1034,7 @@ func adoptCmd(args []string) int {
 	return exitOK
 }
 
-func adoptFilesCmd(file, lockFile, hostFlag, targetFlag string, jsonOut bool) int {
+func adoptFilesCmd(file, lockFile, stateDir, hostFlag, targetFlag string, jsonOut bool) int {
 	f, err := genvfile.Read(file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
@@ -1008,7 +1078,7 @@ func adoptFilesCmd(file, lockFile, hostFlag, targetFlag string, jsonOut bool) in
 		return exitLogic
 	}
 
-	lockPath := lockPathForSpec(file, lockFile)
+	lockPath := lockPathForState(file, stateDir, lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -1174,24 +1244,26 @@ func hostForCommand(hostFlag string) string {
 // Reconciles the system against genv.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
 type applyOptions struct {
-	File          string
-	LockFile      string
-	Host          string
-	DryRun        bool
-	Strict        bool
-	Yes           bool
-	Quiet         bool
-	JSONOut       bool
-	Force         bool
-	Backup        bool
-	Timeout       time.Duration
-	Debug         bool
-	TargetProfile string
-	Target        string
-	ForceNewLock  bool
-	NoHooks       bool
-	HookTimeout   time.Duration
-	SkipPackages  bool
+	File             string
+	LockFile         string
+	StateDir         string
+	Host             string
+	DryRun           bool
+	Strict           bool
+	Yes              bool
+	Quiet            bool
+	JSONOut          bool
+	Force            bool
+	Backup           bool
+	Timeout          time.Duration
+	Debug            bool
+	TargetProfile    string
+	Target           string
+	ForceNewLock     bool
+	NoHooks          bool
+	HookTimeout      time.Duration
+	SkipPackages     bool
+	resolvedStateDir string
 }
 
 func applyCmd(args []string) int {
@@ -1206,6 +1278,7 @@ func applyCmd(args []string) int {
 	opts := applyOptions{}
 	fs.StringVar(&opts.File, "file", defaultSpecPath(), "path to genv.json")
 	fs.StringVar(&opts.LockFile, "lock-file", "", "path to genv lock file")
+	fs.StringVar(&opts.StateDir, "state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite mismatched managed files")
 	fs.BoolVar(&opts.Backup, "backup", false, "back up mismatched files before overwrite (implies keeping originals as *.backup.*)")
@@ -1243,7 +1316,18 @@ func runApply(opts applyOptions) int {
 		ctx = resolver.WithSubprocessTimeout(ctx, opts.Timeout)
 	}
 
-	lockPath := lockPathForSpec(opts.File, opts.LockFile)
+	stateDir, lockPath, err := resolveApplyState(opts)
+	if err != nil {
+		fprintf(os.Stderr, "genv: resolving state paths: %v\n", err)
+		return exitIO
+	}
+	if !opts.DryRun {
+		if err := guardApplyStateWrites(opts, stateDir, lockPath); err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitLogic
+		}
+	}
+	opts.resolvedStateDir = stateDir
 	unlock, err := genvfile.LockMutation(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: locking %s: %v\n", lockPath, err)
@@ -1348,6 +1432,8 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
 	printReconcileWarnings(result)
 	planData := buildPlanResult(f, lf, result)
+	state := applyStatePaths(opts.resolvedStateDir, lockPath)
+	planData.State = &state
 	if opts.DryRun {
 		filePlan, filePlanErr := applyFiles(ctx, opts, f, lf)
 		planData.Files = filePlanEntries(filePlan)
@@ -1370,7 +1456,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	hostName := hostForCommand(opts.Host)
 	if !opts.NoHooks {
-		preErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, true)
+		preErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}.withFiles(opts.File, lockPath), opts.HookTimeout, true)
 		if len(preErrs) > 0 {
 			return writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: false, Data: output.ApplyResult{FailedHooks: preErrs}, Errors: preErrs})
 		}
@@ -1383,11 +1469,11 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	filePlan := &files.ApplyResult{}
 	filePlanErr := error(nil)
 	var envErr, shellErr error
-	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
+	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false, opts.resolvedStateDir)
 	if envErr != nil {
 		errs = append(errs, envErr.Error())
 	}
-	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
+	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false, opts.resolvedStateDir)
 	if shellErr != nil {
 		errs = append(errs, shellErr.Error())
 	}
@@ -1406,7 +1492,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 			fprintf(os.Stderr, "genv apply: %s\n", skipMsg)
 		}
 	} else if !opts.NoHooks {
-		failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, true)
+		failedHooks = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}.withFiles(opts.File, lockPath), opts.HookTimeout, true)
 		errs = append(errs, failedHooks...)
 	}
 	success := len(errs) == 0
@@ -1463,6 +1549,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if opts.Quiet {
 		planOut = io.Discard
 	}
+	printApplyStatePlan(planOut, applyStatePaths(opts.resolvedStateDir, lockPath))
 	toInstall, toRemove, unresolvedCount := printApplyReconcilePlan(planOut, opts.SkipPackages, result)
 
 	var envChanges int
@@ -1498,8 +1585,8 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		if !opts.DryRun {
 			if !opts.NoHooks {
 				hostName := hostForCommand(opts.Host)
-				hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}, opts.HookTimeout, false)
-				hookErrs = append(hookErrs, runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}, opts.HookTimeout, false)...)
+				hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}.withFiles(opts.File, lockPath), opts.HookTimeout, false)
+				hookErrs = append(hookErrs, runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes}.withFiles(opts.File, lockPath), opts.HookTimeout, false)...)
 				if len(hookErrs) > 0 {
 					for _, e := range hookErrs {
 						fprintf(os.Stderr, "genv apply: %s\n", e)
@@ -1546,7 +1633,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	hostName := hostForCommand(opts.Host)
 	if !opts.NoHooks {
-		hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}, opts.HookTimeout, false)
+		hookErrs := runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "pre-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: plannedInstallIDs(result), Removed: plannedRemoveIDs(result)}.withFiles(opts.File, lockPath), opts.HookTimeout, false)
 		if len(hookErrs) > 0 {
 			for _, e := range hookErrs {
 				fprintf(os.Stderr, "genv apply: %s\n", e)
@@ -1560,10 +1647,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	var svcErrs []error
 	var fileErrs []error
 	var appliedFiles *files.ApplyResult
-	if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
+	if _, _, err := applyEnvVars(f, lf, !opts.Quiet, opts.resolvedStateDir); err != nil {
 		fileErrs = append(fileErrs, err)
 	}
-	if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
+	if _, _, err := applyShellCfg(f, lf, !opts.Quiet, opts.resolvedStateDir); err != nil {
 		fileErrs = append(fileErrs, err)
 	}
 	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
@@ -1580,7 +1667,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	}
 	var hookErrs []string
 	if !unresolvedFileMismatch(appliedFiles) && !opts.NoHooks {
-		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
+		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}.withFiles(opts.File, lockPath), opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
 	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, opts.SkipPackages, success); err != nil {
@@ -1696,6 +1783,7 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 				}
 			}
 		}
+		resolver.FillMissingInstalledVersions(newPkgs)
 		lf.Packages = newPkgs
 	}
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
@@ -1709,7 +1797,7 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 // names. The caller is responsible for persisting the lock file (avoiding a
 // double-write when packages and env vars are both applied in the same run).
 // If verbose is true, it prints progress lines to stdout.
-func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
+func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool, stateDir string) (applied, removed []string, err error) {
 	if len(f.Env) == 0 && len(lf.Env) == 0 {
 		return nil, nil, nil
 	}
@@ -1728,7 +1816,7 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 		fprintf(os.Stderr, "genv: warning: %s\n", warn)
 	}
 
-	backends := profilebackend.SelectBackends(runtime.GOOS)
+	backends := profilebackend.SelectBackendsIn(runtime.GOOS, stateDir)
 	var lastFrag string
 	for _, b := range backends {
 		if err := b.ApplyEnv(f.Env); err != nil {
@@ -1750,9 +1838,8 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 			fprintf(os.Stdout, "  env: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			if fragPath, err := genvenv.FragmentPath(); err == nil {
-				fprintf(os.Stdout, "env fragment written (%s backends) e.g. %s\n", lastFrag, fragPath)
-			}
+			state := applyStatePaths(stateDir, "")
+			fprintf(os.Stdout, "env fragment written (%s backends) e.g. %s\n", lastFrag, state.Env)
 		}
 	}
 
@@ -2097,6 +2184,8 @@ type upgradeHookOptions struct {
 	Phase    string
 	Host     string
 	Profile  string
+	SpecFile string
+	LockFile string
 	DryRun   bool
 	Yes      bool
 	Timeout  time.Duration
@@ -2140,7 +2229,7 @@ func upgradeHookEnv(opts upgradeHookOptions) []string {
 	if opts.Phase == "post" {
 		phase = "post-upgrade"
 	}
-	return hookEnv(hookContext{Event: "upgrade", Phase: phase, Host: opts.Host, Profile: opts.Profile, DryRun: opts.DryRun, Yes: opts.Yes, Upgraded: upgradePackageIDs(opts.Upgraded), Failed: opts.Failed, Skipped: upgradeSkippedIDs(opts.Skipped), UpgradeManagers: upgradePlanManagers(opts.Plan)})
+	return hookEnv(hookContext{Event: "upgrade", Phase: phase, Host: opts.Host, Profile: opts.Profile, DryRun: opts.DryRun, Yes: opts.Yes, Upgraded: upgradePackageIDs(opts.Upgraded), Failed: opts.Failed, Skipped: upgradeSkippedIDs(opts.Skipped), UpgradeManagers: upgradePlanManagers(opts.Plan)}.withFiles(opts.SpecFile, opts.LockFile))
 }
 
 func upgradePlanManagers(plan []resolver.UpgradeAction) []string {
@@ -2654,7 +2743,7 @@ func shellEditCmd(args []string) int {
 // applyShellCfg writes managed shell fragments via selected profile backends,
 // updates lf.Shell in memory, and returns lists of applied and removed entry
 // names. The caller writes the lock. If verbose is true, it prints progress.
-func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
+func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool, stateDir string) (applied, removed []string, err error) {
 	if f.Shell == nil && lf.Shell == nil {
 		return nil, nil, nil
 	}
@@ -2700,7 +2789,7 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 	if f.Shell != nil {
 		cfg = f.Shell
 	}
-	backends := profilebackend.SelectBackends(runtime.GOOS)
+	backends := profilebackend.SelectBackendsIn(runtime.GOOS, stateDir)
 	for _, b := range backends {
 		if err := b.ApplyShell(cfg); err != nil {
 			fprintf(os.Stderr, "genv: writing shell fragment (%s): %v\n", b.Name(), err)
@@ -2716,15 +2805,14 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 			fprintf(os.Stdout, "  shell: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			if fragPath, err := shellcfg.FragmentPath(); err == nil {
-				fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
-			}
+			state := applyStatePaths(stateDir, "")
+			fprintf(os.Stdout, "shell fragment written to %s\n", state.Shell)
 		}
 	}
 	if hasFishEntries {
-		fragPath, _ := shellcfg.FragmentPath()
+		state := applyStatePaths(stateDir, "")
 		fprintf(os.Stdout, "note: fish-specific shell entries are not auto-applied.\n")
-		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", fragPath)
+		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", state.Shell)
 	}
 
 	// Update lf.Shell in memory; caller writes the lock once.
@@ -3230,11 +3318,7 @@ func statusCmd(args []string) int {
 		}
 		switch e.Kind {
 		case commands.StatusOK:
-			v := e.InstalledVersion
-			if v == "" {
-				v = "*"
-			}
-			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, v)
+			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, e.DisplayVersion())
 		case commands.StatusPresent:
 			note := "(installed, not in lock — apply will adopt)"
 			fprintf(tw, "  present	%s	%s	%s\n", e.ID, mgr, note)
@@ -3985,7 +4069,7 @@ func upgradeCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON)
+		return upgradeJSON(*dryRun, *yes, hostName, *file, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON)
 	}
 
 	for _, s := range skipped {
@@ -4013,7 +4097,7 @@ func upgradeCmd(args []string) int {
 	if len(plan) == 0 && !hasExtra {
 		if !*dryRun && !*noHooks {
 			ctx := context.Background()
-			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, SpecFile: *file, LockFile: lockPath, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 			hookOpts.Phase = "pre"
 			failedHooks := runUpgradeHooks(ctx, f, hookOpts)
 			hookOpts.Phase = "post"
@@ -4043,7 +4127,7 @@ func upgradeCmd(args []string) int {
 
 	ctx := context.Background()
 	if !*noHooks {
-		preHookOpts := upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+		preHookOpts := upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, SpecFile: *file, LockFile: lockPath, Yes: *yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 		failedHooks := runUpgradeHooks(ctx, f, preHookOpts)
 		if len(failedHooks) > 0 {
 			for _, e := range failedHooks {
@@ -4084,6 +4168,8 @@ func upgradeCmd(args []string) int {
 			Phase:    "post",
 			Host:     hostName,
 			Profile:  lf.ActiveProfile,
+			SpecFile: *file,
+			LockFile: lockPath,
 			Yes:      *yes,
 			Timeout:  hookTimeout,
 			Plan:     plan,
@@ -4186,7 +4272,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // stderr so stdout stays one JSON object, then reports executed batches,
 // refreshed versions, and failed hooks while preserving the human path's exit
 // codes.
-func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
+func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -4234,7 +4320,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 		ctx := context.Background()
 		var failedHooks []output.UpgradeHookResult
 		if !filters.HooksSkipped {
-			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
+			hookOpts := upgradeHookOptions{Host: hostName, Profile: lf.ActiveProfile, SpecFile: specFile, LockFile: lockPath, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped}
 			hookOpts.Phase = "pre"
 			failedHooks = runUpgradeHooksJSON(ctx, f, hookOpts)
 			hookOpts.Phase = "post"
@@ -4261,7 +4347,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 	var errs []string
 	var preHooks []output.UpgradeHookResult
 	if !filters.HooksSkipped {
-		preHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped})
+		preHooks = runUpgradeHooksJSON(ctx, f, upgradeHookOptions{Phase: "pre", Host: hostName, Profile: lf.ActiveProfile, SpecFile: specFile, LockFile: lockPath, Yes: yes, Timeout: hookTimeout, Plan: plan, Skipped: skipped})
 	}
 	if len(preHooks) > 0 {
 		errs = append(errs, upgradeHookErrorStrings(preHooks)...)
@@ -4322,6 +4408,8 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			Phase:    "post",
 			Host:     hostName,
 			Profile:  lf.ActiveProfile,
+			SpecFile: specFile,
+			LockFile: lockPath,
 			Yes:      yes,
 			Timeout:  hookTimeout,
 			Plan:     plan,

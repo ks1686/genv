@@ -44,6 +44,20 @@ type StatusEntry struct {
 	InstalledVersion string // recorded version from lock, may be empty
 }
 
+// DisplayVersion is the human-readable version column for an OK status row.
+// A recorded install version wins. "*" means no spec constraint (and no
+// recorded install version). "?" means a constraint exists but the lock has
+// no installed version.
+func (e StatusEntry) DisplayVersion() string {
+	if e.InstalledVersion != "" {
+		return e.InstalledVersion
+	}
+	if e.SpecVersion == "" {
+		return "*"
+	}
+	return "?"
+}
+
 // Status computes the three-way diff between the spec (genv.json) and the lock
 // file (genv.lock.json). It does not query the live system — the lock file is
 // the record of what genv last installed.

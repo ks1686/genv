@@ -39,6 +39,14 @@ type FilePlanEntry struct {
 	Kind   string `json:"kind"`
 }
 
+// StatePaths names the lock and env/shell fragment files an apply will use.
+type StatePaths struct {
+	Dir   string `json:"dir"`
+	Lock  string `json:"lock"`
+	Env   string `json:"env,omitempty"`
+	Shell string `json:"shell,omitempty"`
+}
+
 // PlanResult is the Data payload for `genv apply [--dry-run] --json`.
 type PlanResult struct {
 	ToInstall       []PlanPackage   `json:"toInstall"`
@@ -50,6 +58,7 @@ type PlanResult struct {
 	ServicesToStop  []string        `json:"servicesToStop,omitempty"`
 	Files           []FilePlanEntry `json:"files,omitempty"`
 	FailedHooks     []string        `json:"failedHooks,omitempty"`
+	State           *StatePaths     `json:"state,omitempty"`
 }
 
 // StatusEntry is a single package entry in a StatusResult.

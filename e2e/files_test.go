@@ -62,6 +62,16 @@ func (fr *fileRunner) env() []string {
 	return append(filtered, "HOME="+fr.home, "XDG_CONFIG_HOME="+filepath.Join(fr.home, ".config"), "GENV_NO_INTERACTIVE=1")
 }
 
+// lockPath is the lock that belongs with --file (sibling genv.lock.json).
+func (fr *fileRunner) lockPath() string {
+	return filepath.Join(filepath.Dir(fr.genvJSON), "genv.lock.json")
+}
+
+// defaultLockPath is the live-machine lock under the isolated HOME.
+func (fr *fileRunner) defaultLockPath() string {
+	return filepath.Join(fr.home, ".config", "genv", "genv.lock.json")
+}
+
 // genv runs a genv subcommand with --file and the isolated HOME injected.
 func (fr *fileRunner) genv(stdinData, subcmd string, extra ...string) (stdout, stderr string, code int) {
 	args := append([]string{subcmd, "--file", fr.genvJSON}, extra...)
@@ -395,13 +405,16 @@ func TestFiles_S7_AdoptFilesRegistersRenderedConfig(t *testing.T) {
 	if len(matches) != 0 {
 		t.Fatalf("adopt --files created backups: %v", matches)
 	}
-	lockPath := filepath.Join(r.home, ".config", "genv", "genv.lock.json")
+	lockPath := r.lockPath()
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		t.Fatalf("read lock: %v", err)
+		t.Fatalf("read lock %s: %v", lockPath, err)
 	}
 	if len(lf.Files) != 1 || lf.Files[0].Mode != "copy" || lf.Files[0].Target != "~/.config/codex/config.toml" {
 		t.Fatalf("locked files = %+v, want one copied codex config", lf.Files)
+	}
+	if _, err := os.Stat(r.defaultLockPath()); err == nil {
+		t.Fatalf("adopt --file wrote the default config lock %s", r.defaultLockPath())
 	}
 
 	stdout, stderr, code = r.genv("", "status", "--files")
@@ -442,6 +455,12 @@ func TestFiles_S8_AdoptFilesKeepsSpecRepoClean(t *testing.T) {
 	if err := os.WriteFile(r.genvJSON, append(data, '\n'), 0o644); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
+	// Lock is machine-local and now lives next to --file. Ignore it so a
+	// git-tracked spec repo stays clean after adopt --files.
+	ignore := "genv.lock.json\ngenv.lock.json.mutex\n"
+	if err := os.WriteFile(filepath.Join(specRepo, ".gitignore"), []byte(ignore), 0o644); err != nil {
+		t.Fatalf("write gitignore: %v", err)
+	}
 	if out, err := exec.Command("git", "-C", specRepo, "add", ".").CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v: %s", err, out)
 	}
@@ -469,5 +488,11 @@ func TestFiles_S8_AdoptFilesKeepsSpecRepoClean(t *testing.T) {
 	}
 	if strings.TrimSpace(string(out)) != "" {
 		t.Fatalf("spec repo dirty after adopt --files: %q", out)
+	}
+	if _, err := os.Stat(r.lockPath()); err != nil {
+		t.Fatalf("expected lock next to spec: %v", err)
+	}
+	if _, err := os.Stat(r.defaultLockPath()); err == nil {
+		t.Fatalf("adopt --file wrote the default config lock %s", r.defaultLockPath())
 	}
 }

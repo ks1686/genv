@@ -10,6 +10,28 @@ import (
 	"github.com/ks1686/genv/internal/testutil"
 )
 
+func TestPOSIXBackend_StateDirSkipsRCInject(t *testing.T) {
+	home := t.TempDir()
+	testutil.SetHome(t, home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("SHELL", "/bin/zsh")
+
+	state := t.TempDir()
+	b := POSIXBackend{Dir: state}
+	if err := b.ApplyEnv(map[string]schema.EnvVar{"FOO": {Value: "bar"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(state, "env.sh")); err != nil {
+		t.Fatalf("expected fragment in state dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "genv", "env.sh")); err == nil {
+		t.Fatal("wrote default env.sh despite StateDir")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".zshrc")); err == nil {
+		t.Fatal("injected rc despite non-default state dir")
+	}
+}
+
 func TestPOSIXBackend_ApplyEnvAndShell(t *testing.T) {
 	home := t.TempDir()
 	testutil.SetHome(t, home)
