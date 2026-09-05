@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Native Windows `genv updates` no longer flashes a console on each Task
+  Scheduler run. The task still uses `InteractiveToken` (so `updates.notify`
+  can toast) and still starts through `schtasks /Run` (so OpenSSH cannot kill
+  it). The action is now `wscript.exe //B //Nologo` plus a `.vbs` host that
+  `WshShell.Run`s the existing `.cmd` with window style 0. `<Hidden>true</Hidden>`
+  alone does not hide `cmd.exe`. `updates.log` and one completion notification
+  are unchanged. Do not flip `genv.exe` to the Windows GUI subsystem.
+
 ### Added
 
 - Tracked-package planning now refreshes each index-based manager once before

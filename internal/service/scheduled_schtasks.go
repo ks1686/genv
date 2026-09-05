@@ -51,12 +51,24 @@ func schtasksXMLFileName(name string) string {
 	return schtasksTaskName(name) + ".xml"
 }
 
-func schtasksCmdExe() string {
+func schtasksVbsFileName(name string) string {
+	return schtasksTaskName(name) + ".vbs"
+}
+
+func schtasksSystem32(exe string) string {
 	root := os.Getenv("SystemRoot")
 	if root == "" {
 		root = `C:\Windows`
 	}
-	return root + `\System32\cmd.exe`
+	return root + `\System32\` + exe
+}
+
+func schtasksCmdExe() string {
+	return schtasksSystem32("cmd.exe")
+}
+
+func schtasksWscriptExe() string {
+	return schtasksSystem32("wscript.exe")
 }
 
 func startSchtasksScheduledJob(ctx context.Context, job ScheduledJob) error {
@@ -68,11 +80,15 @@ func startSchtasksScheduledJob(ctx context.Context, job ScheduledJob) error {
 		return fmt.Errorf("creating scheduled task directory: %w", err)
 	}
 	scriptPath := filepath.Join(dir, schtasksCmdFileName(job.Name))
+	vbsPath := filepath.Join(dir, schtasksVbsFileName(job.Name))
 	xmlPath := filepath.Join(dir, schtasksXMLFileName(job.Name))
 	if err := os.WriteFile(scriptPath, []byte(SchtasksScheduledCmdContent(job)), 0o644); err != nil {
 		return fmt.Errorf("writing scheduled task script %q: %w", scriptPath, err)
 	}
-	xmlContent := SchtasksScheduledTaskXML(job.Name, schtasksCmdExe(), scriptPath, job.Interval)
+	if err := os.WriteFile(vbsPath, []byte(SchtasksScheduledVbsContent(schtasksCmdExe(), scriptPath)), 0o644); err != nil {
+		return fmt.Errorf("writing scheduled task host %q: %w", vbsPath, err)
+	}
+	xmlContent := SchtasksScheduledTaskXML(job.Name, schtasksWscriptExe(), vbsPath, job.Interval)
 	if err := os.WriteFile(xmlPath, encodeUTF16LE(xmlContent), 0o644); err != nil {
 		return fmt.Errorf("writing scheduled task XML %q: %w", xmlPath, err)
 	}
@@ -101,6 +117,7 @@ func stopSchtasksScheduledJob(ctx context.Context, name string) error {
 	}
 	for _, path := range []string{
 		filepath.Join(dir, schtasksCmdFileName(name)),
+		filepath.Join(dir, schtasksVbsFileName(name)),
 		filepath.Join(dir, schtasksXMLFileName(name)),
 	} {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -108,6 +125,22 @@ func stopSchtasksScheduledJob(ctx context.Context, name string) error {
 		}
 	}
 	return nil
+}
+
+// SchtasksScheduledVbsContent renders a windowless WSH host that runs
+// scriptPath via cmd.exe. WshShell.Run window style 0 hides the console that
+// InteractiveToken would otherwise allocate for cmd.exe / genv.exe.
+func SchtasksScheduledVbsContent(cmdExe, scriptPath string) string {
+	run := schtasksHiddenCmdLine(cmdExe, scriptPath)
+	return "Set sh = CreateObject(\"WScript.Shell\")\r\nWScript.Quit sh.Run(" + vbsQuoteString(run) + ", 0, True)\r\n"
+}
+
+func schtasksHiddenCmdLine(cmdExe, scriptPath string) string {
+	return cmdQuoteArg(stripLineBreaks(cmdExe)) + " /d /c call " + cmdQuoteArg(stripLineBreaks(scriptPath))
+}
+
+func vbsQuoteString(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // SchtasksScheduledCmdContent renders the .cmd wrapper that sets PATH (and any
@@ -134,8 +167,9 @@ func SchtasksScheduledCmdContent(job ScheduledJob) string {
 }
 
 // SchtasksScheduledTaskXML renders a Task Scheduler 1.3 XML definition:
-// logon trigger (reboot/logon) plus repetition matching interval.
-func SchtasksScheduledTaskXML(name, cmdExe, scriptPath string, interval time.Duration) string {
+// logon trigger (reboot/logon) plus repetition matching interval. command is
+// the windowless host (wscript.exe); scriptPath is the .vbs wrapper.
+func SchtasksScheduledTaskXML(name, command, scriptPath string, interval time.Duration) string {
 	name = stripLineBreaks(name)
 	taskName := schtasksTaskName(name)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
@@ -189,11 +223,11 @@ func SchtasksScheduledTaskXML(name, cmdExe, scriptPath string, interval time.Dur
     </Exec>
   </Actions>
 </Task>
-`, xmlEscape(name), xmlEscape(taskName), schtasksRepetitionInterval(interval), schtasksRepetitionDuration, schtasksExecutionTimeLimit(interval), xmlEscape(stripLineBreaks(cmdExe)), xmlEscape(schtasksCmdArguments(scriptPath)))
+`, xmlEscape(name), xmlEscape(taskName), schtasksRepetitionInterval(interval), schtasksRepetitionDuration, schtasksExecutionTimeLimit(interval), xmlEscape(stripLineBreaks(command)), xmlEscape(schtasksWscriptArguments(scriptPath)))
 }
 
-func schtasksCmdArguments(scriptPath string) string {
-	return `/d /c call ` + cmdQuoteArg(stripLineBreaks(scriptPath))
+func schtasksWscriptArguments(scriptPath string) string {
+	return `//B //Nologo ` + cmdQuoteArg(stripLineBreaks(scriptPath))
 }
 
 func schtasksRepetitionInterval(interval time.Duration) string {
