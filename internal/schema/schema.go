@@ -258,28 +258,34 @@ type FilesConfig struct {
 }
 
 // FileLink declares a symbolic link from Source to Target.
-// Mode is "link" (default) or "managed-link".
+// Mode is "link" (default), "managed-link", or "merge-dir".
+// Perm is an optional octal mode applied to Source.
 type FileLink struct {
 	Source string        `json:"source"`
 	Target string        `json:"target"`
 	Mode   string        `json:"mode,omitempty"`
 	Host   HostPredicate `json:"host,omitempty"`
 	Backup bool          `json:"backup,omitempty"`
+	Perm   string        `json:"perm,omitempty"`
 }
 
 // FileTemplate declares a file that should be copied from Source to Target
 // after running the v5 placeholder renderer.
+// Perm is an optional octal mode applied to the rendered Target file.
 type FileTemplate struct {
 	Source string        `json:"source"`
 	Target string        `json:"target"`
 	Host   HostPredicate `json:"host,omitempty"`
 	Backup bool          `json:"backup,omitempty"`
+	Perm   string        `json:"perm,omitempty"`
 }
 
 // FileDir declares a directory that should exist.
+// Perm is an optional octal mode applied to Target after it exists.
 type FileDir struct {
 	Target string        `json:"target"`
 	Host   HostPredicate `json:"host,omitempty"`
+	Perm   string        `json:"perm,omitempty"`
 }
 
 // HooksConfig declares lifecycle shell commands.

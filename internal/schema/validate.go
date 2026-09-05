@@ -698,6 +698,7 @@ func validateFilesConfig(files *FilesConfig, fieldPrefix string) []ValidationErr
 			}
 			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
 		}
+		errs = append(errs, validateFilePerm(l.Perm, field)...)
 	}
 	for i, tpl := range files.Templates {
 		field := fmt.Sprintf("%s.templates[%d]", fieldPrefix, i)
@@ -714,6 +715,7 @@ func validateFilesConfig(files *FilesConfig, fieldPrefix string) []ValidationErr
 			}
 			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
 		}
+		errs = append(errs, validateFilePerm(tpl.Perm, field)...)
 	}
 	for i, d := range files.Dirs {
 		field := fmt.Sprintf("%s.dirs[%d]", fieldPrefix, i)
@@ -727,6 +729,7 @@ func validateFilesConfig(files *FilesConfig, fieldPrefix string) []ValidationErr
 			}
 			errs = append(errs, ValidationError{Field: field + ".target", Message: msg})
 		}
+		errs = append(errs, validateFilePerm(d.Perm, field)...)
 	}
 	return errs
 }

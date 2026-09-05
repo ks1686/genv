@@ -40,6 +40,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `files.links[]`, `files.templates[]`, and `files.dirs[]` accept optional
+  `perm`, an octal string (`0600`, `0700`). Apply chmods the managed-link
+  source, rendered template, or directory after creating the entry. A second
+  apply is a no-op when the mode already matches. `genv status` reports
+  `perm-mismatch`. `mode` on links stays the link kind (`link` /
+  `managed-link` / `merge-dir`); it is still rejected on dirs.
 - Tracked-package planning now refreshes each index-based manager once before
   outdated detection. `genv upgrade`, `genv updates check`, and the hourly
   `__run-once` / `autoApply` worker share that path. Refresh argv: `brew update`

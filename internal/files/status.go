@@ -90,9 +90,9 @@ func statusDir(d schema.FileDir) (StatusEntry, error) {
 	}
 	if fi.IsDir() {
 		entry.Kind = "ok"
-	} else {
-		entry.Kind = "wrong-type"
+		return statusPerm(entry, target, d.Perm)
 	}
+	entry.Kind = "wrong-type"
 	return entry, nil
 }
 
@@ -109,7 +109,11 @@ func statusLink(l schema.FileLink) (StatusEntry, error) {
 	if mode == "" {
 		mode = "link"
 	}
-	return statusLinkAt(target, source, mode)
+	entry, err := statusLinkAt(target, source, mode)
+	if err != nil {
+		return entry, err
+	}
+	return statusPerm(entry, source, l.Perm)
 }
 
 // statusMergeDir reports one StatusEntry per file found under l's source
@@ -154,6 +158,16 @@ func statusMergeDir(l schema.FileLink) ([]StatusEntry, error) {
 	})
 	if walkErr != nil {
 		return nil, walkErr
+	}
+	if l.Perm != "" {
+		dirEntry := StatusEntry{Source: sourceDir, Target: targetDir, Mode: "merge-dir", Kind: "ok"}
+		dirEntry, err = statusPerm(dirEntry, sourceDir, l.Perm)
+		if err != nil {
+			return nil, err
+		}
+		if dirEntry.Kind != "ok" {
+			entries = append(entries, dirEntry)
+		}
 	}
 	return entries, nil
 }
@@ -218,9 +232,9 @@ func statusTemplate(tmpl schema.FileTemplate, hostName string) (StatusEntry, err
 	}
 	if bytes.Equal(existing, rendered) {
 		entry.Kind = "ok"
-	} else {
-		entry.Kind = "mismatch"
+		return statusPerm(entry, target, tmpl.Perm)
 	}
+	entry.Kind = "mismatch"
 	return entry, nil
 }
 
