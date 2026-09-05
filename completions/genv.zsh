@@ -107,6 +107,7 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--state-dir=[Directory for lock and env/shell fragments]:path:_files -/' \
 				'--version=[Version constraint]:version:' \
 				"--prefer=[Preferred manager]:manager:($(genv __complete managers 2>/dev/null))" \
 				'--manager=[Manager-specific names]:manager:' \
@@ -190,6 +191,7 @@ _genv() {
 			_arguments \
 				'--file=[Path to genv.json]:path:_files' \
 				'--lock-file=[Path to genv lock file]:path:_files' \
+				'--state-dir=[Directory for lock and env/shell fragments]:path:_files -/' \
 				'--dry-run[Print the reconcile plan without executing]' \
 				'--force[Overwrite mismatched managed files]' \
 				'--backup[Back up mismatched files before overwrite]' \

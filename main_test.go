@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -29,7 +30,7 @@ import (
 // TestMain disables interactive prompts (package search picker, remove fuzzy
 // match) for all unit tests so they run non-interactively. It also isolates
 // the genv config directory so tests do not read or write the developer's
-// real lock file now that LockPathFrom uses the genv config directory.
+// real lock file now that commands default the lock next to --file.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
 	if os.Getenv("XDG_CONFIG_HOME") == "" {
@@ -824,6 +825,43 @@ func TestAdoptCmd_AlreadyInLock_StillFails(t *testing.T) {
 	}
 }
 
+func TestAdoptCmd_RecordsInstalledVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	testutil.InstallFakeBinary(t, "brew", `
+case "$1" in
+list)
+	if [ "$2" = "--versions" ]; then
+		echo "${3:-git} 2.43.0"
+		exit 0
+	fi
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac`)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[]}`)
+	writeLock(t, lockPath, nil)
+
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--prefer", "brew", "git"})
+	if code != exitOK {
+		t.Fatalf("adopt: got %d, want %d", code, exitOK)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lf.Packages) != 1 {
+		t.Fatalf("lock packages = %+v, want 1", lf.Packages)
+	}
+	if got := lf.Packages[0].InstalledVersion; got != "2.43.0" {
+		t.Fatalf("InstalledVersion = %q, want 2.43.0", got)
+	}
+}
+
 // ---- genv disown -------------------------------------------------------------
 // disown removes the package from genv.json and the lock file without uninstalling.
 
@@ -1207,6 +1245,51 @@ func TestApplyCmd_AlreadyUpToDate(t *testing.T) {
 	code := run([]string{"apply", "--file", path})
 	if code != exitOK {
 		t.Errorf("up to date: expected exitOK, got %d", code)
+	}
+}
+
+func TestApplyCmd_BackfillsMissingInstalledVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	testutil.InstallFakeBinary(t, "brew", `
+case "$1" in
+list)
+	if [ "$2" = "--versions" ]; then
+		echo "git 2.43.0"
+		echo "ripgrep 14.1.0"
+		exit 0
+	fi
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac`)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := genvfile.LockPathFrom(path)
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"},{"id":"ripgrep"}]}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "13.0.0"},
+	})
+
+	code := run([]string{"apply", "--file", path, "--yes", "--no-hooks"})
+	if code != exitOK {
+		t.Fatalf("apply: got %d, want %d", code, exitOK)
+	}
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, lp := range lf.Packages {
+		got[lp.ID] = lp.InstalledVersion
+	}
+	if got["git"] != "2.43.0" {
+		t.Errorf("git InstalledVersion = %q, want 2.43.0 (backfill)", got["git"])
+	}
+	if got["ripgrep"] != "13.0.0" {
+		t.Errorf("ripgrep InstalledVersion = %q, want 13.0.0 (keep existing)", got["ripgrep"])
 	}
 }
 
@@ -1789,6 +1872,37 @@ func TestStatusCmd_DriftEntry(t *testing.T) {
 	code := run([]string{"status", "--file", path})
 	if code != exitLogic {
 		t.Errorf("drift: expected exitLogic (%d), got %d", exitLogic, code)
+	}
+}
+
+func TestStatusCmd_DistinguishesUnknownVersionFromNoConstraint(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := genvfile.LockPathFrom(path)
+
+	writeTestFile(t, path, `{"schemaVersion":"1","packages":[{"id":"git"},{"id":"vim","version":"9.*"},{"id":"ripgrep"}]}`)
+	writeLock(t, lockPath, []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "vim", Manager: "brew", PkgName: "vim"},
+		{ID: "ripgrep", Manager: "brew", PkgName: "ripgrep", InstalledVersion: "14.1.0"},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"status", "--file", path, "--offline"})
+	})
+	if code != exitOK {
+		t.Fatalf("status: got %d, want %d\n%s", code, exitOK, out)
+	}
+	if !regexp.MustCompile(`ok\s+git\s+\S+\s+\*`).MatchString(out) {
+		t.Errorf("unconstrained git without installed version should show *: %q", out)
+	}
+	if !regexp.MustCompile(`ok\s+vim\s+\S+\s+\?`).MatchString(out) {
+		t.Errorf("constrained vim without installed version should show ?: %q", out)
+	}
+	if !regexp.MustCompile(`ok\s+ripgrep\s+\S+\s+14\.1\.0`).MatchString(out) {
+		t.Errorf("ripgrep should show recorded installed version: %q", out)
 	}
 }
 
@@ -3518,7 +3632,7 @@ func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		fragName = "env.ps1"
 	}
-	frag := filepath.Join(dir, "genv", fragName)
+	frag := filepath.Join(dir, fragName)
 	if _, err := os.Stat(frag); err != nil {
 		t.Fatalf("env fragment %s missing after package failure: %v", frag, err)
 	}

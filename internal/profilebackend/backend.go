@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -22,6 +23,40 @@ type Backend interface {
 // shell/rc is already relevant.
 // Windows without an engine: POSIX only when relevant; callers should warn
 // about the missing engine separately.
+// SelectBackendsIn is SelectBackends with fragments rooted at stateDir.
+// An empty stateDir keeps the default config directory.
+func SelectBackendsIn(goos, stateDir string) []Backend {
+	backends := SelectBackends(goos)
+	if stateDir == "" {
+		return backends
+	}
+	out := make([]Backend, len(backends))
+	for i, b := range backends {
+		switch t := b.(type) {
+		case POSIXBackend:
+			t.Dir = stateDir
+			out[i] = t
+		case PowerShellBackend:
+			t.Dir = stateDir
+			out[i] = t
+		default:
+			out[i] = b
+		}
+	}
+	return out
+}
+
+func shouldInjectRC(stateDir string) bool {
+	if stateDir == "" {
+		return true
+	}
+	def, err := genvfile.DefaultDir()
+	if err != nil {
+		return false
+	}
+	return genvfile.WithinDir(def, stateDir) && genvfile.WithinDir(stateDir, def)
+}
+
 func SelectBackends(goos string) []Backend {
 	if goos != "windows" {
 		return []Backend{POSIXBackend{}}

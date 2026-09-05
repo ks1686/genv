@@ -835,3 +835,44 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 
 	return out
 }
+
+// FillMissingInstalledVersions writes InstalledVersion on lock entries that
+// lack one, using each manager's VersionLister inventory when that listing
+// already reports versions. Existing versions are left unchanged. Managers
+// that are not VersionListers, failed listings, and names absent from the
+// inventory are skipped.
+func FillMissingInstalledVersions(pkgs []genvfile.LockedPackage) {
+	byMgr := make(map[string][]int)
+	for i, lp := range pkgs {
+		if lp.InstalledVersion != "" || lp.Manager == "" {
+			continue
+		}
+		byMgr[lp.Manager] = append(byMgr[lp.Manager], i)
+	}
+	for mgrName, idxs := range byMgr {
+		mgr := adapter.ByName(mgrName)
+		if mgr == nil {
+			continue
+		}
+		versionLister, ok := mgr.(adapter.VersionLister)
+		if !ok {
+			continue
+		}
+		listed, err := CallTimed(versionLister.ListInstalledVersions, DefaultLiveListTimeout)
+		if err != nil || len(listed) == 0 {
+			continue
+		}
+		for _, i := range idxs {
+			if v := listed[pkgs[i].PkgName]; v != "" {
+				pkgs[i].InstalledVersion = v
+				continue
+			}
+			for name, ver := range listed {
+				if ver != "" && strings.EqualFold(name, pkgs[i].PkgName) {
+					pkgs[i].InstalledVersion = ver
+					break
+				}
+			}
+		}
+	}
+}

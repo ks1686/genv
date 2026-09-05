@@ -230,13 +230,73 @@ func TestScanCmd_DryRunNearEmptyWhenLeavesTracked(t *testing.T) {
 	}
 }
 
+func TestScanCmd_NeverProposesDashNpmOrToolchain(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+
+	uv := &scanLeavesAdapter{
+		name:      "uv",
+		installed: []string{"-", "ruff"},
+		leaves:    []string{"-", "ruff"},
+		versions:  map[string]string{"-": "", "ruff": "0.6.9"},
+	}
+	npm := &scanLeavesAdapter{
+		name:      "npm",
+		installed: []string{"npm", "corepack", "typescript"},
+		leaves:    []string{"npm", "corepack", "typescript"},
+		versions:  map[string]string{"npm": "10.9.2", "corepack": "0.31.0", "typescript": "5.9.2"},
+	}
+	rustup := &scanLeavesAdapter{
+		name:      "rustup",
+		installed: []string{"toolchain:stable-aarch64-apple-darwin"},
+		leaves:    []string{"toolchain:stable-aarch64-apple-darwin"},
+		versions:  map[string]string{"toolchain:stable-aarch64-apple-darwin": "stable-aarch64-apple-darwin"},
+	}
+
+	originalAll := adapter.All
+	originalGOOS := scanGOOS
+	adapter.All = []adapter.Adapter{uv, npm, rustup}
+	scanGOOS = "darwin"
+	t.Cleanup(func() {
+		adapter.All = originalAll
+		scanGOOS = originalGOOS
+	})
+
+	for _, args := range [][]string{
+		{"scan", "--file", path, "--lock-file", lockPath, "--dry-run", "--json", "--target", "macos"},
+		{"scan", "--file", path, "--lock-file", lockPath, "--dry-run", "--json", "--all", "--target", "macos"},
+	} {
+		var code int
+		out := captureStdout(t, func() {
+			code = run(args)
+		})
+		if code != exitOK {
+			t.Fatalf("%v: expected exitOK, got %d\n%s", args, code, out)
+		}
+		ids := scanDryRunIDs(t, out)
+		for _, id := range ids {
+			if id == "-" || id == "npm" || strings.HasPrefix(id, "toolchain:") {
+				t.Errorf("%v proposed non-package id %q in %v", args, id, ids)
+			}
+		}
+		if !slices.Contains(ids, "ruff") {
+			t.Errorf("%v missing uv tool name ruff: %v", args, ids)
+		}
+		if !slices.Contains(ids, "corepack") || !slices.Contains(ids, "typescript") {
+			t.Errorf("%v missing user npm globals: %v", args, ids)
+		}
+	}
+}
+
 func TestScanCmd_HelpDescribesUserFacingInventory(t *testing.T) {
 	var code int
 	out := captureStderr(t, func() {
 		code = run([]string{"scan", "--help"})
 	})
-	if code != exitUsage {
-		t.Fatalf("scan --help: expected exitUsage (%d), got %d\n%s", exitUsage, code, out)
+	if code != exitOK {
+		t.Fatalf("scan --help: expected exitOK (%d), got %d\n%s", exitOK, code, out)
 	}
 	for _, want := range []string{"leaves", "casks", "--all", "user-facing"} {
 		if !strings.Contains(strings.ToLower(out), strings.ToLower(want)) {

@@ -48,7 +48,7 @@ func updatesStartCmd(args []string) int {
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	cfg, interval, code := readUpdatesConfigForLifecycle(*file)
 	if code != exitOK {
@@ -97,7 +97,7 @@ func updatesStopCmd(args []string) int {
 	fs := flag.NewFlagSet("updates stop", flag.ContinueOnError)
 	fs.Usage = func() { fPrintln(os.Stderr, "usage: genv updates stop") }
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	backend := newUpdatesSupervisor()
 	if !backend.Supported() {
@@ -116,7 +116,7 @@ func updatesStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("updates status", flag.ContinueOnError)
 	fs.Usage = func() { fPrintln(os.Stderr, "usage: genv updates status") }
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	backend := newUpdatesSupervisor()
 	status, err := backend.Status(context.Background(), updatesServiceName)

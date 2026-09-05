@@ -10,8 +10,12 @@ import (
 
 func profileCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv profile <list|create|switch> [flags]")
+		printProfileUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printProfileUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "list", "ls":
@@ -26,12 +30,16 @@ func profileCmd(args []string) int {
 	}
 }
 
+func printProfileUsage() {
+	fPrintln(os.Stderr, "usage: genv profile <list|create|switch> [flags]")
+}
+
 func profileListCmd(args []string) int {
 	fs := flag.NewFlagSet("profile list", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
@@ -72,7 +80,7 @@ func profileCreateCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv profile create: missing profile name")
@@ -96,6 +104,7 @@ func profileSwitchCmd(args []string) int {
 	opts := applyOptions{}
 	fs.StringVar(&opts.File, "file", defaultSpecPath(), "path to genv.json")
 	fs.StringVar(&opts.LockFile, "lock-file", "", "path to genv lock file")
+	fs.StringVar(&opts.StateDir, "state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite mismatched managed files")
 	fs.BoolVar(&opts.Strict, "strict", false, "exit with an error if any package cannot be resolved")
@@ -108,7 +117,7 @@ func profileSwitchCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv profile switch: missing profile name")

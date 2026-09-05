@@ -66,7 +66,7 @@ func updatesCheckCmd(args []string) int {
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to check")
 	skipManagerFlag := fs.String("skip-manager", "", "comma-separated list of managers to skip")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)

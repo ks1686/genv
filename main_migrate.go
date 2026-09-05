@@ -26,7 +26,7 @@ func migrateCmd(args []string) int {
 	write := fs.Bool("write", false, "overwrite genv.json with the migrated schemaVersion 8 spec")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() != 0 {
 		fs.Usage()

@@ -86,7 +86,7 @@ drives the real binary. All eight currently pass.
 | S5 CodexTemplatedDrift | `status --files`, `apply --force --yes` | Stale rendered `copy-template` target is flagged `mismatch` (exit 4); force re-renders it with the real HOME (no literal `__HOME__`), writes one backup, and status then exits 0. |
 | S6 DryRun | `apply --dry-run --force --yes` | Reports the planned change but writes nothing to disk and creates no backup. |
 | S7 AdoptFilesRegistersRenderedConfig | `adopt --files` | Records an already-rendered `copy-template` target into the lock as mode `copy` without touching the file or writing a backup; `status --files` then exits 0. |
-| S8 AdoptFilesKeepsSpecRepoClean | `adopt --files` | Against a git-backed spec repo, leaves the working tree clean (`git status --porcelain` empty). Skips when `git` is unavailable. |
+| S8 AdoptFilesKeepsSpecRepoClean | `adopt --files` | Against a git-backed spec repo, writes the lock next to `--file` and leaves the working tree clean (`git status --porcelain` empty; lock is gitignored). Skips when `git` is unavailable. |
 
 ## Files-block behavior reference
 
@@ -132,10 +132,10 @@ Shared behavior across modes:
 - `genv adopt --files`: registers already-managed files into the lock without
   rewriting the targets; template targets are rendered before comparison.
 - `--file <path>`: spec location, injected by the test runners.
-- `--lock-file <path>`: lock location. The default is
-  `~/.config/genv/genv.lock.json` under HOME. The package-manager suite passes
-  `--lock-file` to keep the lock inside its temp dir; the files suite relies on
-  the HOME-based default inside its isolated temp HOME.
+- `--lock-file <path>`: lock location. The default is `genv.lock.json` next to
+  `--file` (or `--state-dir` when set). The package-manager suite passes
+  `--lock-file` explicitly. The files suite uses the sibling-of-`--file`
+  default and asserts adopt does not write the isolated HOME default lock.
 
 Exit codes used across the suite: `0` success, `1` usage error, `2` filesystem
 or serialization error, `3` schema validation failure, `4` semantic error or
