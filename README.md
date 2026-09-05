@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.3.0_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.3.1_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -50,7 +50,7 @@ The bucket is self-hosted (not Scoop extras). `scoop install genv` needs a root
 **Windows (PowerShell zip):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.3.0_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.3.1_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
@@ -209,7 +209,7 @@ Legacy **v1–v7** specs still load. Convert with `genv migrate`. Field-by-field
 
 Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the spec and usually the live system in one step. `genv add` installs first and only persists the spec after a successful install (unresolved or failed installs exit `4` and leave the spec unchanged; use `adopt` to track without installing). On v8 they write into `targets.<active>` (`--target` or `$GENV_TARGET` / classification).
 
-`genv scan` adopts **user-facing** installs by default: Homebrew `brew leaves` plus casks (not the full formula tree), Ruby gems that are not default or bundled with the interpreter, and pip-user packages that are not dependencies of other user-site packages (minus installer/stdlib-like noise such as `certifi` / `setuptools`). npm/pnpm/yarn already list top-level globals only. Pass `--all` or `--deps` to adopt every `ListInstalled` name, including Homebrew libraries and language stdlib. Preview with `--dry-run`; text mode prompts unless `--yes` is set.
+`genv scan` adopts **user-facing** installs by default: Homebrew `brew leaves` plus casks (not the full formula tree), Ruby gems that are not default or bundled with the interpreter, and pip-user packages that are not dependencies of other user-site packages (minus installer/stdlib-like noise such as `certifi` / `setuptools`). npm/pnpm/yarn already list top-level globals only (and scan never proposes `npm` itself). uv proposes tool names from `uv tool list` headers, not `-` entrypoint bullets. rustup toolchains are not proposed. Pass `--all` or `--deps` to adopt every `ListInstalled` name, including Homebrew libraries and language stdlib. Scan still never proposes `-`, `npm` via npm, or `toolchain:*`. Preview with `--dry-run`; text mode prompts unless `--yes` is set.
 
 `genv pull` fetches `genv.json` **and** relative `files` assets from `repo.url`. It never overwrites the lock or secrets.
 

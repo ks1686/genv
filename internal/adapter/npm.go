@@ -87,7 +87,25 @@ func (n Npm) ListOutdated(pkgNames []string) (map[string]string, error) {
 }
 
 func (Npm) listEntries() ([]jsPackageEntry, error) {
-	return runJSONPackageList("npm", "list", "--global", "--depth=0", "--json")
+	entries, err := runJSONPackageList("npm", "list", "--global", "--depth=0", "--json")
+	if err != nil {
+		return nil, err
+	}
+	return skipNpmSelf(entries), nil
+}
+
+// skipNpmSelf drops the npm CLI that `npm list -g` reports as a global.
+// Adopting it writes an uninstallable spec entry. corepack stays — it is a
+// user-installable global and is tracked on purpose.
+func skipNpmSelf(entries []jsPackageEntry) []jsPackageEntry {
+	out := make([]jsPackageEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.name == "npm" {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func searchNpmRegistryContext(ctx context.Context, query string) ([]string, error) {

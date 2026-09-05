@@ -89,6 +89,14 @@ func (Rustup) ListInstalled() ([]string, error) {
 	return installed, nil
 }
 
+// ListForScan omits rustup toolchains. `rustup toolchain list` is not a
+// package inventory, and adopting `toolchain:<triple>` writes an
+// uninstallable spec entry. ListInstalled still reports them so apply
+// and status can manage already-tracked toolchains.
+func (Rustup) ListForScan() ([]string, error) {
+	return nil, nil
+}
+
 func (r Rustup) QueryVersion(pkgName string) (string, error) {
 	pkg, ok := parseRustupPackageID(pkgName)
 	if !ok || pkg.kind != rustupToolchain {
