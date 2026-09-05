@@ -67,6 +67,26 @@ func TestServiceCLICommands(t *testing.T) {
 	}
 }
 
+func TestServiceStart_RawCommandFailsUnderSystemd(t *testing.T) {
+	// Linux CI has systemd --user. `service start` must still run the declared
+	// start argv so a failing command exits 4, not enable a generated unit.
+	home := t.TempDir()
+	testutil.SetHome(t, home)
+	testutil.InstallFakeBinary(t, "systemctl", "exit 0")
+	testutil.InstallFakeBinary(t, "launchctl", "exit 0")
+
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	writeEmptyV1Spec(t, path)
+	if code := run([]string{"service", "add", "failing", "--file", path, "--start", "false"}); code != exitOK {
+		t.Fatalf("add failing service: got %d, want %d", code, exitOK)
+	}
+	if code := run([]string{"service", "start", "failing", "--file", path}); code != exitLogic {
+		t.Fatalf("service start failure path: got exit code %d, want %d", code, exitLogic)
+	}
+}
+
 func TestServiceCLIUsageErrors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.json")

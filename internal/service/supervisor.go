@@ -301,12 +301,6 @@ func StartDeclared(ctx context.Context, name string, svc schema.Service, sourceR
 		_, err := applySystemdTemplate(ctx, name, svc, sourceRoot, false)
 		return err
 	}
-	if probeSystemd() {
-		return applySystemd(ctx, name, svc, false)
-	}
-	if probeLaunchd() {
-		return applyLaunchd(ctx, name, svc, false)
-	}
 	if len(svc.Start) == 0 {
 		return fmt.Errorf("service %q has no start command", name)
 	}

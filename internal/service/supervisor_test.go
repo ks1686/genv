@@ -292,6 +292,30 @@ func TestApplyServices_SupervisorTemplateSkippedWhenUnavailable(t *testing.T) {
 	}
 }
 
+func TestStartDeclared_RawStartFailsWhenSupervisorPresent(t *testing.T) {
+	// `genv service start` for a start/stop/status service must run the start
+	// argv. Generating a systemd/launchd unit would hide a failing command
+	// (systemctl enable --now exits 0 even when ExecStart is `false`).
+	home := t.TempDir()
+	testutil.SetHome(t, home)
+	installServiceFakeBinary(t, "systemctl", "exit 0")
+	installServiceFakeBinary(t, "launchctl", "exit 0")
+	t.Cleanup(func() {
+		probeLaunchd = IsLaunchdAvailable
+		probeSystemd = IsSystemdAvailable
+	})
+	probeLaunchd = func() bool { return true }
+	probeSystemd = func() bool { return true }
+
+	err := StartDeclared(context.Background(), "failing", schema.Service{Start: []string{"false"}}, "")
+	if err == nil {
+		t.Fatal("StartDeclared(false) = nil, want the start command's failure")
+	}
+	if err := StartDeclared(context.Background(), "ok", schema.Service{Start: []string{"true"}}, ""); err != nil {
+		t.Fatalf("StartDeclared(true) = %v", err)
+	}
+}
+
 func TestSpecToLock_SupervisorFields(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "com.example.agent.plist")
