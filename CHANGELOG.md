@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Schema v8 top-level `adapters` defines command adapters for plugin CLIs
+  (Claude Code plugins, gh extensions, editor plugins). Packages with
+  `prefer: <adapter>` install, remove, and upgrade via the declared commands
+  and participate in `status`, `scan`, `updates check`, and `upgrade`.
+  List parsing is JSON (`idField` / `versionField`) and/or regex (`listMatch`).
+  `external` stays track-only. See SCHEMA.md.
 - `genv apply --source-root <dir>` resolves `files.links` / `files.templates`
   sources against that directory instead of the spec file directory. Use it to
   dry-run (or apply) a worktree copy of `genv.json` against the live tree so

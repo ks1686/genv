@@ -51,6 +51,12 @@
     },
     "updates": {
       "type": "object"
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/adapterDef"
+      }
     }
   },
   "$defs": {
@@ -168,6 +174,43 @@
           "additionalProperties": {
             "type": "string"
           }
+        }
+      }
+    },
+    "adapterDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["list", "install", "remove"],
+      "properties": {
+        "list": {
+          "type": "string",
+          "minLength": 1
+        },
+        "install": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remove": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upgrade": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "outdated": {
+          "type": "string"
+        },
+        "listMatch": {
+          "type": "string"
+        },
+        "idField": {
+          "type": "string"
+        },
+        "versionField": {
+          "type": "string"
         }
       }
     }

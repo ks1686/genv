@@ -13,7 +13,7 @@ Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/val
 | v5 | `"5"` | `files`, `hooks`, per-record `host`, `repo` |
 | v6 | `"6"` | expanded lifecycle hooks, `updates` |
 | v7 | `"7"` | `"shell": "powershell"` targeting |
-| v8 | `"8"` | portable `defaults` + `targets.*` |
+| v8 | `"8"` | portable `defaults` + `targets.*`; optional top-level `adapters` |
 
 Older versions still load. Prefer **v8** for new multi-machine specs. Convert with `genv migrate`.
 
@@ -62,7 +62,7 @@ Older versions still load. Prefer **v8** for new multi-machine specs. Convert wi
 
 - Top-level `packages`, `env`, `shell`, `files`, `services`, and `hooks` are **invalid** in v8. Put them under `defaults` and/or `targets.<id>`.
 - `targets` must be non-empty; keys must be known target IDs.
-- `repo` and `updates` remain top-level.
+- `repo`, `updates`, and `adapters` remain top-level.
 - Bundles support the same blocks as the flat schema: `packages`, `env`, `shell`, `files`, `services`, `hooks`.
 
 ### Merge and tombstones
@@ -143,9 +143,64 @@ Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_form
 
 ## Manager resolution
 
-`prefer` and `managers` accept registered manager IDs (see README table). Without an explicit selection, fallback uses **system** package managers only. Language, toolchain, and plugin managers are explicit-only.
+`prefer` and `managers` accept registered manager IDs (see README table) or a v8 `adapters` name. Without an explicit selection, fallback uses **system** package managers only. Language, toolchain, and plugin managers are explicit-only.
 
 `external` is a track-only manager for apps with an official installer (not winget/scoop). Apply records them when the binary is on PATH; it never installs them.
+
+## Spec adapters (v8)
+
+Top-level `adapters` defines installable command adapters for plugin CLIs that genv does not ship built-in. `external` stays track-only. A package with `prefer: <adapter-name>` then participates in apply, adopt, status, scan, updates, and upgrade.
+
+```json
+{
+  "schemaVersion": "8",
+  "adapters": {
+    "claude-plugin": {
+      "list": "claude plugin list --json",
+      "install": "claude plugin install {{id}} --scope user",
+      "remove": "claude plugin uninstall {{id}}",
+      "upgrade": "claude plugin update {{id}}",
+      "idField": "name",
+      "versionField": "version"
+    },
+    "gh-extension": {
+      "list": "gh extension list",
+      "install": "gh extension install {{id}}",
+      "remove": "gh extension remove {{id}}",
+      "upgrade": "gh extension upgrade {{id}}",
+      "listMatch": "(?m)^(?P<id>\\S+)\\s+(?P<version>\\S+)"
+    }
+  },
+  "targets": {
+    "macos": {
+      "packages": [
+        { "id": "slack@claude-plugins-official", "prefer": "claude-plugin" },
+        { "id": "github/gh-copilot", "prefer": "gh-extension" }
+      ]
+    }
+  }
+}
+```
+
+### Adapter fields
+
+| Field | Required | Role |
+| ----- | -------- | ---- |
+| `list` | yes | Inventory command. Used for Query, scan, status, and apply adopt-if-present. |
+| `install` | yes | Argv template. `{{id}}` and `{{name}}` expand to the package id. |
+| `remove` | yes | Uninstall template. |
+| `upgrade` | no | Upgrade template. Omitted → same argv as `install`. |
+| `version` | no | Per-package version command (`{{id}}`). Omitted → `versionField` from `list`. |
+| `outdated` | no | Optional outdated inventory, parsed like `list`. Omit to keep the built-in “no detector → keep all” updates behavior. |
+| `idField` | no | JSON object field (or dotted path, e.g. `plugins.name`) for the package id. |
+| `versionField` | no | JSON field on the same object for the installed version. |
+| `listMatch` | no | Regex. Capture group 1, or named `(?P<id>…)` / `(?P<name>…)` and `(?P<version>…)`. |
+
+List parsing order: JSON when `idField` is set and stdout looks like JSON; else `listMatch`; else the first whitespace-separated field per line.
+
+Commands are split into argv (quotes supported). There is no shell piping or redirection — wrap in `sh -c` if needed. Adapter names are `claude-plugin`-style kebab-case and must not collide with a built-in manager. Spec adapters are explicit-only: they never win `genv add git` fallback.
+
+`genv scan` runs each available adapter’s `list` and, for spec adapters, writes `prefer` so the adopted package stays bound. `genv export` copies `adapters` into the snapshot so `prefer` still validates.
 
 `genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 

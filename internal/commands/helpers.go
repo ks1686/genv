@@ -21,6 +21,22 @@ var knownManagerList = func() string {
 // KnownManagerList returns a sorted, comma-separated string of all known manager names.
 func KnownManagerList() string { return knownManagerList }
 
+// KnownManagerListFor is KnownManagerList plus any spec-defined adapter names.
+func KnownManagerListFor(f *schema.GenvFile) string {
+	if f == nil || len(f.Adapters) == 0 {
+		return knownManagerList
+	}
+	names := make([]string, 0, len(schema.KnownManagers)+len(f.Adapters))
+	for k := range schema.KnownManagers {
+		names = append(names, k)
+	}
+	for k := range f.Adapters {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 // RedactValue returns value unchanged unless sensitive is true, in which case
 // it returns "[redacted]". Use for any user-facing output that may expose secrets.
 func RedactValue(value string, sensitive bool) string {

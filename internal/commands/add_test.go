@@ -75,6 +75,24 @@ func TestAdd_UnknownPrefer(t *testing.T) {
 	}
 }
 
+func TestAdd_SpecAdapterPrefer(t *testing.T) {
+	f := &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Adapters: map[string]schema.AdapterDef{
+			"claude-plugin": {List: "claude plugin list", Install: "claude plugin install {{id}}", Remove: "claude plugin uninstall {{id}}"},
+		},
+		Targets: map[string]*schema.TargetBundle{
+			"macos": {Packages: []schema.Package{}},
+		},
+	}
+	if err := Add(f, "slack@official", "", "claude-plugin", nil, "macos"); err != nil {
+		t.Fatalf("Add with spec adapter prefer: %v", err)
+	}
+	if got := f.Targets["macos"].Packages[0].Prefer; got != "claude-plugin" {
+		t.Fatalf("prefer=%q", got)
+	}
+}
+
 func TestAdd_UnknownManagerKey(t *testing.T) {
 	f := newFile()
 	if err := Add(f, "git", "*", "", map[string]string{"yum": "git"}, ""); err == nil {

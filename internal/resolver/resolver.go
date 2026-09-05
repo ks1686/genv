@@ -29,7 +29,7 @@ func fprint(w io.Writer, a ...any)                 { _, _ = fmt.Fprint(w, a...) 
 // by checking each registered adapter's binary in PATH.
 func Detect() map[string]bool {
 	available := make(map[string]bool)
-	for _, a := range adapter.All {
+	for _, a := range adapter.Registered() {
 		if a.Available() {
 			available[a.Name()] = true
 		}
@@ -83,7 +83,7 @@ func resolveOnGOOS(pkg schema.Package, available map[string]bool, goos string) A
 
 	// 2. Pick the first available adapter in registry order whose manager name
 	//    appears in the package's explicit managers map.
-	for _, a := range adapter.All {
+	for _, a := range adapter.Registered() {
 		if _, ok := pkg.Managers[a.Name()]; ok && available[a.Name()] {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
 			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}
@@ -96,7 +96,7 @@ func resolveOnGOOS(pkg schema.Package, available map[string]bool, goos string) A
 	//    (reachable via prefer or the managers map above) so `genv add git`
 	//    never silently resolves to npm/cargo/go just because one happens to be
 	//    installed.
-	for _, a := range adapter.All {
+	for _, a := range adapter.Registered() {
 		if available[a.Name()] && adapter.IsDefaultFallbackEligible(a) && adapter.AutomaticOnGOOS(a.Name(), goos) {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
 			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}

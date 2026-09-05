@@ -21,6 +21,7 @@ func MergeTarget(f *GenvFile, targetID string) (*GenvFile, error) {
 		SchemaVersion: Version8,
 		Repo:          copyRepo(f.Repo),
 		Updates:       copyUpdatesConfig(f.Updates),
+		Adapters:      copyAdapters(f.Adapters),
 	}
 	defaults := f.Defaults
 	out.Packages = mergePackages(defaults, target)
@@ -265,6 +266,17 @@ func copyRepo(in *Repo) *Repo {
 	}
 	out := *in
 	return &out
+}
+
+func copyAdapters(in map[string]AdapterDef) map[string]AdapterDef {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]AdapterDef, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func copyUpdatesConfig(in *UpdatesConfig) *UpdatesConfig {

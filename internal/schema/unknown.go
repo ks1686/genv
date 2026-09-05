@@ -18,6 +18,7 @@ func validateUnknownKeys(raw map[string]json.RawMessage, positions map[string]Po
 	errs = append(errs, walkHooks(raw["hooks"], "hooks", positions)...)
 	errs = append(errs, walkObject(raw["repo"], "repo", repoFields, positions)...)
 	errs = append(errs, walkObject(raw["updates"], "updates", updatesFields, positions)...)
+	errs = append(errs, walkAdapters(raw["adapters"], positions)...)
 	errs = append(errs, walkBundle(raw["defaults"], "defaults", positions)...)
 	if targets, ok := asObject(raw["targets"]); ok {
 		for name, body := range targets {
@@ -30,7 +31,11 @@ func validateUnknownKeys(raw map[string]json.RawMessage, positions map[string]Po
 var (
 	rootFields = strSet(
 		"$schema", "schemaVersion", "packages", "env", "shell", "services",
-		"files", "hooks", "repo", "updates", "defaults", "targets",
+		"files", "hooks", "repo", "updates", "adapters", "defaults", "targets",
+	)
+	adapterFields = strSet(
+		"list", "install", "remove", "upgrade", "version", "outdated",
+		"listMatch", "idField", "versionField",
 	)
 	packageFields = strSet("id", "version", "prefer", "managers", "host")
 	envVarFields  = strSet("value", "sensitive")
@@ -85,6 +90,18 @@ func walkObject(raw json.RawMessage, path string, allowed map[string]bool, posit
 		return nil
 	}
 	return rejectUnknown(obj, path, allowed, positions)
+}
+
+func walkAdapters(raw json.RawMessage, positions map[string]Position) []ValidationError {
+	obj, ok := asObject(raw)
+	if !ok {
+		return nil
+	}
+	var errs []ValidationError
+	for name, body := range obj {
+		errs = append(errs, walkObject(body, "adapters."+name, adapterFields, positions)...)
+	}
+	return errs
 }
 
 func walkBundle(raw json.RawMessage, path string, positions map[string]Position) []ValidationError {

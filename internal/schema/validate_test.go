@@ -1686,3 +1686,165 @@ func TestValidPackageName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidAdapterName(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"claude-plugin", true},
+		{"gh-extension", true},
+		{"a", true},
+		{"a1", true},
+		{"", false},
+		{"Brew", false},
+		{"1gh", false},
+		{"gh_extension", false},
+		{"gh extension", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ValidAdapterName(tc.name); got != tc.ok {
+				t.Fatalf("ValidAdapterName(%q)=%v, want %v", tc.name, got, tc.ok)
+			}
+		})
+	}
+}
+
+func TestParseAndValidate_V8AdaptersAcceptCustomPrefer(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "adapters":{
+	    "claude-plugin":{
+	      "list":"claude plugin list --json",
+	      "install":"claude plugin install {{id}} --scope user",
+	      "remove":"claude plugin uninstall {{id}}",
+	      "upgrade":"claude plugin update {{id}}",
+	      "idField":"name",
+	      "versionField":"version"
+	    }
+	  },
+	  "targets":{
+	    "macos":{
+	      "packages":[{"id":"slack@claude-plugins-official","prefer":"claude-plugin"}]
+	    }
+	  }
+	}`
+	f, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil || len(errs) > 0 {
+		t.Fatalf("unexpected: err=%v errs=%v", err, errs)
+	}
+	if _, ok := f.Adapters["claude-plugin"]; !ok {
+		t.Fatal("expected claude-plugin adapter")
+	}
+	if !KnownManager(f, "claude-plugin") {
+		t.Fatal("KnownManager should accept spec adapter")
+	}
+	if KnownManager(f, "not-a-manager") {
+		t.Fatal("KnownManager should reject unknown names")
+	}
+}
+
+func TestParseAndValidate_AdaptersRequireV8(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"7",
+	  "packages":[],
+	  "adapters":{
+	    "claude-plugin":{
+	      "list":"claude plugin list",
+	      "install":"claude plugin install {{id}}",
+	      "remove":"claude plugin uninstall {{id}}"
+	    }
+	  }
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "adapters") {
+		t.Fatalf("expected adapters to require v8, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_AdapterRejectsBuiltinName(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "adapters":{
+	    "brew":{
+	      "list":"brew list",
+	      "install":"brew install {{id}}",
+	      "remove":"brew uninstall {{id}}"
+	    }
+	  },
+	  "targets":{"macos":{"packages":[]}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "adapters.brew") {
+		t.Fatalf("expected collision error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_AdapterRequiresCommands(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "adapters":{"gh-extension":{"list":"","install":"gh extension install {{id}}"}},
+	  "targets":{"macos":{"packages":[]}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "adapters.gh-extension.list") {
+		t.Fatalf("expected missing list, got: %v", errs)
+	}
+	if !hasValidationField(errs, "adapters.gh-extension.remove") {
+		t.Fatalf("expected missing remove, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_AdapterUnknownField(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "adapters":{
+	    "gh-extension":{
+	      "list":"gh extension list",
+	      "install":"gh extension install {{id}}",
+	      "remove":"gh extension remove {{id}}",
+	      "shell":"true"
+	    }
+	  },
+	  "targets":{"macos":{"packages":[]}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "adapters.gh-extension.shell") {
+		t.Fatalf("expected unknown field, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_AdapterInvalidListMatch(t *testing.T) {
+	raw := `{
+	  "schemaVersion":"8",
+	  "adapters":{
+	    "gh-extension":{
+	      "list":"gh extension list",
+	      "install":"gh extension install {{id}}",
+	      "remove":"gh extension remove {{id}}",
+	      "listMatch":"("
+	    }
+	  },
+	  "targets":{"macos":{"packages":[]}}
+	}`
+	_, errs, err := ParseAndValidate([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasValidationField(errs, "adapters.gh-extension.listMatch") {
+		t.Fatalf("expected invalid listMatch, got: %v", errs)
+	}
+}
