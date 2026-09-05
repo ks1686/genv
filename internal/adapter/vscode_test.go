@@ -6,7 +6,42 @@ import (
 	"testing"
 )
 
+// isolatePATH drops inherited PATH so a host `cursor` or `code` cannot
+// shadow the fake binaries these tests install.
+func isolatePATH(t *testing.T) {
+	t.Helper()
+	t.Setenv("PATH", t.TempDir())
+}
+
+func TestVscode_Available_whenOnlyCursorOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "cursor", "")
+	a := Vscode{}
+	if !a.Available() {
+		t.Fatal("Available() = false when only cursor is on PATH")
+	}
+}
+
+func TestVscode_Available_whenOnlyCodeOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "code", "")
+	a := Vscode{}
+	if !a.Available() {
+		t.Fatal("Available() = false when only code is on PATH")
+	}
+}
+
+func TestVscode_Available_whenNeitherCLIOnPATH(t *testing.T) {
+	isolatePATH(t)
+	a := Vscode{}
+	if a.Available() {
+		t.Fatal("Available() = true when neither cursor nor code is on PATH")
+	}
+}
+
 func TestVscode_PlanCommands_whenExtensionTracked(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "code", "")
 	a := Vscode{}
 
 	if got, want := a.PlanInstall("golang.go"), []string{"code", "--install-extension", "golang.go"}; !slices.Equal(got, want) {
@@ -26,7 +61,35 @@ func TestVscode_PlanCommands_whenExtensionTracked(t *testing.T) {
 	}
 }
 
+func TestVscode_PlanCommands_whenOnlyCursorOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "cursor", "")
+	a := Vscode{}
+
+	if got, want := a.PlanInstall("golang.go"), []string{"cursor", "--install-extension", "golang.go"}; !slices.Equal(got, want) {
+		t.Errorf("PlanInstall = %v, want %v", got, want)
+	}
+	if got, want := a.PlanUninstall("golang.go@0.42.0"), []string{"cursor", "--uninstall-extension", "golang.go"}; !slices.Equal(got, want) {
+		t.Errorf("PlanUninstall = %v, want %v", got, want)
+	}
+	if got, want := a.PlanUpgrade("golang.go"), []string{"cursor", "--install-extension", "golang.go", "--force"}; !slices.Equal(got, want) {
+		t.Errorf("PlanUpgrade = %v, want %v", got, want)
+	}
+}
+
+func TestVscode_PlanCommands_prefersCursorWhenBothOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "code", "")
+	installFakeBinary(t, "cursor", "")
+	a := Vscode{}
+
+	if got, want := a.PlanInstall("golang.go"), []string{"cursor", "--install-extension", "golang.go"}; !slices.Equal(got, want) {
+		t.Errorf("PlanInstall = %v, want %v", got, want)
+	}
+}
+
 func TestVscode_ParseListWithVersions_whenExtensionsInstalled(t *testing.T) {
+	isolatePATH(t)
 	installFakeBinary(t, "code", `if [ "$1" = "--list-extensions" ] && [ "$2" = "--show-versions" ]; then
   echo 'golang.Go@0.42.0'
   echo 'ms-python.python@2024.4.0'
@@ -42,7 +105,26 @@ fi`)
 	}
 }
 
+func TestVscode_ListInstalled_whenOnlyCursorOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "cursor", `if [ "$1" = "--list-extensions" ] && [ "$2" = "--show-versions" ]; then
+  echo 'golang.Go@0.42.0'
+  echo 'anysphere.remote-ssh@1.1.14'
+fi`)
+
+	got, err := Vscode{}.ListInstalled()
+	if err != nil {
+		t.Fatalf("Vscode.ListInstalled: %v", err)
+	}
+	slices.Sort(got)
+	want := []string{"anysphere.remote-ssh", "golang.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("ListInstalled = %v, want %v", got, want)
+	}
+}
+
 func TestVscode_Query_whenExtensionIDIsCaseInsensitive(t *testing.T) {
+	isolatePATH(t)
 	installFakeBinary(t, "code", `if [ "$1" = "--list-extensions" ]; then
   echo 'golang.Go@0.42.0'
 fi`)
