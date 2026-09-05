@@ -67,9 +67,10 @@ type ServiceStatusEntry struct {
 
 // ServiceStatus computes the two-way diff between the spec services block and
 // the lock services entries. When probe is true, each in-spec service is also
-// checked for liveness (brew, a custom status command, or systemd). When
-// probe is false, Running is always false and no subprocesses are spawned.
-func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfile.LockedService, probe bool) []ServiceStatusEntry {
+// checked for liveness (brew, launchd, systemd, or a custom status command).
+// When probe is false, Running is always false and no subprocesses are spawned.
+// sourceRoot resolves relative launchd/systemd template paths.
+func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfile.LockedService, probe bool, sourceRoot string) []ServiceStatusEntry {
 	lockByName := make(map[string]genvfile.LockedService, len(lockServices))
 	for _, ls := range lockServices {
 		lockByName[ls.Name] = ls
@@ -107,19 +108,12 @@ func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfi
 		}
 
 		running := false
-		if probe && inSpec && svc.BrewFormula != "" {
-			running = BrewServicesRunning(svc.BrewFormula)
-		} else if probe && inSpec && len(svc.Status) > 0 {
-			// Status commands are user-configured; still bound them so a wedged
-			// probe script cannot stall `genv service list`.
+		if probe && inSpec {
 			if err := resolver.RunTimed(func() error {
-				return exec.Command(svc.Status[0], svc.Status[1:]...).Run()
-			}, resolver.DefaultLiveListTimeout); err == nil {
-				running = true
-			}
-		} else if probe && inSpec && IsSystemdAvailable() {
-			if err := resolver.RunTimed(func() error {
-				return exec.Command("systemctl", "--user", "is-active", "--quiet", systemdUnitName(name)).Run()
+				if ProbeRunning(context.Background(), name, svc, sourceRoot) {
+					return nil
+				}
+				return fmt.Errorf("not running")
 			}, resolver.DefaultLiveListTimeout); err == nil {
 				running = true
 			}
@@ -136,60 +130,47 @@ func ServiceStatus(specServices map[string]schema.Service, lockServices []genvfi
 }
 
 func compareServices(s schema.Service, l genvfile.LockedService) bool {
+	launchdPlist, systemdUnit := "", ""
+	if s.Launchd != nil {
+		launchdPlist = s.Launchd.Plist
+	}
+	if s.Systemd != nil {
+		systemdUnit = s.Systemd.Unit
+	}
 	return strings.Join(s.Start, " ") == strings.Join(l.Start, " ") &&
 		strings.Join(s.Stop, " ") == strings.Join(l.Stop, " ") &&
 		strings.Join(s.Restart, " ") == strings.Join(l.Restart, " ") &&
 		strings.Join(s.Status, " ") == strings.Join(l.Status, " ") &&
-		s.BrewFormula == l.BrewFormula
+		s.BrewFormula == l.BrewFormula &&
+		launchdPlist == l.LaunchdPlist &&
+		systemdUnit == l.SystemdUnit
 }
 
 // ApplyServices reconciles the system state with the desired services.
-// It starts missing/modified services and stops extra services.
-func ApplyServices(ctx context.Context, specServices map[string]schema.Service, lockServices []genvfile.LockedService, verbose bool) (applied, removed []string, errs []error) {
-	statusEntries := ServiceStatus(specServices, lockServices, true)
+// It starts missing/modified services, re-renders supervisor templates, and
+// stops extra services. sourceRoot resolves relative template paths.
+func ApplyServices(ctx context.Context, specServices map[string]schema.Service, lockServices []genvfile.LockedService, verbose bool, sourceRoot string) (applied, removed []string, errs []error) {
+	statusEntries := ServiceStatus(specServices, lockServices, true, sourceRoot)
 
 	for _, e := range statusEntries {
 		switch e.Kind {
-		case ServiceStatusMissing, ServiceStatusModified:
-			svc := specServices[e.Name]
-			if svc.BrewFormula != "" {
-				if !IsBrewServicesAvailable() {
-					errs = append(errs, fmt.Errorf("service %q requires brew services but brew is not available on this platform", e.Name))
-					continue
-				}
-				if verbose {
-					_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s via brew services\n", e.Name)
-				}
-				if err := BrewServicesStart(ctx, svc.BrewFormula); err != nil {
-					errs = append(errs, err)
-				} else {
-					applied = append(applied, e.Name)
-				}
-			} else if IsSystemdAvailable() {
-				if err := applySystemd(ctx, e.Name, svc, verbose); err != nil {
-					errs = append(errs, err)
-				} else {
-					applied = append(applied, e.Name)
-				}
-			} else if IsLaunchdAvailable() {
-				if err := applyLaunchd(ctx, e.Name, svc, verbose); err != nil {
-					errs = append(errs, err)
-				} else {
-					applied = append(applied, e.Name)
-				}
-			} else {
-				if verbose {
-					_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s\n", e.Name)
-				}
-				cmd := exec.CommandContext(ctx, svc.Start[0], svc.Start[1:]...)
-				if err := cmd.Run(); err != nil {
-					errs = append(errs, fmt.Errorf("starting service %q: %w", e.Name, err))
-				} else {
-					applied = append(applied, e.Name)
-				}
+		case ServiceStatusMissing, ServiceStatusModified, ServiceStatusOK:
+			svc, inSpec := specServices[e.Name]
+			if !inSpec {
+				continue
+			}
+			if e.Kind == ServiceStatusOK && !svc.DeclaresLaunchd() && !svc.DeclaresSystemd() {
+				continue
+			}
+			changed, err := applyDeclared(ctx, e.Name, svc, sourceRoot, verbose)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if changed {
+				applied = append(applied, e.Name)
 			}
 		case ServiceStatusExtra:
-			// Find the locked service to get its stop command if possible.
 			var ls genvfile.LockedService
 			for _, l := range lockServices {
 				if l.Name == e.Name {
@@ -197,46 +178,9 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 					break
 				}
 			}
-
-			if ls.BrewFormula != "" {
-				if !IsBrewServicesAvailable() {
-					errs = append(errs, fmt.Errorf("service %q requires brew services but brew is not available on this platform", e.Name))
-					continue
-				}
-				if verbose {
-					_, _ = fmt.Fprintf(os.Stdout, "  service: stopping %s via brew services\n", e.Name)
-				}
-				if err := BrewServicesStop(ctx, ls.BrewFormula); err != nil {
-					errs = append(errs, err)
-				} else {
-					removed = append(removed, e.Name)
-				}
-			} else if IsSystemdAvailable() {
-				if err := removeSystemd(ctx, e.Name, verbose); err != nil {
-					errs = append(errs, err)
-				} else {
-					removed = append(removed, e.Name)
-				}
-			} else if IsLaunchdAvailable() {
-				if err := removeLaunchd(ctx, e.Name, verbose); err != nil {
-					errs = append(errs, err)
-				} else {
-					removed = append(removed, e.Name)
-				}
-			} else if len(ls.Stop) > 0 {
-				if verbose {
-					_, _ = fmt.Fprintf(os.Stdout, "  service: stopping %s\n", e.Name)
-				}
-				cmd := exec.CommandContext(ctx, ls.Stop[0], ls.Stop[1:]...)
-				if err := cmd.Run(); err != nil {
-					errs = append(errs, fmt.Errorf("stopping service %q: %w", e.Name, err))
-				} else {
-					removed = append(removed, e.Name)
-				}
+			if err := removeLocked(ctx, e.Name, ls, verbose); err != nil {
+				errs = append(errs, err)
 			} else {
-				if verbose {
-					_, _ = fmt.Fprintf(os.Stdout, "  service: removed %s from spec (no stop command defined)\n", e.Name)
-				}
 				removed = append(removed, e.Name)
 			}
 		}
@@ -245,20 +189,34 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 }
 
 // SpecToLock converts spec services map to a slice of locked services.
-func SpecToLock(spec map[string]schema.Service) []genvfile.LockedService {
+// sourceRoot is used to resolve and parse supervisor templates when present.
+func SpecToLock(spec map[string]schema.Service, sourceRoot string) []genvfile.LockedService {
 	if len(spec) == 0 {
 		return nil
 	}
 	var lock []genvfile.LockedService
 	for name, svc := range spec {
-		lock = append(lock, genvfile.LockedService{
+		ls := genvfile.LockedService{
 			Name:        name,
 			Start:       svc.Start,
 			Stop:        svc.Stop,
 			BrewFormula: svc.BrewFormula,
 			Restart:     svc.Restart,
 			Status:      svc.Status,
-		})
+		}
+		if svc.DeclaresLaunchd() {
+			ls.LaunchdPlist = svc.Launchd.Plist
+			if label, err := launchdLabelFor(svc, sourceRoot); err == nil {
+				ls.LaunchdLabel = label
+			}
+		}
+		if svc.DeclaresSystemd() {
+			ls.SystemdUnit = svc.Systemd.Unit
+			if unitBase, err := systemdNameFor(name, svc); err == nil {
+				ls.SystemdName = unitBase
+			}
+		}
+		lock = append(lock, ls)
 	}
 	sort.Slice(lock, func(i, j int) bool {
 		return lock[i].Name < lock[j].Name
@@ -408,8 +366,8 @@ func applySystemd(ctx context.Context, name string, svc schema.Service, verbose 
 	}
 
 	// reload daemon, enable and start service
-	_ = exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
-	if err := exec.CommandContext(ctx, "systemctl", "--user", "enable", "--now", unitName).Run(); err != nil {
+	_ = systemctlRun(ctx, "--user", "daemon-reload")
+	if err := systemctlRun(ctx, "--user", "enable", "--now", unitName); err != nil {
 		return fmt.Errorf("enabling systemd service %q: %w\nTip: to view logs run: %s", unitName, err, SystemdLogsHint(name))
 	}
 
@@ -428,14 +386,14 @@ func removeSystemd(ctx context.Context, name string, verbose bool) error {
 		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via systemd\n", name)
 	}
 
-	_ = exec.CommandContext(ctx, "systemctl", "--user", "stop", unitName).Run()
-	_ = exec.CommandContext(ctx, "systemctl", "--user", "disable", unitName).Run()
+	_ = systemctlRun(ctx, "--user", "stop", unitName)
+	_ = systemctlRun(ctx, "--user", "disable", unitName)
 
 	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing systemd unit file %q: %w", unitPath, err)
 	}
 
-	_ = exec.CommandContext(ctx, "systemctl", "--user", "daemon-reload").Run()
+	_ = systemctlRun(ctx, "--user", "daemon-reload")
 	return nil
 }
 
@@ -460,9 +418,9 @@ func applyLaunchd(ctx context.Context, name string, svc schema.Service, verbose 
 		_, _ = fmt.Fprintf(os.Stdout, "  service: starting %s via launchd\n", name)
 	}
 
-	// unload if already loaded, then load
-	_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
-	if err := exec.CommandContext(ctx, "launchctl", "load", plistPath).Run(); err != nil {
+	label := strings.TrimSuffix(plistName, ".plist")
+	_ = bootoutLaunchd(ctx, label)
+	if err := bootstrapLaunchd(ctx, plistPath); err != nil {
 		return fmt.Errorf("loading launchd service %q: %w\nTip: to view logs run: log show --predicate 'subsystem == \"genv\"' --last 1h", name, err)
 	}
 
@@ -481,7 +439,7 @@ func removeLaunchd(ctx context.Context, name string, verbose bool) error {
 		_, _ = fmt.Fprintf(os.Stdout, "  service: stopping and removing %s via launchd\n", name)
 	}
 
-	_ = exec.CommandContext(ctx, "launchctl", "unload", plistPath).Run()
+	_ = bootoutLaunchd(ctx, strings.TrimSuffix(plistName, ".plist"))
 
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing launchd plist file %q: %w", plistPath, err)

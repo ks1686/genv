@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Spec services can declare a LaunchAgent or systemd --user unit from a
+  template: `services.<name>.launchd.plist` and `services.<name>.systemd.unit`.
+  Paths render like `files.templates[]`. `genv apply` writes the unit, loads it
+  if needed, and re-bootstraps / restarts when the rendered content changes.
+  `genv service status` uses `launchctl print gui/$UID/<Label>` or
+  `systemctl --user is-active`. Removing the service boots it out (or stops
+  the unit) and deletes the file. No postApply hook is required.
 - Schema v8 top-level `adapters` defines command adapters for plugin CLIs
   (Claude Code plugins, gh extensions, editor plugins). Packages with
   `prefer: <adapter>` install, remove, and upgrade via the declared commands
@@ -13,11 +20,12 @@ All notable changes to this project will be documented in this file.
   List parsing is JSON (`idField` / `versionField`) and/or regex (`listMatch`).
   `external` stays track-only. See SCHEMA.md.
 - `genv apply --source-root <dir>` resolves `files.links` / `files.templates`
-  sources against that directory instead of the spec file directory. Use it to
-  dry-run (or apply) a worktree copy of `genv.json` against the live tree so
-  existing links stay `ok` and only real file changes show. A missing or
-  non-directory `--source-root` is refused. Lock, env, and shell paths still
-  follow `--file` / `--lock-file` / `--state-dir`.
+  and service `launchd.plist` / `systemd.unit` sources against that directory
+  instead of the spec file directory. Use it to dry-run (or apply) a worktree
+  copy of `genv.json` against the live tree so existing links stay `ok` and
+  only real file changes show. A missing or non-directory `--source-root` is
+  refused. Lock, env, and shell paths still follow `--file` / `--lock-file` /
+  `--state-dir`.
 - Lock files record a `contentHash` (`sha256:<hex>`) per managed link and
   template after a successful apply. `genv status --files` reports `drifted`
   (with the path) when the live source or rendered body no longer matches that

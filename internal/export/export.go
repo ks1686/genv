@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ks1686/genv/internal/genvfile"
@@ -38,10 +39,13 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 		return nil, err
 	}
 
-	report := buildReport(effective.Packages, effective.Files, targetID)
+	report := buildReport(effective.Packages, effective.Files, effective.Services, targetID)
 	bundle, envReport := bundleFromFlat(effective)
 	report = append(report, envReport...)
 	if err := rewriteAndCopyFileAssets(bundle.Files, opts.BaseDir, outDir); err != nil {
+		return report.sorted(), err
+	}
+	if err := rewriteAndCopyServiceAssets(bundle.Services, opts.BaseDir, outDir); err != nil {
 		return report.sorted(), err
 	}
 
@@ -163,7 +167,7 @@ func normalizeBundle(bundle *schema.TargetBundle) *schema.TargetBundle {
 	return bundle
 }
 
-func buildReport(packages []schema.Package, files *schema.FilesConfig, targetID string) Report {
+func buildReport(packages []schema.Package, files *schema.FilesConfig, services map[string]schema.Service, targetID string) Report {
 	var report Report
 	allowed := managerAllowlist(targetID)
 	for _, pkg := range packages {
@@ -187,6 +191,14 @@ func buildReport(packages []schema.Package, files *schema.FilesConfig, targetID 
 			if isAbsolutePath(tpl.Source) {
 				report = append(report, absoluteSourceItem(fmt.Sprintf("files.templates[%d].source", i), tpl.Source))
 			}
+		}
+	}
+	for name, svc := range services {
+		if svc.DeclaresLaunchd() && isAbsolutePath(svc.Launchd.Plist) {
+			report = append(report, absoluteSourceItem("services."+name+".launchd.plist", svc.Launchd.Plist))
+		}
+		if svc.DeclaresSystemd() && isAbsolutePath(svc.Systemd.Unit) {
+			report = append(report, absoluteSourceItem("services."+name+".systemd.unit", svc.Systemd.Unit))
 		}
 	}
 	return report
@@ -288,6 +300,42 @@ func rewriteAndCopyFileAssets(files *schema.FilesConfig, baseDir, outDir string)
 			return err
 		}
 		files.Templates[i].Source = rel
+	}
+	return nil
+}
+
+func rewriteAndCopyServiceAssets(services map[string]*schema.Service, baseDir, outDir string) error {
+	if len(services) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for i, name := range names {
+		svc := services[name]
+		if svc == nil {
+			continue
+		}
+		if svc.DeclaresLaunchd() && svc.Launchd.Plist != "" && !isAbsolutePath(svc.Launchd.Plist) {
+			rel, err := copyAsset(baseDir, outDir, svc.Launchd.Plist, "launchd", i)
+			if err != nil {
+				return err
+			}
+			copied := *svc.Launchd
+			copied.Plist = rel
+			svc.Launchd = &copied
+		}
+		if svc.DeclaresSystemd() && svc.Systemd.Unit != "" && !isAbsolutePath(svc.Systemd.Unit) {
+			rel, err := copyAsset(baseDir, outDir, svc.Systemd.Unit, "systemd", i)
+			if err != nil {
+				return err
+			}
+			copied := *svc.Systemd
+			copied.Unit = rel
+			svc.Systemd = &copied
+		}
 	}
 	return nil
 }
@@ -518,6 +566,14 @@ func copyService(in schema.Service) schema.Service {
 	out.Stop = copyStrings(in.Stop)
 	out.Restart = copyStrings(in.Restart)
 	out.Status = copyStrings(in.Status)
+	if in.Launchd != nil {
+		v := *in.Launchd
+		out.Launchd = &v
+	}
+	if in.Systemd != nil {
+		v := *in.Systemd
+		out.Systemd = &v
+	}
 	return out
 }
 

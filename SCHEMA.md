@@ -135,7 +135,20 @@ Hooks run as the current user and are arbitrary code by design — treat the spe
 
 ## v4 — services
 
-Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_formula` (mutually exclusive with `start`).
+Map of name → one backend:
+
+- `{ start, stop, restart, status }` argv arrays
+- `brew_formula` (mutually exclusive with `start`)
+- `launchd: { "plist": "agents/com.example.agent.plist" }` — LaunchAgent template, rendered like `files.templates[]` (`__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`)
+- `systemd: { "unit": "units/foo.service" }` — systemd --user unit template, same rendering
+
+`launchd` and `systemd` may coexist on one service (portable defaults). They are mutually exclusive with `start` and `brew_formula`.
+
+`genv apply` writes the rendered plist to `~/Library/LaunchAgents/<Label>.plist` and `launchctl bootstrap`s `gui/$UID` when the job is not loaded. A content change boots the job out and bootstraps again. `genv service status <name>` uses `launchctl print gui/$UID/<Label>`. Removing the service from the spec boots it out and deletes the plist.
+
+On Linux, apply writes `~/.config/systemd/user/<basename>.service`, then `systemctl --user daemon-reload` and `enable --now`. Content changes restart the unit. Status uses `systemctl --user is-active`. Removal stops, disables, and deletes the unit.
+
+Relative template paths resolve against the spec directory (or `repo.url` when set), same as `files.templates`.
 
 ## v3 / v2 / v1
 

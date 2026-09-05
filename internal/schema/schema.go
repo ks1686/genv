@@ -356,15 +356,38 @@ type Hook struct {
 }
 
 // Service is a single user-space service declaration.
-// Either Start or BrewFormula must be provided.
+// At least one of Start, BrewFormula, Launchd.Plist, or Systemd.Unit is required.
 // When BrewFormula is set, genv manages the service via `brew services` on macOS.
+// Launchd and Systemd declare user-supervisor units from rendered templates.
 type Service struct {
 	Start       []string      `json:"start,omitempty"`
 	Stop        []string      `json:"stop,omitempty"`
 	Restart     []string      `json:"restart,omitempty"`
 	Status      []string      `json:"status,omitempty"`
 	BrewFormula string        `json:"brew_formula,omitempty"`
+	Launchd     *LaunchdSpec  `json:"launchd,omitempty"`
+	Systemd     *SystemdSpec  `json:"systemd,omitempty"`
 	Host        HostPredicate `json:"host,omitempty"`
+}
+
+// LaunchdSpec points at a LaunchAgent plist template, rendered like files.templates.
+type LaunchdSpec struct {
+	Plist string `json:"plist"`
+}
+
+// SystemdSpec points at a systemd --user unit template, rendered like files.templates.
+type SystemdSpec struct {
+	Unit string `json:"unit"`
+}
+
+// DeclaresLaunchd reports whether svc names a launchd plist template.
+func (s Service) DeclaresLaunchd() bool {
+	return s.Launchd != nil && s.Launchd.Plist != ""
+}
+
+// DeclaresSystemd reports whether svc names a systemd --user unit template.
+func (s Service) DeclaresSystemd() bool {
+	return s.Systemd != nil && s.Systemd.Unit != ""
 }
 
 // ShellConfig is the shell configuration block in genv.json.

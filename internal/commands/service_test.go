@@ -61,3 +61,23 @@ func TestServiceCommands(t *testing.T) {
 		t.Errorf("expected 'service not found' error, got %v", err)
 	}
 }
+
+func TestServicePut_LaunchdTemplate(t *testing.T) {
+	f := &schema.GenvFile{SchemaVersion: schema.Version8, Targets: map[string]*schema.TargetBundle{
+		"macos": {},
+	}}
+	err := ServicePut(f, "agent", schema.Service{Launchd: &schema.LaunchdSpec{Plist: "agents/foo.plist"}}, "macos")
+	if err != nil {
+		t.Fatalf("ServicePut launchd: %v", err)
+	}
+	got := f.Targets["macos"].Services["agent"]
+	if got == nil || !got.DeclaresLaunchd() || got.Launchd.Plist != "agents/foo.plist" {
+		t.Fatalf("macos agent = %+v", got)
+	}
+	var buf bytes.Buffer
+	listFile := &schema.GenvFile{Services: map[string]schema.Service{"agent": *got}}
+	ServiceList(listFile, &buf)
+	if !strings.Contains(buf.String(), "launchd:agents/foo.plist") {
+		t.Fatalf("list missing launchd cell:\n%s", buf.String())
+	}
+}

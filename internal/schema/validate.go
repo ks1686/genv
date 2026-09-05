@@ -601,10 +601,11 @@ func validateServiceName(name, fieldPrefix string) []ValidationError {
 
 func validateService(name string, svc Service, fieldPrefix string) []ValidationError {
 	var errs []ValidationError
-	if len(svc.Start) == 0 && svc.BrewFormula == "" {
+	hasSupervisor := svc.DeclaresLaunchd() || svc.DeclaresSystemd()
+	if len(svc.Start) == 0 && svc.BrewFormula == "" && !hasSupervisor {
 		errs = append(errs, ValidationError{
 			Field:   fmt.Sprintf("%s.%s.start", fieldPrefix, name),
-			Message: "start command is required (or set brew_formula for brew-managed services)",
+			Message: "start command is required (or set brew_formula, launchd.plist, or systemd.unit)",
 		})
 	}
 	if svc.BrewFormula != "" && len(svc.Start) > 0 {
@@ -613,16 +614,50 @@ func validateService(name string, svc Service, fieldPrefix string) []ValidationE
 			Message: "brew_formula and start are mutually exclusive; use one or the other",
 		})
 	}
+	if hasSupervisor && (len(svc.Start) > 0 || svc.BrewFormula != "") {
+		errs = append(errs, ValidationError{
+			Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
+			Message: "launchd/systemd templates are mutually exclusive with start and brew_formula",
+		})
+	}
 	if strings.ContainsAny(svc.BrewFormula, "\r\n") {
 		errs = append(errs, ValidationError{
 			Field:   fmt.Sprintf("%s.%s.brew_formula", fieldPrefix, name),
 			Message: "brew_formula must not contain newlines",
 		})
 	}
+	if svc.Launchd != nil {
+		errs = append(errs, validateServicePath(fieldPrefix, name, "launchd.plist", svc.Launchd.Plist, true)...)
+	}
+	if svc.Systemd != nil {
+		errs = append(errs, validateServicePath(fieldPrefix, name, "systemd.unit", svc.Systemd.Unit, true)...)
+	}
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "start", svc.Start)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "stop", svc.Stop)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "restart", svc.Restart)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "status", svc.Status)...)
+	return errs
+}
+
+func validateServicePath(fieldPrefix, name, field, path string, required bool) []ValidationError {
+	var errs []ValidationError
+	loc := fmt.Sprintf("%s.%s.%s", fieldPrefix, name, field)
+	if path == "" {
+		if required {
+			errs = append(errs, ValidationError{Field: loc, Message: "path must not be empty"})
+		}
+		return errs
+	}
+	if strings.ContainsAny(path, "\r\n") {
+		errs = append(errs, ValidationError{Field: loc, Message: "path must not contain newlines"})
+	}
+	if expanded, err := expandPath(path); err != nil || expanded == "" {
+		msg := "cannot expand path"
+		if err != nil {
+			msg = fmt.Sprintf("%s: %v", msg, err)
+		}
+		errs = append(errs, ValidationError{Field: loc, Message: msg})
+	}
 	return errs
 }
 
