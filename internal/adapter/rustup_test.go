@@ -169,6 +169,31 @@ fi`)
 	}
 }
 
+func TestRustup_ListForScan_SkipsToolchains(t *testing.T) {
+	installFakeBinary(t, "rustup",
+		`if [ "$1" = "toolchain" ] && [ "$2" = "list" ]; then
+  echo "stable-aarch64-apple-darwin (default)"
+  echo "nightly-x86_64-unknown-linux-gnu"
+fi`)
+
+	got, err := Rustup{}.ListForScan()
+	if err != nil {
+		t.Fatalf("Rustup.ListForScan: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListForScan = %v, want no toolchain ids", got)
+	}
+
+	pkgs, err := Rustup{}.ListInstalled()
+	if err != nil {
+		t.Fatalf("Rustup.ListInstalled: %v", err)
+	}
+	want := []string{"toolchain:stable-aarch64-apple-darwin", "toolchain:nightly-x86_64-unknown-linux-gnu"}
+	if !slices.Equal(pkgs, want) {
+		t.Errorf("ListInstalled = %v, want %v (apply still tracks toolchains)", pkgs, want)
+	}
+}
+
 func TestRustup_Query_whenIDMalformed(t *testing.T) {
 	// When
 	ok, err := Rustup{}.Query("component:rustfmt")

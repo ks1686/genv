@@ -56,8 +56,8 @@ func (Uv) Query(pkgName string) (bool, error) {
 	return false, nil
 }
 
-// ListInstalled parses "uv tool list" output. Top-level lines name the tool
-// (e.g. "black v24.2.0"); indented lines are entrypoints and are skipped.
+// ListInstalled parses "uv tool list" output. Header lines name the tool
+// (e.g. "black v24.2.0"); `- <entrypoint>` bullets and indented names are skipped.
 func (Uv) ListInstalled() ([]string, error) {
 	entries, err := Uv{}.listEntries()
 	if err != nil {
@@ -120,23 +120,34 @@ func (Uv) listEntries() ([]uvEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseUvToolList(lines), nil
+}
+
+// parseUvToolList reads "uv tool list" text. Only header lines matching
+// `^\S+ v\d` are tools; `- <entrypoint>` bullets and indented names are not.
+func parseUvToolList(lines []string) []uvEntry {
 	entries := make([]uvEntry, 0, len(lines))
 	for _, line := range lines {
-		if line == "" || isIndented(line) {
-			continue
+		if entry, ok := parseUvToolHeader(line); ok {
+			entries = append(entries, entry)
 		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		version := ""
-		if len(fields) > 1 {
-			// Output is "<tool> v<version>" or "<tool> <version>".
-			version = strings.TrimPrefix(fields[1], "v")
-		}
-		entries = append(entries, uvEntry{name: fields[0], version: version})
 	}
-	return entries, nil
+	return entries
+}
+
+func parseUvToolHeader(line string) (uvEntry, bool) {
+	if line == "" || isIndented(line) || strings.HasPrefix(line, "-") {
+		return uvEntry{}, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 2 || fields[0] == "-" {
+		return uvEntry{}, false
+	}
+	ver := fields[1]
+	if len(ver) < 2 || ver[0] != 'v' || ver[1] < '0' || ver[1] > '9' {
+		return uvEntry{}, false
+	}
+	return uvEntry{name: fields[0], version: ver[1:]}, true
 }
 
 // runUvToolList runs "uv tool list" and returns stdout split into lines,

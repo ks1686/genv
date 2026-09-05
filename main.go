@@ -2758,7 +2758,10 @@ func scanCmd(args []string) int {
 		fPrintln(os.Stderr, "  gem             skip default and bundled Ruby gems")
 		fPrintln(os.Stderr, "  pip-user        packages that are not deps of other user-site")
 		fPrintln(os.Stderr, "                  packages, minus installer/stdlib-like noise")
-		fPrintln(os.Stderr, "  npm/pnpm/yarn   already top-level globals only (--depth=0)")
+		fPrintln(os.Stderr, "  npm/pnpm/yarn   already top-level globals only (--depth=0);")
+		fPrintln(os.Stderr, "                  npm itself is never proposed")
+		fPrintln(os.Stderr, "  uv              tool headers only (not `-` entrypoint bullets)")
+		fPrintln(os.Stderr, "  rustup          skip toolchains (not rustup package ids)")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "Pass --all (or --deps) to adopt every ListInstalled name,")
 		fPrintln(os.Stderr, "including Homebrew libraries and language stdlib.")
@@ -2860,6 +2863,9 @@ func scanCmd(args []string) int {
 			continue
 		}
 		for _, pkgName := range pkgs {
+			if skipScanPackage(a.Name(), pkgName) {
+				continue
+			}
 			if seen[pkgName] {
 				continue // already handled by a higher-priority manager
 			}
@@ -3000,6 +3006,18 @@ func listScanInventory(a adapter.Adapter, includeDeps bool) ([]string, map[strin
 		return nil, nil, err
 	}
 	return listed, nil, nil
+}
+
+// skipScanPackage drops ids that are not installable packages: uv's
+// `-` entrypoint bullet, npm listing itself, and rustup toolchain lines.
+func skipScanPackage(manager, id string) bool {
+	if id == "-" {
+		return true
+	}
+	if manager == "npm" && id == "npm" {
+		return true
+	}
+	return strings.HasPrefix(id, "toolchain:")
 }
 
 func scanAdaptersOnGOOS(available map[string]bool, goos string) []adapter.Adapter {

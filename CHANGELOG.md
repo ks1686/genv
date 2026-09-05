@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `genv scan` no longer proposes non-package ids: `-` from `uv tool list`
+  entrypoint bullets, `npm` from `npm list -g` reporting itself, or
+  `toolchain:*` from rustup. uv parses only `name v<version>` headers;
+  rustup `ListForScan` is empty (ListInstalled still reports toolchains
+  for apply/status); `--all` still drops those three shapes.
+
 - `genv upgrade --json` wet-run now requires `--yes` to execute (or `--dry-run`
   to plan only), matching the human confirmation path. The refused envelope
   still includes the planned batches.
