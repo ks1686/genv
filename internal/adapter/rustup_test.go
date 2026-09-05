@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -183,11 +182,6 @@ fi`)
 	}
 	if len(got) != 0 {
 		t.Errorf("ListForScan = %v, want no toolchain ids", got)
-	}
-	for _, id := range got {
-		if strings.HasPrefix(id, "toolchain:") {
-			t.Errorf("ListForScan proposed %q", id)
-		}
 	}
 
 	pkgs, err := Rustup{}.ListInstalled()

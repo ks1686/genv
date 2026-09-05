@@ -87,7 +87,7 @@ func TestParseUvToolList(t *testing.T) {
 }
 
 // TestUv_ListInstalled_ParsesToolsAndEntrypoints verifies that ListInstalled
-// extracts tool names from top-level lines and skips indented entrypoint lines.
+// extracts tool names from version headers and skips `-` entrypoint bullets.
 func TestUv_ListInstalled_ParsesToolsAndEntrypoints(t *testing.T) {
 	installFakeBinary(t, "uv",
 		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
