@@ -14,6 +14,7 @@ import (
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestRunSubcmd_EmptyArgv(t *testing.T) {
@@ -293,7 +294,30 @@ func TestPlanInstall_AllManagers(t *testing.T) {
 	}
 }
 
+func TestPlanUpgrade_SkipsUnavailableManagers(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	packages := []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+	}
+
+	plan, skipped := PlanUpgrade(packages)
+
+	if len(plan) != 0 {
+		t.Fatalf("expected no upgrade actions for unavailable brew, got %v", plan)
+	}
+	if len(skipped) != 1 {
+		t.Fatalf("expected 1 skipped package, got %d", len(skipped))
+	}
+	if skipped[0].ID != "git" || skipped[0].Manager != "brew" {
+		t.Fatalf("skipped = %#v, want git via brew", skipped[0])
+	}
+	if skipped[0].Reason != `manager "brew" is not available` {
+		t.Fatalf("skipped reason = %q, want manager not available", skipped[0].Reason)
+	}
+}
+
 func TestPlanUpgrade_SkipsMissingManagers(t *testing.T) {
+	testutil.InstallFakeBinary(t, "brew", "exit 0")
 	packages := []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 		{ID: "legacy", Manager: "yum", PkgName: "legacy"},
@@ -316,6 +340,8 @@ func TestPlanUpgrade_SkipsMissingManagers(t *testing.T) {
 }
 
 func TestPlanUpgrade_BatchesSameManager(t *testing.T) {
+	testutil.InstallFakeBinary(t, "brew", "exit 0")
+	testutil.InstallFakeBinary(t, "uv", "exit 0")
 	packages := []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git"},
 		{ID: "neovim", Manager: "brew", PkgName: "neovim"},
@@ -359,6 +385,8 @@ func TestPlanUpgrade_BatchesSameManager(t *testing.T) {
 }
 
 func TestPlanUpgrade_PreservesManagerOrder(t *testing.T) {
+	testutil.InstallFakeBinary(t, "snap", "exit 0")
+	testutil.InstallFakeBinary(t, "brew", "exit 0")
 	packages := []genvfile.LockedPackage{
 		{ID: "a", Manager: "snap", PkgName: "a"},
 		{ID: "b", Manager: "brew", PkgName: "b"},

@@ -20,15 +20,17 @@ import (
 // logic without requiring fake outdated CLIs.
 var planAll = output.UpgradeFilters{All: true}
 
+func withAvailableManagers(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		testutil.InstallFakeBinary(t, name, "exit 0")
+	}
+}
+
 func TestBuildUpgradePlan_FiltersAll_skipsOutdatedDetection(t *testing.T) {
 	// Given: brew outdated reports only git, but --all requests every package.
-	dir := t.TempDir()
-	script := "#!/bin/sh\n" +
-		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi` + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake brew: %v", err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi`)
 
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
@@ -197,6 +199,7 @@ func TestBuildUpgradePlan_DetectOutdated_filters_to_outdated(t *testing.T) {
 
 func TestBuildUpgradePlan_Constraint_unconstrained_package_plans_normally(t *testing.T) {
 	// Given: an unconstrained package tracked by a registered manager.
+	withAvailableManagers(t, "brew")
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git"}}}
 
@@ -217,6 +220,7 @@ func TestBuildUpgradePlan_Constraint_unconstrained_package_plans_normally(t *tes
 
 func TestBuildUpgradePlan_Constraint_constrained_packages_are_skipped_in_lock_order(t *testing.T) {
 	// Given: two constrained packages separated by an unconstrained package in lock order.
+	withAvailableManagers(t, "brew")
 	spec := &schema.GenvFile{Packages: []schema.Package{
 		{ID: "ripgrep", Version: "14.1.0"},
 		{ID: "git"},
@@ -258,6 +262,7 @@ func TestBuildUpgradePlan_Constraint_constrained_packages_are_skipped_in_lock_or
 
 func TestBuildUpgradePlan_Constraint_mixed_batch_excludes_only_constrained_packages(t *testing.T) {
 	// Given: a batch-capable manager tracks constrained and unconstrained packages together.
+	withAvailableManagers(t, "brew")
 	spec := &schema.GenvFile{Packages: []schema.Package{
 		{ID: "git"},
 		{ID: "jq", Version: "1.7.1"},
@@ -293,6 +298,7 @@ func TestBuildUpgradePlan_Constraint_mixed_batch_excludes_only_constrained_packa
 
 func TestBuildUpgradePlan_Constraint_existing_package_filters_run_first(t *testing.T) {
 	// Given: a constrained package selected by overlapping package filters.
+	withAvailableManagers(t, "brew")
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "jq", Version: "1.7.1"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "jq", Manager: "brew", PkgName: "jq"}}}
 	tests := []struct {
@@ -332,6 +338,7 @@ func TestBuildUpgradePlan_Constraint_existing_package_filters_run_first(t *testi
 }
 
 func TestBuildPlan(t *testing.T) {
+	withAvailableManagers(t, "brew", "bun")
 	spec := &schema.GenvFile{
 		Packages: []schema.Package{
 			{ID: "pkg1"},
@@ -433,6 +440,7 @@ func TestBuildPlan(t *testing.T) {
 
 func TestBuildUpgradePlan_is_callable_without_cli_side_effects(t *testing.T) {
 	// Given: a spec and lock that can be planned without file paths, hooks, or command IO.
+	withAvailableManagers(t, "brew")
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "1.0.0"}}}
 

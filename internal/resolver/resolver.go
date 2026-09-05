@@ -254,6 +254,10 @@ func PlanUpgrade(packages []genvfile.LockedPackage) (plan []UpgradeAction, skipp
 			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager, Reason: fmt.Sprintf("adapter %q not registered", lp.Manager)})
 			continue
 		}
+		if !mgr.Available() {
+			skipped = append(skipped, SkippedPackage{ID: lp.ID, Manager: lp.Manager, Reason: fmt.Sprintf("manager %q is not available", lp.Manager)})
+			continue
+		}
 		if _, ok := groups[lp.Manager]; !ok {
 			groups[lp.Manager] = &group{mgr: mgr}
 			order = append(order, lp.Manager)
@@ -313,6 +317,10 @@ func FilterOutdated(packages []genvfile.LockedPackage) (kept []genvfile.LockedPa
 	keep := make(map[string]map[string]bool, len(order))
 	for _, name := range order {
 		g := groups[name]
+		if g.mgr == nil || !g.mgr.Available() {
+			keep[name] = nil // PlanUpgrade records the unavailable skip
+			continue
+		}
 		lister, ok := g.mgr.(adapter.OutdatedLister)
 		if !ok {
 			keep[name] = nil // no capability: keep all

@@ -6,9 +6,11 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestTrackedStep_commands_match_existing_planner(t *testing.T) {
+	testutil.InstallFakeBinary(t, "brew", "exit 0")
 	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}}}
 	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
 		{ID: "git", Manager: "brew", PkgName: "git", InstalledVersion: "1.0.0"},

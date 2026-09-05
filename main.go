@@ -3758,13 +3758,15 @@ func validateCmd(args []string) int {
 	return exitOK
 }
 
-// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug] [--all]`.
+// upgradeCmd implements `genv upgrade [--dry-run] [--yes] [--no-hooks] [--debug] [--all] [id ...]`.
 // By default plans only packages with a detected update; pass --all to plan every
 // unconstrained tracked package without outdated filtering.
 func upgradeCmd(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.Usage = func() {
-		fPrintln(os.Stderr, "usage: genv upgrade [flags]")
+		fPrintln(os.Stderr, "usage: genv upgrade [flags] [id ...]")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Leftover package IDs are treated as --only.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -3772,13 +3774,13 @@ func upgradeCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	dryRun := fs.Bool("dry-run", false, "print the upgrade commands without executing")
-	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt (required to execute with --json)")
 	noHooks := fs.Bool("no-hooks", false, "skip pre-upgrade and post-upgrade hooks")
-	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text (wet-run requires --yes)")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
-	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade")
+	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade (positional IDs are also --only)")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to upgrade")
 	skipManagerFlag := fs.String("skip-manager", "", "comma-separated list of managers to skip")
@@ -3888,6 +3890,7 @@ func upgradeCmd(args []string) int {
 		}
 	}
 	only := parseCommaList(*onlyFlag)
+	only = append(only, fs.Args()...)
 	skip := parseCommaList(*skipFlag)
 	onlyManager := parseCommaList(*onlyManagerFlag)
 	skipManager := parseCommaList(*skipManagerFlag)
@@ -4135,10 +4138,12 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 }
 
 // upgradeJSON emits a single JSON envelope for `genv upgrade --json`. In dry-run
-// it plans only — no hooks, subprocesses, or lock write. In wet-run it routes
-// all subprocess and hook output to stderr so stdout stays one JSON object,
-// then reports executed batches, refreshed versions, and failed hooks while
-// preserving the human path's exit codes.
+// it plans only — no hooks, subprocesses, or lock write. Wet-run with work
+// requires --yes (JSON cannot prompt); without it the envelope stays planned
+// and exits nonzero. With --yes it routes all subprocess and hook output to
+// stderr so stdout stays one JSON object, then reports executed batches,
+// refreshed versions, and failed hooks while preserving the human path's exit
+// codes.
 func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
@@ -4159,6 +4164,27 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 				Skipped: skippedEntries,
 				Filters: filters,
 			},
+		})
+	}
+
+	if !yes && (len(plan) > 0 || extraJSONHasCommands(extras.steps)) {
+		batches := make([]output.UpgradeBatch, 0, len(plan))
+		for _, a := range plan {
+			batches = append(batches, upgradeBatchFromAction(a, "planned"))
+		}
+		return writeJSON(os.Stdout, output.Envelope{
+			Version: output.SchemaVersion,
+			Command: "upgrade",
+			OK:      false,
+			Data: output.UpgradeResult{
+				DryRun:  false,
+				Refresh: refreshBatches(refresh),
+				Batches: batches,
+				Steps:   extras.steps,
+				Skipped: skippedEntries,
+				Filters: filters,
+			},
+			Errors: []string{"wet-run requires --yes (pass --dry-run to plan only)"},
 		})
 	}
 
@@ -4596,11 +4622,11 @@ Remove-specific flags:
 
 Upgrade-specific flags:
   --dry-run                 Print the upgrade commands without executing
-  --yes                     Skip the confirmation prompt
+  --yes                     Skip the confirmation prompt (required for --json wet-run)
   --all                     Upgrade every unconstrained tracked package (skip outdated detection)
   --no-hooks                Skip pre-upgrade and post-upgrade hooks
-  --json                    Emit machine-readable JSON to stdout
-  --only <ids>              Comma-separated package IDs or names to upgrade
+  --json                    Emit machine-readable JSON to stdout (wet-run requires --yes)
+  --only <ids>              Comma-separated package IDs or names to upgrade (positional IDs also apply)
   --skip <ids>              Comma-separated package IDs or names to skip
   --only-manager <mgrs>     Comma-separated managers to upgrade
   --skip-manager <mgrs>     Comma-separated managers to skip

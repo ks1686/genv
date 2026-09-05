@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `genv upgrade --json` wet-run now requires `--yes` to execute (or `--dry-run`
+  to plan only), matching the human confirmation path. The refused envelope
+  still includes the planned batches.
+- Leftover `genv upgrade <id>` arguments now apply as `--only` filters, matching
+  shell completions. `--only` and positionals merge.
+- Upgrade and index-refresh planning skip a manager when `Available()` is false
+  and record an explicit reason, instead of emitting commands that cannot run.
+
 - `genv apply --skip-packages` no longer inventories live package managers or
   prints the per-package `(up to date)` table. The header names files/env/services
   instead of a package count, and JSON omits the package plan the same way.

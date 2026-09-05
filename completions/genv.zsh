@@ -138,7 +138,7 @@ _genv() {
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:' \
-				'1: :->pkgid'
+				'*::tracked package:->pkgid'
 			if [[ $state == pkgid ]]; then
 				local -a pkgs
 				# shellcheck disable=SC2086

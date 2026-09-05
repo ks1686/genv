@@ -90,6 +90,12 @@ func RefreshIndexes(packages []genvfile.LockedPackage, opts RefreshOptions) (act
 	var jobs []pending
 	for _, name := range order {
 		mgr := lookupAdapter(name)
+		if mgr == nil || !mgr.Available() {
+			if mgr != nil {
+				warnings = append(warnings, fmt.Sprintf("skipping refresh for %s: manager is not available", name))
+			}
+			continue
+		}
 		refresher, ok := mgr.(adapter.IndexRefresher)
 		if !ok {
 			continue
