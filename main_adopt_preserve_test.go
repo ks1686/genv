@@ -124,7 +124,7 @@ func TestAdoptCmd_PreservesEmptyBlocksAndKeyOrder(t *testing.T) {
 	writeTestFile(t, path, specWithEveryEmptyBlock)
 	writeLock(t, lockPath, nil)
 
-	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "macos", "bash"})
+	code := run([]string{"adopt", "--file", path, "--lock-file", lockPath, "--target", "macos", "--prefer", "brew", "bash"})
 	if code != exitOK {
 		t.Fatalf("adopt: expected exitOK (%d), got %d", exitOK, code)
 	}
@@ -139,7 +139,8 @@ func TestAdoptCmd_PreservesEmptyBlocksAndKeyOrder(t *testing.T) {
           "id": "git"
         },
         {
-          "id": "bash"
+          "id": "bash",
+          "prefer": "brew"
         }`, 1)
 	if string(got) != want {
 		t.Fatalf("adopt rewrote more than the new package entry\nwant:\n%s\ngot:\n%s", want, got)
