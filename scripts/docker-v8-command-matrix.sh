@@ -128,16 +128,6 @@ write_v8_spec() {
         { "id": "tree", "prefer": "pacman" }
       ],
       "env": { "LANG": { "value": "C.UTF-8" } },
-      "files": {
-        "links": [
-          {
-            "source": "testrc",
-            "target": "~/.testrc",
-            "mode": "managed-link",
-            "backup": true
-          }
-        ]
-      },
       "services": {
         "pulse": {
           "start": ["true"],
@@ -310,6 +300,10 @@ run_matrix() {
 	run service ls --file "$SPEC" --target arch
 	assert_ok "service ls alias" "$code"
 
+	# Add the link after the first apply so that apply does not create a
+	# dangling ~/.testrc symlink that later writes follow.
+	jq '.targets.arch.files = {"links":[{"source":"testrc","target":"~/.testrc","mode":"managed-link","backup":true}]}' \
+		"$SPEC" >"$SPEC.tmp" && mv "$SPEC.tmp" "$SPEC"
 	printf 'live-testrc\n' >"$HOME/.testrc"
 	run files adopt --file "$SPEC" --lock-file "$LOCK" --target arch --dry-run ~/.testrc
 	assert_ok "files adopt --dry-run" "$code" "$out$err"
