@@ -618,6 +618,82 @@ func TestApply_SourceRootMissingIsRefused(t *testing.T) {
 	}
 }
 
+func TestApply_SourceRootResolvesServiceTemplates(t *testing.T) {
+	// A worktree spec copy must resolve launchd/systemd templates from
+	// --source-root, same as files.links / files.templates.
+	home := t.TempDir()
+	testutil.SetHome(t, home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	testutil.InstallFakeBinary(t, "systemctl", "exit 0")
+	testutil.InstallFakeBinary(t, "launchctl", "exit 0")
+
+	liveDir := filepath.Join(t.TempDir(), "live")
+	workDir := filepath.Join(t.TempDir(), "work")
+	if err := os.MkdirAll(filepath.Join(liveDir, "units"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(liveDir, "units", "agent.service"),
+		"[Unit]\nDescription=agent\n\n[Service]\nExecStart=/bin/true\n")
+	writeTestFile(t, filepath.Join(liveDir, "units", "com.example.agent.plist"),
+		`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.example.agent</string>
+<key>ProgramArguments</key><array><string>/bin/true</string></array>
+</dict></plist>
+`)
+	spec := `{` +
+		`"schemaVersion":"6","packages":[],` +
+		`"services":{"agent":{` +
+		`"launchd":{"plist":"units/com.example.agent.plist"},` +
+		`"systemd":{"unit":"units/agent.service"}` +
+		`}}}`
+	workSpec := filepath.Join(workDir, "genv.json")
+	writeTestFile(t, workSpec, spec)
+
+	lockPath := filepath.Join(t.TempDir(), "genv.lock.json")
+	applyArgs := func(extra ...string) []string {
+		return append([]string{
+			"apply", "--file", workSpec, "--lock-file", lockPath,
+			"--skip-packages", "--yes", "--no-hooks",
+		}, extra...)
+	}
+
+	var stderr string
+	code := 0
+	stderr = captureStderr(t, func() {
+		_ = captureStdout(t, func() {
+			code = run(applyArgs())
+		})
+	})
+	if code == exitOK {
+		t.Fatalf("apply without --source-root should fail to find the unit template; stderr=%s", stderr)
+	}
+
+	stderr = captureStderr(t, func() {
+		_ = captureStdout(t, func() {
+			code = run(applyArgs("--source-root", liveDir))
+		})
+	})
+	if code != exitOK {
+		t.Fatalf("apply --source-root: expected exitOK, got %d; stderr=%s", code, stderr)
+	}
+
+	var dest string
+	switch runtime.GOOS {
+	case "darwin":
+		dest = filepath.Join(home, "Library", "LaunchAgents", "com.example.agent.plist")
+	default:
+		dest = filepath.Join(home, ".config", "systemd", "user", "agent.service")
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("expected applied unit at %s: %v", dest, err)
+	}
+}
+
 func applyJSONFileKinds(t *testing.T, stdout string) map[string]string {
 	t.Helper()
 	var env struct {

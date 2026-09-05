@@ -4859,7 +4859,7 @@ Apply-specific flags:
   --target <id>        Portable target id for schemaVersion 8 specs
   --force-new-lock     Back up a foreign lock and start a new local lock
   --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
-  --source-root <dir>  Resolve files.links/templates sources relative to this directory
+  --source-root <dir>  Resolve files.links/templates and service template sources relative to this directory
 
 Export-specific flags:
   --target <id>        Target id to export

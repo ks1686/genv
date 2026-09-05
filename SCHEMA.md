@@ -217,7 +217,7 @@ Commands are split into argv (quotes supported). There is no shell piping or red
 
 `genv scan` runs each available adapter’s `list` and, for spec adapters, writes `prefer` so the adopted package stays bound. `genv export` copies `adapters` into the snapshot so `prefer` still validates.
 
-`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
+`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` and service `launchd.plist` / `systemd.unit` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`.
 
