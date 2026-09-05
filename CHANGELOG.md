@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
   `WshShell.Run`s the existing `.cmd` with window style 0. `<Hidden>true</Hidden>`
   alone does not hide `cmd.exe`. `updates.log` and one completion notification
   are unchanged. Do not flip `genv.exe` to the Windows GUI subsystem.
+- The `vscode` adapter now prefers `cursor` on PATH, then `code`. Cursor-only
+  hosts can scan, adopt, and upgrade extensions without a `code` shim.
+  VS Code-only hosts (`code`, no `cursor`) are unchanged.
 
 ### Added
 
@@ -33,12 +36,6 @@ All notable changes to this project will be documented in this file.
 
 - README documents the hard skip for any non-empty package `version` during
   upgrade (range-satisfying upgrades are not implemented).
-
-### Fixed
-
-- The `vscode` adapter now prefers `cursor` on PATH, then `code`. Cursor-only
-  hosts can scan, adopt, and upgrade extensions without a `code` shim.
-  VS Code-only hosts (`code`, no `cursor`) are unchanged.
 
 ## v4.3.0 - 2026-09-03
 
