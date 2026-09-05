@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/testutil"
 )
 
@@ -97,10 +99,40 @@ func TestApply_PackageFailureStillAppliesFiles(t *testing.T) {
 	}
 }
 
+// skipPackagesListAdapter records ListInstalled so --skip-packages can prove
+// it does not inventory managers just to render the unchanged package table.
+type skipPackagesListAdapter struct {
+	lifecycleHookAdapter
+	listCalls int
+}
+
+func (a *skipPackagesListAdapter) ListInstalled() ([]string, error) {
+	a.listCalls++
+	return nil, nil
+}
+
+func registerSkipPackagesListAdapter(t *testing.T, a *skipPackagesListAdapter) {
+	t.Helper()
+	originalAll := adapter.All
+	originalKnown := schema.KnownManagers["test-hook-manager"]
+	adapter.All = append([]adapter.Adapter{a}, originalAll...)
+	schema.KnownManagers["test-hook-manager"] = true
+	t.Cleanup(func() {
+		adapter.All = originalAll
+		if originalKnown {
+			schema.KnownManagers["test-hook-manager"] = true
+		} else {
+			delete(schema.KnownManagers, "test-hook-manager")
+		}
+	})
+}
+
 func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	testutil.SetHome(t, dir)
+	lister := &skipPackagesListAdapter{}
+	registerSkipPackagesListAdapter(t, lister)
 	spec := filepath.Join(dir, "genv.json")
 	lock := filepath.Join(dir, "genv.lock.json")
 	src := filepath.Join(dir, "src.txt")
@@ -108,14 +140,66 @@ func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
 	writeTestFile(t, src, "hello\n")
 	writeTestFile(t, spec, `{`+
 		`"schemaVersion":"6",`+
-		`"packages":[{"id":"cursor","prefer":"brew"}],`+
+		`"packages":[`+
+		`{"id":"cursor","prefer":"test-hook-manager"},`+
+		`{"id":"extra","prefer":"test-hook-manager"}`+
+		`],`+
 		`"files":{"links":[{"source":`+jsonString(src)+`,"target":`+jsonString(dst)+`,"mode":"link"}]}`+
 		`}`)
-	writeLock(t, lock, nil)
+	writeLock(t, lock, []genvfile.LockedPackage{
+		{ID: "cursor", Manager: "test-hook-manager", PkgName: "cursor"},
+	})
 
-	code := run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--no-hooks", "--skip-packages"})
+	var jsonCode int
+	jsonOut := captureStdout(t, func() {
+		jsonCode = run([]string{"apply", "--file", spec, "--lock-file", lock, "--dry-run", "--json", "--skip-packages"})
+	})
+	if jsonCode != exitOK {
+		t.Fatalf("dry-run json exit %d\n%s", jsonCode, jsonOut)
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(jsonOut), &env); err != nil {
+		t.Fatalf("dry-run json: %v\n%s", err, jsonOut)
+	}
+	data, _ := env["data"].(map[string]any)
+	if data == nil {
+		t.Fatalf("dry-run json missing data: %s", jsonOut)
+	}
+	for _, key := range []string{"toInstall", "toRemove", "unchanged"} {
+		got, _ := data[key].([]any)
+		if len(got) != 0 {
+			t.Fatalf("dry-run json %s = %#v, want empty package plan", key, data[key])
+		}
+	}
+	if adopted, ok := data["adopted"]; ok {
+		if items, _ := adopted.([]any); len(items) != 0 {
+			t.Fatalf("dry-run json adopted = %#v, want omitted or empty", adopted)
+		}
+	}
+	files, _ := data["files"].([]any)
+	if len(files) == 0 {
+		t.Fatalf("dry-run json should still plan files; got %s", jsonOut)
+	}
+
+	var code int
+	var stdout string
+	stdout = captureStdout(t, func() {
+		code = run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--no-hooks", "--skip-packages"})
+	})
 	if code != exitOK {
-		t.Fatalf("exit %d", code)
+		t.Fatalf("exit %d\n%s", code, stdout)
+	}
+	if strings.Contains(stdout, "(up to date)") {
+		t.Fatalf("skip-packages must not print the per-package table; got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "package") {
+		t.Fatalf("skip-packages header must not count packages; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "files") || !strings.Contains(stdout, "env") || !strings.Contains(stdout, "services") {
+		t.Fatalf("skip-packages header should name files/env/services; got:\n%s", stdout)
+	}
+	if lister.listCalls != 0 {
+		t.Fatalf("skip-packages must not inventory live managers; ListInstalled calls = %d", lister.listCalls)
 	}
 	if _, err := os.Lstat(dst); err != nil {
 		t.Fatalf("link not applied: %v", err)
@@ -124,10 +208,17 @@ func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var sawCursor bool
 	for _, p := range lf.Packages {
-		if p.ID == "cursor" {
-			t.Fatal("skip-packages must not lock/install cursor")
+		if p.ID == "extra" {
+			t.Fatal("skip-packages must not lock/install extra")
 		}
+		if p.ID == "cursor" {
+			sawCursor = true
+		}
+	}
+	if !sawCursor {
+		t.Fatal("skip-packages must leave already-locked cursor in the lock")
 	}
 }
 

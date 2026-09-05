@@ -393,6 +393,45 @@ func TestBuildPlanAndOutputConverters(t *testing.T) {
 	}
 }
 
+func TestPrintApplyReconcilePlan_SkipPackagesOmitsPackageTable(t *testing.T) {
+	var buf bytes.Buffer
+	toInstall, toRemove, unresolved := printApplyReconcilePlan(&buf, true, resolver.ReconcileResult{
+		Unchanged: []genvfile.LockedPackage{{ID: "cursor", Manager: "brew"}},
+	})
+	if toInstall != 0 || toRemove != 0 || unresolved != 0 {
+		t.Fatalf("skip-packages counts = %d %d %d", toInstall, toRemove, unresolved)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "files, env, services") {
+		t.Fatalf("header = %q", got)
+	}
+	if strings.Contains(got, "(up to date)") || strings.Contains(got, "package") {
+		t.Fatalf("skip-packages plan leaked packages: %q", got)
+	}
+
+	buf.Reset()
+	printApplyReconcilePlan(&buf, false, resolver.ReconcileResult{
+		Unchanged: []genvfile.LockedPackage{{ID: "cursor", Manager: "brew"}},
+	})
+	if !strings.Contains(buf.String(), "(up to date)") {
+		t.Fatalf("normal plan should still list unchanged packages; got %q", buf.String())
+	}
+}
+
+func TestApplyConfirmMessage_SkipPackagesOmitsPackageCounts(t *testing.T) {
+	got := applyConfirmMessage(true, 3, 1, 0, 0, 0, 2)
+	if strings.Contains(got, "package") || strings.Contains(got, "install 3") {
+		t.Fatalf("skip-packages confirm mentioned packages: %q", got)
+	}
+	if !strings.Contains(got, "2 file") {
+		t.Fatalf("skip-packages confirm should mention files: %q", got)
+	}
+	normal := applyConfirmMessage(false, 1, 0, 0, 0, 0, 0)
+	if !strings.Contains(normal, "install 1 and remove 0 package(s)") {
+		t.Fatalf("normal confirm = %q", normal)
+	}
+}
+
 func TestInitCmd_CreatesSpecFromStdin(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

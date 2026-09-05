@@ -60,6 +60,7 @@ func TestVscodeLatestStableFromVersions_allPreReleaseIsUnknown(t *testing.T) {
 }
 
 func TestVscode_ListOutdated_skipsNewerPreRelease(t *testing.T) {
+	isolatePATH(t)
 	installFakeBinary(t, "code", `if [ "$1" = "--list-extensions" ] && [ "$2" = "--show-versions" ]; then
   echo 'anysphere.remote-containers@1.0.39'
   echo 'anysphere.remote-ssh@1.1.14'
@@ -87,6 +88,7 @@ fi`)
 }
 
 func TestVscode_ListOutdated_reportsNewerStable(t *testing.T) {
+	isolatePATH(t)
 	installFakeBinary(t, "code", `if [ "$1" = "--list-extensions" ] && [ "$2" = "--show-versions" ]; then
   echo 'golang.go@0.42.0'
   echo 'anysphere.remote-containers@1.0.39'
@@ -105,6 +107,30 @@ fi`)
 	setVscodeGalleryBase(t, srv.URL)
 
 	got, err := Vscode{}.ListOutdated([]string{"golang.go", "anysphere.remote-containers"})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"golang.go": "0.43.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListOutdated = %v, want %v", got, want)
+	}
+}
+
+func TestVscode_ListOutdated_whenOnlyCursorOnPATH(t *testing.T) {
+	isolatePATH(t)
+	installFakeBinary(t, "cursor", `if [ "$1" = "--list-extensions" ] && [ "$2" = "--show-versions" ]; then
+  echo 'golang.go@0.42.0'
+fi`)
+	srv := newVscodeGalleryServer(t, map[string][]vscodeGalleryVersion{
+		"golang.go": {
+			{Version: "0.43.0"},
+			{Version: "0.42.0"},
+		},
+	})
+	defer srv.Close()
+	setVscodeGalleryBase(t, srv.URL)
+
+	got, err := Vscode{}.ListOutdated([]string{"golang.go"})
 	if err != nil {
 		t.Fatalf("ListOutdated: %v", err)
 	}
@@ -179,6 +205,7 @@ func TestVscodeGalleryServiceURL_readsProductJSONFromCodeBinary(t *testing.T) {
 	vscodeGalleryBase = ""
 	t.Cleanup(func() { vscodeGalleryBase = orig })
 
+	isolatePATH(t)
 	// installFakeBinary plants a Windows .cmd shim so LookPath can find `code`.
 	installFakeBinary(t, "code", "")
 	codePath, err := lookPath("code")
@@ -187,6 +214,28 @@ func TestVscodeGalleryServiceURL_readsProductJSONFromCodeBinary(t *testing.T) {
 	}
 	want := "https://marketplace.cursorapi.com/_apis/public/gallery"
 	product := filepath.Join(filepath.Dir(codePath), "product.json")
+	if err := os.WriteFile(product, []byte(`{"extensionsGallery":{"serviceUrl":"`+want+`"}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile product.json: %v", err)
+	}
+
+	if got := vscodeGalleryServiceURL(); got != want {
+		t.Fatalf("vscodeGalleryServiceURL = %q, want Cursor gallery %q", got, want)
+	}
+}
+
+func TestVscodeGalleryServiceURL_readsProductJSONFromCursorBinary(t *testing.T) {
+	orig := vscodeGalleryBase
+	vscodeGalleryBase = ""
+	t.Cleanup(func() { vscodeGalleryBase = orig })
+
+	isolatePATH(t)
+	installFakeBinary(t, "cursor", "")
+	cliPath, err := lookPath("cursor")
+	if err != nil {
+		t.Fatalf("lookPath(cursor): %v", err)
+	}
+	want := "https://marketplace.cursorapi.com/_apis/public/gallery"
+	product := filepath.Join(filepath.Dir(cliPath), "product.json")
 	if err := os.WriteFile(product, []byte(`{"extensionsGallery":{"serviceUrl":"`+want+`"}}`), 0o644); err != nil {
 		t.Fatalf("WriteFile product.json: %v", err)
 	}
