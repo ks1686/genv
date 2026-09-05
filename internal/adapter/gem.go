@@ -61,6 +61,24 @@ func (g Gem) ListInstalled() ([]string, error) {
 	return names, nil
 }
 
+// ListForScan returns user-installed gems, skipping Ruby default gems
+// (marked `default:` in `gem list`) and gems that ship bundled with the
+// interpreter (rake, rdoc, …). ListInstalled stays complete for apply.
+func (g Gem) ListForScan() ([]string, error) {
+	entries, err := g.listEntries()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.defaultGem || rubyBundledGem[entry.name] {
+			continue
+		}
+		names = append(names, entry.name)
+	}
+	return names, nil
+}
+
 func (g Gem) QueryVersion(pkgName string) (string, error) {
 	entries, err := g.listEntries()
 	if err != nil {
@@ -86,8 +104,37 @@ func (g Gem) ListInstalledVersions() (map[string]string, error) {
 }
 
 type gemEntry struct {
-	name    string
-	version string
+	name       string
+	version    string
+	defaultGem bool
+}
+
+// rubyBundledGem is the set of gems Ruby ships beside the interpreter
+// (tool/bundled_gems). They look like ordinary `gem list` entries — no
+// `default:` marker — but adopting them pins stdlib that `gem upgrade`
+// cannot usefully manage.
+var rubyBundledGem = map[string]bool{
+	"debug":           true,
+	"error_highlight": true,
+	"irb":             true,
+	"matrix":          true,
+	"minitest":        true,
+	"net-ftp":         true,
+	"net-imap":        true,
+	"net-pop":         true,
+	"net-smtp":        true,
+	"power_assert":    true,
+	"prime":           true,
+	"racc":            true,
+	"rake":            true,
+	"rbs":             true,
+	"rdoc":            true,
+	"reline":          true,
+	"rexml":           true,
+	"rss":             true,
+	"syntax_suggest":  true,
+	"test-unit":       true,
+	"typeprof":        true,
 }
 
 func (Gem) listEntries() ([]gemEntry, error) {
@@ -178,7 +225,8 @@ func parseGemListLine(line string) (gemEntry, bool) {
 		return gemEntry{}, false
 	}
 	versions := line[open+1 : len(line)-1]
+	defaultGem := strings.Contains(versions, "default:")
 	versions = strings.TrimPrefix(versions, "default: ")
 	first, _, _ := strings.Cut(versions, ",")
-	return gemEntry{name: name, version: strings.TrimSpace(first)}, true
+	return gemEntry{name: name, version: strings.TrimSpace(first), defaultGem: defaultGem}, true
 }

@@ -226,7 +226,7 @@ function script:Get-GenvCompletions {
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'scan' } {
-			$flags = @('--file', '--lock-file', '--dry-run', '--yes', '--json', '--debug', '--target')
+			$flags = @('--file', '--lock-file', '--dry-run', '--yes', '--all', '--deps', '--json', '--debug', '--target')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'completion' } {

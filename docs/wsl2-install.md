@@ -198,10 +198,11 @@ Your `genv.json` lives at `~/.config/genv/genv.json`. Add more packages with:
 genv add <package>
 ```
 
-Or bulk-adopt everything already installed:
+Or bulk-adopt user-facing installs already on the machine (`brew leaves` + casks, not Homebrew libraries or language stdlib; `--all` for the full tree):
 
 ```bash
-genv scan
+genv scan --dry-run
+genv scan --yes
 ```
 
 Then run `genv apply` to sync after editing the spec directly.

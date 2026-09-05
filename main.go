@@ -2709,8 +2709,24 @@ func scanCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv scan [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Discover installed packages and adopt them into genv.json.")
+		fPrintln(os.Stderr, "Discover user-facing installed packages and adopt them into genv.json.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Default inventory is leaves, not the full dependency tree:")
+		fPrintln(os.Stderr, "  brew/linuxbrew  brew leaves + casks (not brew list)")
+		fPrintln(os.Stderr, "  gem             skip default and bundled Ruby gems")
+		fPrintln(os.Stderr, "  pip-user        packages that are not deps of other user-site")
+		fPrintln(os.Stderr, "                  packages, minus installer/stdlib-like noise")
+		fPrintln(os.Stderr, "  npm/pnpm/yarn   already top-level globals only (--depth=0)")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Pass --all (or --deps) to adopt every ListInstalled name,")
+		fPrintln(os.Stderr, "including Homebrew libraries and language stdlib.")
 		fPrintln(os.Stderr, "Preview with --dry-run. Text mode prompts unless --yes is set.")
+		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Examples:")
+		fPrintln(os.Stderr, "  genv scan --dry-run")
+		fPrintln(os.Stderr, "  genv scan --dry-run --target macos")
+		fPrintln(os.Stderr, "  genv scan --yes")
+		fPrintln(os.Stderr, "  genv scan --all --dry-run")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -2723,6 +2739,8 @@ func scanCmd(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "list packages that would be adopted without writing the spec or lock")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
+	includeAll := fs.Bool("all", false, "include manager dependencies and language stdlib (same as --deps)")
+	includeDeps := fs.Bool("deps", false, "include manager dependencies and language stdlib (same as --all)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -2791,29 +2809,13 @@ func scanCmd(args []string) int {
 	seen := make(map[string]bool)
 	var candidates []scanCandidate
 	var skipped int
+	fullInventory := *includeAll || *includeDeps
 
 	for _, a := range scanAdaptersOnGOOS(available, scanGOOS) {
-		versions := map[string]string(nil)
-		var pkgs []string
-		// Cap every manager inventory like apply/status do, so one hung
-		// manager (winget's first-run source sync can stall for minutes)
-		// cannot wedge the whole scan.
-		if versionLister, ok := a.(adapter.VersionLister); ok {
-			if listedVersions, err := resolver.CallTimed(versionLister.ListInstalledVersions, resolver.DefaultLiveListTimeout); err == nil {
-				versions = listedVersions
-				for pkgName := range versions {
-					pkgs = append(pkgs, pkgName)
-				}
-				sort.Strings(pkgs)
-			}
-		}
-		if pkgs == nil {
-			listed, err := resolver.CallTimed(a.ListInstalled, resolver.DefaultLiveListTimeout)
-			if err != nil {
-				fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
-				continue
-			}
-			pkgs = listed
+		pkgs, versions, err := listScanInventory(a, fullInventory)
+		if err != nil {
+			fprintf(os.Stderr, "genv scan: %s: listing packages: %v\n", a.Name(), err)
+			continue
 		}
 		for _, pkgName := range pkgs {
 			if seen[pkgName] {
@@ -2915,6 +2917,47 @@ func scanCmd(args []string) int {
 	}
 	fprintf(os.Stdout, "scan complete: %d added, %d already tracked\n", added, skipped)
 	return exitOK
+}
+
+// listScanInventory returns the package names (and optional versions) scan
+// should consider for one manager. Default is user-facing installs when the
+// adapter implements ScanLister; --all/--deps keeps the full ListInstalled
+// / VersionLister inventory.
+func listScanInventory(a adapter.Adapter, includeDeps bool) ([]string, map[string]string, error) {
+	if !includeDeps {
+		if sl, ok := a.(adapter.ScanLister); ok {
+			listed, err := resolver.CallTimed(sl.ListForScan, resolver.DefaultLiveListTimeout)
+			if err != nil {
+				return nil, nil, err
+			}
+			var versions map[string]string
+			if versionLister, ok := a.(adapter.VersionLister); ok {
+				if listedVersions, verr := resolver.CallTimed(versionLister.ListInstalledVersions, resolver.DefaultLiveListTimeout); verr == nil {
+					versions = listedVersions
+				}
+			}
+			return listed, versions, nil
+		}
+	}
+
+	// Cap every manager inventory like apply/status do, so one hung
+	// manager (winget's first-run source sync can stall for minutes)
+	// cannot wedge the whole scan.
+	if versionLister, ok := a.(adapter.VersionLister); ok {
+		if listedVersions, err := resolver.CallTimed(versionLister.ListInstalledVersions, resolver.DefaultLiveListTimeout); err == nil {
+			pkgs := make([]string, 0, len(listedVersions))
+			for pkgName := range listedVersions {
+				pkgs = append(pkgs, pkgName)
+			}
+			sort.Strings(pkgs)
+			return pkgs, listedVersions, nil
+		}
+	}
+	listed, err := resolver.CallTimed(a.ListInstalled, resolver.DefaultLiveListTimeout)
+	if err != nil {
+		return nil, nil, err
+	}
+	return listed, nil, nil
 }
 
 func scanAdaptersOnGOOS(available map[string]bool, goos string) []adapter.Adapter {
@@ -4469,7 +4512,7 @@ Commands:
   disown <id> Stop tracking a package in genv.json without uninstalling it
   list        List all packages installed by genv                   (alias: ls)
   apply       Reconcile system state with genv.json (install added, remove deleted)
-  scan        Discover installed packages and bulk-adopt them (use --dry-run / --yes)
+  scan        Discover user-facing installs and bulk-adopt them (use --dry-run / --yes; --all for full trees)
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
   edit        Open genv.json in $EDITOR
@@ -4569,6 +4612,8 @@ Status-specific flags:
 Scan-specific flags:
   --dry-run   List packages that would be adopted without writing
   --yes       Skip the confirmation prompt
+  --all       Include manager dependencies and language stdlib (same as --deps)
+  --deps      Include manager dependencies and language stdlib (same as --all)
   --json      Emit machine-readable JSON to stdout
   --debug     Emit debug-level structured logs to stderr
 

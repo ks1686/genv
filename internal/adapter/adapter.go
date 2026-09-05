@@ -58,6 +58,15 @@ type VersionLister interface {
 	ListInstalledVersions() (map[string]string, error)
 }
 
+// ScanLister is an optional extension for managers whose default scan should
+// report user-facing installs rather than every ListInstalled name.
+// ListInstalled stays complete so apply/status/upgrade can still see
+// dependencies that are already tracked. Scan uses ListForScan unless the
+// caller passes --all / --deps.
+type ScanLister interface {
+	ListForScan() ([]string, error)
+}
+
 // BatchUpgrader is an optional extension of Adapter for managers that can
 // upgrade multiple named packages in a single command while leaving untracked
 // packages alone. When implemented, the resolver groups tracked packages by

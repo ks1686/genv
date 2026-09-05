@@ -120,6 +120,77 @@ exit 1`)
 	}
 }
 
+// TestBrew_ListForScan_LeavesPlusCasks is the #130 contract: default scan
+// must propose brew leaves and casks, not the full formula tree (openssl@3,
+// libpng, gettext, …) that `brew list --formula` reports.
+func TestBrew_ListForScan_LeavesPlusCasks(t *testing.T) {
+	installFakeBinary(t, "brew",
+		`if [ "$1" = "leaves" ]; then
+	echo "git"
+	echo "neovim"
+	exit 0
+fi
+if [ "$1" = "list" ] && [ "$2" = "--cask" ] && [ "$3" = "-1" ]; then
+	echo "iterm2"
+	exit 0
+fi
+if [ "$1" = "list" ] && [ "$2" = "--formula" ] && [ "$3" = "-1" ]; then
+	echo "git"
+	echo "neovim"
+	echo "openssl@3"
+	echo "libpng"
+	echo "gettext"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	pkgs, err := Brew{}.ListForScan()
+	if err != nil {
+		t.Fatalf("ListForScan: unexpected error: %v", err)
+	}
+	want := []string{"git", "neovim", "iterm2"}
+	if len(pkgs) != len(want) {
+		t.Fatalf("ListForScan: got %v, want %v", pkgs, want)
+	}
+	for i, w := range want {
+		if pkgs[i] != w {
+			t.Errorf("ListForScan[%d] = %q, want %q", i, pkgs[i], w)
+		}
+	}
+	for _, noise := range []string{"openssl@3", "libpng", "gettext"} {
+		for _, got := range pkgs {
+			if got == noise {
+				t.Errorf("ListForScan included brew dependency %q", noise)
+			}
+		}
+	}
+}
+
+func TestLinuxbrew_ListForScan_LeavesOnly(t *testing.T) {
+	installFakeBinary(t, "brew",
+		`if [ "$1" = "leaves" ]; then
+	echo "jq"
+	exit 0
+fi
+if [ "$1" = "list" ] && [ "$2" = "--formula" ] && [ "$3" = "-1" ]; then
+	echo "jq"
+	echo "openssl@3"
+	exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1`)
+
+	pkgs, err := Linuxbrew{}.ListForScan()
+	if err != nil {
+		t.Fatalf("ListForScan: unexpected error: %v", err)
+	}
+	want := []string{"jq"}
+	if len(pkgs) != len(want) || pkgs[0] != want[0] {
+		t.Fatalf("ListForScan: got %v, want %v", pkgs, want)
+	}
+}
+
 func TestLinuxbrew_ListInstalled_UsesSingleDashOne(t *testing.T) {
 	installFakeBinary(t, "brew",
 		`if [ "$1" = "list" ] && [ "$2" = "--formula" ] && [ "$3" = "-1" ]; then

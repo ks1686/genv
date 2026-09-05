@@ -74,7 +74,7 @@ Platform walkthroughs: [macOS](docs/macos-install.md) · [Windows](docs/windows-
 genv init                              # optional wizard
 genv add git
 genv add neovim --version "0.10.*"
-genv scan                              # bulk-adopt what's already installed
+genv scan                              # bulk-adopt user-facing installs (not brew deps / stdlib)
 genv status
 genv apply --dry-run
 genv apply --yes
@@ -209,6 +209,8 @@ Legacy **v1–v7** specs still load. Convert with `genv migrate`. Field-by-field
 
 Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the spec and usually the live system in one step. `genv add` installs first and only persists the spec after a successful install (unresolved or failed installs exit `4` and leave the spec unchanged; use `adopt` to track without installing). On v8 they write into `targets.<active>` (`--target` or `$GENV_TARGET` / classification).
 
+`genv scan` adopts **user-facing** installs by default: Homebrew `brew leaves` plus casks (not the full formula tree), Ruby gems that are not default or bundled with the interpreter, and pip-user packages that are not dependencies of other user-site packages (minus installer/stdlib-like noise such as `certifi` / `setuptools`). npm/pnpm/yarn already list top-level globals only. Pass `--all` or `--deps` to adopt every `ListInstalled` name, including Homebrew libraries and language stdlib. Preview with `--dry-run`; text mode prompts unless `--yes` is set.
+
 `genv pull` fetches `genv.json` **and** relative `files` assets from `repo.url`. It never overwrites the lock or secrets.
 
 ---
@@ -219,7 +221,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | ------- | ------- |
 | `add` / `remove` (`rm`) | Track + install / untrack + uninstall |
 | `adopt` / `disown` | Track without install / untrack without uninstall |
-| `scan` | Bulk-adopt installed packages (`--dry-run`, `--yes`) |
+| `scan` | Bulk-adopt user-facing installs (`--dry-run`, `--yes`; `--all` / `--deps` for full trees) |
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`) |
