@@ -83,7 +83,7 @@ Merge order: copy `defaults`, overlay `targets.<id>`. Arrays defined on the targ
 
 `~/.config/genv/genv.lock.json` is machine-local. v8 locks may record `target` and `goos`. A foreign lock is refused; use `genv apply --force-new-lock` to back it up and start fresh. Never commit locks.
 
-Each applied `files.links[]` (`link` / `managed-link`) and `files.templates[]` entry may record `contentHash` (`sha256:<hex>` of the link source or rendered template). `genv status --files` reports `drifted` when the live hash differs. Older locks omit the field and stay topology-only. Apply refreshes the hash after a successful link/template op and never reverts the body.
+Each applied `files.links[]` (`link` / `managed-link`) and `files.templates[]` entry may record `contentHash` (`sha256:<hex>` of the link source or rendered template). `genv files adopt` records the same hash after a successful seed+link. `genv status --files` reports `drifted` when the live hash differs. Older locks omit the field and stay topology-only. Apply refreshes the hash after a successful link/template op and never reverts the body.
 
 Guide: [docs/multi-machine.md](docs/multi-machine.md).
 
@@ -121,7 +121,7 @@ Hooks run as the current user and are arbitrary code by design — treat the spe
 
 ### `files`
 
-- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup`, optional `perm`
+- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup` (`backup: true` replaces that entry's mismatched regular file without `--force`), optional `perm`
   - `mode` is the link kind, not a Unix mode
   - `merge-dir` symlinks each file from source into target so multiple records can layer into one directory
   - `perm` is an octal string (`0644`, `0700`); apply chmods the source file (managed-link) or source directory (merge-dir)

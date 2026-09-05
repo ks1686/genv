@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service profile version help
+        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service files profile version help
             return 1
         end
     end
@@ -125,6 +125,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a init -d 'Create a new genv.j
 complete -c genv -n __fish_genv_no_subcommand -f -a env -d 'Manage shell environment variables'
 complete -c genv -n __fish_genv_no_subcommand -f -a shell -d 'Manage shell aliases and config'
 complete -c genv -n __fish_genv_no_subcommand -f -a service -d 'Manage background services'
+complete -c genv -n __fish_genv_no_subcommand -f -a files -d 'Adopt a live file into a managed link'
 complete -c genv -n __fish_genv_no_subcommand -f -a profile -d 'Manage named environment profiles'
 complete -c genv -n __fish_genv_no_subcommand -f -a version -d 'Show genv build version information'
 complete -c genv -n __fish_genv_no_subcommand -f -a help -d 'Show this help text'
@@ -273,6 +274,13 @@ complete -c genv -n '__fish_genv_seen_subsub shell alias set' -l shell -d 'Targe
 complete -c genv -n '__fish_genv_seen_subsub shell alias set; or __fish_genv_seen_subsub shell alias unset' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_seen_sub shell status' -l json -d 'Emit machine-readable JSON to stdout'
 complete -c genv -n '__fish_genv_seen_sub shell status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+
+# files subcommands
+complete -c genv -n '__fish_genv_at_subcommand files adopt' -f -a adopt -d 'Seed missing source from the live file, back it up, and link it'
+complete -c genv -n '__fish_genv_seen_sub files adopt' -l dry-run -d 'Print the seed/backup/link steps without writing'
+complete -c genv -n '__fish_genv_seen_sub files adopt' -l lock-file -d 'Path to genv lock file' -r
+complete -c genv -n '__fish_genv_seen_sub files adopt' -l host -d 'Host name for host-specific records' -x
+complete -c genv -n '__fish_genv_seen_sub files adopt' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 
 # service subcommands
 complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a add -d 'Add or update a service'

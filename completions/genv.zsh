@@ -29,6 +29,7 @@ _genv() {
 		'env:Manage shell environment variables'
 		'shell:Manage shell aliases and config'
 		'service:Manage background services'
+		'files:Adopt a live file into a managed link'
 		'profile:Manage named environment profiles'
 		'version:Show genv build version information'
 		'help:Show this help text'
@@ -399,6 +400,33 @@ _genv() {
 						'--debug[Emit debug-level structured logs to stderr]' \
 						'--host=[Host name for host-specific records]:host:' \
 						'1:profile name:'
+					;;
+				esac
+				;;
+			esac
+			;;
+		files)
+			local -a files_cmds
+			files_cmds=(
+				'adopt:Seed missing source from the live file, back it up, and link it'
+			)
+			_arguments \
+				'1: :->filescmd' \
+				'*::arg:->filesarg'
+			case $state in
+			filescmd)
+				_describe -t commands 'files subcommand' files_cmds
+				;;
+			filesarg)
+				case ${line[1]} in
+				adopt)
+					_arguments \
+						'--file=[Path to genv.json]:path:_files' \
+						'--lock-file=[Path to genv lock file]:path:_files' \
+						'--host=[Host name for host-specific records]:host:' \
+						'--target=[Portable target id for schemaVersion 8 specs]:target:' \
+						'--dry-run[Print the seed/backup/link steps without writing]' \
+						'1:target:_files'
 					;;
 				esac
 				;;

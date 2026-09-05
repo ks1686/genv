@@ -116,7 +116,8 @@ result atomically. Supported tokens are `__HOME__`, `__USER__`, `__HOST__`,
 
 Shared behavior across modes:
 
-- `--force` overwrites a mismatched target.
+- `--force` overwrites a mismatched target. Per-entry `backup: true` also
+  replaces that entry's mismatched regular file without `--force`.
 - `backup` (per record, or `--backup` on apply) preserves the old target as
   `target.backup.<timestamp>` instead of deleting it.
 - `--dry-run` reports the plan and writes nothing.

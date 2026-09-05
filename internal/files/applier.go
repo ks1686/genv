@@ -32,7 +32,8 @@ type ApplyResult struct {
 // Apply reconciles cfg against the filesystem on the named host.
 // It filters links, templates, and dirs by host, expands paths, creates missing
 // entries, and reports mismatches. With Force and Backup it preserves existing
-// targets.
+// targets. Per-entry backup: true replaces that entry's mismatched regular
+// file without Force.
 func Apply(ctx context.Context, cfg *schema.FilesConfig, hostName string, opts ApplyOptions) (*ApplyResult, error) {
 	res := &ApplyResult{}
 	if cfg == nil {
@@ -155,7 +156,7 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 		res.Updated = append(res.Updated, target)
 		return nil
 	}
-	if !opts.Force {
+	if !opts.Force && !tmpl.Backup {
 		res.Mismatched = append(res.Mismatched, target)
 		return nil
 	}

@@ -45,6 +45,8 @@ var registeredHelpCommands = [][]string{
 	{"service", "start"},
 	{"service", "stop"},
 	{"service", "status"},
+	{"files"},
+	{"files", "adopt"},
 	{"profile"},
 	{"profile", "list"},
 	{"profile", "create"},
@@ -61,6 +63,7 @@ var commandGroups = [][]string{
 	{"shell"},
 	{"shell", "alias"},
 	{"service"},
+	{"files"},
 	{"profile"},
 	{"updates"},
 }

@@ -26,6 +26,13 @@ All notable changes to this project will be documented in this file.
   refreshes the hash. Pre-hash locks omit the field and stay topology-only.
   Hashing is always on for `link` / `managed-link` / templates; `merge-dir`
   trees are not hashed.
+- Per-entry `backup: true` on a files link (or template) replaces that
+  entry's mismatched regular file without `--force`, and keeps a
+  `*.backup.*` copy. Other mismatches still report and still need `--force`.
+  Global `--backup` alone does not grant replace consent.
+- `genv files adopt <target>` seeds a missing source from the live file,
+  backs the live file up, creates the link, and records it in the lock.
+  `--dry-run` prints the copy/backup/link steps without writing.
 
 ## v4.3.1 - 2026-09-05
 

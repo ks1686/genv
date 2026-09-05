@@ -148,6 +148,8 @@ func run(args []string) int {
 		return shellCmd(args[1:])
 	case "service":
 		return serviceCmd(args[1:])
+	case "files":
+		return filesCmd(args[1:])
 	case "__complete":
 		return completeInternalCmd(args[1:])
 	case "version", "--version":
@@ -2223,7 +2225,7 @@ func writeFileMismatchGuidance(w io.Writer, res *files.ApplyResult) {
 	for _, target := range res.Mismatched {
 		fprintf(w, "genv apply: mismatch: %s\n", target)
 	}
-	fPrintln(w, "Hint: re-run with genv apply --force to overwrite, and add --backup (or per-entry backup: true) to preserve the existing file as *.backup.*")
+	fPrintln(w, "Hint: re-run with genv apply --force to overwrite remaining mismatches. Per-entry backup: true replaces that entry and keeps *.backup.*")
 }
 
 func hasPostApplyHooks(f *schema.GenvFile) bool {
@@ -4813,6 +4815,7 @@ Commands:
   env         Manage shell environment variables (set, unset, list)
   shell       Manage shell aliases and shell config drift
   service     Manage user-space services
+  files       Adopt a live file into a managed link (adopt)
   pull        Fetch genv.json from the configured spec repository
   migrate     Convert legacy host predicates to schemaVersion 8 targets
   completion  Print or install the shell completion script (bash, zsh, fish, or powershell)

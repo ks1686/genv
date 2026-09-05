@@ -51,7 +51,7 @@ func applyLink(ctx context.Context, l schema.FileLink, opts ApplyOptions, res *A
 		return applyLinkPerm(source, target, l.Perm, opts, res)
 	}
 
-	if err := applyLinkAt(target, source, l.Mode == "managed-link", opts.Backup || l.Backup, opts, res); err != nil {
+	if err := applyLinkAt(target, source, l.Mode == "managed-link", opts.Backup || l.Backup, l.Backup, opts, res); err != nil {
 		return err
 	}
 	return applyLinkPerm(source, target, l.Perm, opts, res)
@@ -104,14 +104,16 @@ func applyMergeDir(ctx context.Context, sourceDir, targetDir string, l schema.Fi
 		if err != nil {
 			return fmt.Errorf("merge-dir %s: %w", path, err)
 		}
-		return applyLinkAt(filepath.Join(targetDir, rel), path, true, opts.Backup || l.Backup, opts, res)
+		return applyLinkAt(filepath.Join(targetDir, rel), path, true, opts.Backup || l.Backup, l.Backup, opts, res)
 	})
 }
 
 // applyLinkAt ensures target is a symlink to source. When managed is true,
 // a wrong or dangling existing symlink is relinked without requiring
 // --force (mirrors "managed-link" and every file under a "merge-dir").
-func applyLinkAt(target, source string, managed, backup bool, opts ApplyOptions, res *ApplyResult) error {
+// replace (per-entry backup: true) is consent to replace a mismatched
+// regular file for this entry only; directories still require --force.
+func applyLinkAt(target, source string, managed, backup, replace bool, opts ApplyOptions, res *ApplyResult) error {
 	fi, err := os.Lstat(target)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -149,7 +151,14 @@ func applyLinkAt(target, source string, managed, backup bool, opts ApplyOptions,
 	}
 
 	// Target is a real file or directory.
-	if !opts.Force {
+	if fi.IsDir() {
+		if !opts.Force {
+			res.Mismatched = append(res.Mismatched, target)
+			return nil
+		}
+		return replaceLinkAt(target, source, backup, opts, res)
+	}
+	if !opts.Force && !replace {
 		res.Mismatched = append(res.Mismatched, target)
 		return nil
 	}

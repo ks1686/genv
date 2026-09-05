@@ -236,7 +236,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `export` | Single-target snapshot + report + assets |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |
-| `env` / `shell` / `service` | Env vars, aliases, user services |
+| `env` / `shell` / `service` / `files` | Env vars, aliases, user services, `files adopt` |
 | `completion` | `bash` / `zsh` / `fish` / `powershell` |
 | `clean` | Clear detected manager caches |
 | `version` / `help` | Build info / usage |
@@ -269,6 +269,7 @@ genv apply --skip-packages --yes                  # links + env only
 genv apply --timeout 30m --hook-timeout 2m        # cap each subprocess / hook (default 10m; 0 disables)
 genv apply --target ubuntu --dry-run --json
 genv apply --force --backup --yes                 # overwrite mismatched files; keep *.backup.*
+genv files adopt ~/.foo --dry-run                 # seed missing source, backup live file, link
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
 genv apply --dry-run --file ./worktree/genv.json --source-root ~/.config/genv
 genv status --target windows                      # present vs missing vs ok
