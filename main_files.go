@@ -7,6 +7,7 @@ import (
 
 	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // filesCmd implements `genv files <subcommand>`.
@@ -111,15 +112,9 @@ func filesAdoptCmd(args []string) int {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
-	mode := link.Mode
-	if mode == "" {
-		mode = "link"
-	}
-	lf.Files = mergeLockedFiles(lf.Files, []genvfile.LockedFile{{
-		Source: link.Source,
-		Target: link.Target,
-		Mode:   mode,
-	}})
+	hostName := hostForCommand(*hostFlag)
+	adopted := lockedFilesFromSpec(&schema.FilesConfig{Links: []schema.FileLink{link}}, hostName, sourceRootForSpec(*file, f))
+	lf.Files = mergeLockedFiles(lf.Files, adopted)
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO

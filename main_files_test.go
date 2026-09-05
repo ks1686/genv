@@ -170,6 +170,9 @@ func TestFilesAdopt_seedsSourceAndRecordsLock(t *testing.T) {
 	if lf.Files[0].Target != targetPath || lf.Files[0].Source != sourcePath {
 		t.Fatalf("lock entry = %#v", lf.Files[0])
 	}
+	if lf.Files[0].ContentHash == "" {
+		t.Fatal("adopted lock missing contentHash")
+	}
 }
 
 func TestFilesAdopt_dryRunPrintsThreeSteps(t *testing.T) {
