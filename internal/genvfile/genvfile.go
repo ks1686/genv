@@ -36,16 +36,60 @@ func DefaultSpecPath() (string, error) {
 	return filepath.Join(dir, "genv.json"), nil
 }
 
-// LockPathFrom returns the per-host lock file path inside the genv config
-// directory (~/.config/genv/genv.lock.json, or $XDG_CONFIG_HOME/genv/genv.lock.json
-// when set). The specPath argument is ignored so the lock lives outside the spec
-// repo by default.
+// ResolveStateDir returns the directory that owns the lock and env/shell
+// fragments. An explicit stateDir wins; otherwise the directory containing
+// specPath is used; if specPath is empty, DefaultDir is used.
+func ResolveStateDir(specPath, stateDir string) (string, error) {
+	if stateDir != "" {
+		abs, err := filepath.Abs(stateDir)
+		if err != nil {
+			return "", fmt.Errorf("resolving state directory %s: %w", stateDir, err)
+		}
+		return abs, nil
+	}
+	if specPath != "" {
+		abs, err := filepath.Abs(specPath)
+		if err != nil {
+			return "", fmt.Errorf("resolving spec path %s: %w", specPath, err)
+		}
+		return filepath.Dir(abs), nil
+	}
+	return DefaultDir()
+}
+
+// LockPathFrom returns the lock file path that belongs with specPath: a
+// genv.lock.json next to the spec. Empty specPath falls back to DefaultDir.
 func LockPathFrom(specPath string) string {
-	dir, err := DefaultDir()
+	dir, err := ResolveStateDir(specPath, "")
 	if err != nil {
 		return "genv.lock.json"
 	}
 	return filepath.Join(dir, "genv.lock.json")
+}
+
+// LockPathIn returns genv.lock.json inside stateDir.
+func LockPathIn(stateDir string) string {
+	if stateDir == "" {
+		return LockPathFrom("")
+	}
+	return filepath.Join(stateDir, "genv.lock.json")
+}
+
+// WithinDir reports whether path is the directory dir or a file inside it.
+func WithinDir(dir, path string) bool {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
 // ErrNotFound is returned by Read when the file does not exist.

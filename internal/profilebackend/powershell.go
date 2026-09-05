@@ -18,6 +18,8 @@ type PowerShellBackend struct {
 	Home string
 	// Engine overrides DetectEngine in tests.
 	Engine *Engine
+	// Dir is the state directory for fragments. Empty uses the default config dir.
+	Dir string
 }
 
 func (PowerShellBackend) Name() string { return "powershell" }
@@ -30,7 +32,7 @@ func (b PowerShellBackend) ApplyEnv(vars map[string]schema.EnvVar) error {
 	if err := WriteEnvPS1(fragPath, vars); err != nil {
 		return err
 	}
-	if len(vars) == 0 {
+	if len(vars) == 0 || !shouldInjectRC(b.Dir) {
 		return nil
 	}
 	profile, err := b.profilePath()
@@ -52,7 +54,7 @@ func (b PowerShellBackend) ApplyShell(cfg *schema.ShellConfig) error {
 	if err := WriteShellPS1(fragPath, cfg); err != nil {
 		return err
 	}
-	if !hasPowerShellFragmentContent(cfg) {
+	if !hasPowerShellFragmentContent(cfg) || !shouldInjectRC(b.Dir) {
 		return nil
 	}
 	profile, err := b.profilePath()
@@ -67,6 +69,9 @@ func (b PowerShellBackend) ApplyShell(cfg *schema.ShellConfig) error {
 }
 
 func (b PowerShellBackend) envFragmentPath() (string, error) {
+	if b.Dir != "" {
+		return filepath.Join(b.Dir, "env.ps1"), nil
+	}
 	dir, err := genvfile.DefaultDir()
 	if err != nil {
 		return "", err
@@ -75,6 +80,9 @@ func (b PowerShellBackend) envFragmentPath() (string, error) {
 }
 
 func (b PowerShellBackend) shellFragmentPath() (string, error) {
+	if b.Dir != "" {
+		return filepath.Join(b.Dir, "shell.ps1"), nil
+	}
 	dir, err := genvfile.DefaultDir()
 	if err != nil {
 		return "", err

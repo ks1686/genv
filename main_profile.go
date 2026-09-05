@@ -96,6 +96,7 @@ func profileSwitchCmd(args []string) int {
 	opts := applyOptions{}
 	fs.StringVar(&opts.File, "file", defaultSpecPath(), "path to genv.json")
 	fs.StringVar(&opts.LockFile, "lock-file", "", "path to genv lock file")
+	fs.StringVar(&opts.StateDir, "state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite mismatched managed files")
 	fs.BoolVar(&opts.Strict, "strict", false, "exit with an error if any package cannot be resolved")

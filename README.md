@@ -224,7 +224,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `scan` | Bulk-adopt user-facing installs (`--dry-run`, `--yes`; `--all` / `--deps` for full trees) |
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
-| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`) |
+| `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`) |
 | `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
@@ -253,7 +253,8 @@ Tab completion on `add` / `adopt` suggests package names from available managers
 ### Common flags
 
 - `--file <path>` — spec path (default under `~/.config/genv/`)
-- `--lock-file <path>` — lock path (default `genv.lock.json` in the genv config dir)
+- `--lock-file <path>` — lock path (default `genv.lock.json` next to `--file`)
+- `--state-dir <dir>` — directory for lock and env/shell fragments (default: directory of `--file`)
 - `--target <id>` — v8 target for apply / status / upgrade / updates / mutate / export / map / scan
 - `--host <name>` — legacy host filter override for v1–v7 records / hooks (defaults via host **classification**, not hostname)
 - `--json` — machine-readable envelope on stdout; subprocess noise on stderr

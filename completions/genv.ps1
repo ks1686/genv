@@ -94,7 +94,7 @@ function script:Get-GenvCompletions {
 
 	switch ($cmd) {
 		{ $_ -in 'apply' } {
-			$flags = @('--file', '--lock-file', '--dry-run', '--force', '--backup', '--strict', '--yes',
+			$flags = @('--file', '--lock-file', '--state-dir', '--dry-run', '--force', '--backup', '--strict', '--yes',
 				'--quiet', '--json', '--timeout', '--no-hooks', '--skip-packages', '--hook-timeout', '--debug',
 				'--host', '--target', '--force-new-lock')
 			return (& $completeCandidates -Candidates $flags)
@@ -133,7 +133,7 @@ function script:Get-GenvCompletions {
 		}
 		{ $_ -in 'adopt' } {
 			if ($WordToComplete -like '-*') {
-				$flags = @('--file', '--lock-file', '--version', '--prefer', '--manager',
+				$flags = @('--file', '--lock-file', '--state-dir', '--version', '--prefer', '--manager',
 					'--host', '--target', '--files', '--json')
 				return (& $completeCandidates -Candidates $flags)
 			}

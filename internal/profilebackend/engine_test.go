@@ -89,6 +89,24 @@ func TestSelectBackends_NonWindows(t *testing.T) {
 	}
 }
 
+func TestSelectBackendsIn_SetsDir(t *testing.T) {
+	dir := t.TempDir()
+	backends := SelectBackendsIn("darwin", dir)
+	if len(backends) != 1 {
+		t.Fatalf("got %#v", backends)
+	}
+	posix, ok := backends[0].(POSIXBackend)
+	if !ok {
+		t.Fatalf("got %T", backends[0])
+	}
+	if posix.Dir != dir {
+		t.Fatalf("Dir = %q, want %q", posix.Dir, dir)
+	}
+	if SelectBackendsIn("darwin", "")[0].(POSIXBackend).Dir != "" {
+		t.Fatal("empty state dir should leave Dir unset")
+	}
+}
+
 func TestSelectBackends_WindowsWithEngine(t *testing.T) {
 	prev := lookPath
 	t.Cleanup(func() { lookPath = prev })
