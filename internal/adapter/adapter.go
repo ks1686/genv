@@ -200,8 +200,17 @@ var All = []Adapter{
 }
 
 // ByName returns the adapter whose Name() matches name, or nil if none match.
+// Spec-level command adapters registered via SetSpecAdapters are searched
+// after the built-in registry.
 func ByName(name string) Adapter {
 	for _, a := range All {
+		if a.Name() == name {
+			return a
+		}
+	}
+	specMu.RLock()
+	defer specMu.RUnlock()
+	for _, a := range specAdapters {
 		if a.Name() == name {
 			return a
 		}

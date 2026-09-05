@@ -74,6 +74,7 @@ func TestMergeTarget_DeepCopiesAndReplacesArrays(t *testing.T) {
 		SchemaVersion: Version8,
 		Repo:          &Repo{URL: "https://example.com/repo", Ref: "main"},
 		Updates:       &UpdatesConfig{Enabled: true, Interval: "24h", OnlyManagers: []string{"brew"}},
+		Adapters:      map[string]AdapterDef{"gh-extension": {List: "gh extension list", Install: "gh extension install {{id}}", Remove: "gh extension remove {{id}}"}},
 		Defaults: &TargetBundle{
 			Packages: []Package{{ID: "default-pkg", Prefer: "brew", Managers: map[string]string{"brew": "default-pkg"}}},
 			Env:      map[string]*EnvVar{"KEEP": {Value: "1"}},
@@ -113,6 +114,13 @@ func TestMergeTarget_DeepCopiesAndReplacesArrays(t *testing.T) {
 	}
 	if got.Repo == f.Repo || got.Repo.URL != f.Repo.URL || got.Updates == f.Updates || got.Updates.Interval != f.Updates.Interval {
 		t.Fatalf("repo/updates not deep-copied: got repo=%p src=%p updates=%p src=%p", got.Repo, f.Repo, got.Updates, f.Updates)
+	}
+	if len(got.Adapters) != 1 || got.Adapters["gh-extension"].List != "gh extension list" {
+		t.Fatalf("adapters should copy onto the flat spec: %+v", got.Adapters)
+	}
+	got.Adapters["gh-extension"] = AdapterDef{List: "mutated"}
+	if f.Adapters["gh-extension"].List != "gh extension list" {
+		t.Fatal("MergeTarget mutated source adapters")
 	}
 	if len(got.Packages) != 1 || got.Packages[0].ID != "target-pkg" {
 		t.Fatalf("target packages should replace defaults: %+v", got.Packages)

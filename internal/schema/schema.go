@@ -176,6 +176,7 @@ type GenvFile struct {
 	Hooks         *HooksConfig             `json:"hooks,omitempty"`
 	Repo          *Repo                    `json:"repo,omitempty"`
 	Updates       *UpdatesConfig           `json:"updates,omitempty"`
+	Adapters      map[string]AdapterDef    `json:"adapters,omitempty"`
 	Defaults      *TargetBundle            `json:"defaults,omitempty"`
 	Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 }
@@ -198,6 +199,7 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Hooks         *HooksConfig             `json:"hooks,omitempty"`
 		Repo          *Repo                    `json:"repo,omitempty"`
 		Updates       *UpdatesConfig           `json:"updates,omitempty"`
+		Adapters      map[string]AdapterDef    `json:"adapters,omitempty"`
 		Defaults      *TargetBundle            `json:"defaults,omitempty"`
 		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 	}
@@ -211,9 +213,53 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Hooks:         f.Hooks,
 		Repo:          f.Repo,
 		Updates:       f.Updates,
+		Adapters:      f.Adapters,
 		Defaults:      f.Defaults,
 		Targets:       f.Targets,
 	})
+}
+
+// AdapterDef is a spec-level command adapter for plugin ecosystems that genv
+// does not ship a built-in manager for (Claude Code plugins, gh extensions, …).
+// Commands are argv templates: {{id}} (and {{name}}) expand to the package id.
+// list output is parsed as JSON (idField / versionField) and/or regex (listMatch).
+type AdapterDef struct {
+	List         string `json:"list"`
+	Install      string `json:"install"`
+	Remove       string `json:"remove"`
+	Upgrade      string `json:"upgrade,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Outdated     string `json:"outdated,omitempty"`
+	ListMatch    string `json:"listMatch,omitempty"`
+	IDField      string `json:"idField,omitempty"`
+	VersionField string `json:"versionField,omitempty"`
+}
+
+// KnownManager reports whether name is a built-in manager or a spec-defined adapter.
+func KnownManager(f *GenvFile, name string) bool {
+	if KnownManagers[name] {
+		return true
+	}
+	if f == nil || name == "" {
+		return false
+	}
+	_, ok := f.Adapters[name]
+	return ok
+}
+
+// ValidAdapterName reports whether name is a legal spec adapter key:
+// lowercase letter, then lowercase letters, digits, or hyphens.
+func ValidAdapterName(name string) bool {
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // TargetBundle is a v8 defaults or target-scoped config block.

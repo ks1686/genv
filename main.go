@@ -257,10 +257,35 @@ func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetF
 
 // resolveEffectiveSpec flattens a schemaVersion 8 target (MergeTarget) or applies
 // legacy host filtering so callers can read top-level packages/env/shell/services.
+// useSpecAdapters binds command adapters declared in f so Detect, ByName,
+// scan, and upgrade treat prefer: <custom> as a real manager.
+func useSpecAdapters(f *schema.GenvFile) {
+	if f == nil || len(f.Adapters) == 0 {
+		adapter.SetSpecAdapters(nil)
+		return
+	}
+	defs := make(map[string]adapter.CommandDef, len(f.Adapters))
+	for name, d := range f.Adapters {
+		defs[name] = adapter.CommandDef{
+			List:         d.List,
+			Install:      d.Install,
+			Remove:       d.Remove,
+			Upgrade:      d.Upgrade,
+			Version:      d.Version,
+			Outdated:     d.Outdated,
+			ListMatch:    d.ListMatch,
+			IDField:      d.IDField,
+			VersionField: d.VersionField,
+		}
+	}
+	adapter.SetSpecAdapters(adapter.CommandsFromDefs(defs))
+}
+
 func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*schema.GenvFile, string, error) {
 	if f == nil {
 		return nil, "", fmt.Errorf("genv file is nil")
 	}
+	useSpecAdapters(f)
 	if f.SchemaVersion == schema.Version8 {
 		targetID, err := target.Resolve(targetFlag)
 		if err != nil {
@@ -558,7 +583,11 @@ func addCmd(args []string) int {
 	}
 
 	// Detect available managers once; used by both the search picker (step 0)
-	// and the resolver (step 2).
+	// and the resolver (step 2). Bind spec adapters first so prefer: <custom>
+	// can resolve before the spec is rewritten.
+	if existing, err := genvfile.Read(*file); err == nil {
+		useSpecAdapters(existing)
+	}
 	available := resolver.Detect()
 
 	// 0. When no explicit manager mapping is given and stdin is a terminal,
@@ -1403,6 +1432,7 @@ func applyLockGate(cmd, lockPath string, lf *genvfile.LockFile, activeTarget str
 }
 
 func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile, lockPath string) int {
+	useSpecAdapters(f)
 	available := resolver.Detect()
 	if lf == nil {
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
@@ -2972,6 +3002,7 @@ func scanCmd(args []string) int {
 		return exit
 	}
 
+	useSpecAdapters(f)
 	available := resolver.Detect()
 	if len(available) == 0 {
 		if *jsonOut {
@@ -3085,7 +3116,11 @@ func scanCmd(args []string) int {
 
 	var added int
 	for _, c := range candidates {
-		if err := commands.Add(f, c.id, "", "", nil, targetID); err != nil {
+		prefer := ""
+		if adapter.SpecName(c.manager) {
+			prefer = c.manager
+		}
+		if err := commands.Add(f, c.id, "", prefer, nil, targetID); err != nil {
 			// ErrAlreadyTracked can race with trackedInSpec; skip silently.
 			skipped++
 			continue
@@ -3187,7 +3222,7 @@ func skipScanPackage(manager, id string) bool {
 
 func scanAdaptersOnGOOS(available map[string]bool, goos string) []adapter.Adapter {
 	selected := make([]adapter.Adapter, 0, len(adapter.All))
-	for _, a := range adapter.All {
+	for _, a := range adapter.Registered() {
 		if available[a.Name()] && adapter.AutomaticOnGOOS(a.Name(), goos) {
 			selected = append(selected, a)
 		}
@@ -3905,8 +3940,11 @@ func completeInternalCmd(args []string) int {
 			fPrintln(os.Stdout, p.ID)
 		}
 	case "managers":
+		if spec, err := genvfile.Read(defaultSpecPath()); err == nil {
+			useSpecAdapters(spec)
+		}
 		available := resolver.Detect()
-		for _, a := range adapter.All {
+		for _, a := range adapter.Registered() {
 			if available[a.Name()] {
 				fPrintln(os.Stdout, a.Name())
 			}

@@ -48,7 +48,7 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return report.sorted(), fmt.Errorf("creating export directory %s: %w", outDir, err)
 	}
-	if err := writeSnapshot(filepath.Join(outDir, "genv.json"), targetID, bundle); err != nil {
+	if err := writeSnapshot(filepath.Join(outDir, "genv.json"), targetID, bundle, f.Adapters); err != nil {
 		return report.sorted(), err
 	}
 	if err := writeReport(filepath.Join(outDir, "report.json"), report); err != nil {
@@ -62,12 +62,14 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 
 type snapshotDocument struct {
 	SchemaVersion string                          `json:"schemaVersion"`
+	Adapters      map[string]schema.AdapterDef    `json:"adapters,omitempty"`
 	Targets       map[string]*schema.TargetBundle `json:"targets"`
 }
 
-func writeSnapshot(path, targetID string, bundle *schema.TargetBundle) error {
+func writeSnapshot(path, targetID string, bundle *schema.TargetBundle, adapters map[string]schema.AdapterDef) error {
 	doc := snapshotDocument{
 		SchemaVersion: schema.Version8,
+		Adapters:      adapters,
 		Targets: map[string]*schema.TargetBundle{
 			targetID: bundle,
 		},

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -90,6 +91,7 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateHooks(f, raw, positions)...)
 	errs = append(errs, validateRepo(f, raw, positions)...)
 	errs = append(errs, validateUpdates(f, raw, positions)...)
+	errs = append(errs, validateAdapters(f, raw, positions)...)
 	errs = append(errs, validateV8(f, positions)...)
 
 	return f, errs, nil
@@ -247,12 +249,12 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 			})
 		}
 	} else {
-		errs = append(errs, validatePackageList(f.Packages, "packages", positions)...)
+		errs = append(errs, validatePackageList(f, f.Packages, "packages", positions)...)
 	}
 	return errs
 }
 
-func validatePackageList(packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validatePackageList(f *GenvFile, packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	seen := make(map[string]int) // id → first index
 	for i, pkg := range packages {
@@ -281,7 +283,7 @@ func validatePackageList(packages []Package, fieldPrefix string, positions map[s
 			seen[pkg.ID] = i
 		}
 
-		if pkg.Prefer != "" && !KnownManagers[pkg.Prefer] {
+		if pkg.Prefer != "" && !KnownManager(f, pkg.Prefer) {
 			errs = append(errs, ValidationError{
 				Position: positions[pkgPath+".prefer"],
 				Field:    pkgPath + ".prefer",
@@ -291,7 +293,7 @@ func validatePackageList(packages []Package, fieldPrefix string, positions map[s
 
 		for mgr, pkgName := range pkg.Managers {
 			field := fmt.Sprintf("%s.managers.%s", pkgPath, mgr)
-			if !KnownManagers[mgr] {
+			if !KnownManager(f, mgr) {
 				errs = append(errs, ValidationError{
 					Position: positions[field],
 					Field:    field,
@@ -883,8 +885,8 @@ func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[
 	if f.Updates == nil {
 		return errs
 	}
-	errs = append(errs, validateUpdatesManagers("updates.onlyManagers", f.Updates.OnlyManagers, positions)...)
-	errs = append(errs, validateUpdatesManagers("updates.skipManagers", f.Updates.SkipManagers, positions)...)
+	errs = append(errs, validateUpdatesManagers(f, "updates.onlyManagers", f.Updates.OnlyManagers, positions)...)
+	errs = append(errs, validateUpdatesManagers(f, "updates.skipManagers", f.Updates.SkipManagers, positions)...)
 	if !f.Updates.Enabled {
 		return errs
 	}
@@ -915,10 +917,10 @@ func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[
 	return errs
 }
 
-func validateUpdatesManagers(field string, managers []string, positions map[string]Position) []ValidationError {
+func validateUpdatesManagers(f *GenvFile, field string, managers []string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	for i, mgr := range managers {
-		if KnownManagers[mgr] {
+		if KnownManager(f, mgr) {
 			continue
 		}
 		elem := fmt.Sprintf("%s[%d]", field, i)
@@ -927,6 +929,71 @@ func validateUpdatesManagers(field string, managers []string, positions map[stri
 			Field:    elem,
 			Message:  fmt.Sprintf("unknown manager %q", mgr),
 		})
+	}
+	return errs
+}
+
+func validateAdapters(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if _, hasAdapters := raw["adapters"]; !hasAdapters {
+		return errs
+	}
+	if f.SchemaVersion != Version8 {
+		errs = append(errs, ValidationError{
+			Position: positions["adapters"],
+			Field:    "adapters",
+			Message:  fmt.Sprintf("adapters block requires schemaVersion %q (current: %q)", Version8, f.SchemaVersion),
+		})
+	}
+	if len(f.Adapters) == 0 {
+		return errs
+	}
+	for name, def := range f.Adapters {
+		path := "adapters." + name
+		if !ValidAdapterName(name) {
+			errs = append(errs, ValidationError{
+				Position: positions[path],
+				Field:    path,
+				Message:  fmt.Sprintf("invalid adapter name %q: must be lowercase letters, digits, and hyphens, starting with a letter", name),
+			})
+		}
+		if KnownManagers[name] {
+			errs = append(errs, ValidationError{
+				Position: positions[path],
+				Field:    path,
+				Message:  fmt.Sprintf("adapter name %q collides with a built-in manager", name),
+			})
+		}
+		if strings.TrimSpace(def.List) == "" {
+			errs = append(errs, ValidationError{
+				Position: positions[path+".list"],
+				Field:    path + ".list",
+				Message:  "required field is missing or empty",
+			})
+		}
+		if strings.TrimSpace(def.Install) == "" {
+			errs = append(errs, ValidationError{
+				Position: positions[path+".install"],
+				Field:    path + ".install",
+				Message:  "required field is missing or empty",
+			})
+		}
+		if strings.TrimSpace(def.Remove) == "" {
+			errs = append(errs, ValidationError{
+				Position: positions[path+".remove"],
+				Field:    path + ".remove",
+				Message:  "required field is missing or empty",
+			})
+		}
+		if def.ListMatch != "" {
+			if _, err := regexp.Compile(def.ListMatch); err != nil {
+				errs = append(errs, ValidationError{
+					Position: positions[path+".listMatch"],
+					Field:    path + ".listMatch",
+					Message:  fmt.Sprintf("invalid listMatch regexp: %v", err),
+				})
+			}
+		}
 	}
 	return errs
 }
@@ -1095,7 +1162,7 @@ func hasDefaultService(defaults *TargetBundle, name string) bool {
 
 func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
-	errs = append(errs, validatePackageList(bundle.Packages, fieldPrefix+".packages", positions)...)
+	errs = append(errs, validatePackageList(f, bundle.Packages, fieldPrefix+".packages", positions)...)
 	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", positions)...)
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
 	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)

@@ -121,6 +121,8 @@ WSL2 does **not** inherit native `arch` automatically. Put shared bits in `defau
 
 `external` is a track-only pseudo-manager: packages installed outside any manager (official installers, vendor downloads). Apply records them in the lock when the binary is on PATH; genv never installs or removes them itself.
 
+Schema v8 also accepts top-level `adapters` for plugin CLIs genv does not ship built-in (`claude plugin`, `gh extension`, …). Set `prefer` to the adapter name. Details and examples: [SCHEMA.md](SCHEMA.md#spec-adapters-v8).
+
 Native `apt`, `dnf`, and `apk` adapters are registered system managers (`prefer: apt|dnf|apk`). Use `genv map` / `genv export` when moving a spec across Linux families.
 
 ---
@@ -295,7 +297,7 @@ File mismatches without `--force` no longer block packages/services: non-conflic
 
 ## Resolution and upgrades (summary)
 
-**Install resolution:** detect available managers → honor `prefer` → try `managers` map → fall back to system managers using the package `id`. Language / toolchain / plugin managers are **explicit-only** (must set `prefer` or `managers`) so `git` never silently resolves through npm.
+**Install resolution:** detect available managers → honor `prefer` → try `managers` map → fall back to system managers using the package `id`. Language / toolchain / plugin managers (including v8 spec `adapters`) are **explicit-only** (must set `prefer` or `managers`) so `git` never silently resolves through npm.
 
 **Upgrades:** `genv upgrade` applies tracked-package updates, then OS vendor updates for the active target (macOS `softwareupdate`, Windows Update Agent COM via PowerShell, Arch `pacman -Syu`, Ubuntu `apt-get upgrade`). Firmware uses `fwupdmgr` on Linux when present; macOS firmware ships through `softwareupdate`, and Windows firmware is skipped as vendor-specific. `genv updates check` and the timer stay tracked-packages-only and share the tracked planner with `upgrade`. Before outdated detection, the planner refreshes each index-based manager that still has candidates (`brew update`, `sudo apt-get update`, `sudo pacman -Sy`, and the equivalents on paru/yay/dnf/apk/scoop/winget). Live registries (mas, npm/bun, uv/pipx, cargo, volta, choco, snap, vscode) are queried as-is. A failed refresh keeps that manager's packages and prints a warning — same conservative rule as a failed outdated query. A manager whose binary is gone (`Available()` false) is skipped with an explicit reason instead of planning `brew update` / `brew upgrade` that cannot run. By default they plan packages with a detected update; `--all` on `upgrade` still refreshes, then plans every unconstrained tracked package. Leftover positional IDs (`genv upgrade git`) are treated as `--only`. Human `upgrade` prompts unless `--yes`; `upgrade --json` wet-run also requires `--yes` (or `--dry-run` to plan only). Packages with a non-empty `version` are always skipped; genv does not yet plan range-satisfying upgrades. Batched where the manager allows (`brew`, `pacman`/`paru`/`yay`, `apt`/`dnf`/`apk`, `mas`, `snap`, `scoop`, `choco`, …). The `vscode` manager compares against the marketplace's newest **stable** version (pre-release builds are ignored; `--install-extension --force` cannot install them). It invokes `cursor` when that CLI is on PATH, otherwise `code`. `brew outdated` uses `--greedy` so auto-updating casks are not hidden after the index fetch.
 
