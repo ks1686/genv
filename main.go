@@ -386,10 +386,74 @@ func addToSpec(file, id, version, prefer string, managers map[string]string, tar
 // appendLockEntry reads the lock at lockPath, appends lp, and writes it back.
 // Returns an exit code; exitOK means success.
 func lockPathForSpec(file, override string) string {
+	return lockPathForState(file, "", override)
+}
+
+func lockPathForState(file, stateDir, override string) string {
 	if override != "" {
 		return override
 	}
-	return genvfile.LockPathFrom(file)
+	dir, err := genvfile.ResolveStateDir(file, stateDir)
+	if err != nil {
+		return "genv.lock.json"
+	}
+	return genvfile.LockPathIn(dir)
+}
+
+func resolveApplyState(opts applyOptions) (stateDir, lockPath string, err error) {
+	stateDir, err = genvfile.ResolveStateDir(opts.File, opts.StateDir)
+	if err != nil {
+		return "", "", err
+	}
+	return stateDir, lockPathForState(opts.File, opts.StateDir, opts.LockFile), nil
+}
+
+func applyStatePaths(stateDir, lockPath string) output.StatePaths {
+	if stateDir == "" {
+		if dir, err := genvfile.DefaultDir(); err == nil {
+			stateDir = dir
+		}
+	}
+	envName, shellName := "env.sh", "shell.sh"
+	if runtime.GOOS == "windows" {
+		envName, shellName = "env.ps1", "shell.ps1"
+	}
+	return output.StatePaths{
+		Dir:   stateDir,
+		Lock:  lockPath,
+		Env:   filepath.Join(stateDir, envName),
+		Shell: filepath.Join(stateDir, shellName),
+	}
+}
+
+func printApplyStatePlan(w io.Writer, state output.StatePaths) {
+	fPrintln(w, "state:")
+	fprintf(w, "  lock: %s\n", state.Lock)
+	if state.Env != "" {
+		fprintf(w, "  env: %s\n", state.Env)
+	}
+	if state.Shell != "" {
+		fprintf(w, "  shell: %s\n", state.Shell)
+	}
+	fPrintln(w)
+}
+
+func guardApplyStateWrites(opts applyOptions, stateDir, lockPath string) error {
+	allowed, err := genvfile.ResolveStateDir(opts.File, opts.StateDir)
+	if err != nil {
+		return err
+	}
+	state := applyStatePaths(stateDir, lockPath)
+	if opts.LockFile == "" && !genvfile.WithinDir(allowed, lockPath) {
+		return fmt.Errorf("refusing to write lock %s outside %s (pass --lock-file or --state-dir)", lockPath, allowed)
+	}
+	if !genvfile.WithinDir(allowed, state.Env) {
+		return fmt.Errorf("refusing to write env fragment %s outside %s (pass --state-dir)", state.Env, allowed)
+	}
+	if !genvfile.WithinDir(allowed, state.Shell) {
+		return fmt.Errorf("refusing to write shell fragment %s outside %s (pass --state-dir)", state.Shell, allowed)
+	}
+	return nil
 }
 
 func stampLockTarget(lf *genvfile.LockFile, targetID string) {
@@ -835,6 +899,7 @@ func adoptCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
+	stateDir := fs.String("state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	version := fs.String("version", "", `version constraint, e.g. "0.10.*" (default: omitted, meaning any)`)
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
@@ -861,7 +926,7 @@ func adoptCmd(args []string) int {
 		}
 	}
 	if *filesOnly {
-		return adoptFilesCmd(*file, *lockFile, *hostFlag, *targetFlag, *jsonOut)
+		return adoptFilesCmd(*file, *lockFile, *stateDir, *hostFlag, *targetFlag, *jsonOut)
 	}
 
 	managers, err := parseManagerFlag(*managerFlag)
@@ -925,7 +990,7 @@ func adoptCmd(args []string) int {
 		return exitLogic
 	}
 
-	lockPath := lockPathForSpec(*file, *lockFile)
+	lockPath := lockPathForState(*file, *stateDir, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -964,7 +1029,7 @@ func adoptCmd(args []string) int {
 	return exitOK
 }
 
-func adoptFilesCmd(file, lockFile, hostFlag, targetFlag string, jsonOut bool) int {
+func adoptFilesCmd(file, lockFile, stateDir, hostFlag, targetFlag string, jsonOut bool) int {
 	f, err := genvfile.Read(file)
 	if err != nil {
 		if errors.Is(err, genvfile.ErrNotFound) {
@@ -1008,7 +1073,7 @@ func adoptFilesCmd(file, lockFile, hostFlag, targetFlag string, jsonOut bool) in
 		return exitLogic
 	}
 
-	lockPath := lockPathForSpec(file, lockFile)
+	lockPath := lockPathForState(file, stateDir, lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
@@ -1174,24 +1239,26 @@ func hostForCommand(hostFlag string) string {
 // Reconciles the system against genv.json by installing added packages and
 // removing packages that were deleted from the spec since the last apply.
 type applyOptions struct {
-	File          string
-	LockFile      string
-	Host          string
-	DryRun        bool
-	Strict        bool
-	Yes           bool
-	Quiet         bool
-	JSONOut       bool
-	Force         bool
-	Backup        bool
-	Timeout       time.Duration
-	Debug         bool
-	TargetProfile string
-	Target        string
-	ForceNewLock  bool
-	NoHooks       bool
-	HookTimeout   time.Duration
-	SkipPackages  bool
+	File             string
+	LockFile         string
+	StateDir         string
+	Host             string
+	DryRun           bool
+	Strict           bool
+	Yes              bool
+	Quiet            bool
+	JSONOut          bool
+	Force            bool
+	Backup           bool
+	Timeout          time.Duration
+	Debug            bool
+	TargetProfile    string
+	Target           string
+	ForceNewLock     bool
+	NoHooks          bool
+	HookTimeout      time.Duration
+	SkipPackages     bool
+	resolvedStateDir string
 }
 
 func applyCmd(args []string) int {
@@ -1206,6 +1273,7 @@ func applyCmd(args []string) int {
 	opts := applyOptions{}
 	fs.StringVar(&opts.File, "file", defaultSpecPath(), "path to genv.json")
 	fs.StringVar(&opts.LockFile, "lock-file", "", "path to genv lock file")
+	fs.StringVar(&opts.StateDir, "state-dir", "", "directory for lock and env/shell fragments (default: directory of --file)")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print the reconcile plan without executing")
 	fs.BoolVar(&opts.Force, "force", false, "overwrite mismatched managed files")
 	fs.BoolVar(&opts.Backup, "backup", false, "back up mismatched files before overwrite (implies keeping originals as *.backup.*)")
@@ -1243,7 +1311,18 @@ func runApply(opts applyOptions) int {
 		ctx = resolver.WithSubprocessTimeout(ctx, opts.Timeout)
 	}
 
-	lockPath := lockPathForSpec(opts.File, opts.LockFile)
+	stateDir, lockPath, err := resolveApplyState(opts)
+	if err != nil {
+		fprintf(os.Stderr, "genv: resolving state paths: %v\n", err)
+		return exitIO
+	}
+	if !opts.DryRun {
+		if err := guardApplyStateWrites(opts, stateDir, lockPath); err != nil {
+			fprintf(os.Stderr, "genv apply: %v\n", err)
+			return exitLogic
+		}
+	}
+	opts.resolvedStateDir = stateDir
 	unlock, err := genvfile.LockMutation(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: locking %s: %v\n", lockPath, err)
@@ -1348,6 +1427,8 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, lf *genvfile.LockFile, result resolver.ReconcileResult) int {
 	printReconcileWarnings(result)
 	planData := buildPlanResult(f, lf, result)
+	state := applyStatePaths(opts.resolvedStateDir, lockPath)
+	planData.State = &state
 	if opts.DryRun {
 		filePlan, filePlanErr := applyFiles(ctx, opts, f, lf)
 		planData.Files = filePlanEntries(filePlan)
@@ -1383,11 +1464,11 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	filePlan := &files.ApplyResult{}
 	filePlanErr := error(nil)
 	var envErr, shellErr error
-	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false)
+	envApplied, envRemoved, envErr = applyEnvVars(f, lf, false, opts.resolvedStateDir)
 	if envErr != nil {
 		errs = append(errs, envErr.Error())
 	}
-	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false)
+	shellApplied, shellRemoved, shellErr = applyShellCfg(f, lf, false, opts.resolvedStateDir)
 	if shellErr != nil {
 		errs = append(errs, shellErr.Error())
 	}
@@ -1463,6 +1544,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if opts.Quiet {
 		planOut = io.Discard
 	}
+	printApplyStatePlan(planOut, applyStatePaths(opts.resolvedStateDir, lockPath))
 	toInstall, toRemove, unresolvedCount := printApplyReconcilePlan(planOut, opts.SkipPackages, result)
 
 	var envChanges int
@@ -1560,10 +1642,10 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	var svcErrs []error
 	var fileErrs []error
 	var appliedFiles *files.ApplyResult
-	if _, _, err := applyEnvVars(f, lf, !opts.Quiet); err != nil {
+	if _, _, err := applyEnvVars(f, lf, !opts.Quiet, opts.resolvedStateDir); err != nil {
 		fileErrs = append(fileErrs, err)
 	}
-	if _, _, err := applyShellCfg(f, lf, !opts.Quiet); err != nil {
+	if _, _, err := applyShellCfg(f, lf, !opts.Quiet, opts.resolvedStateDir); err != nil {
 		fileErrs = append(fileErrs, err)
 	}
 	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
@@ -1709,7 +1791,7 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 // names. The caller is responsible for persisting the lock file (avoiding a
 // double-write when packages and env vars are both applied in the same run).
 // If verbose is true, it prints progress lines to stdout.
-func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
+func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool, stateDir string) (applied, removed []string, err error) {
 	if len(f.Env) == 0 && len(lf.Env) == 0 {
 		return nil, nil, nil
 	}
@@ -1728,7 +1810,7 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 		fprintf(os.Stderr, "genv: warning: %s\n", warn)
 	}
 
-	backends := profilebackend.SelectBackends(runtime.GOOS)
+	backends := profilebackend.SelectBackendsIn(runtime.GOOS, stateDir)
 	var lastFrag string
 	for _, b := range backends {
 		if err := b.ApplyEnv(f.Env); err != nil {
@@ -1750,9 +1832,8 @@ func applyEnvVars(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (appl
 			fprintf(os.Stdout, "  env: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			if fragPath, err := genvenv.FragmentPath(); err == nil {
-				fprintf(os.Stdout, "env fragment written (%s backends) e.g. %s\n", lastFrag, fragPath)
-			}
+			state := applyStatePaths(stateDir, "")
+			fprintf(os.Stdout, "env fragment written (%s backends) e.g. %s\n", lastFrag, state.Env)
 		}
 	}
 
@@ -2654,7 +2735,7 @@ func shellEditCmd(args []string) int {
 // applyShellCfg writes managed shell fragments via selected profile backends,
 // updates lf.Shell in memory, and returns lists of applied and removed entry
 // names. The caller writes the lock. If verbose is true, it prints progress.
-func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, err error) {
+func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool, stateDir string) (applied, removed []string, err error) {
 	if f.Shell == nil && lf.Shell == nil {
 		return nil, nil, nil
 	}
@@ -2700,7 +2781,7 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 	if f.Shell != nil {
 		cfg = f.Shell
 	}
-	backends := profilebackend.SelectBackends(runtime.GOOS)
+	backends := profilebackend.SelectBackendsIn(runtime.GOOS, stateDir)
 	for _, b := range backends {
 		if err := b.ApplyShell(cfg); err != nil {
 			fprintf(os.Stderr, "genv: writing shell fragment (%s): %v\n", b.Name(), err)
@@ -2716,15 +2797,14 @@ func applyShellCfg(f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (app
 			fprintf(os.Stdout, "  shell: removed %s\n", name)
 		}
 		if len(applied) > 0 || len(removed) > 0 {
-			if fragPath, err := shellcfg.FragmentPath(); err == nil {
-				fprintf(os.Stdout, "shell fragment written to %s\n", fragPath)
-			}
+			state := applyStatePaths(stateDir, "")
+			fprintf(os.Stdout, "shell fragment written to %s\n", state.Shell)
 		}
 	}
 	if hasFishEntries {
-		fragPath, _ := shellcfg.FragmentPath()
+		state := applyStatePaths(stateDir, "")
 		fprintf(os.Stdout, "note: fish-specific shell entries are not auto-applied.\n")
-		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", fragPath)
+		fprintf(os.Stdout, "      Add '. %s' to ~/.config/fish/config.fish to source them.\n", state.Shell)
 	}
 
 	// Update lf.Shell in memory; caller writes the lock once.

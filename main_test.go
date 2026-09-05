@@ -29,7 +29,7 @@ import (
 // TestMain disables interactive prompts (package search picker, remove fuzzy
 // match) for all unit tests so they run non-interactively. It also isolates
 // the genv config directory so tests do not read or write the developer's
-// real lock file now that LockPathFrom uses the genv config directory.
+// real lock file now that commands default the lock next to --file.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
 	if os.Getenv("XDG_CONFIG_HOME") == "" {
@@ -3518,7 +3518,7 @@ func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		fragName = "env.ps1"
 	}
-	frag := filepath.Join(dir, "genv", fragName)
+	frag := filepath.Join(dir, fragName)
 	if _, err := os.Stat(frag); err != nil {
 		t.Fatalf("env fragment %s missing after package failure: %v", frag, err)
 	}

@@ -313,17 +313,29 @@ func TestWrite_OverwritesExistingFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LockPathFrom — lock lives in the genv config directory, ignoring spec path.
+// LockPathFrom — lock lives next to the spec (absolute).
 // ---------------------------------------------------------------------------
 
 func TestLockPathFrom(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.FromSlash("/custom/config"))
+	spec := filepath.FromSlash("/tmp/repo/genv.json")
+	got := filepath.Clean(LockPathFrom(spec))
+	absSpec, err := filepath.Abs(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Clean(filepath.Join(filepath.Dir(absSpec), "genv.lock.json"))
+	if got != want {
+		t.Errorf("LockPathFrom(spec) = %q, want lock next to spec %q", got, want)
+	}
+}
+
+func TestLockPathFrom_EmptySpecUsesDefaultDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.FromSlash("/custom/config"))
+	got := LockPathFrom("")
 	want := filepath.Join(filepath.FromSlash("/custom/config"), "genv", "genv.lock.json")
-	for _, specPath := range []string{"genv.json", "/tmp/repo/genv.json", "/any/path.json"} {
-		got := LockPathFrom(specPath)
-		if got != want {
-			t.Errorf("LockPathFrom(%q) = %q, want %q", specPath, got, want)
-		}
+	if got != want {
+		t.Errorf("LockPathFrom(\"\") = %q, want %q", got, want)
 	}
 }
 
@@ -331,10 +343,46 @@ func TestLockPathFrom_FallsBackToHomeConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	home := filepath.FromSlash("/home/testuser")
 	testutil.SetHome(t, home)
-	got := LockPathFrom("/ignored/path/genv.json")
+	got := LockPathFrom("")
 	want := filepath.Join(home, ".config", "genv", "genv.lock.json")
 	if got != want {
 		t.Errorf("LockPathFrom fallback = %q, want %q", got, want)
+	}
+}
+
+func TestResolveStateDir(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "nested", "genv.json")
+	got, err := ResolveStateDir(spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Dir(spec) {
+		t.Fatalf("ResolveStateDir(spec) = %q, want %q", got, filepath.Dir(spec))
+	}
+	override := t.TempDir()
+	got, err = ResolveStateDir(spec, override)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absOverride, err := filepath.Abs(override)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != absOverride {
+		t.Fatalf("ResolveStateDir(spec, override) = %q, want %q", got, absOverride)
+	}
+}
+
+func TestWithinDir(t *testing.T) {
+	dir := t.TempDir()
+	if !WithinDir(dir, filepath.Join(dir, "env.sh")) {
+		t.Fatal("expected env.sh inside dir")
+	}
+	if !WithinDir(dir, dir) {
+		t.Fatal("expected dir to contain itself")
+	}
+	if WithinDir(dir, filepath.Join(dir, "..", "outside")) {
+		t.Fatal("parent path must not be inside dir")
 	}
 }
 

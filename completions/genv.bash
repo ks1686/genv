@@ -76,7 +76,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "$(genv __complete repo-packages "${cur}" 2>/dev/null)" -- "${cur}")
 			return 0
 		fi
-		opts="--file --lock-file --version --prefer --manager --host --target --files --json"
+		opts="--file --lock-file --state-dir --version --prefer --manager --host --target --files --json"
 		;;
 	upgrade)
 		# Complete positional arg (if any) with tracked package IDs.
@@ -113,7 +113,7 @@ _genv() {
 		fi
 		;;
 	apply)
-		opts="--file --lock-file --dry-run --force --backup --strict --yes --quiet --json --timeout --no-hooks --skip-packages --hook-timeout --debug --host --target --force-new-lock"
+		opts="--file --lock-file --state-dir --dry-run --force --backup --strict --yes --quiet --json --timeout --no-hooks --skip-packages --hook-timeout --debug --host --target --force-new-lock"
 		;;
 	migrate)
 		opts="--file --write"

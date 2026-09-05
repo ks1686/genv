@@ -264,7 +264,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		},
 	}
 
-	applied, removed, err := applyEnvVars(f, lf, true)
+	applied, removed, err := applyEnvVars(f, lf, true, "")
 	if err != nil {
 		t.Fatalf("applyEnvVars: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 
 	// Removal path: clear spec env while lock still has FOO.
 	f.Env = map[string]schema.EnvVar{}
-	applied, removed, err = applyEnvVars(f, lf, true)
+	applied, removed, err = applyEnvVars(f, lf, true, "")
 	if err != nil {
 		t.Fatalf("applyEnvVars remove: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		t.Fatalf("env remove = %v %v", applied, removed)
 	}
 
-	applied, removed, err = applyShellCfg(f, lf, true)
+	applied, removed, err = applyShellCfg(f, lf, true, "")
 	if err != nil {
 		t.Fatalf("applyShellCfg: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 		t.Fatal("expected lock shell updated")
 	}
 	if !strings.Contains(captureStdout(t, func() {
-		_, _, _ = applyShellCfg(f, lf, false)
+		_, _, _ = applyShellCfg(f, lf, false, "")
 	}), "") {
 		// fish note only prints when hasFishEntries; force by keeping fish alias
 	}
@@ -304,16 +304,16 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 	out := captureStdout(t, func() {
 		f2 := &schema.GenvFile{Shell: f.Shell}
 		lf2 := &genvfile.LockFile{}
-		_, _, _ = applyShellCfg(f2, lf2, false)
+		_, _, _ = applyShellCfg(f2, lf2, false, "")
 	})
 	if !strings.Contains(out, "fish-specific") {
 		t.Errorf("expected fish note, got %q", out)
 	}
 
-	if a, r, err := applyEnvVars(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil || err != nil {
+	if a, r, err := applyEnvVars(&schema.GenvFile{}, &genvfile.LockFile{}, false, ""); a != nil || r != nil || err != nil {
 		t.Errorf("empty env apply = %v %v %v", a, r, err)
 	}
-	if a, r, err := applyShellCfg(&schema.GenvFile{}, &genvfile.LockFile{}, false); a != nil || r != nil || err != nil {
+	if a, r, err := applyShellCfg(&schema.GenvFile{}, &genvfile.LockFile{}, false, ""); a != nil || r != nil || err != nil {
 		t.Errorf("empty shell apply = %v %v %v", a, r, err)
 	}
 }
@@ -338,7 +338,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if code := adoptFilesCmd(specPath, "", "", "", false); code != exitOK {
+	if code := adoptFilesCmd(specPath, "", "", "", "", false); code != exitOK {
 		t.Fatalf("adopt files = %d", code)
 	}
 	lockPath := genvfile.LockPathFrom(specPath)
@@ -352,7 +352,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 
 	var code int
 	out := captureStdout(t, func() {
-		code = adoptFilesCmd(specPath, "", "", "", true)
+		code = adoptFilesCmd(specPath, "", "", "", "", true)
 	})
 	if code != exitOK {
 		t.Fatalf("adopt files --json = %d (%s)", code, out)
@@ -361,7 +361,7 @@ func TestAdoptFilesCmd_SuccessAndJSON(t *testing.T) {
 		t.Errorf("json output = %s", out)
 	}
 
-	if code := adoptFilesCmd(filepath.Join(dir, "missing.json"), "", "", "", false); code != exitIO {
+	if code := adoptFilesCmd(filepath.Join(dir, "missing.json"), "", "", "", "", false); code != exitIO {
 		t.Errorf("missing spec = %d", code)
 	}
 }
