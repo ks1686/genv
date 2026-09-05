@@ -108,7 +108,7 @@ func vscodeGalleryServiceURL() string {
 	if vscodeGalleryBase != "" {
 		return vscodeGalleryBase
 	}
-	if cliPath, err := lookPath(vscodeCLI()); err == nil {
+	if cliPath, err := lookPath(vscodeCLIName()); err == nil {
 		if product := vscodeFindProductJSON(cliPath); product != "" {
 			if raw, err := os.ReadFile(product); err == nil {
 				if u := vscodeGalleryURLFromProductJSON(raw); u != "" {
