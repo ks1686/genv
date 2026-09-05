@@ -475,7 +475,7 @@ func addCmd(args []string) int {
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if *hookTimeout < 0 {
 		fPrintln(os.Stderr, "genv add: --hook-timeout must be non-negative")
@@ -627,7 +627,7 @@ func removeCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if *hookTimeout < 0 {
 		fPrintln(os.Stderr, "genv remove: --hook-timeout must be non-negative")
@@ -846,13 +846,13 @@ func adoptCmd(args []string) int {
 	id := ""
 	if hasBoolFlag(args, "files") {
 		if err := fs.Parse(args); err != nil {
-			return exitUsage
+			return flagParseExit(err)
 		}
 	} else {
 		var flagArgs []string
 		id, flagArgs = extractPositional(args)
 		if err := fs.Parse(flagArgs); err != nil {
-			return exitUsage
+			return flagParseExit(err)
 		}
 		if id == "" {
 			fPrintln(os.Stderr, "genv adopt: missing package id")
@@ -1040,7 +1040,7 @@ func disownCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 1 {
 		fPrintln(os.Stderr, "genv disown: missing package id")
@@ -1131,7 +1131,7 @@ func listCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	lf, err := genvfile.ReadLock(lockPathForSpec(*file, *lockFile))
@@ -1223,7 +1223,7 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if opts.HookTimeout < 0 {
 		fPrintln(os.Stderr, "genv apply: --hook-timeout must be non-negative")
@@ -2196,13 +2196,12 @@ func upgradeFailedIDs(plan []resolver.UpgradeAction, errs []error) []string {
 // Subcommands: set, unset, list.
 func envCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv env <set|unset|list> [flags]")
-		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "subcommands:")
-		fPrintln(os.Stderr, "  set <NAME> <value> [--sensitive]   Add or update a variable in the spec")
-		fPrintln(os.Stderr, "  unset <NAME>                        Remove a variable from the spec")
-		fPrintln(os.Stderr, "  list [--json]                       Show all declared variables")
+		printEnvUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printEnvUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "set":
@@ -2215,6 +2214,15 @@ func envCmd(args []string) int {
 		fprintf(os.Stderr, "genv env: unknown subcommand %q\n\nRun 'genv env' for usage.\n", args[0])
 		return exitUsage
 	}
+}
+
+func printEnvUsage() {
+	fPrintln(os.Stderr, "usage: genv env <set|unset|list> [flags]")
+	fPrintln(os.Stderr)
+	fPrintln(os.Stderr, "subcommands:")
+	fPrintln(os.Stderr, "  set <NAME> <value> [--sensitive]   Add or update a variable in the spec")
+	fPrintln(os.Stderr, "  unset <NAME>                        Remove a variable from the spec")
+	fPrintln(os.Stderr, "  list [--json]                       Show all declared variables")
 }
 
 // envSetCmd implements `genv env set <NAME> <value> [--sensitive] [--file]`.
@@ -2231,7 +2239,7 @@ func envSetCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 2 {
 		fPrintln(os.Stderr, "genv env set: NAME and value are required")
@@ -2284,7 +2292,7 @@ func envUnsetCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 1 {
 		fPrintln(os.Stderr, "genv env unset: NAME is required")
@@ -2341,7 +2349,7 @@ func envListCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	f, code := readMaterializedSpec("env list", *file, "", *targetFlag)
@@ -2383,14 +2391,12 @@ func envListCmd(args []string) int {
 // shellCmd implements `genv shell <subcommand>`.
 func shellCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv shell <alias|status|edit> [flags]")
-		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "subcommands:")
-		fPrintln(os.Stderr, "  alias set <name> <value> [--shell bash|zsh|fish]   Add or update an alias")
-		fPrintln(os.Stderr, "  alias unset <name>                                 Remove an alias")
-		fPrintln(os.Stderr, "  status [--json]                                    Show shell config drift")
-		fPrintln(os.Stderr, "  edit                                               Open genv.json in $EDITOR")
+		printShellUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printShellUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "alias":
@@ -2405,11 +2411,25 @@ func shellCmd(args []string) int {
 	}
 }
 
+func printShellUsage() {
+	fPrintln(os.Stderr, "usage: genv shell <alias|status|edit> [flags]")
+	fPrintln(os.Stderr)
+	fPrintln(os.Stderr, "subcommands:")
+	fPrintln(os.Stderr, "  alias set <name> <value> [--shell bash|zsh|fish]   Add or update an alias")
+	fPrintln(os.Stderr, "  alias unset <name>                                 Remove an alias")
+	fPrintln(os.Stderr, "  status [--json]                                    Show shell config drift")
+	fPrintln(os.Stderr, "  edit                                               Open genv.json in $EDITOR")
+}
+
 // shellAliasCmd dispatches `genv shell alias set|unset`.
 func shellAliasCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv shell alias <set|unset> [flags]")
+		printShellAliasUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printShellAliasUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "set":
@@ -2420,6 +2440,10 @@ func shellAliasCmd(args []string) int {
 		fprintf(os.Stderr, "genv shell alias: unknown subcommand %q\n", args[0])
 		return exitUsage
 	}
+}
+
+func printShellAliasUsage() {
+	fPrintln(os.Stderr, "usage: genv shell alias <set|unset> [flags]")
 }
 
 // shellAliasSetCmd implements `genv shell alias set <name> <value> [--shell] [--file]`.
@@ -2436,7 +2460,7 @@ func shellAliasSetCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 2 {
 		fPrintln(os.Stderr, "genv shell alias set: name and value are required")
@@ -2492,7 +2516,7 @@ func shellAliasUnsetCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 1 {
 		fPrintln(os.Stderr, "genv shell alias unset: name is required")
@@ -2549,7 +2573,7 @@ func shellStatusCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	f, code := readMaterializedSpec("shell status", *file, "", *targetFlag)
@@ -2603,7 +2627,7 @@ func shellEditCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -2761,7 +2785,7 @@ func scanCmd(args []string) int {
 	includeDeps := fs.Bool("deps", false, "include manager dependencies and language stdlib (same as --all)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if *debug {
 		logging.Init(true)
@@ -3017,7 +3041,7 @@ func statusCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if *debug {
 		logging.Init(true)
@@ -3325,7 +3349,7 @@ func cleanCmd(args []string) int {
 	}
 	dryRun := fs.Bool("dry-run", false, "print the clean commands without executing")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	availableNames := resolver.Detect()
@@ -3470,7 +3494,7 @@ func editCmd(args []string) int {
 	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	editor := os.Getenv("VISUAL")
@@ -3525,7 +3549,7 @@ func completionCmd(args []string) int {
 		fPrintln(os.Stderr, "  genv completion install zsh    # install for a specific shell")
 	}
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() < 1 {
 		fPrintln(os.Stderr, "genv completion: missing shell argument (bash, zsh, fish, or powershell)")
@@ -3585,7 +3609,7 @@ func completionInstallCmd(args []string) int {
 	}
 	shell, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if shell == "" {
 		shell = detectShell()
@@ -3733,7 +3757,7 @@ func validateCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	_, err := genvfile.Read(*file)
@@ -3788,7 +3812,7 @@ func upgradeCmd(args []string) int {
 	hookTimeoutFlag := fs.String("hook-timeout", "", "per-hook deadline, e.g. 5m or 30s (default: no hook timeout)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if *debug {
 		logging.Init(true)
@@ -4429,7 +4453,7 @@ func initCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	// Refuse to overwrite an existing valid spec.
@@ -4684,17 +4708,12 @@ func printVersion() {
 // serviceCmd implements `genv service <subcommand>`.
 func serviceCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|status> [flags]")
-		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "subcommands:")
-		fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service (raw commands)")
-		fPrintln(os.Stderr, "  add <name> --brew-formula <formula>                                          Add a brew-managed service (macOS)")
-		fPrintln(os.Stderr, "  remove <name>                                                              Remove a service from the spec")
-		fPrintln(os.Stderr, "  list                                                                        Show all declared services")
-		fPrintln(os.Stderr, "  start <name>                                                               Start a service")
-		fPrintln(os.Stderr, "  stop <name>                                                                Stop a service")
-		fPrintln(os.Stderr, "  status <name>                                                              Show service running status")
+		printServiceUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printServiceUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "add":
@@ -4713,6 +4732,19 @@ func serviceCmd(args []string) int {
 		fprintf(os.Stderr, "genv service: unknown subcommand %q\n\nRun 'genv service' for usage.\n", args[0])
 		return exitUsage
 	}
+}
+
+func printServiceUsage() {
+	fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|status> [flags]")
+	fPrintln(os.Stderr)
+	fPrintln(os.Stderr, "subcommands:")
+	fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service (raw commands)")
+	fPrintln(os.Stderr, "  add <name> --brew-formula <formula>                                          Add a brew-managed service (macOS)")
+	fPrintln(os.Stderr, "  remove <name>                                                              Remove a service from the spec")
+	fPrintln(os.Stderr, "  list                                                                        Show all declared services")
+	fPrintln(os.Stderr, "  start <name>                                                               Start a service")
+	fPrintln(os.Stderr, "  stop <name>                                                                Stop a service")
+	fPrintln(os.Stderr, "  status <name>                                                              Show service running status")
 }
 
 // serviceAddCmd implements `genv service add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]`.
@@ -4735,7 +4767,7 @@ func serviceAddCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv service add: missing service name")
@@ -4823,7 +4855,7 @@ func serviceRemoveCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv service remove: name is required")
@@ -4878,7 +4910,7 @@ func serviceListCmd(args []string) int {
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	f, code := readMaterializedSpec("service list", *file, "", *targetFlag)
@@ -4898,7 +4930,7 @@ func serviceStartCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv service start: name is required")
@@ -4953,7 +4985,7 @@ func serviceStopCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv service stop: name is required")
@@ -5004,7 +5036,7 @@ func serviceStatusCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv service status: name is required")

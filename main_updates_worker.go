@@ -44,7 +44,7 @@ func updatesRunOnceCmd(args []string) int {
 	hostFlag := fs.String("host", "", "host name for host-specific records")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	logger, closeLog, err := updatesLogger()
 	if err != nil {

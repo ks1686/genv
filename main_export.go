@@ -31,7 +31,7 @@ func exportCmd(args []string) int {
 	fromV7 := fs.Bool("from-v7", false, "migrate a v1-v7 spec to schemaVersion 8 in memory before exporting")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() != 0 {
 		fs.Usage()
