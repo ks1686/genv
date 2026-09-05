@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `genv apply --skip-packages` no longer inventories live package managers or
+  prints the per-package `(up to date)` table. The header names files/env/services
+  instead of a package count, and JSON omits the package plan the same way.
+  Env, shell, files, and services still apply; lock packages are left untouched.
 - Native Windows `genv updates` no longer flashes a console on each Task
   Scheduler run. The task still uses `InteractiveToken` (so `updates.notify`
   can toast) and still starts through `schtasks /Run` (so OpenSSH cannot kill

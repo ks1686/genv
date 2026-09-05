@@ -1330,15 +1330,13 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
-	live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
-	for _, w := range liveWarns {
-		fprintf(os.Stderr, "genv apply: warning: %s\n", w)
-	}
-	result := resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
-	if opts.SkipPackages {
-		result.ToInstall = nil
-		result.ToRemove = nil
-		result.Adopted = nil
+	var result resolver.ReconcileResult
+	if !opts.SkipPackages {
+		live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
+		for _, w := range liveWarns {
+			fprintf(os.Stderr, "genv apply: warning: %s\n", w)
+		}
+		result = resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
 	}
 
 	if opts.JSONOut {
@@ -1412,7 +1410,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		errs = append(errs, failedHooks...)
 	}
 	success := len(errs) == 0
-	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
+	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, opts.SkipPackages, success); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		errs = append(errs, err.Error())
 		installed := make([]string, len(execResult.Installed))
@@ -1465,7 +1463,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if opts.Quiet {
 		planOut = io.Discard
 	}
-	toInstall, toRemove, unresolvedCount := resolver.PrintReconcilePlan(result, planOut)
+	toInstall, toRemove, unresolvedCount := printApplyReconcilePlan(planOut, opts.SkipPackages, result)
 
 	var envChanges int
 	for _, e := range genvenv.EnvStatus(f.Env, lf.Env) {
@@ -1509,7 +1507,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 					return exitLogic
 				}
 			}
-			if err := writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, true); err != nil {
+			if err := writeLockAfterApply(lockPath, lf, result, resolver.ApplyExecution{}, opts.TargetProfile, opts.Target, opts.SkipPackages, true); err != nil {
 				fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 				return exitIO
 			}
@@ -1539,20 +1537,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitOK
 	}
 
-	confirmMsg := fmt.Sprintf("This will install %d and remove %d package(s)", toInstall, toRemove)
-	if envChanges > 0 {
-		confirmMsg += fmt.Sprintf(", apply %d env variable(s)", envChanges)
-	}
-	if shellChanges > 0 {
-		confirmMsg += fmt.Sprintf(", apply %d shell config entry/entries", shellChanges)
-	}
-	if serviceChanges > 0 {
-		confirmMsg += fmt.Sprintf(", reconcile %d service(s)", serviceChanges)
-	}
-	if fileChanges > 0 {
-		confirmMsg += fmt.Sprintf(", reconcile %d file entry/entries", fileChanges)
-	}
-	confirmMsg += ". Continue? [y/N] "
+	confirmMsg := applyConfirmMessage(opts.SkipPackages, toInstall, toRemove, envChanges, shellChanges, serviceChanges, fileChanges)
 
 	if !opts.Yes && !confirm(confirmMsg) {
 		fPrintln(os.Stdout, "Aborted.")
@@ -1598,7 +1583,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		hookErrs = runApplyHookPhase(ctx, f, hookContext{Event: "apply", Phase: "post-apply", Host: hostName, Profile: lf.ActiveProfile, Yes: opts.Yes, Installed: lockedPackageIDs(execResult.Installed), Removed: execResult.Uninstalled, Failed: applyFailedIDs(execResult.Errors)}, opts.HookTimeout, false)
 	}
 	success := len(execResult.Errors) == 0 && len(svcErrs) == 0 && len(fileErrs) == 0 && len(hookErrs) == 0
-	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, success); err != nil {
+	if err := writeLockAfterApply(lockPath, lf, result, execResult, opts.TargetProfile, opts.Target, opts.SkipPackages, success); err != nil {
 		fprintf(os.Stderr, "genv: writing lock: %v\n", err)
 		return exitIO
 	}
@@ -1628,9 +1613,40 @@ func printReconcileWarnings(result resolver.ReconcileResult) {
 	}
 }
 
+func printApplyReconcilePlan(w io.Writer, skipPackages bool, result resolver.ReconcileResult) (toInstall, toRemove, unresolved int) {
+	if skipPackages {
+		fPrintln(w, "Apply plan — files, env, services")
+		fPrintln(w)
+		return 0, 0, 0
+	}
+	return resolver.PrintReconcilePlan(result, w)
+}
+
+func applyConfirmMessage(skipPackages bool, toInstall, toRemove, envChanges, shellChanges, serviceChanges, fileChanges int) string {
+	var parts []string
+	if !skipPackages {
+		parts = append(parts, fmt.Sprintf("install %d and remove %d package(s)", toInstall, toRemove))
+	}
+	if envChanges > 0 {
+		parts = append(parts, fmt.Sprintf("apply %d env variable(s)", envChanges))
+	}
+	if shellChanges > 0 {
+		parts = append(parts, fmt.Sprintf("apply %d shell config entry/entries", shellChanges))
+	}
+	if serviceChanges > 0 {
+		parts = append(parts, fmt.Sprintf("reconcile %d service(s)", serviceChanges))
+	}
+	if fileChanges > 0 {
+		parts = append(parts, fmt.Sprintf("reconcile %d file entry/entries", fileChanges))
+	}
+	return "This will " + strings.Join(parts, ", ") + ". Continue? [y/N] "
+}
+
 // writeLockAfterApply updates the lock file to reflect what actually succeeded.
 // Called from both the JSON and human-readable paths of applyCmd.
-func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, success bool) error {
+// skipPackages leaves lock packages untouched so a files/env/services apply
+// cannot rewrite the package inventory.
+func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver.ReconcileResult, execResult resolver.ApplyExecution, targetProfile, activeTarget string, skipPackages, success bool) error {
 	if success && targetProfile != "" {
 		if targetProfile == "base" {
 			lf.ActiveProfile = ""
@@ -1642,44 +1658,46 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 		lf.Target = activeTarget
 		lf.GOOS = runtime.GOOS
 	}
-	uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
-	for _, id := range execResult.Uninstalled {
-		uninstalledSet[id] = true
-	}
-	installedSet := make(map[string]bool, len(execResult.Installed))
-	for _, lp := range execResult.Installed {
-		installedSet[lp.ID] = true
-	}
-	prevByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
-	for _, lp := range lf.Packages {
-		prevByID[lp.ID] = lp
-	}
-	newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(result.Adopted)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
-	newPkgs = append(newPkgs, result.Unchanged...)
-	newPkgs = append(newPkgs, result.Adopted...)
-	newPkgs = append(newPkgs, execResult.Installed...)
-	for _, a := range result.ToInstall {
-		if installedSet[a.Pkg.ID] {
-			continue
+	if !skipPackages {
+		uninstalledSet := make(map[string]bool, len(execResult.Uninstalled))
+		for _, id := range execResult.Uninstalled {
+			uninstalledSet[id] = true
 		}
-		if prev, ok := prevByID[a.Pkg.ID]; ok {
-			newPkgs = append(newPkgs, prev)
+		installedSet := make(map[string]bool, len(execResult.Installed))
+		for _, lp := range execResult.Installed {
+			installedSet[lp.ID] = true
 		}
-	}
-	for _, a := range result.ToRemove {
-		if !uninstalledSet[a.Pkg.ID] {
+		prevByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
+		for _, lp := range lf.Packages {
+			prevByID[lp.ID] = lp
+		}
+		newPkgs := make([]genvfile.LockedPackage, 0, len(result.Unchanged)+len(result.Adopted)+len(execResult.Installed)+len(result.ToRemove)+len(result.ToInstall))
+		newPkgs = append(newPkgs, result.Unchanged...)
+		newPkgs = append(newPkgs, result.Adopted...)
+		newPkgs = append(newPkgs, execResult.Installed...)
+		for _, a := range result.ToInstall {
+			if installedSet[a.Pkg.ID] {
+				continue
+			}
 			if prev, ok := prevByID[a.Pkg.ID]; ok {
 				newPkgs = append(newPkgs, prev)
-			} else {
-				newPkgs = append(newPkgs, genvfile.LockedPackage{
-					ID:      a.Pkg.ID,
-					Manager: a.Manager,
-					PkgName: a.PkgName,
-				})
 			}
 		}
+		for _, a := range result.ToRemove {
+			if !uninstalledSet[a.Pkg.ID] {
+				if prev, ok := prevByID[a.Pkg.ID]; ok {
+					newPkgs = append(newPkgs, prev)
+				} else {
+					newPkgs = append(newPkgs, genvfile.LockedPackage{
+						ID:      a.Pkg.ID,
+						Manager: a.Manager,
+						PkgName: a.PkgName,
+					})
+				}
+			}
+		}
+		lf.Packages = newPkgs
 	}
-	lf.Packages = newPkgs
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
 		return err
 	}
