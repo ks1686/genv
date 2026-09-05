@@ -10,8 +10,12 @@ import (
 
 func profileCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv profile <list|create|switch> [flags]")
+		printProfileUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printProfileUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "list", "ls":
@@ -26,12 +30,16 @@ func profileCmd(args []string) int {
 	}
 }
 
+func printProfileUsage() {
+	fPrintln(os.Stderr, "usage: genv profile <list|create|switch> [flags]")
+}
+
 func profileListCmd(args []string) int {
 	fs := flag.NewFlagSet("profile list", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
@@ -72,7 +80,7 @@ func profileCreateCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv profile create: missing profile name")
@@ -108,7 +116,7 @@ func profileSwitchCmd(args []string) int {
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if name == "" {
 		fPrintln(os.Stderr, "genv profile switch: missing profile name")

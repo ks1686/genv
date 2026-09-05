@@ -26,7 +26,7 @@ func mapCmd(args []string) int {
 	targetID := fs.String("target", "", "destination target id")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if fs.NArg() != 0 {
 		fs.Usage()

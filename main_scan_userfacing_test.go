@@ -235,8 +235,8 @@ func TestScanCmd_HelpDescribesUserFacingInventory(t *testing.T) {
 	out := captureStderr(t, func() {
 		code = run([]string{"scan", "--help"})
 	})
-	if code != exitUsage {
-		t.Fatalf("scan --help: expected exitUsage (%d), got %d\n%s", exitUsage, code, out)
+	if code != exitOK {
+		t.Fatalf("scan --help: expected exitOK (%d), got %d\n%s", exitOK, code, out)
 	}
 	for _, want := range []string{"leaves", "casks", "--all", "user-facing"} {
 		if !strings.Contains(strings.ToLower(out), strings.ToLower(want)) {

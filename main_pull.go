@@ -36,7 +36,7 @@ func pullCmd(args []string) int {
 	dryRun := fs.Bool("dry-run", false, "print what would be pulled without writing")
 
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 
 	if *file == "-" {
