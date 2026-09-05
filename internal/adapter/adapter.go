@@ -78,6 +78,15 @@ type OutdatedLister interface {
 	ListOutdated(pkgNames []string) (map[string]string, error)
 }
 
+// IndexRefresher is an optional extension for managers whose outdated query
+// reads a local/cached index. PlanRefresh returns the argv to fetch that
+// index (metadata only — not an upgrade). The upgrade planner runs it once
+// per manager before FilterOutdated. Live-registry managers (mas, npm, uv,
+// cargo, choco, snap, …) omit this interface.
+type IndexRefresher interface {
+	PlanRefresh() []string
+}
+
 // TrackOnly is an optional marker for adapters that record a package in the
 // lock without spawning an installer (official/manual installers).
 type TrackOnly interface {

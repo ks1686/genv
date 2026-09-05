@@ -194,6 +194,7 @@ type UpgradeStep struct {
 // UpgradeResult is the Data payload for `genv upgrade [--dry-run] --json`.
 type UpgradeResult struct {
 	DryRun      bool                `json:"dryRun"`
+	Refresh     []UpgradeBatch      `json:"refresh,omitempty"`
 	Batches     []UpgradeBatch      `json:"batches"`
 	Steps       []UpgradeStep       `json:"steps,omitempty"`
 	Updated     []UpgradePackage    `json:"updated,omitempty"`

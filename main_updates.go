@@ -10,7 +10,6 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/profile"
-	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/upgrade"
 )
 
@@ -100,7 +99,7 @@ func updatesCheckCmd(args []string) int {
 		SkipManager:  parseCommaList(*skipManagerFlag),
 		HooksSkipped: true,
 	}
-	plan, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters})
+	plan, err := upgrade.BuildUpgradePlan(upgrade.UpgradeOptions{Spec: f, Lock: lf, Filters: filters, Stdin: os.Stdin})
 	if err != nil {
 		if *jsonOut {
 			_ = writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "updates check", OK: false, Errors: []string{err.Error()}})
@@ -111,7 +110,7 @@ func updatesCheckCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return updatesCheckJSON(plan.Actions, plan.Skipped, filters)
+		return updatesCheckJSON(plan, filters)
 	}
 	return updatesCheckHuman(os.Stdout, plan)
 }
@@ -140,9 +139,9 @@ func updatesCheckReadLockError(jsonOut bool, err error) int {
 	return exitIO
 }
 
-func updatesCheckJSON(plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters) int {
-	batches := make([]output.UpgradeBatch, 0, len(plan))
-	for _, a := range plan {
+func updatesCheckJSON(plan upgrade.UpgradePlan, filters output.UpgradeFilters) int {
+	batches := make([]output.UpgradeBatch, 0, len(plan.Actions))
+	for _, a := range plan.Actions {
 		batches = append(batches, upgradeBatchFromAction(a, "planned"))
 	}
 	return writeJSON(os.Stdout, output.Envelope{
@@ -151,8 +150,9 @@ func updatesCheckJSON(plan []resolver.UpgradeAction, skipped []resolver.SkippedP
 		OK:      true,
 		Data: output.UpgradeResult{
 			DryRun:  true,
+			Refresh: refreshBatches(plan.Refresh),
 			Batches: batches,
-			Skipped: upgradeSkippedEntries(skipped),
+			Skipped: upgradeSkippedEntries(plan.Skipped),
 			Filters: filters,
 		},
 	})
@@ -170,11 +170,12 @@ func updatesCheckHuman(w io.Writer, plan upgrade.UpgradePlan) int {
 			fprintf(os.Stderr, "genv updates check: adapter %q not registered for %s — skipping\n", skipped.Manager, skipped.ID)
 		}
 	}
-	if len(plan.Actions) == 0 {
+	if len(plan.Actions) == 0 && len(plan.Refresh) == 0 {
 		fPrintln(w, "no upgradeable genv-tracked packages found.")
 		return exitOK
 	}
 	fPrintln(w, "available update plan:")
+	printRefreshLines(w, plan.Refresh)
 	for _, action := range plan.Actions {
 		ids := make([]string, len(action.LPs))
 		for i, lp := range action.LPs {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/genvfile"
@@ -51,6 +52,117 @@ func TestBuildUpgradePlan_FiltersAll_skipsOutdatedDetection(t *testing.T) {
 	}
 	if !slices.Equal(gotIDs, []string{"git", "jq"}) {
 		t.Fatalf("Filters.All plan packages = %v, want [git jq]", gotIDs)
+	}
+}
+
+func TestBuildUpgradePlan_RefreshThenOutdated_includes_package_absent_before_refresh(t *testing.T) {
+	// Given: brew outdated is empty until brew update writes a marker.
+	dir := t.TempDir()
+	state := filepath.Join(dir, "refreshed")
+	stateSh := strings.ReplaceAll(state, "\\", "/")
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "update" ]; then touch '`+stateSh+`'; exit 0; fi
+if [ "$1" = "outdated" ]; then
+  if [ -f '`+stateSh+`' ]; then
+    echo '{"formulae":[{"name":"jq","current_version":"1.7.1"}],"casks":[]}'
+  else
+    echo '{"formulae":[],"casks":[]}'
+  fi
+  exit 0
+fi`)
+
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	if len(plan.Refresh) != 1 || !slices.Equal(plan.Refresh[0].Cmd, []string{"brew", "update"}) {
+		t.Fatalf("Refresh = %#v, want brew update", plan.Refresh)
+	}
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"jq"}) {
+		t.Fatalf("outdated after refresh = %v, want [jq] (absent from pre-refresh outdated)", gotIDs)
+	}
+}
+
+func TestBuildUpgradePlan_RefreshError_keepsAllWithWarning(t *testing.T) {
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "update" ]; then echo boom >&2; exit 1; fi
+if [ "$1" = "outdated" ]; then echo '{"formulae":[],"casks":[]}'; exit 0; fi`)
+
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: spec, Lock: lock})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git", "jq"}) {
+		t.Fatalf("keep-all after refresh error = %v, want [git jq]", gotIDs)
+	}
+	joined := strings.Join(plan.Warnings, "\n")
+	if !strings.Contains(joined, "could not refresh brew") || !strings.Contains(joined, "keeping all") {
+		t.Fatalf("warnings = %v, want refresh keep-all", plan.Warnings)
+	}
+}
+
+func TestBuildUpgradePlan_FiltersAll_stillRefreshes(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "updated")
+	markerSh := strings.ReplaceAll(marker, "\\", "/")
+	testutil.InstallFakeBinary(t, "brew",
+		`if [ "$1" = "update" ]; then touch '`+markerSh+`'; exit 0; fi
+if [ "$1" = "outdated" ]; then echo '{"formulae":[{"name":"git","current_version":"2.44.0"}],"casks":[]}'; exit 0; fi`)
+
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{
+		Spec:    spec,
+		Lock:    lock,
+		Filters: output.UpgradeFilters{All: true},
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("Filters.All must still run brew update: %v", err)
+	}
+	if len(plan.Refresh) != 1 || !slices.Equal(plan.Refresh[0].Cmd, []string{"brew", "update"}) {
+		t.Fatalf("Refresh = %#v, want brew update on --all", plan.Refresh)
+	}
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git", "jq"}) {
+		t.Fatalf("Filters.All packages = %v, want [git jq]", gotIDs)
 	}
 }
 

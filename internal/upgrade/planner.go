@@ -19,9 +19,16 @@ type UpgradeOptions struct {
 	// via each manager's OutdatedLister. Filters.All true restores brute-force
 	// planning of every unconstrained tracked package (`genv upgrade --all`).
 	Filters output.UpgradeFilters
+	// Context bounds index refresh (and is reserved for later planner work).
+	// Nil means context.Background. The hourly worker passes its job budget.
+	Context context.Context
+	// Stdin is forwarded to refresh commands so interactive sudo can prompt.
+	// The hourly worker passes an empty reader.
+	Stdin io.Reader
 }
 
 type UpgradePlan struct {
+	Refresh  []resolver.RefreshAction
 	Actions  []resolver.UpgradeAction
 	Skipped  []resolver.SkippedPackage
 	Warnings []string
@@ -183,9 +190,17 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 		upgradeablePackages = append(upgradeablePackages, lp)
 	}
 
+	refresh, keepAll, refreshWarns := resolver.RefreshIndexes(upgradeablePackages, resolver.RefreshOptions{
+		Context: opts.Context,
+		Stdin:   opts.Stdin,
+	})
+	plan.Refresh = refresh
+	plan.Warnings = append(plan.Warnings, refreshWarns...)
+
 	if !opts.Filters.All {
-		filtered, warnings := resolver.FilterOutdated(upgradeablePackages)
-		upgradeablePackages = filtered
+		filterable := packagesForOutdated(upgradeablePackages, keepAll)
+		filtered, warnings := resolver.FilterOutdated(filterable)
+		upgradeablePackages = mergeAfterOutdated(upgradeablePackages, keepAll, filtered)
 		plan.Warnings = append(plan.Warnings, warnings...)
 	}
 
@@ -214,6 +229,33 @@ func RunUpgrade(ctx context.Context, opts UpgradeRunOptions) UpgradeRunResult {
 	}
 
 	return result
+}
+
+func packagesForOutdated(packages []genvfile.LockedPackage, keepAll map[string]bool) []genvfile.LockedPackage {
+	if len(keepAll) == 0 {
+		return packages
+	}
+	var out []genvfile.LockedPackage
+	for _, lp := range packages {
+		if !keepAll[lp.Manager] {
+			out = append(out, lp)
+		}
+	}
+	return out
+}
+
+func mergeAfterOutdated(original []genvfile.LockedPackage, keepAll map[string]bool, filtered []genvfile.LockedPackage) []genvfile.LockedPackage {
+	kept := make(map[string]bool, len(filtered))
+	for _, lp := range filtered {
+		kept[lp.ID] = true
+	}
+	var out []genvfile.LockedPackage
+	for _, lp := range original {
+		if keepAll[lp.Manager] || kept[lp.ID] {
+			out = append(out, lp)
+		}
+	}
+	return out
 }
 
 func applyUpgradedVersions(lf *genvfile.LockFile, upgraded []genvfile.LockedPackage) {

@@ -3857,6 +3857,7 @@ func upgradeCmd(args []string) int {
 		Spec:    f,
 		Lock:    lf,
 		Filters: filters,
+		Stdin:   os.Stdin,
 	})
 	if err != nil {
 		fprintf(os.Stderr, "genv upgrade: %v\n", err)
@@ -3872,13 +3873,13 @@ func upgradeCmd(args []string) int {
 	}
 
 	for _, w := range planResult.Warnings {
-		if *dryRun && !*jsonOut {
+		if !*jsonOut {
 			fprintf(os.Stderr, "genv upgrade: %s\n", w)
 		}
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, filters, extraJSON)
+		return upgradeJSON(*dryRun, *yes, hostName, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON)
 	}
 
 	for _, s := range skipped {
@@ -3890,8 +3891,9 @@ func upgradeCmd(args []string) int {
 	}
 
 	hasExtra := extraUpgradeHasCommands(extraPlan)
-	if len(plan) > 0 || hasExtra || len(extraPlan) > 0 {
+	if len(plan) > 0 || len(planResult.Refresh) > 0 || hasExtra || len(extraPlan) > 0 {
 		fPrintln(os.Stdout, "upgrade plan:")
+		printRefreshLines(os.Stdout, planResult.Refresh)
 		for _, a := range plan {
 			ids := make([]string, len(a.LPs))
 			for i, lp := range a.LPs {
@@ -4014,6 +4016,27 @@ func upgradeConfirmPrompt(planBatches int, hasExtra bool) string {
 
 // upgradeBatchFromAction builds a machine-readable batch descriptor from a
 // resolved upgrade action, with the given lifecycle status.
+func printRefreshLines(w io.Writer, refresh []resolver.RefreshAction) {
+	for _, r := range refresh {
+		fprintf(w, "  %s  ==> %s\n", r.Manager, strings.Join(r.Cmd, " "))
+	}
+}
+
+func refreshBatches(refresh []resolver.RefreshAction) []output.UpgradeBatch {
+	if len(refresh) == 0 {
+		return nil
+	}
+	out := make([]output.UpgradeBatch, len(refresh))
+	for i, r := range refresh {
+		out[i] = output.UpgradeBatch{
+			Manager: r.Manager,
+			Cmd:     strings.Join(r.Cmd, " "),
+			Status:  "refreshed",
+		}
+	}
+	return out
+}
+
 func upgradeBatchFromAction(a resolver.UpgradeAction, status string) output.UpgradeBatch {
 	ids := make([]string, len(a.LPs))
 	pkgNames := make([]string, len(a.LPs))
@@ -4055,7 +4078,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // all subprocess and hook output to stderr so stdout stays one JSON object,
 // then reports executed batches, refreshed versions, and failed hooks while
 // preserving the human path's exit codes.
-func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
+func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -4069,6 +4092,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			OK:      true,
 			Data: output.UpgradeResult{
 				DryRun:  true,
+				Refresh: refreshBatches(refresh),
 				Batches: batches,
 				Steps:   extras.steps,
 				Skipped: skippedEntries,
@@ -4093,6 +4117,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			OK:      len(failedHooks) == 0,
 			Data: output.UpgradeResult{
 				DryRun:      false,
+				Refresh:     refreshBatches(refresh),
 				Batches:     []output.UpgradeBatch{},
 				Steps:       extras.steps,
 				Skipped:     skippedEntries,
@@ -4117,6 +4142,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 			OK:      false,
 			Data: output.UpgradeResult{
 				DryRun:      false,
+				Refresh:     refreshBatches(refresh),
 				Batches:     []output.UpgradeBatch{},
 				Steps:       extras.steps,
 				Skipped:     skippedEntries,
@@ -4199,6 +4225,7 @@ func upgradeJSON(dryRun, yes bool, hostName, lockPath string, hookTimeout time.D
 		OK:      len(errs) == 0,
 		Data: output.UpgradeResult{
 			DryRun:      false,
+			Refresh:     refreshBatches(refresh),
 			Batches:     batches,
 			Steps:       appliedSteps,
 			Updated:     updated,

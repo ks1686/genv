@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Tracked-package planning now refreshes each index-based manager once before
+  outdated detection. `genv upgrade`, `genv updates check`, and the hourly
+  `__run-once` / `autoApply` worker share that path. Refresh argv: `brew update`
+  (brew and linuxbrew share one call), `sudo apt-get update`,
+  `sudo pacman -Sy --noconfirm` (not `-Syu`), `paru`/`yay -Sy --noconfirm`,
+  `sudo dnf makecache`, `sudo apk update`, `scoop update`,
+  `winget source update`. Live registries (mas, bun/npm/pnpm/yarn, uv/pipx,
+  pip-user, cargo, volta, choco, snap, vscode) stay as-is. A failed or timed-out
+  refresh keeps that manager's packages and warns on wet upgrade, check, and
+  `updates.log`. `--all` still refreshes. Human plans show the refresh command
+  (e.g. `brew  ==> brew update`). `brew outdated` now passes `--greedy` so
+  auto-updating casks are not dropped after the fetch.
+
+### Changed
+
+- README documents the hard skip for any non-empty package `version` during
+  upgrade (range-satisfying upgrades are not implemented).
+
 ## v4.3.0 - 2026-09-03
 
 ### Added
