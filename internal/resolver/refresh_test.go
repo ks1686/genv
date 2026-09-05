@@ -117,6 +117,42 @@ func TestRefreshIndexes_errorKeepsAllManagersSharingArgv(t *testing.T) {
 	}
 }
 
+func TestRefreshIndexes_skipsUnavailableManager(t *testing.T) {
+	swapLookupAdapter(t, map[string]adapter.Adapter{
+		"brew": &unavailableRefreshMgr{cmd: []string{"brew", "update"}},
+	})
+	var n int
+	swapIndexRefresh(t, func(context.Context, []string) error {
+		n++
+		return nil
+	})
+
+	actions, keepAll, warnings := RefreshIndexes([]genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+	}, RefreshOptions{})
+
+	if n != 0 {
+		t.Fatalf("refresh runs = %d, want 0 for unavailable manager", n)
+	}
+	if len(actions) != 0 {
+		t.Fatalf("actions = %#v, want none", actions)
+	}
+	if len(keepAll) != 0 {
+		t.Fatalf("keepAll = %v, want empty when refresh is skipped", keepAll)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "brew") || !strings.Contains(warnings[0], "not available") {
+		t.Fatalf("warnings = %v, want explicit unavailable reason", warnings)
+	}
+}
+
+type unavailableRefreshMgr struct {
+	outdatedTestMgr
+	cmd []string
+}
+
+func (m *unavailableRefreshMgr) Available() bool       { return false }
+func (m *unavailableRefreshMgr) PlanRefresh() []string { return m.cmd }
+
 func TestRefreshIndexes_omitsManagersWithoutIndexRefresher(t *testing.T) {
 	swapLookupAdapter(t, map[string]adapter.Adapter{
 		"mas": &outdatedTestMgr{name: "mas"},
