@@ -924,6 +924,10 @@ func adoptCmd(args []string) int {
 		fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
 		return exitLogic
 	}
+	installedVersion := ""
+	if v, err := mgr.QueryVersion(action.PkgName); err == nil {
+		installedVersion = v
+	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
 	lf, err := genvfile.ReadLock(lockPath)
@@ -953,9 +957,10 @@ func adoptCmd(args []string) int {
 		}
 	}
 	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
-		ID:      action.Pkg.ID,
-		Manager: action.Manager,
-		PkgName: action.PkgName,
+		ID:               action.Pkg.ID,
+		Manager:          action.Manager,
+		PkgName:          action.PkgName,
+		InstalledVersion: installedVersion,
 	}, targetID); exit != exitOK {
 		return exit
 	}
@@ -1696,6 +1701,7 @@ func writeLockAfterApply(lockPath string, lf *genvfile.LockFile, result resolver
 				}
 			}
 		}
+		resolver.FillMissingInstalledVersions(newPkgs)
 		lf.Packages = newPkgs
 	}
 	if err := genvfile.WriteLock(lockPath, lf); err != nil {
@@ -3188,11 +3194,7 @@ func statusCmd(args []string) int {
 		}
 		switch e.Kind {
 		case commands.StatusOK:
-			v := e.InstalledVersion
-			if v == "" {
-				v = "*"
-			}
-			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, v)
+			fprintf(tw, "  ok	%s	%s	%s\n", e.ID, mgr, e.DisplayVersion())
 		case commands.StatusPresent:
 			note := "(installed, not in lock — apply will adopt)"
 			fprintf(tw, "  present	%s	%s	%s\n", e.ID, mgr, note)
