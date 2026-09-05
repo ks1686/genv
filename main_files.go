@@ -12,11 +12,12 @@ import (
 // filesCmd implements `genv files <subcommand>`.
 func filesCmd(args []string) int {
 	if len(args) == 0 {
-		fPrintln(os.Stderr, "usage: genv files <adopt> [flags]")
-		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "subcommands:")
-		fPrintln(os.Stderr, "  adopt <target>   Seed missing source from the live file, back it up, and link it")
+		printFilesUsage()
 		return exitUsage
+	}
+	if isHelpArg(args[0]) {
+		printFilesUsage()
+		return exitOK
 	}
 	switch args[0] {
 	case "adopt":
@@ -25,6 +26,13 @@ func filesCmd(args []string) int {
 		fprintf(os.Stderr, "genv files: unknown subcommand %q\n\nRun 'genv files' for usage.\n", args[0])
 		return exitUsage
 	}
+}
+
+func printFilesUsage() {
+	fPrintln(os.Stderr, "usage: genv files <adopt> [flags]")
+	fPrintln(os.Stderr)
+	fPrintln(os.Stderr, "subcommands:")
+	fPrintln(os.Stderr, "  adopt <target>   Seed missing source from the live file, back it up, and link it")
 }
 
 // filesAdoptCmd implements `genv files adopt <target>`.
@@ -44,7 +52,7 @@ func filesAdoptCmd(args []string) int {
 
 	want, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+		return flagParseExit(err)
 	}
 	if want == "" {
 		fPrintln(os.Stderr, "genv files adopt: missing target path")
