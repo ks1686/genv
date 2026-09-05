@@ -31,11 +31,22 @@ func applyDir(ctx context.Context, d schema.FileDir, opts ApplyOptions, res *App
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return fmt.Errorf("dir %s: %w", target, err)
 		}
+		if _, err := applyPermIfNeeded(target, d.Perm, opts); err != nil {
+			return fmt.Errorf("dir %s: %w", target, err)
+		}
 		res.Created = append(res.Created, target)
 		return nil
 	}
 
 	if fi.IsDir() {
+		changed, err := applyPermIfNeeded(target, d.Perm, opts)
+		if err != nil {
+			return fmt.Errorf("dir %s: %w", target, err)
+		}
+		if changed {
+			res.Updated = append(res.Updated, target)
+			return nil
+		}
 		res.Skipped = append(res.Skipped, target)
 		return nil
 	}
@@ -59,6 +70,9 @@ func applyDir(ctx context.Context, d schema.FileDir, opts ApplyOptions, res *App
 		}
 	}
 	if err := os.MkdirAll(target, 0o755); err != nil {
+		return fmt.Errorf("dir %s: %w", target, err)
+	}
+	if _, err := applyPermIfNeeded(target, d.Perm, opts); err != nil {
 		return fmt.Errorf("dir %s: %w", target, err)
 	}
 	res.Updated = append(res.Updated, target)

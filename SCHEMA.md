@@ -115,10 +115,13 @@ Hooks run as the current user and are arbitrary code by design — treat the spe
 
 ### `files`
 
-- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup`
+- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup`, optional `perm`
+  - `mode` is the link kind, not a Unix mode
   - `merge-dir` symlinks each file from source into target so multiple records can layer into one directory
-- `templates[]` — copy after `__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__` rendering
-- `dirs[]` — ensure directories exist
+  - `perm` is an octal string (`0644`, `0700`); apply chmods the source file (managed-link) or source directory (merge-dir)
+- `templates[]` — copy after `__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__` rendering; optional `perm` on the rendered file
+- `dirs[]` — ensure directories exist; optional `perm` on the directory
+- `perm` is 3 or 4 octal digits. Apply sets it after creating the entry; a second apply is a no-op when the mode already matches. `genv status` reports `perm-mismatch`. `mode` on `dirs[]` is rejected (unknown field).
 
 ### `repo`
 

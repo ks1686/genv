@@ -1151,6 +1151,118 @@ func TestParseAndValidate_FilesRejectsInvalidLinkMode(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_FilesAcceptsOctalPerm(t *testing.T) {
+	input := `{
+		"schemaVersion": "5",
+		"packages": [],
+		"files": {
+			"links": [{"source": "a", "target": "~/b", "mode": "managed-link", "perm": "0600"}],
+			"templates": [{"source": "c", "target": "~/d", "perm": "644"}],
+			"dirs": [{"target": "~/.gnupg", "perm": "0700"}]
+		}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	if f.Files == nil {
+		t.Fatal("files block not parsed")
+	}
+	if got := f.Files.Links[0].Perm; got != "0600" {
+		t.Errorf("links[0].perm = %q, want 0600", got)
+	}
+	if got := f.Files.Templates[0].Perm; got != "644" {
+		t.Errorf("templates[0].perm = %q, want 644", got)
+	}
+	if got := f.Files.Dirs[0].Perm; got != "0700" {
+		t.Errorf("dirs[0].perm = %q, want 0700", got)
+	}
+}
+
+func TestParseAndValidate_V8FilesAcceptsPerm(t *testing.T) {
+	input := `{
+		"schemaVersion": "8",
+		"targets": {
+			"macos": {
+				"files": {
+					"links": [{"source": "gpg/gpg.conf", "target": "~/.gnupg/gpg.conf", "mode": "managed-link", "perm": "0600"}],
+					"templates": [{"source": "snowflake.toml", "target": "~/.snowflake/config.toml", "perm": "0600"}],
+					"dirs": [{"target": "~/.gnupg", "perm": "0700"}]
+				}
+			}
+		}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+	files := f.Targets["macos"].Files
+	if files == nil {
+		t.Fatal("targets.macos.files not parsed")
+	}
+	if files.Links[0].Perm != "0600" || files.Templates[0].Perm != "0600" || files.Dirs[0].Perm != "0700" {
+		t.Fatalf("v8 perm not parsed: %+v", files)
+	}
+}
+
+func TestParseAndValidate_FilesRejectsNonOctalPerm(t *testing.T) {
+	tests := []struct {
+		name  string
+		json  string
+		field string
+	}{
+		{
+			name:  "letters on dir",
+			json:  `{"schemaVersion":"5","packages":[],"files":{"dirs":[{"target":"~/.gnupg","perm":"rwx"}]}}`,
+			field: "files.dirs[0].perm",
+		},
+		{
+			name:  "digit 8 on link",
+			json:  `{"schemaVersion":"5","packages":[],"files":{"links":[{"source":"a","target":"~/b","perm":"0800"}]}}`,
+			field: "files.links[0].perm",
+		},
+		{
+			name:  "0o prefix on template",
+			json:  `{"schemaVersion":"5","packages":[],"files":{"templates":[{"source":"a","target":"~/b","perm":"0o700"}]}}`,
+			field: "files.templates[0].perm",
+		},
+		{
+			name:  "too short",
+			json:  `{"schemaVersion":"5","packages":[],"files":{"dirs":[{"target":"~/.gnupg","perm":"70"}]}}`,
+			field: "files.dirs[0].perm",
+		},
+		{
+			name:  "too long",
+			json:  `{"schemaVersion":"8","targets":{"macos":{"files":{"dirs":[{"target":"~/.gnupg","perm":"00700"}]}}}}`,
+			field: "targets.macos.files.dirs[0].perm",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errs, err := ParseAndValidate([]byte(tc.json))
+			if err != nil {
+				t.Fatalf("unexpected fatal error: %v", err)
+			}
+			found := false
+			for _, e := range errs {
+				if e.Field == tc.field && strings.Contains(e.Message, "octal") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected %s octal validation error, got: %v", tc.field, errs)
+			}
+		})
+	}
+}
+
 func TestHostPredicate_UnmarshalString(t *testing.T) {
 	var hp HostPredicate
 	if err := hp.UnmarshalJSON([]byte(`"macos"`)); err != nil {

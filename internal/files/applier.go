@@ -123,6 +123,9 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 		if err := RenderTemplate(source, target, hostName, renderOpts); err != nil {
 			return fmt.Errorf("template %s: %w", target, err)
 		}
+		if _, err := applyPermIfNeeded(target, tmpl.Perm, opts); err != nil {
+			return fmt.Errorf("template %s: %w", target, err)
+		}
 		res.Created = append(res.Created, target)
 		return nil
 	}
@@ -136,6 +139,14 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 		return fmt.Errorf("template %s: read target: %w", target, err)
 	}
 	if string(existing) == string(rendered) {
+		changed, err := applyPermIfNeeded(target, tmpl.Perm, opts)
+		if err != nil {
+			return fmt.Errorf("template %s: %w", target, err)
+		}
+		if changed {
+			res.Updated = append(res.Updated, target)
+			return nil
+		}
 		res.Skipped = append(res.Skipped, target)
 		return nil
 	}
@@ -150,6 +161,9 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 	}
 
 	if err := RenderTemplate(source, target, hostName, renderOpts); err != nil {
+		return fmt.Errorf("template %s: %w", target, err)
+	}
+	if _, err := applyPermIfNeeded(target, tmpl.Perm, opts); err != nil {
 		return fmt.Errorf("template %s: %w", target, err)
 	}
 	res.Updated = append(res.Updated, target)

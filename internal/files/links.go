@@ -45,10 +45,32 @@ func applyLink(ctx context.Context, l schema.FileLink, opts ApplyOptions, res *A
 	}
 
 	if l.Mode == "merge-dir" {
-		return applyMergeDir(ctx, source, target, l, opts, res)
+		if err := applyMergeDir(ctx, source, target, l, opts, res); err != nil {
+			return err
+		}
+		return applyLinkPerm(source, target, l.Perm, opts, res)
 	}
 
-	return applyLinkAt(target, source, l.Mode == "managed-link", opts.Backup || l.Backup, opts, res)
+	if err := applyLinkAt(target, source, l.Mode == "managed-link", opts.Backup || l.Backup, opts, res); err != nil {
+		return err
+	}
+	return applyLinkPerm(source, target, l.Perm, opts, res)
+}
+
+func applyLinkPerm(source, target, perm string, opts ApplyOptions, res *ApplyResult) error {
+	if perm == "" || containsPath(res.Mismatched, target) {
+		return nil
+	}
+	created := containsPath(res.Created, target)
+	if opts.DryRun && created {
+		return nil
+	}
+	changed, err := applyPermIfNeeded(source, perm, opts)
+	if err != nil {
+		return fmt.Errorf("link %s: %w", target, err)
+	}
+	recordPermChange(res, target, created, changed)
+	return nil
 }
 
 // applyMergeDir walks source (which must be a directory) and, for every
