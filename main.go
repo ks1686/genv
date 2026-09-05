@@ -1263,6 +1263,7 @@ type applyOptions struct {
 	NoHooks          bool
 	HookTimeout      time.Duration
 	SkipPackages     bool
+	SourceRoot       string
 	resolvedStateDir string
 }
 
@@ -1294,6 +1295,7 @@ func applyCmd(args []string) int {
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to host classification)")
 	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
+	fs.StringVar(&opts.SourceRoot, "source-root", "", "resolve files.links/templates sources relative to this directory instead of the spec file directory")
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -1309,6 +1311,10 @@ func applyCmd(args []string) int {
 func runApply(opts applyOptions) int {
 	if opts.Debug {
 		logging.Init(true)
+	}
+	if err := validateApplySourceRoot(opts.SourceRoot); err != nil {
+		fprintf(os.Stderr, "genv apply: %v\n", err)
+		return exitIO
 	}
 
 	ctx := context.Background()
@@ -2004,6 +2010,30 @@ func sourceRootForSpec(file string, f *schema.GenvFile) string {
 	return filepath.Dir(file)
 }
 
+// applySourceRoot is the files.links/templates root for apply.
+// --source-root wins so a spec copy can preview against the live tree.
+func applySourceRoot(opts applyOptions, f *schema.GenvFile) string {
+	if opts.SourceRoot != "" {
+		return expandCLIPath(opts.SourceRoot)
+	}
+	return sourceRootForSpec(opts.File, f)
+}
+
+func validateApplySourceRoot(sourceRoot string) error {
+	if sourceRoot == "" {
+		return nil
+	}
+	root := expandCLIPath(sourceRoot)
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("--source-root %s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("--source-root %s: not a directory", root)
+	}
+	return nil
+}
+
 func expandCLIPath(path string) string {
 	if strings.HasPrefix(path, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -2169,7 +2199,7 @@ func fileStatusEntries(res *files.StatusResult) []output.FilePlanEntry {
 
 func applyFiles(ctx context.Context, opts applyOptions, f *schema.GenvFile, lf *genvfile.LockFile) (*files.ApplyResult, error) {
 	res, err := files.Apply(ctx, f.Files, hostForCommand(opts.Host), files.ApplyOptions{
-		SourceRoot: sourceRootForSpec(opts.File, f),
+		SourceRoot: applySourceRoot(opts, f),
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
 		Backup:     opts.Backup,
@@ -4735,6 +4765,8 @@ Apply-specific flags:
   --debug              Emit debug-level structured logs to stderr
   --target <id>        Portable target id for schemaVersion 8 specs
   --force-new-lock     Back up a foreign lock and start a new local lock
+  --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
+  --source-root <dir>  Resolve files.links/templates sources relative to this directory
 
 Export-specific flags:
   --target <id>        Target id to export

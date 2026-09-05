@@ -147,7 +147,7 @@ Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_form
 
 `external` is a track-only manager for apps with an official installer (not winget/scoop). Apply records them when the binary is on PATH; it never installs them.
 
-`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages.
+`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`.
 

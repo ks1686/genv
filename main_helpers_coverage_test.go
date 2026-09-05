@@ -114,6 +114,22 @@ func TestFileAndPathHelpers(t *testing.T) {
 	if sourceRootForSpec(specPath, &schema.GenvFile{}) != specDir {
 		t.Error("spec dir should be source root")
 	}
+	override := filepath.Join(specDir, "canonical")
+	if got := applySourceRoot(applyOptions{File: specPath, SourceRoot: override}, &schema.GenvFile{Repo: &schema.Repo{URL: repoRoot}}); got != override {
+		t.Errorf("apply --source-root should beat repo.url: got %q", got)
+	}
+	if got := applySourceRoot(applyOptions{File: specPath}, &schema.GenvFile{Repo: &schema.Repo{URL: repoRoot}}); got != repoRoot {
+		t.Errorf("repo.url should remain the default apply source root: got %q", got)
+	}
+	if err := validateApplySourceRoot(""); err != nil {
+		t.Errorf("empty source-root: %v", err)
+	}
+	if err := validateApplySourceRoot(specPath); err == nil {
+		t.Error("file as --source-root should fail")
+	}
+	if err := validateApplySourceRoot(filepath.Join(specDir, "missing")); err == nil {
+		t.Error("missing --source-root should fail")
+	}
 
 	if !hasBoolFlag([]string{"--files", "--json"}, "files") || hasBoolFlag([]string{"--file"}, "files") {
 		t.Error("hasBoolFlag mismatch")
@@ -232,7 +248,7 @@ func TestCompletionCmdIncludesPortabilityEntries(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("completion bash = %d, want %d", code, exitOK)
 	}
-	for _, want := range []string{"migrate", "--target", "--force-new-lock"} {
+	for _, want := range []string{"migrate", "--target", "--force-new-lock", "--source-root"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("completion output missing %q", want)
 		}

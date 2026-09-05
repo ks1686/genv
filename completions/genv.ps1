@@ -96,7 +96,7 @@ function script:Get-GenvCompletions {
 		{ $_ -in 'apply' } {
 			$flags = @('--file', '--lock-file', '--state-dir', '--dry-run', '--force', '--backup', '--strict', '--yes',
 				'--quiet', '--json', '--timeout', '--no-hooks', '--skip-packages', '--hook-timeout', '--debug',
-				'--host', '--target', '--force-new-lock')
+				'--host', '--target', '--force-new-lock', '--source-root')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'migrate' } {

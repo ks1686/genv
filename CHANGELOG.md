@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- `genv apply --source-root <dir>` resolves `files.links` / `files.templates`
+  sources against that directory instead of the spec file directory. Use it to
+  dry-run (or apply) a worktree copy of `genv.json` against the live tree so
+  existing links stay `ok` and only real file changes show. A missing or
+  non-directory `--source-root` is refused. Lock, env, and shell paths still
+  follow `--file` / `--lock-file` / `--state-dir`.
+
 ## v4.3.1 - 2026-09-05
 
 ### Fixed
