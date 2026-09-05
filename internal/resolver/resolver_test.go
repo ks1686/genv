@@ -533,6 +533,39 @@ func (m *testBatchVersionListerMgr) ListInstalledVersions() (map[string]string, 
 	return m.versions, nil
 }
 
+func TestFillMissingInstalledVersions_UsesVersionListerInventory(t *testing.T) {
+	mgr := &testBatchVersionListerMgr{versions: map[string]string{
+		"git":     "2.45.0",
+		"ripgrep": "14.1.0",
+	}}
+	orig := adapter.All
+	adapter.All = append([]adapter.Adapter{mgr}, orig...)
+	t.Cleanup(func() { adapter.All = orig })
+
+	pkgs := []genvfile.LockedPackage{
+		{ID: "git", Manager: "batchmgr", PkgName: "git"},
+		{ID: "ripgrep", Manager: "batchmgr", PkgName: "ripgrep", InstalledVersion: "13.0.0"},
+		{ID: "neovim", Manager: "batchmgr", PkgName: "neovim"},
+		{ID: "curl", Manager: "not-a-manager", PkgName: "curl"},
+	}
+	FillMissingInstalledVersions(pkgs)
+	if mgr.listCalls != 1 {
+		t.Fatalf("ListInstalledVersions calls = %d, want 1", mgr.listCalls)
+	}
+	if pkgs[0].InstalledVersion != "2.45.0" {
+		t.Errorf("git = %q, want 2.45.0", pkgs[0].InstalledVersion)
+	}
+	if pkgs[1].InstalledVersion != "13.0.0" {
+		t.Errorf("ripgrep = %q, want existing 13.0.0", pkgs[1].InstalledVersion)
+	}
+	if pkgs[2].InstalledVersion != "" {
+		t.Errorf("neovim = %q, want empty (absent from inventory)", pkgs[2].InstalledVersion)
+	}
+	if pkgs[3].InstalledVersion != "" {
+		t.Errorf("curl = %q, want empty (unknown manager)", pkgs[3].InstalledVersion)
+	}
+}
+
 func TestReconcile_RemovalPathSkipsMissingManagers(t *testing.T) {
 	result := Reconcile(
 		nil,

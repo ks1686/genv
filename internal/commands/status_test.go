@@ -101,6 +101,28 @@ func TestStatus_NoDriftWhenNoInstalledVersion(t *testing.T) {
 	}
 }
 
+func TestStatusEntry_DisplayVersion(t *testing.T) {
+	cases := []struct {
+		name      string
+		spec      string
+		installed string
+		want      string
+	}{
+		{name: "installed version wins", spec: "", installed: "2.1.259", want: "2.1.259"},
+		{name: "installed version wins over constraint", spec: "2.*", installed: "2.1.259", want: "2.1.259"},
+		{name: "no constraint and unknown install", spec: "", installed: "", want: "*"},
+		{name: "constraint and unknown install", spec: "2.40.*", installed: "", want: "?"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := StatusEntry{SpecVersion: tc.spec, InstalledVersion: tc.installed}.DisplayVersion()
+			if got != tc.want {
+				t.Fatalf("DisplayVersion() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStatus_Empty(t *testing.T) {
 	entries := Status(&schema.GenvFile{}, &genvfile.LockFile{})
 	if len(entries) != 0 {
