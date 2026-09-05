@@ -28,9 +28,9 @@ const (
 )
 
 // vscodeGalleryBase is the extensionsGallery.serviceUrl used for outdated
-// queries. Empty means auto-detect from the `code` binary's product.json
-// (so Cursor hits marketplace.cursorapi.com), falling back to the public
-// VS Code marketplace. Tests point it at an httptest server.
+// queries. Empty means auto-detect from the resolved editor CLI's
+// product.json (so Cursor hits marketplace.cursorapi.com), falling back
+// to the public VS Code marketplace. Tests point it at an httptest server.
 var vscodeGalleryBase string
 
 type vscodeGalleryQuery struct {
@@ -108,8 +108,8 @@ func vscodeGalleryServiceURL() string {
 	if vscodeGalleryBase != "" {
 		return vscodeGalleryBase
 	}
-	if codePath, err := lookPath("code"); err == nil {
-		if product := vscodeFindProductJSON(codePath); product != "" {
+	if cliPath, err := lookPath(vscodeCLI()); err == nil {
+		if product := vscodeFindProductJSON(cliPath); product != "" {
 			if raw, err := os.ReadFile(product); err == nil {
 				if u := vscodeGalleryURLFromProductJSON(raw); u != "" {
 					return u
@@ -132,8 +132,8 @@ func vscodeGalleryURLFromProductJSON(raw []byte) string {
 	return strings.TrimSpace(product.ExtensionsGallery.ServiceURL)
 }
 
-// vscodeFindProductJSON locates product.json relative to the `code` CLI so
-// Cursor, VS Code, and VSCodium each hit their own gallery.
+// vscodeFindProductJSON locates product.json relative to the resolved
+// editor CLI so Cursor, VS Code, and VSCodium each hit their own gallery.
 func vscodeFindProductJSON(codePath string) string {
 	resolved, err := filepath.EvalSymlinks(codePath)
 	if err != nil {
