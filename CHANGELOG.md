@@ -12,6 +12,14 @@ All notable changes to this project will be documented in this file.
   existing links stay `ok` and only real file changes show. A missing or
   non-directory `--source-root` is refused. Lock, env, and shell paths still
   follow `--file` / `--lock-file` / `--state-dir`.
+- Lock files record a `contentHash` (`sha256:<hex>`) per managed link and
+  template after a successful apply. `genv status --files` reports `drifted`
+  (with the path) when the live source or rendered body no longer matches that
+  hash. Topology-only `ok` / `missing` / `wrong-type` / `mismatch` are
+  unchanged. Apply never reverts a drifted body; a later successful apply
+  refreshes the hash. Pre-hash locks omit the field and stay topology-only.
+  Hashing is always on for `link` / `managed-link` / templates; `merge-dir`
+  trees are not hashed.
 
 ## v4.3.1 - 2026-09-05
 

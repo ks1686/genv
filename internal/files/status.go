@@ -27,6 +27,14 @@ type StatusResult struct {
 
 // Status compares cfg against the live filesystem for hostName.
 func Status(cfg *schema.FilesConfig, hostName string) (*StatusResult, error) {
+	return StatusWithHashes(cfg, hostName, nil)
+}
+
+// StatusWithHashes is Status plus optional lock content hashes keyed by the
+// cleaned expanded target path. A matching topology with a different hash is
+// reported as "drifted". Missing hashes keep the topology-only result so older
+// locks stay compatible. Status never rewrites files.
+func StatusWithHashes(cfg *schema.FilesConfig, hostName string, hashes map[string]string) (*StatusResult, error) {
 	res := &StatusResult{OK: true}
 	if cfg == nil {
 		return res, nil
@@ -51,14 +59,14 @@ func Status(cfg *schema.FilesConfig, hostName string) (*StatusResult, error) {
 			}
 			continue
 		}
-		entry, err := statusLink(l)
+		entry, err := statusLink(l, hashes)
 		if err != nil {
 			return res, err
 		}
 		res.add(entry)
 	}
 	for _, tmpl := range filtered.Templates {
-		entry, err := statusTemplate(tmpl, hostName)
+		entry, err := statusTemplate(tmpl, hostName, hashes)
 		if err != nil {
 			return res, err
 		}
@@ -96,7 +104,7 @@ func statusDir(d schema.FileDir) (StatusEntry, error) {
 	return entry, nil
 }
 
-func statusLink(l schema.FileLink) (StatusEntry, error) {
+func statusLink(l schema.FileLink, hashes map[string]string) (StatusEntry, error) {
 	target, err := statusTarget(l.Target)
 	if err != nil {
 		return StatusEntry{}, fmt.Errorf("link target %q: %w", l.Target, err)
@@ -113,6 +121,11 @@ func statusLink(l schema.FileLink) (StatusEntry, error) {
 	if err != nil {
 		return entry, err
 	}
+	// Topology first, then content drift, then perm. One kind per entry;
+	// statusPerm no-ops unless the kind is still ok.
+	entry = applyContentDrift(entry, hashes, func() (string, error) {
+		return HashFile(source)
+	})
 	return statusPerm(entry, source, l.Perm)
 }
 
@@ -200,7 +213,7 @@ func statusLinkAt(target, source, mode string) (StatusEntry, error) {
 	return entry, nil
 }
 
-func statusTemplate(tmpl schema.FileTemplate, hostName string) (StatusEntry, error) {
+func statusTemplate(tmpl schema.FileTemplate, hostName string, hashes map[string]string) (StatusEntry, error) {
 	target, err := statusTarget(tmpl.Target)
 	if err != nil {
 		return StatusEntry{}, fmt.Errorf("template target %q: %w", tmpl.Target, err)
@@ -232,6 +245,9 @@ func statusTemplate(tmpl schema.FileTemplate, hostName string) (StatusEntry, err
 	}
 	if bytes.Equal(existing, rendered) {
 		entry.Kind = "ok"
+		entry = applyContentDrift(entry, hashes, func() (string, error) {
+			return HashBytes(rendered), nil
+		})
 		return statusPerm(entry, target, tmpl.Perm)
 	}
 	entry.Kind = "mismatch"

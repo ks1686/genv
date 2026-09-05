@@ -562,6 +562,41 @@ func TestWriteLock_ProducesValidJSON(t *testing.T) {
 	}
 }
 
+func TestWriteLock_ContentHash_OmitEmptyAndRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.lock.json")
+	lf := &LockFile{
+		SchemaVersion: schema.Version,
+		Files: []LockedFile{
+			{Source: "a", Target: "b", Mode: "managed-link", ContentHash: "sha256:abc"},
+			{Source: "c", Target: "d", Mode: "link"},
+		},
+	}
+	if err := WriteLock(path, lf); err != nil {
+		t.Fatalf("WriteLock: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), `"contentHash": "sha256:abc"`) {
+		t.Fatalf("expected contentHash in lock JSON:\n%s", data)
+	}
+	got, err := ReadLock(path)
+	if err != nil {
+		t.Fatalf("ReadLock: %v", err)
+	}
+	if got.Files[0].ContentHash != "sha256:abc" {
+		t.Fatalf("Files[0].ContentHash = %q", got.Files[0].ContentHash)
+	}
+	if got.Files[1].ContentHash != "" {
+		t.Fatalf("empty ContentHash should omit; got %q", got.Files[1].ContentHash)
+	}
+	if strings.Count(string(data), "contentHash") != 1 {
+		t.Fatalf("contentHash should be omitted when empty:\n%s", data)
+	}
+}
+
 func TestWriteLock_InstalledVersion_OmitEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "genv.lock.json")

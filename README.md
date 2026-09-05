@@ -223,7 +223,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `adopt` / `disown` | Track without install / untrack without uninstall |
 | `scan` | Bulk-adopt user-facing installs (`--dry-run`, `--yes`; `--all` / `--deps` for full trees) |
 | `list` (`ls`) | Show lock-tracked packages |
-| `status` | Spec ↔ lock drift (`--files`, `--offline`, `--target`) |
+| `status` | Spec ↔ lock drift (`--files` includes content `drifted`, `--offline`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`, `--source-root <dir>`) |
 | `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
