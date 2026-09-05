@@ -154,13 +154,28 @@ func New() *schema.GenvFile {
 // Write serializes f to path with 2-space indentation.
 // Writing is atomic: it writes to a temp file then renames, so a crash
 // mid-write cannot leave a half-written genv.json.
+//
+// When path already exists and f only changes package lists, Write edits
+// those arrays in place so empty blocks and key order survive adopt/disown.
 func Write(path string, f *schema.GenvFile) error {
+	if original, err := os.ReadFile(path); err == nil {
+		if patched, ok := rewritePackagesInPlace(original, f); ok {
+			return writeValidated(path, patched)
+		}
+	}
+	return writeMarshaled(path, f)
+}
+
+func writeMarshaled(path string, f *schema.GenvFile) error {
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return fmt.Errorf("serialising genv.json: %w", err)
 	}
 	data = append(data, '\n')
+	return writeValidated(path, data)
+}
 
+func writeValidated(path string, data []byte) error {
 	_, valErrs, parseErr := schema.ParseAndValidate(data)
 	if parseErr != nil {
 		return fmt.Errorf("%w: %s: %w", ErrInvalidFile, path, parseErr)
