@@ -128,6 +128,16 @@ write_v8_spec() {
         { "id": "tree", "prefer": "pacman" }
       ],
       "env": { "LANG": { "value": "C.UTF-8" } },
+      "files": {
+        "links": [
+          {
+            "source": "testrc",
+            "target": "~/.testrc",
+            "mode": "managed-link",
+            "backup": true
+          }
+        ]
+      },
       "services": {
         "pulse": {
           "start": ["true"],
@@ -299,6 +309,15 @@ run_matrix() {
 	assert_ok "service stop" "$code" "$out$err"
 	run service ls --file "$SPEC" --target arch
 	assert_ok "service ls alias" "$code"
+
+	printf 'live-testrc\n' >"$HOME/.testrc"
+	run files adopt --file "$SPEC" --lock-file "$LOCK" --target arch --dry-run ~/.testrc
+	assert_ok "files adopt --dry-run" "$code" "$out$err"
+	assert_contains "files adopt dry-run copy" "$out" "copy"
+	assert_contains "files adopt dry-run backup" "$out" "backup"
+	assert_contains "files adopt dry-run link" "$out" "link"
+	run files adopt --file "$SPEC" --lock-file "$LOCK" --target arch ~/.testrc
+	assert_ok "files adopt" "$code" "$out$err"
 
 	# ── export / map / apply dry-run / clean ──────────────────────────────
 	run export --file "$SPEC" --target arch --out "$WORK/out/export"

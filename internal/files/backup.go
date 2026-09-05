@@ -7,11 +7,16 @@ import (
 )
 
 func backupExisting(target string) error {
+	_, err := backupExistingTo(target)
+	return err
+}
+
+func backupExistingTo(target string) (string, error) {
 	backupPath := backupPathFor(target)
 	if err := os.Rename(target, backupPath); err != nil {
-		return fmt.Errorf("backup %s -> %s: %w", target, backupPath, err)
+		return "", fmt.Errorf("backup %s -> %s: %w", target, backupPath, err)
 	}
-	return nil
+	return backupPath, nil
 }
 
 func backupPathFor(target string) string {

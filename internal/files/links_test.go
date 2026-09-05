@@ -254,6 +254,159 @@ func TestApply_managedLinkSelfHealsWrongSymlink(t *testing.T) {
 	}
 }
 
+func TestApply_linkMismatchBackupTrueReplacesWithoutForce(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	source := setupSource(t, home, "simple.txt")
+	target := filepath.Join(home, ".genv-test", "simple.txt")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target parent: %v", err)
+	}
+	original := []byte("i am a hand-written file\n")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatalf("write planted file: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Links: []schema.FileLink{{
+			Source: source,
+			Target: "~/.genv-test/simple.txt",
+			Mode:   "managed-link",
+			Backup: true,
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply error = %v, want nil", err)
+	}
+	if len(res.Updated) != 1 || res.Updated[0] != target {
+		t.Fatalf("Updated = %v, want [%s]", res.Updated, target)
+	}
+	if len(res.Mismatched) != 0 {
+		t.Fatalf("Mismatched = %v, want none", res.Mismatched)
+	}
+	got, err := os.Readlink(target)
+	if err != nil {
+		t.Fatalf("Readlink: %v", err)
+	}
+	if got != source {
+		t.Fatalf("symlink points to %q, want %q", got, source)
+	}
+	matches, _ := filepath.Glob(target + ".backup.*")
+	if len(matches) != 1 {
+		t.Fatalf("expected one backup, got %v", matches)
+	}
+	backupData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if !bytes.Equal(backupData, original) {
+		t.Fatalf("backup data mismatch: got %q, want %q", backupData, original)
+	}
+}
+
+func TestApply_mixedBackupOnlyReplacesBackupEntry(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	replaceSource := setupSource(t, home, "replace.txt")
+	keepSource := setupSource(t, home, "keep.txt")
+	replaceTarget := filepath.Join(home, ".genv-test", "replace.txt")
+	keepTarget := filepath.Join(home, ".genv-test", "keep.txt")
+	if err := os.MkdirAll(filepath.Dir(replaceTarget), 0o755); err != nil {
+		t.Fatalf("mkdir target parent: %v", err)
+	}
+	replaceOriginal := []byte("replace-me\n")
+	keepOriginal := []byte("leave-me\n")
+	if err := os.WriteFile(replaceTarget, replaceOriginal, 0o644); err != nil {
+		t.Fatalf("write replace target: %v", err)
+	}
+	if err := os.WriteFile(keepTarget, keepOriginal, 0o644); err != nil {
+		t.Fatalf("write keep target: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Links: []schema.FileLink{
+			{
+				Source: replaceSource,
+				Target: "~/.genv-test/replace.txt",
+				Mode:   "managed-link",
+				Backup: true,
+			},
+			{
+				Source: keepSource,
+				Target: "~/.genv-test/keep.txt",
+				Mode:   "managed-link",
+			},
+		},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{})
+	if err == nil {
+		t.Fatal("Apply error = nil, want mismatch error")
+	}
+	if len(res.Updated) != 1 || res.Updated[0] != replaceTarget {
+		t.Fatalf("Updated = %v, want [%s]", res.Updated, replaceTarget)
+	}
+	if len(res.Mismatched) != 1 || res.Mismatched[0] != keepTarget {
+		t.Fatalf("Mismatched = %v, want [%s]", res.Mismatched, keepTarget)
+	}
+	got, err := os.Readlink(replaceTarget)
+	if err != nil {
+		t.Fatalf("Readlink replace: %v", err)
+	}
+	if got != replaceSource {
+		t.Fatalf("replace symlink points to %q, want %q", got, replaceSource)
+	}
+	keepData, err := os.ReadFile(keepTarget)
+	if err != nil {
+		t.Fatalf("read keep target: %v", err)
+	}
+	if !bytes.Equal(keepData, keepOriginal) {
+		t.Fatalf("keep target was modified: got %q, want %q", keepData, keepOriginal)
+	}
+	if fi, err := os.Lstat(keepTarget); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("keep target should remain a regular file")
+	}
+}
+
+func TestApply_globalBackupWithoutForceDoesNotReplace(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	source := setupSource(t, home, "simple.txt")
+	target := filepath.Join(home, ".genv-test", "simple.txt")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target parent: %v", err)
+	}
+	original := []byte("leave-me\n")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatalf("write planted file: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Links: []schema.FileLink{{
+			Source: source,
+			Target: "~/.genv-test/simple.txt",
+			Mode:   "managed-link",
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{Backup: true})
+	if err == nil {
+		t.Fatal("Apply error = nil, want mismatch error")
+	}
+	if len(res.Mismatched) != 1 || res.Mismatched[0] != target {
+		t.Fatalf("Mismatched = %v, want [%s]", res.Mismatched, target)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("target was modified: got %q, want %q", got, original)
+	}
+}
+
 func TestApply_managedLinkRequiresForceForRealFile(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

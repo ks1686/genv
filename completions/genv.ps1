@@ -5,7 +5,7 @@
 $script:GenvCommands = @(
 	'add', 'remove', 'rm', 'adopt', 'disown', 'list', 'ls', 'apply', 'edit',
 	'clean', 'scan', 'status', 'completion', 'validate', 'upgrade', 'updates',
-	'migrate', 'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'profile', 'version', 'help'
+	'migrate', 'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'files', 'profile', 'version', 'help'
 )
 
 function script:Get-GenvCompletions {
@@ -210,6 +210,15 @@ function script:Get-GenvCompletions {
 				'edit' { $flags = @('--file') }
 				default { $flags = @('--file') }
 			}
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'files' } {
+			$filesSubs = @('adopt')
+			$filesSub = $after | Where-Object { $filesSubs -contains $_ } | Select-Object -First 1
+			if (-not $filesSub -and $WordToComplete -notlike '-*') {
+				return (& $completeCandidates -Candidates $filesSubs -ResultType 'ParameterValue')
+			}
+			$flags = @('--file', '--lock-file', '--host', '--target', '--dry-run')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'service' } {

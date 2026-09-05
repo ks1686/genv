@@ -121,7 +121,7 @@ Hooks run as the current user and are arbitrary code by design — treat the spe
 
 ### `files`
 
-- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup`, optional `perm`
+- `links[]` — `source`, `target`, `mode` (`link` default, `managed-link`, or `merge-dir`), optional `host`, `backup` (`backup: true` replaces that entry's mismatched regular file without `--force`), optional `perm`
   - `mode` is the link kind, not a Unix mode
   - `merge-dir` symlinks each file from source into target so multiple records can layer into one directory
   - `perm` is an octal string (`0644`, `0700`); apply chmods the source file (managed-link) or source directory (merge-dir)

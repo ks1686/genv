@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+// ResolveSource expands source and, when it is relative, joins it under
+// sourceRoot. It refuses paths that escape sourceRoot.
+func ResolveSource(sourceRoot, source string) (string, error) {
+	return resolveSource(sourceRoot, source)
+}
+
+// ExpandPath expands a leading ~ and $VAR references.
+func ExpandPath(s string) (string, error) {
+	return expandPath(s)
+}
+
 func resolveSource(sourceRoot, source string) (string, error) {
 	if source == "" {
 		return "", errors.New("source must not be empty")
