@@ -164,7 +164,7 @@ opt-in convenience and is not configured in this repository.
 - Prefer repo-name tab completions for new package ids on `add`/`adopt` (tracked-ID commands stay as today): ambiguous deduped bare names across managers, then the existing add picker sets `prefer`; hybrid model matching Homebrew — full local name dumps with no min-prefix gate, live `Search` only as fallback; v1 covers all `Searchable` managers plus easy high-value listers (e.g. mas, npm/bun) where practical.
 - Treat multi-machine / cross-OS config portability (export-to-target / migration without sharing locks) as a first-class product goal.
 - For public Linux support, focus on major distros whose packaging channels do not require separate human review gates known to reject AI-assisted tooling.
-- Prefer `--dry-run` and confirmation (unless `--yes`) for bulk-mutating discovery commands like `scan` before writing the spec or lock.
+- Prefer `--dry-run` and confirmation (unless `--yes`) for bulk-mutating discovery commands like `scan` before writing the spec or lock. Default `genv scan` proposes user-facing installs (`brew leaves` + casks, skip default/bundled gems, pip-user `--not-required` minus installer/stdlib-like noise). `--all` / `--deps` restores the full `ListInstalled` inventory.
 
 ## Learned Workspace Facts
 

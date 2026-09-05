@@ -38,6 +38,14 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- `genv scan` now proposes user-facing installs by default: Homebrew
+  `brew leaves` plus casks, Ruby gems that are not default or bundled,
+  and pip-user packages that are not dependencies of other user-site
+  packages (minus installer/stdlib-like noise). npm/pnpm/yarn were
+  already top-level (`--depth=0`). Pass `--all` or `--deps` for the
+  previous full `ListInstalled` inventory. `--dry-run` on a host whose
+  brew leaves and casks are already tracked stays near-empty aside from
+  real extras.
 - README documents the hard skip for any non-empty package `version` during
   upgrade (range-satisfying upgrades are not implemented).
 

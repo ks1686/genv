@@ -77,6 +77,26 @@ fi`)
 	}
 }
 
+func TestGem_ListForScan_SkipsDefaultAndBundled(t *testing.T) {
+	installFakeBinary(t, "gem", `if [ "$1" = "list" ] && [ "$2" = "--local" ]; then
+  echo 'rake (13.0.6)'
+  echo 'rdoc (6.6.3)'
+  echo 'json (default: 2.3.0, 2.6.1)'
+  echo 'nokogiri (1.16.0)'
+fi`)
+	orig := gemManageable
+	gemManageable = func() bool { return true }
+	t.Cleanup(func() { gemManageable = orig })
+
+	got, err := Gem{}.ListForScan()
+	if err != nil {
+		t.Fatalf("Gem.ListForScan: %v", err)
+	}
+	if want := []string{"nokogiri"}; !slices.Equal(got, want) {
+		t.Errorf("ListForScan = %v, want %v (skip default/bundled gems)", got, want)
+	}
+}
+
 func TestGem_ListInstalled_whenInstallDirWritable_listsGems(t *testing.T) {
 	// Given: a writable install dir — gems should be reported normally.
 	installFakeBinary(t, "gem", `if [ "$1" = "list" ] && [ "$2" = "--local" ]; then

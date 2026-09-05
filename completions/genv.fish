@@ -111,7 +111,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a 'list ls' -d 'List all packa
 complete -c genv -n __fish_genv_no_subcommand -f -a apply -d 'Reconcile system state with genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a edit -d 'Open genv.json in $EDITOR'
 complete -c genv -n __fish_genv_no_subcommand -f -a clean -d 'Clear the cache of all detected package managers'
-complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover all installed packages and bulk-adopt them into genv.json'
+complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover user-facing installed packages and bulk-adopt them into genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between genv.json, the lock file, and recorded versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
@@ -235,6 +235,8 @@ complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_comm
 complete -c genv -n '__fish_genv_using_command status; or __fish_genv_using_command scan' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command scan' -l dry-run -d 'List packages that would be adopted without writing'
 complete -c genv -n '__fish_genv_using_command scan' -l yes -d 'Skip the confirmation prompt'
+complete -c genv -n '__fish_genv_using_command scan' -l all -d 'Include manager dependencies and language stdlib'
+complete -c genv -n '__fish_genv_using_command scan' -l deps -d 'Include manager dependencies and language stdlib'
 complete -c genv -n '__fish_genv_using_command scan' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_using_command status' -l files -d 'Check files block against the live filesystem only'
 complete -c genv -n '__fish_genv_using_command status' -l offline -d 'Compare spec vs lock only (skip live manager probe)'

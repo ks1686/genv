@@ -3,6 +3,7 @@ package adapter
 import (
 	"errors"
 	"os/exec"
+	"strings"
 )
 
 // PipUser is the adapter for pip --user installs.
@@ -68,6 +69,59 @@ func (PipUser) ListInstalled() ([]string, error) {
 		names = append(names, entry.name)
 	}
 	return names, nil
+}
+
+// ListForScan returns user-site packages that are not dependencies of other
+// installed packages (`pip list --user --not-required`), minus installer and
+// stdlib-like noise (pip, setuptools, certifi, …). Leftover transitives of
+// tools already tracked via uv often show up as orphans; the skip set drops
+// the usual ones. Pass scan --all to adopt the full user-site list.
+func (PipUser) ListForScan() ([]string, error) {
+	out, err := runProbe("python3", "-m", "pip", "list", "--user", "--not-required", "--format=json")
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entries, err := parsePipListJSON(out)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if pipUserScanSkip[pythonScanKey(entry.name)] {
+			continue
+		}
+		names = append(names, entry.name)
+	}
+	return names, nil
+}
+
+// pipUserScanSkip is installer tooling plus common network/stdlib-like
+// transitives that show up as pip --user orphans after a tool moves to uv.
+var pipUserScanSkip = map[string]bool{
+	"certifi":            true,
+	"charset-normalizer": true,
+	"colorama":           true,
+	"exceptiongroup":     true,
+	"idna":               true,
+	"importlib-metadata": true,
+	"packaging":          true,
+	"pip":                true,
+	"pyparsing":          true,
+	"setuptools":         true,
+	"six":                true,
+	"tomli":              true,
+	"typing-extensions":  true,
+	"urllib3":            true,
+	"wheel":              true,
+	"zipp":               true,
+}
+
+func pythonScanKey(name string) string {
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(name)), "_", "-")
 }
 
 func (PipUser) QueryVersion(pkgName string) (string, error) {

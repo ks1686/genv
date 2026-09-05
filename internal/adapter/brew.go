@@ -204,6 +204,21 @@ func (Brew) ListInstalled() ([]string, error) {
 	return append(formulae, casks...), nil
 }
 
+// ListForScan returns formulae that are not dependencies of another installed
+// formula (`brew leaves`) plus every cask. Homebrew libraries pulled in as
+// deps (openssl@3, libpng, …) stay out of default scan.
+func (Brew) ListForScan() ([]string, error) {
+	leaves, err := runListOutput("brew", "leaves")
+	if err != nil {
+		return nil, err
+	}
+	casks, err := runListOutput("brew", "list", "--cask", "-1")
+	if err != nil {
+		return nil, err
+	}
+	return append(leaves, casks...), nil
+}
+
 func (Brew) QueryVersion(pkgName string) (string, error) { return brewQueryVersion(pkgName) }
 
 // Linuxbrew is the adapter for Homebrew on Linux (distinct manager ID so
@@ -222,6 +237,11 @@ func (Linuxbrew) Query(pkgName string) (bool, error) {
 
 func (Linuxbrew) ListInstalled() ([]string, error) {
 	return runListOutput("brew", "list", "--formula", "-1")
+}
+
+// ListForScan returns Linuxbrew leaves only. Linux Homebrew has no casks.
+func (Linuxbrew) ListForScan() ([]string, error) {
+	return runListOutput("brew", "leaves")
 }
 
 func (Linuxbrew) QueryVersion(pkgName string) (string, error) { return brewQueryVersion(pkgName) }

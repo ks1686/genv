@@ -15,7 +15,7 @@ _genv() {
 		'apply:Reconcile system state with genv.json'
 		"edit:Open genv.json in \$EDITOR"
 		'clean:Clear the cache of all detected package managers'
-		'scan:Discover all installed packages and bulk-adopt them into genv.json'
+		'scan:Discover user-facing installed packages and bulk-adopt them into genv.json'
 		'status:Show diff between genv.json, the lock file, and recorded versions'
 		'completion:Print shell completion script'
 		'validate:Validate genv.json against the schema'
@@ -241,6 +241,8 @@ _genv() {
 				'--lock-file=[Path to genv lock file]:path:_files' \
 				'--dry-run[List packages that would be adopted without writing]' \
 				'--yes[Skip the confirmation prompt]' \
+				'--all[Include manager dependencies and language stdlib]' \
+				'--deps[Include manager dependencies and language stdlib]' \
 				'--json[Emit machine-readable JSON to stdout]' \
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--target=[Portable target id for schemaVersion 8 specs]:target:'
