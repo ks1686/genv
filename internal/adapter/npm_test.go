@@ -68,3 +68,39 @@ fi`)
 		t.Errorf("ListInstalled = %v, want %v", names, want)
 	}
 }
+
+func TestNpm_ListInstalled_SkipsNpmSelfKeepsCorepack(t *testing.T) {
+	installFakeBinary(t, "npm", `if [ "$1" = "list" ]; then
+  printf '%s\n' '{"dependencies":{"corepack":{"version":"0.31.0"},"npm":{"version":"10.9.2"},"typescript":{"version":"5.9.2"}}}'
+fi`)
+
+	names, err := Npm{}.ListInstalled()
+	if err != nil {
+		t.Fatalf("Npm.ListInstalled: %v", err)
+	}
+	if slices.Contains(names, "npm") {
+		t.Errorf("ListInstalled = %v, must not include npm itself", names)
+	}
+	if want := []string{"corepack", "typescript"}; !slices.Equal(names, want) {
+		t.Errorf("ListInstalled = %v, want %v", names, want)
+	}
+
+	ok, err := Npm{}.Query("npm")
+	if err != nil {
+		t.Fatalf("Npm.Query(npm): %v", err)
+	}
+	if ok {
+		t.Error("Npm.Query(npm) = true, want false")
+	}
+
+	versions, err := Npm{}.ListInstalledVersions()
+	if err != nil {
+		t.Fatalf("Npm.ListInstalledVersions: %v", err)
+	}
+	if _, found := versions["npm"]; found {
+		t.Errorf("ListInstalledVersions includes npm: %v", versions)
+	}
+	if _, found := versions["corepack"]; !found {
+		t.Errorf("ListInstalledVersions missing corepack: %v", versions)
+	}
+}

@@ -3,8 +3,88 @@ package adapter
 import (
 	"maps"
 	"os"
+	"slices"
 	"testing"
 )
+
+func TestParseUvToolList(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  []uvEntry
+	}{
+		{
+			name: "headers with multiple dash entrypoints",
+			lines: []string{
+				"ruff v0.6.9",
+				"- ruff",
+				"httpie v3.2.4",
+				"- http",
+				"- https",
+				"- httpie",
+			},
+			want: []uvEntry{{name: "ruff", version: "0.6.9"}, {name: "httpie", version: "3.2.4"}},
+		},
+		{
+			name: "indented entrypoints under a header",
+			lines: []string{
+				"black v24.10.0",
+				"  black",
+				"  blackd",
+			},
+			want: []uvEntry{{name: "black", version: "24.10.0"}},
+		},
+		{
+			name: "mixed dash and indented entrypoints",
+			lines: []string{
+				"ruff v0.11.2",
+				"- ruff",
+				"black v24.10.0",
+				"  black",
+				"  blackd",
+			},
+			want: []uvEntry{{name: "ruff", version: "0.11.2"}, {name: "black", version: "24.10.0"}},
+		},
+		{
+			name: "skips lone dash and dash-prefixed noise",
+			lines: []string{
+				"-",
+				"- ruff",
+				"ruff v0.6.9",
+				"- ruff",
+			},
+			want: []uvEntry{{name: "ruff", version: "0.6.9"}},
+		},
+		{
+			name: "skips lines that are not name-v-version headers",
+			lines: []string{
+				"black 24.10.0",
+				"note: something",
+				"ruff v0.6.9",
+			},
+			want: []uvEntry{{name: "ruff", version: "0.6.9"}},
+		},
+		{
+			name:  "empty input",
+			lines: []string{"", "   "},
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseUvToolList(tt.lines)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("parseUvToolList = %#v, want %#v", got, tt.want)
+			}
+			for _, entry := range got {
+				if entry.name == "-" {
+					t.Error("parseUvToolList proposed '-' from an entrypoint line")
+				}
+			}
+		})
+	}
+}
 
 // TestUv_ListInstalled_ParsesToolsAndEntrypoints verifies that ListInstalled
 // extracts tool names from top-level lines and skips indented entrypoint lines.
@@ -12,10 +92,10 @@ func TestUv_ListInstalled_ParsesToolsAndEntrypoints(t *testing.T) {
 	installFakeBinary(t, "uv",
 		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
   echo "ruff v0.6.9"
-  echo "  ruff"
+  echo "- ruff"
   echo "black v24.10.0"
-  echo "  black"
-  echo "  blackd"
+  echo "- black"
+  echo "- blackd"
 fi`)
 	pkgs, err := Uv{}.ListInstalled()
 	if err != nil {
@@ -101,7 +181,7 @@ func TestUv_QueryVersion_ParsesVersion(t *testing.T) {
 	installFakeBinary(t, "uv",
 		`if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
   echo "ruff v0.6.9"
-  echo "black 24.10.0"
+  echo "black v24.10.0"
 fi`)
 	ver, err := Uv{}.QueryVersion("ruff")
 	if err != nil {
@@ -146,9 +226,9 @@ func TestUv_ListInstalledVersions_returnsVersionsAndExecsListOnce(t *testing.T) 
   count=$((count + 1))
   printf "%s" "$count" > "$GENV_FAKE_COUNTER"
   echo "ruff v0.6.9"
-  echo "  ruff"
-  echo "black 24.10.0"
-  echo "  black"
+  echo "- ruff"
+  echo "black v24.10.0"
+  echo "- black"
 fi`)
 
 	// When
