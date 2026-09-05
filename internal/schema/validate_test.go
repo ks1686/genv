@@ -820,6 +820,29 @@ func TestParseAndValidate_NewHooksRequireV6(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_HookNameAndContinueOnError(t *testing.T) {
+	input := `{"schemaVersion":"6","packages":[],"hooks":{"postApply":[{"name":"selftest","command":"true","continueOnError":true}]}}`
+
+	f, errs, err := ParseAndValidate([]byte(input))
+
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("name and continueOnError should validate, got: %v", errs)
+	}
+	if f.Hooks == nil || len(f.Hooks.PostApply) != 1 {
+		t.Fatalf("postApply not parsed: %+v", f.Hooks)
+	}
+	got := f.Hooks.PostApply[0]
+	if got.Name != "selftest" {
+		t.Fatalf("Name = %q, want selftest", got.Name)
+	}
+	if !got.ContinueOnError {
+		t.Fatal("ContinueOnError = false, want true")
+	}
+}
+
 func TestParseAndValidate_HookCommandOrFileExactlyOne(t *testing.T) {
 	tests := []struct {
 		name  string
