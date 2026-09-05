@@ -41,6 +41,7 @@ follow-up macOS workflow job publishes the AUR packages.
 | `v4.2.1` | Apply/status list only needed managers; 30s listing timeout so hung Composer cannot stall Windows CI |
 | `v4.2.2` | Every manager probe bounded (scan/search/upgrade/outdated/services); crash-safe fsync'd spec & lock writes; atomic pull; docs/completions/CI fixes; updates worker shutdown grace |
 | `v4.3.0` | Windows updates scheduler, vscode stable-only outdated detection, lock/apply recovery, and `genv upgrade` OS/firmware steps |
+| `v4.3.1` | Index refresh before outdated; user-facing `scan` default; apply `--skip-packages` quiet; vscode prefers `cursor`; hidden Windows updates host; upgrade `--json`/`--only` polish |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,
