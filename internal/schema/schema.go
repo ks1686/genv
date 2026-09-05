@@ -296,9 +296,11 @@ type HooksConfig struct {
 
 // Hook is a single lifecycle shell command or script-file reference.
 type Hook struct {
-	Command string        `json:"command"`
-	File    string        `json:"file,omitempty"`
-	Host    HostPredicate `json:"host,omitempty"`
+	Name            string        `json:"name,omitempty"`
+	Command         string        `json:"command"`
+	File            string        `json:"file,omitempty"`
+	Host            HostPredicate `json:"host,omitempty"`
+	ContinueOnError bool          `json:"continueOnError,omitempty"`
 }
 
 // Service is a single user-space service declaration.

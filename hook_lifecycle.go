@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ type hookContext struct {
 	Phase           string
 	Host            string
 	Profile         string
+	SpecFile        string
+	SpecDir         string
+	LockFile        string
 	DryRun          bool
 	Yes             bool
 	Installed       []string
@@ -78,12 +82,40 @@ func runHookPhase(ctx context.Context, req hookPhaseRun) []string {
 	return nil
 }
 
+func (c hookContext) withFiles(specPath, lockPath string) hookContext {
+	c.SpecFile, c.SpecDir, c.LockFile = resolveHookPaths(specPath, lockPath)
+	return c
+}
+
+func resolveHookPaths(specPath, lockPath string) (specFile, specDir, lockFile string) {
+	specFile = absHookPath(specPath)
+	if specFile != "" {
+		specDir = filepath.Dir(specFile)
+	}
+	lockFile = absHookPath(lockPath)
+	return specFile, specDir, lockFile
+}
+
+func absHookPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
+}
+
 func hookEnv(ctx hookContext) []string {
 	return []string{
 		"GENV_EVENT=" + ctx.Event,
 		"GENV_PHASE=" + ctx.Phase,
 		"GENV_HOST=" + ctx.Host,
 		"GENV_PROFILE=" + ctx.Profile,
+		"GENV_SPEC_FILE=" + ctx.SpecFile,
+		"GENV_SPEC_DIR=" + ctx.SpecDir,
+		"GENV_LOCK_FILE=" + ctx.LockFile,
 		"GENV_DRY_RUN=" + boolString(ctx.DryRun),
 		"GENV_YES=" + boolString(ctx.Yes),
 		"GENV_INSTALLED=" + strings.Join(ctx.Installed, ","),

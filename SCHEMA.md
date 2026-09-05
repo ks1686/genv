@@ -107,7 +107,11 @@ launchd (macOS), or Task Scheduler / `schtasks` (Windows).
 
 Phases: `preApply` / `postApply`, `preAdd` / `postAdd`, `preRemove` / `postRemove`, `preUpgrade` / `postUpgrade` (v5 also had `preUpgrade` / `postApply` / `postUpgrade`).
 
-Each hook is `{ "command": "..." }` or `{ "file": "..." }` (exactly one), optional `host` on v1–v7. Context env: `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_YES`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, `GENV_SKIPPED`.
+Each hook is `{ "command": "..." }` or `{ "file": "..." }` (exactly one), optional `name`, optional `continueOnError`, optional `host` on v1–v7.
+
+Context env: `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_SPEC_FILE`, `GENV_SPEC_DIR`, `GENV_LOCK_FILE`, `GENV_YES`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, `GENV_SKIPPED`.
+
+`continueOnError: true` reports a non-zero hook and continues the phase instead of failing the command. After a phase, genv prints a hook summary: `name` (or the first 40 characters of the command), exit code, and duration, in run order.
 
 Hooks run as the current user and are arbitrary code by design — treat the spec as trusted.
 

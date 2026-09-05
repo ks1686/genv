@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -22,12 +23,18 @@ type fakeRunner struct {
 	envs   [][]string
 	stdins []io.Reader
 	err    error
+	errs   []error
 }
 
 func (f *fakeRunner) Run(_ context.Context, args []string, env []string, stdin io.Reader, _, _ io.Writer) error {
 	f.calls = append(f.calls, args)
 	f.envs = append(f.envs, env)
 	f.stdins = append(f.stdins, stdin)
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		return err
+	}
 	return f.err
 }
 
@@ -244,6 +251,64 @@ func TestPostUpgrade_DryRunPrintsWithoutExecuting(t *testing.T) {
 	}
 	if !strings.Contains(got, "echo two") {
 		t.Errorf("dry-run output missing echo two: %q", got)
+	}
+}
+
+func TestExecutor_ContinueOnError_reports_but_keeps_running(t *testing.T) {
+	ctx := context.Background()
+	var stderr bytes.Buffer
+	e, fr := newTestExecutor(nil, &stderr)
+	fr.errs = []error{errors.New("boom"), nil}
+	hooks := []schema.Hook{
+		{Name: "diag", Command: "echo first", ContinueOnError: true},
+		{Command: "echo second"},
+	}
+
+	err := e.PostApply(ctx, hooks, "any", false)
+	if err != nil {
+		t.Fatalf("PostApply() error = %v, want nil when continueOnError", err)
+	}
+	if len(fr.calls) != 2 {
+		t.Fatalf("got %d calls, want 2 (continued after failure)", len(fr.calls))
+	}
+	if !strings.Contains(stderr.String(), "diag") && !strings.Contains(stderr.String(), "echo first") {
+		t.Fatalf("stderr %q does not report the failed hook", stderr.String())
+	}
+}
+
+func TestExecutor_PrintsHookSummary_name_exit_duration(t *testing.T) {
+	ctx := context.Background()
+	var stdout bytes.Buffer
+	e := NewExecutor(&stdout, io.Discard)
+	longCmd := "echo " + strings.Repeat("x", 50)
+	hooks := []schema.Hook{
+		{Name: "selftest", Command: "true"},
+		{Command: longCmd},
+	}
+
+	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
+		t.Fatalf("PostApply() error = %v, want nil", err)
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "selftest") {
+		t.Fatalf("summary missing named hook, got: %q", got)
+	}
+	if !strings.Contains(got, longCmd[:40]) {
+		t.Fatalf("summary missing first 40 chars of command, got: %q", got)
+	}
+	if strings.Contains(got, longCmd) {
+		t.Fatalf("unnamed command should be truncated to 40 chars, got: %q", got)
+	}
+	if !strings.Contains(got, "exit 0") && !strings.Contains(got, "exit=0") {
+		t.Fatalf("summary missing exit code, got: %q", got)
+	}
+	if !regexp.MustCompile(`(?i)\d+(\.\d+)?(ns|us|µs|μs|ms|s)`).MatchString(got) {
+		t.Fatalf("summary missing duration, got: %q", got)
+	}
+	selfIdx := strings.Index(got, "selftest")
+	cmdIdx := strings.Index(got, longCmd[:40])
+	if selfIdx < 0 || cmdIdx < 0 || selfIdx > cmdIdx {
+		t.Fatalf("summary order wrong, got: %q", got)
 	}
 }
 

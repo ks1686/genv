@@ -165,6 +165,12 @@ func (e *Executor) PostUpgradeWithOptions(ctx context.Context, hooks []schema.Ho
 	return e.runPhase(ctx, "post-upgrade", hooks, opts)
 }
 
+type hookResult struct {
+	Name     string
+	ExitCode int
+	Duration time.Duration
+}
+
 func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Hook, opts RunOptions) error {
 	if e.runner == nil {
 		e.runner = execRunner{}
@@ -179,6 +185,8 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		e.Stderr = io.Discard
 	}
 
+	var results []hookResult
+	var fatal error
 	for i, h := range hooks {
 		if !host.Match(h.Host, opts.Host) {
 			slog.Debug("skipping hook for host", "phase", phase, "index", i, "command", h.Command, "host", opts.Host)
@@ -193,9 +201,17 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		}
 
 		slog.Debug("running hook", "phase", phase, "index", i, "hook", desc)
+		start := time.Now()
 		args, err := e.hookArgs(h)
 		if err != nil {
-			return fmt.Errorf("%s hook %s: %w", phase, desc, err)
+			err = fmt.Errorf("%s hook %s: %w", phase, desc, err)
+			results = append(results, hookResult{Name: hookSummaryName(h), ExitCode: hookExitCode(err), Duration: time.Since(start)})
+			if h.ContinueOnError {
+				fprintf(e.Stderr, "%s (continuing)\n", err)
+				continue
+			}
+			fatal = err
+			break
 		}
 		runCtx := ctx
 		cancel := func() {}
@@ -205,14 +221,67 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		err = e.runner.Run(runCtx, args, opts.Env, opts.Stdin, e.Stdout, e.Stderr)
 		cancel()
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("%s hook timed out after %s %s: %w", phase, opts.Timeout, desc, context.DeadlineExceeded)
+			err = fmt.Errorf("%s hook timed out after %s %s: %w", phase, opts.Timeout, desc, context.DeadlineExceeded)
+		} else if err != nil {
+			err = fmt.Errorf("%s hook %s: %w", phase, desc, err)
 		}
+		results = append(results, hookResult{Name: hookSummaryName(h), ExitCode: hookExitCode(err), Duration: time.Since(start)})
 		if err != nil {
-			return fmt.Errorf("%s hook %s: %w", phase, desc, err)
+			if h.ContinueOnError {
+				fprintf(e.Stderr, "%s (continuing)\n", err)
+				continue
+			}
+			fatal = err
+			break
 		}
 	}
+	e.printHookSummary(results)
+	return fatal
+}
 
-	return nil
+func (e *Executor) printHookSummary(results []hookResult) {
+	if len(results) == 0 {
+		return
+	}
+	fprintf(e.Stdout, "hooks:\n")
+	for _, r := range results {
+		fprintf(e.Stdout, "  %s  exit %d  %s\n", r.Name, r.ExitCode, formatHookDuration(r.Duration))
+	}
+}
+
+func hookSummaryName(h schema.Hook) string {
+	if strings.TrimSpace(h.Name) != "" {
+		return h.Name
+	}
+	src := h.Command
+	if src == "" {
+		src = h.File
+	}
+	if len(src) > 40 {
+		return src[:40]
+	}
+	return src
+}
+
+func hookExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return 1
+}
+
+func formatHookDuration(d time.Duration) string {
+	if d < time.Millisecond {
+		return d.Round(time.Microsecond).String()
+	}
+	if d < time.Second {
+		return d.Round(time.Millisecond).String()
+	}
+	return d.Round(10 * time.Millisecond).String()
 }
 
 func (e *Executor) hookArgs(h schema.Hook) ([]string, error) {
@@ -241,6 +310,9 @@ func (e *Executor) hookArgs(h schema.Hook) ([]string, error) {
 }
 
 func hookDesc(h schema.Hook) string {
+	if strings.TrimSpace(h.Name) != "" {
+		return h.Name
+	}
 	if h.File != "" {
 		return "file " + h.File
 	}
