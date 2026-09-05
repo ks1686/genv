@@ -621,6 +621,9 @@ func TestApply_SourceRootMissingIsRefused(t *testing.T) {
 func TestApply_SourceRootResolvesServiceTemplates(t *testing.T) {
 	// A worktree spec copy must resolve launchd/systemd templates from
 	// --source-root, same as files.links / files.templates.
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("declarative service templates apply only under launchd or systemd")
+	}
 	home := t.TempDir()
 	testutil.SetHome(t, home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
