@@ -60,10 +60,14 @@ type LockedService struct {
 }
 
 // LockedFile records a single applied file entry from the spec files block.
+// ContentHash is a versioned digest ("sha256:<hex>") of the link source or
+// rendered template at last successful apply. Empty on pre-hash locks and for
+// dirs / merge-dir records.
 type LockedFile struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Mode   string `json:"mode,omitempty"`
+	Source      string `json:"source"`
+	Target      string `json:"target"`
+	Mode        string `json:"mode,omitempty"`
+	ContentHash string `json:"contentHash,omitempty"`
 }
 
 // LockFile is the on-disk representation of the applied state tracked by genv.
@@ -71,6 +75,7 @@ type LockedFile struct {
 // The Shell field is added in M9 (schemaVersion "3") and is absent in v1/v2 lock files.
 // The Services field is added in M10 (schemaVersion "4") and is absent in v1/v2/v3 lock files.
 // The Files field is added in M11 (schemaVersion "5") and is absent in v1-v4 lock files.
+// ContentHash on Files entries is additive (omitempty); older locks omit it.
 type LockFile struct {
 	SchemaVersion string             `json:"schemaVersion"`
 	Target        string             `json:"target,omitempty"`

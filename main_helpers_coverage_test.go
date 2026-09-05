@@ -70,12 +70,15 @@ func TestFileAndPathHelpers(t *testing.T) {
 	}
 	existing := []genvfile.LockedFile{{Source: "a", Target: "b", Mode: "link"}}
 	adopted := []genvfile.LockedFile{
-		{Source: "a", Target: "b", Mode: "link"},
+		{Source: "a", Target: "b", Mode: "link", ContentHash: "sha256:new"},
 		{Source: "c", Target: "d", Mode: "copy"},
 	}
 	merged := mergeLockedFiles(existing, adopted)
 	if len(merged) != 2 {
 		t.Fatalf("merged = %#v", merged)
+	}
+	if merged[0].ContentHash != "sha256:new" {
+		t.Fatalf("merge should refresh contentHash, got %#v", merged[0])
 	}
 
 	home := t.TempDir()
@@ -133,6 +136,27 @@ func TestFileAndPathHelpers(t *testing.T) {
 
 	if !hasBoolFlag([]string{"--files", "--json"}, "files") || hasBoolFlag([]string{"--file"}, "files") {
 		t.Error("hasBoolFlag mismatch")
+	}
+
+	src := filepath.Join(home, "hashed.txt")
+	if err := os.WriteFile(src, []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hashed := lockedFilesFromSpec(&schema.FilesConfig{
+		Links:     []schema.FileLink{{Source: src, Target: "~/hashed.txt", Mode: "managed-link"}},
+		Templates: []schema.FileTemplate{{Source: src, Target: "~/hashed.copy"}},
+		Dirs:      []schema.FileDir{{Target: "~/hashed-dir"}},
+	}, "any", home)
+	if len(hashed) != 3 || hashed[0].ContentHash == "" || hashed[1].ContentHash == "" || hashed[2].ContentHash != "" {
+		t.Fatalf("lockedFilesFromSpec hashes = %#v", hashed)
+	}
+	hashMap := fileContentHashes(hashed)
+	expanded, err := files.ExpandTarget("~/hashed.txt")
+	if err != nil || hashMap[expanded] != hashed[0].ContentHash {
+		t.Fatalf("fileContentHashes = %#v expand=%q err=%v", hashMap, expanded, err)
+	}
+	if fileContentHashes(nil) != nil {
+		t.Error("nil lock hashes should stay nil")
 	}
 
 	plan := filePlanEntries(&files.ApplyResult{
