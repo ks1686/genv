@@ -461,6 +461,8 @@ _genv() {
 						'--restart=[Command to restart the service]:command:' \
 						'--status=[Command to check service status]:command:' \
 						'--brew-formula=[Homebrew formula to manage via brew services (macOS only)]:formula:' \
+						'--launchd-plist=[LaunchAgent plist template]:plist:_files' \
+						'--systemd-unit=[systemd --user unit template]:unit:_files' \
 						'--target=[Portable target id for schemaVersion 8 specs]:target:'
 					;;
 				remove | rm)

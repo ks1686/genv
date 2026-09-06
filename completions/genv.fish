@@ -294,6 +294,8 @@ complete -c genv -n '__fish_genv_seen_sub service add' -l stop -d 'Command to st
 complete -c genv -n '__fish_genv_seen_sub service add' -l restart -d 'Command to restart the service' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l status -d 'Command to check service status' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homebrew formula to manage via brew services (macOS only)' -x
+complete -c genv -n '__fish_genv_seen_sub service add' -l launchd-plist -d 'LaunchAgent plist template' -r
+complete -c genv -n '__fish_genv_seen_sub service add' -l systemd-unit -d 'systemd --user unit template' -r
 complete -c genv -n '__fish_genv_seen_sub service add; or __fish_genv_seen_sub service remove; or __fish_genv_seen_sub service rm' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 complete -c genv -n '__fish_genv_seen_sub service list; or __fish_genv_seen_sub service ls; or __fish_genv_seen_sub service start; or __fish_genv_seen_sub service stop; or __fish_genv_seen_sub service status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
 

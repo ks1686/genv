@@ -78,6 +78,42 @@ func TestIsAbsolutePathRecognizesTargetPlatformPaths(t *testing.T) {
 	}
 }
 
+func TestBuildCopiesSupervisorTemplates(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(base, "agents", "com.example.agent.plist")
+	if err := os.WriteFile(plist, []byte("<plist/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Targets: map[string]*schema.TargetBundle{
+			"macos": {
+				Services: map[string]*schema.Service{
+					"agent": {Launchd: &schema.LaunchdSpec{Plist: "agents/com.example.agent.plist"}},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if _, err := BuildWithOptions(f, "macos", outDir, Options{BaseDir: base}); err != nil {
+		t.Fatal(err)
+	}
+	copied := filepath.Join(outDir, "files", "agents", "com.example.agent.plist")
+	if _, err := os.Stat(copied); err != nil {
+		t.Fatalf("expected bundled plist at %s: %v", copied, err)
+	}
+	data, err := os.ReadFile(filepath.Join(outDir, "genv.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "files/agents/com.example.agent.plist") {
+		t.Fatalf("snapshot should rewrite launchd.plist, got:\n%s", data)
+	}
+}
+
 func TestBuildDoesNotDeferNativeLinuxManagers(t *testing.T) {
 	f := &schema.GenvFile{
 		SchemaVersion: schema.Version8,

@@ -937,6 +937,73 @@ func TestParseAndValidate_V4StillValid(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_LaunchdAndSystemdTemplates(t *testing.T) {
+	input := `{
+		"schemaVersion":"8",
+		"defaults":{},
+		"targets":{"macos":{"services":{
+			"agent":{"launchd":{"plist":"agents/com.example.agent.plist"}},
+			"both":{"launchd":{"plist":"agents/foo.plist"},"systemd":{"unit":"units/foo.service"}}
+		}}}
+	}`
+	f, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("launchd/systemd templates should validate: %v", errs)
+	}
+	got := f.Targets["macos"].Services["agent"]
+	if got == nil || !got.DeclaresLaunchd() || got.Launchd.Plist != "agents/com.example.agent.plist" {
+		t.Fatalf("macos agent launchd = %+v", got)
+	}
+}
+
+func TestParseAndValidate_LaunchdExclusiveWithStart(t *testing.T) {
+	input := `{"schemaVersion":"4","packages":[],"services":{"svc":{"start":["true"],"launchd":{"plist":"a.plist"}}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "services.svc" && strings.Contains(e.Message, "mutually exclusive") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected exclusivity error, got: %v", errs)
+	}
+}
+
+func TestParseAndValidate_LaunchdEmptyPlistRejected(t *testing.T) {
+	input := `{"schemaVersion":"4","packages":[],"services":{"svc":{"launchd":{}}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("expected empty launchd.plist to fail validation")
+	}
+}
+
+func TestParseAndValidate_UnknownLaunchdFieldRejected(t *testing.T) {
+	input := `{"schemaVersion":"4","packages":[],"services":{"svc":{"launchd":{"plist":"a.plist","program":"x"}}}}`
+	_, errs, err := ParseAndValidate([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected fatal error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.Field == "services.svc.launchd.program" && strings.Contains(e.Message, "unknown field") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected unknown launchd field, got: %v", errs)
+	}
+}
+
 func TestParseAndValidate_AcceptsV7(t *testing.T) {
 	input := `{"schemaVersion":"7","packages":[]}`
 	f, errs, err := ParseAndValidate([]byte(input))

@@ -228,7 +228,7 @@ function script:Get-GenvCompletions {
 				return (& $completeCandidates -Candidates $serviceSubs -ResultType 'ParameterValue')
 			}
 			switch ($serviceSub) {
-				'add' { $flags = @('--file', '--start', '--stop', '--restart', '--status', '--brew-formula', '--target') }
+				'add' { $flags = @('--file', '--start', '--stop', '--restart', '--status', '--brew-formula', '--launchd-plist', '--systemd-unit', '--target') }
 				{ $_ -in 'remove', 'rm' } { $flags = @('--file', '--target') }
 				default { $flags = @('--file') }
 			}

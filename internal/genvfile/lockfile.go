@@ -51,12 +51,16 @@ type LockedShellConfig struct {
 
 // LockedService records how one service was last applied by genv.
 type LockedService struct {
-	Name        string   `json:"name"`
-	Start       []string `json:"start,omitempty"`
-	Stop        []string `json:"stop,omitempty"`
-	Restart     []string `json:"restart,omitempty"`
-	Status      []string `json:"status,omitempty"`
-	BrewFormula string   `json:"brew_formula,omitempty"`
+	Name         string   `json:"name"`
+	Start        []string `json:"start,omitempty"`
+	Stop         []string `json:"stop,omitempty"`
+	Restart      []string `json:"restart,omitempty"`
+	Status       []string `json:"status,omitempty"`
+	BrewFormula  string   `json:"brew_formula,omitempty"`
+	LaunchdPlist string   `json:"launchdPlist,omitempty"`
+	LaunchdLabel string   `json:"launchdLabel,omitempty"`
+	SystemdUnit  string   `json:"systemdUnit,omitempty"`
+	SystemdName  string   `json:"systemdName,omitempty"`
 }
 
 // LockedFile records a single applied file entry from the spec files block.

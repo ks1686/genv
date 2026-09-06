@@ -122,12 +122,12 @@ func TestApplyServicesUsesAvailableSupervisor(t *testing.T) {
 	installServiceFakeBinary(t, "launchctl", "exit 0")
 
 	spec := map[string]schema.Service{"managed": {Start: []string{"true"}}}
-	applied, removed, errs := ApplyServices(context.Background(), spec, nil, true)
+	applied, removed, errs := ApplyServices(context.Background(), spec, nil, true, "")
 	if len(errs) != 0 || len(applied) != 1 || applied[0] != "managed" || len(removed) != 0 {
 		t.Fatalf("apply = %v, remove = %v, errors = %v", applied, removed, errs)
 	}
 
-	applied, removed, errs = ApplyServices(context.Background(), nil, []genvfile.LockedService{{Name: "managed"}}, true)
+	applied, removed, errs = ApplyServices(context.Background(), nil, []genvfile.LockedService{{Name: "managed"}}, true, "")
 	if len(errs) != 0 || len(applied) != 0 || len(removed) != 1 || removed[0] != "managed" {
 		t.Fatalf("apply = %v, remove = %v, errors = %v", applied, removed, errs)
 	}

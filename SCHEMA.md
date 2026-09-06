@@ -135,7 +135,20 @@ Hooks run as the current user and are arbitrary code by design — treat the spe
 
 ## v4 — services
 
-Map of name → `{ start, stop, restart, status }` argv arrays and/or `brew_formula` (mutually exclusive with `start`).
+Map of name → one backend:
+
+- `{ start, stop, restart, status }` argv arrays
+- `brew_formula` (mutually exclusive with `start`)
+- `launchd: { "plist": "agents/com.example.agent.plist" }` — LaunchAgent template, rendered like `files.templates[]` (`__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`)
+- `systemd: { "unit": "units/foo.service" }` — systemd --user unit template, same rendering
+
+`launchd` and `systemd` may coexist on one service (portable defaults). They are mutually exclusive with `start` and `brew_formula`.
+
+`genv apply` writes the rendered plist to `~/Library/LaunchAgents/<Label>.plist` and `launchctl bootstrap`s `gui/$UID` when the job is not loaded. A content change boots the job out and bootstraps again. `genv service status <name>` uses `launchctl print gui/$UID/<Label>`. Removing the service from the spec boots it out and deletes the plist.
+
+On Linux, apply writes `~/.config/systemd/user/<basename>.service`, then `systemctl --user daemon-reload` and `enable --now`. Content changes restart the unit. Status uses `systemctl --user is-active`. Removal stops, disables, and deletes the unit.
+
+Relative template paths resolve against the spec directory (or `repo.url` when set), same as `files.templates`.
 
 ## v3 / v2 / v1
 
@@ -204,7 +217,7 @@ Commands are split into argv (quotes supported). There is no shell piping or red
 
 `genv scan` runs each available adapter’s `list` and, for spec adapters, writes `prefer` so the adopted package stays bound. `genv export` copies `adapters` into the snapshot so `prefer` still validates.
 
-`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
+`genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` and service `launchd.plist` / `systemd.unit` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`.
 

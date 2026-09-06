@@ -85,7 +85,7 @@
         "services": {
           "type": "object",
           "additionalProperties": {
-            "type": "object"
+            "$ref": "#/$defs/service"
           }
         },
         "hooks": {
@@ -127,7 +127,7 @@
           "additionalProperties": {
             "anyOf": [
               {
-                "type": "object"
+                "$ref": "#/$defs/service"
               },
               {
                 "type": "null"
@@ -148,6 +148,59 @@
         },
         "sensitive": {
           "type": "boolean"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stop": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "restart": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "brew_formula": {
+          "type": "string"
+        },
+        "launchd": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "plist": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },

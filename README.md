@@ -236,7 +236,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `export` | Single-target snapshot + report + assets |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |
-| `env` / `shell` / `service` / `files` | Env vars, aliases, user services, `files adopt` |
+| `env` / `shell` / `service` / `files` | Env vars, aliases, user services (`launchd` / `systemd` templates), `files adopt` |
 | `completion` | `bash` / `zsh` / `fish` / `powershell` |
 | `clean` | Clear detected manager caches |
 | `version` / `help` | Build info / usage |
@@ -279,6 +279,21 @@ genv migrate --write
 ```
 
 File mismatches without `--force` no longer block packages/services: non-conflicting file ops still apply, each mismatched path is printed, and apply exits `4` if any remain.
+
+### User services (launchd / systemd)
+
+Declare a LaunchAgent or systemd --user unit in the spec instead of a `postApply` hook:
+
+```json
+"services": {
+  "syncthing": {
+    "launchd": { "plist": "launchd/com.example.syncthing.plist" },
+    "systemd": { "unit": "systemd/syncthing.service" }
+  }
+}
+```
+
+`genv apply` renders the template (`__HOME__` and the other `files.templates[]` placeholders), writes `~/Library/LaunchAgents/<Label>.plist` or `~/.config/systemd/user/<basename>.service`, and loads it. Editing the template and applying again re-bootstraps the launchd job or restarts the systemd unit. `genv service status syncthing` reads supervisor state. Removing the service from the spec unloads it and deletes the unit file. See [SCHEMA.md](SCHEMA.md#v4--services).
 
 ### Updates checker
 

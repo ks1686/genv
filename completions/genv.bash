@@ -283,7 +283,7 @@ _genv() {
 			fi
 		else
 			case "${svc_sub}" in
-			add) opts="--file --start --stop --restart --status --brew-formula --target" ;;
+			add) opts="--file --start --stop --restart --status --brew-formula --launchd-plist --systemd-unit --target" ;;
 			remove | rm) opts="--file --target" ;;
 			list | ls) opts="--file --target" ;;
 			start | stop | status) opts="--file --target" ;;

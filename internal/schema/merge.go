@@ -311,6 +311,14 @@ func copyService(in Service) Service {
 	out.Restart = copyStrings(in.Restart)
 	out.Status = copyStrings(in.Status)
 	out.Host = copyHostPredicate(in.Host)
+	if in.Launchd != nil {
+		v := *in.Launchd
+		out.Launchd = &v
+	}
+	if in.Systemd != nil {
+		v := *in.Systemd
+		out.Systemd = &v
+	}
 	return out
 }
 

@@ -48,7 +48,7 @@ func TestServiceStatus(t *testing.T) {
 		},
 	}
 
-	entries := ServiceStatus(spec, lock, true)
+	entries := ServiceStatus(spec, lock, true, "")
 
 	expected := map[string]ServiceStatusKind{
 		"ok-service":       ServiceStatusOK,
@@ -85,7 +85,7 @@ func TestServiceStatus_skipProbe(t *testing.T) {
 			Status: []string{"touch", marker},
 		},
 	}
-	entries := ServiceStatus(spec, nil, false)
+	entries := ServiceStatus(spec, nil, false, "")
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want 1", len(entries))
 	}
@@ -110,7 +110,7 @@ func TestApplyServices(t *testing.T) {
 	}
 	lock := []genvfile.LockedService{}
 
-	applied, removed, errs := ApplyServices(ctx, spec, lock, false)
+	applied, removed, errs := ApplyServices(ctx, spec, lock, false, "")
 	if len(errs) > 0 {
 		t.Errorf("ApplyServices failed: %v", errs[0])
 	}
@@ -127,7 +127,7 @@ func TestApplyServices(t *testing.T) {
 		{Name: "extra-svc", Stop: []string{"true"}},
 	}
 
-	applied, removed, errs = ApplyServices(ctx, spec, lock, false)
+	applied, removed, errs = ApplyServices(ctx, spec, lock, false, "")
 	if len(errs) > 0 {
 		t.Errorf("ApplyServices failed: %v", errs[0])
 	}
@@ -153,7 +153,7 @@ func TestApplyServicesFailure(t *testing.T) {
 		"bad-svc": {Start: []string{"false"}},
 	}
 
-	applied, removed, errs := ApplyServices(ctx, spec, nil, false)
+	applied, removed, errs := ApplyServices(ctx, spec, nil, false, "")
 	if len(errs) == 0 {
 		t.Error("expected an error when start command fails, got none")
 	}
@@ -179,7 +179,7 @@ func TestApplyServicesModified(t *testing.T) {
 		{Name: "mod-svc", Start: []string{"echo", "old"}},
 	}
 
-	applied, _, errs := ApplyServices(ctx, spec, lock, false)
+	applied, _, errs := ApplyServices(ctx, spec, lock, false, "")
 	if len(errs) > 0 {
 		t.Errorf("unexpected error: %v", errs[0])
 	}
@@ -196,7 +196,7 @@ func TestApplyServicesExtraNoStop(t *testing.T) {
 		{Name: "nostop-svc"},
 	}
 
-	_, removed, errs := ApplyServices(ctx, nil, lock, false)
+	_, removed, errs := ApplyServices(ctx, nil, lock, false, "")
 	if len(errs) > 0 {
 		t.Errorf("unexpected error: %v", errs[0])
 	}
@@ -211,7 +211,7 @@ func TestSpecToLock(t *testing.T) {
 		"svc-a": {Start: []string{"a"}, Status: []string{"check-a"}},
 	}
 
-	lock := SpecToLock(spec)
+	lock := SpecToLock(spec, "")
 
 	if len(lock) != 2 {
 		t.Fatalf("expected 2 locked services, got %d", len(lock))
@@ -229,10 +229,10 @@ func TestSpecToLock(t *testing.T) {
 }
 
 func TestSpecToLockEmpty(t *testing.T) {
-	if got := SpecToLock(nil); got != nil {
+	if got := SpecToLock(nil, ""); got != nil {
 		t.Errorf("expected nil for empty spec, got %v", got)
 	}
-	if got := SpecToLock(map[string]schema.Service{}); got != nil {
+	if got := SpecToLock(map[string]schema.Service{}, ""); got != nil {
 		t.Errorf("expected nil for empty map, got %v", got)
 	}
 }

@@ -1327,7 +1327,7 @@ func applyCmd(args []string) int {
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to host classification)")
 	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
 	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
-	fs.StringVar(&opts.SourceRoot, "source-root", "", "resolve files.links/templates sources relative to this directory instead of the spec file directory")
+	fs.StringVar(&opts.SourceRoot, "source-root", "", "resolve files.links/templates and service launchd/systemd template sources relative to this directory instead of the spec file directory")
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -1516,7 +1516,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if shellErr != nil {
 		errs = append(errs, shellErr.Error())
 	}
-	_, _, svcErrs := applyServices(ctx, f, lf, false)
+	_, _, svcErrs := applyServices(ctx, f, lf, false, applySourceRoot(opts, f))
 	if len(svcErrs) > 0 {
 		errs = append(errs, errStrings(svcErrs)...)
 	}
@@ -1604,7 +1604,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 	var serviceChanges int
-	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
+	for _, e := range service.ServiceStatus(f.Services, lf.Services, false, "") {
 		if e.Kind != service.ServiceStatusOK {
 			serviceChanges++
 		}
@@ -1693,7 +1693,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 	if _, _, err := applyShellCfg(f, lf, !opts.Quiet, opts.resolvedStateDir); err != nil {
 		fileErrs = append(fileErrs, err)
 	}
-	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet)
+	_, _, svcErrs = applyServices(ctx, f, lf, !opts.Quiet, applySourceRoot(opts, f))
 	var filePlanErr error
 	appliedFiles, filePlanErr = applyFiles(ctx, opts, f, lf)
 	if filePlanErr != nil {
@@ -1931,7 +1931,7 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 	}
 
 	var toStart, toStop []string
-	for _, e := range service.ServiceStatus(f.Services, lf.Services, false) {
+	for _, e := range service.ServiceStatus(f.Services, lf.Services, false, "") {
 		switch e.Kind {
 		case service.ServiceStatusMissing, service.ServiceStatusModified:
 			toStart = append(toStart, e.Name)
@@ -2044,7 +2044,7 @@ func sourceRootForSpec(file string, f *schema.GenvFile) string {
 	return filepath.Dir(file)
 }
 
-// applySourceRoot is the files.links/templates root for apply.
+// applySourceRoot is the files.links/templates and service template root for apply.
 // --source-root wins so a spec copy can preview against the live tree.
 func applySourceRoot(opts applyOptions, f *schema.GenvFile) string {
 	if opts.SourceRoot != "" {
@@ -3344,7 +3344,7 @@ func statusCmd(args []string) int {
 	}
 	envEntries := genvenv.EnvStatus(f.Env, lf.Env)
 	shellEntries := shellcfg.ShellStatus(f.Shell, lf.Shell)
-	serviceEntries := service.ServiceStatus(f.Services, lf.Services, true)
+	serviceEntries := service.ServiceStatus(f.Services, lf.Services, true, sourceRootForSpec(*file, f))
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
@@ -3545,14 +3545,14 @@ func statusCmd(args []string) int {
 // applyServices reconciles services, updates lf.Services in memory, and
 // returns lists of applied and removed service names. The caller writes the lock.
 // If verbose is true, it prints progress lines to stdout.
-func applyServices(ctx context.Context, f *schema.GenvFile, lf *genvfile.LockFile, verbose bool) (applied, removed []string, errs []error) {
+func applyServices(ctx context.Context, f *schema.GenvFile, lf *genvfile.LockFile, verbose bool, sourceRoot string) (applied, removed []string, errs []error) {
 	if len(f.Services) == 0 && len(lf.Services) == 0 {
 		return nil, nil, nil
 	}
 
-	applied, removed, errs = service.ApplyServices(ctx, f.Services, lf.Services, verbose)
+	applied, removed, errs = service.ApplyServices(ctx, f.Services, lf.Services, verbose, sourceRoot)
 	if len(errs) == 0 {
-		lf.Services = service.SpecToLock(f.Services)
+		lf.Services = service.SpecToLock(f.Services, sourceRoot)
 	}
 
 	return applied, removed, errs
@@ -4859,7 +4859,7 @@ Apply-specific flags:
   --target <id>        Portable target id for schemaVersion 8 specs
   --force-new-lock     Back up a foreign lock and start a new local lock
   --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
-  --source-root <dir>  Resolve files.links/templates sources relative to this directory
+  --source-root <dir>  Resolve files.links/templates and service template sources relative to this directory
 
 Export-specific flags:
   --target <id>        Target id to export
@@ -4971,6 +4971,8 @@ func printServiceUsage() {
 	fPrintln(os.Stderr, "subcommands:")
 	fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service (raw commands)")
 	fPrintln(os.Stderr, "  add <name> --brew-formula <formula>                                          Add a brew-managed service (macOS)")
+	fPrintln(os.Stderr, "  add <name> --launchd-plist <path>                                            Add a launchd user agent from a plist template")
+	fPrintln(os.Stderr, "  add <name> --systemd-unit <path>                                             Add a systemd --user unit from a unit template")
 	fPrintln(os.Stderr, "  remove <name>                                                              Remove a service from the spec")
 	fPrintln(os.Stderr, "  list                                                                        Show all declared services")
 	fPrintln(os.Stderr, "  start <name>                                                               Start a service")
@@ -4984,6 +4986,8 @@ func serviceAddCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv service add <name> --start <cmd> [flags]")
 		fPrintln(os.Stderr, "       genv service add <name> --brew-formula <formula> [flags]")
+		fPrintln(os.Stderr, "       genv service add <name> --launchd-plist <path> [flags]")
+		fPrintln(os.Stderr, "       genv service add <name> --systemd-unit <path> [flags]")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -4994,6 +4998,8 @@ func serviceAddCmd(args []string) int {
 	restart := fs.String("restart", "", "command to restart the service")
 	status := fs.String("status", "", "command to check service status")
 	brewFormula := fs.String("brew-formula", "", "homebrew formula to manage via `brew services` (macOS only)")
+	launchdPlist := fs.String("launchd-plist", "", "LaunchAgent plist template (rendered like files.templates)")
+	systemdUnit := fs.String("systemd-unit", "", "systemd --user unit template (rendered like files.templates)")
 	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
 
 	name, flagArgs := extractPositional(args)
@@ -5005,8 +5011,8 @@ func serviceAddCmd(args []string) int {
 		fs.Usage()
 		return exitUsage
 	}
-	if *start == "" && *brewFormula == "" {
-		fPrintln(os.Stderr, "genv service add: either --start or --brew-formula is required")
+	if *start == "" && *brewFormula == "" && *launchdPlist == "" && *systemdUnit == "" {
+		fPrintln(os.Stderr, "genv service add: either --start, --brew-formula, --launchd-plist, or --systemd-unit is required")
 		fs.Usage()
 		return exitUsage
 	}
@@ -5055,7 +5061,20 @@ func serviceAddCmd(args []string) int {
 	if exit != exitOK {
 		return exit
 	}
-	if err := commands.ServiceAdd(f, name, startCmd, stopCmd, restartCmd, statusCmd, *brewFormula, targetID); err != nil {
+	svc := schema.Service{
+		Start:       startCmd,
+		Stop:        stopCmd,
+		Restart:     restartCmd,
+		Status:      statusCmd,
+		BrewFormula: *brewFormula,
+	}
+	if *launchdPlist != "" {
+		svc.Launchd = &schema.LaunchdSpec{Plist: *launchdPlist}
+	}
+	if *systemdUnit != "" {
+		svc.Systemd = &schema.SystemdSpec{Unit: *systemdUnit}
+	}
+	if err := commands.ServicePut(f, name, svc, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
 		return exitUsage
 	}
@@ -5185,20 +5204,16 @@ func serviceStartCmd(args []string) int {
 		return exitLogic
 	}
 
-	if svc.BrewFormula != "" {
+	if svc.DeclaresLaunchd() {
+		fprintf(os.Stdout, "Starting service %q via launchd\n", name)
+	} else if svc.DeclaresSystemd() {
+		fprintf(os.Stdout, "Starting service %q via systemd --user\n", name)
+	} else if svc.BrewFormula != "" {
 		fprintf(os.Stdout, "Starting service %q via brew services: %s\n", name, svc.BrewFormula)
-		if err := service.BrewServicesStart(context.Background(), svc.BrewFormula); err != nil {
-			fprintf(os.Stderr, "genv: %v\n", err)
-			return exitLogic
-		}
-		return exitOK
+	} else {
+		fprintf(os.Stdout, "Starting service %q: %s\n", name, strings.Join(svc.Start, " "))
 	}
-
-	fprintf(os.Stdout, "Starting service %q: %s\n", name, strings.Join(svc.Start, " "))
-	cmd := exec.Command(svc.Start[0], svc.Start[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := service.StartDeclared(context.Background(), name, svc, sourceRootForSpec(*file, f)); err != nil {
 		fprintf(os.Stderr, "genv: failed to start service %q: %v\n", name, err)
 		if service.IsSystemdAvailable() {
 			fprintf(os.Stderr, "Tip: to view logs run: %s\n", service.SystemdLogsHint(name))
@@ -5234,25 +5249,19 @@ func serviceStopCmd(args []string) int {
 		return exitLogic
 	}
 
-	if svc.BrewFormula != "" {
+	if svc.DeclaresLaunchd() {
+		fprintf(os.Stdout, "Stopping service %q via launchd\n", name)
+	} else if svc.DeclaresSystemd() {
+		fprintf(os.Stdout, "Stopping service %q via systemd --user\n", name)
+	} else if svc.BrewFormula != "" {
 		fprintf(os.Stdout, "Stopping service %q via brew services: %s\n", name, svc.BrewFormula)
-		if err := service.BrewServicesStop(context.Background(), svc.BrewFormula); err != nil {
-			fprintf(os.Stderr, "genv: %v\n", err)
-			return exitLogic
-		}
-		return exitOK
-	}
-
-	if len(svc.Stop) == 0 {
+	} else if len(svc.Stop) == 0 {
 		fprintf(os.Stderr, "genv: no stop command defined for service %q\n", name)
 		return exitLogic
+	} else {
+		fprintf(os.Stdout, "Stopping service %q: %s\n", name, strings.Join(svc.Stop, " "))
 	}
-
-	fprintf(os.Stdout, "Stopping service %q: %s\n", name, strings.Join(svc.Stop, " "))
-	cmd := exec.Command(svc.Stop[0], svc.Stop[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := service.StopDeclared(context.Background(), name, svc, sourceRootForSpec(*file, f)); err != nil {
 		fprintf(os.Stderr, "genv: failed to stop service %q: %v\n", name, err)
 		return exitLogic
 	}
@@ -5285,25 +5294,15 @@ func serviceStatusCmd(args []string) int {
 		return exitLogic
 	}
 
-	if svc.BrewFormula != "" {
-		if service.BrewServicesRunning(svc.BrewFormula) {
-			fprintf(os.Stdout, "service %q is running\n", name)
-			return exitOK
-		}
-		fprintf(os.Stdout, "service %q is NOT running\n", name)
-		return exitLogic
-	}
-
-	if len(svc.Status) == 0 {
+	if !svc.DeclaresLaunchd() && !svc.DeclaresSystemd() && svc.BrewFormula == "" && len(svc.Status) == 0 && !service.IsSystemdAvailable() && !service.IsLaunchdAvailable() {
 		fprintf(os.Stderr, "genv: no status command defined for service %q\n", name)
 		return exitLogic
 	}
 
-	cmd := exec.Command(svc.Status[0], svc.Status[1:]...)
-	if err := cmd.Run(); err != nil {
-		fprintf(os.Stdout, "service %q is NOT running\n", name)
-		return exitLogic
+	if service.ProbeRunning(context.Background(), name, svc, sourceRootForSpec(*file, f)) {
+		fprintf(os.Stdout, "service %q is running\n", name)
+		return exitOK
 	}
-	fprintf(os.Stdout, "service %q is running\n", name)
-	return exitOK
+	fprintf(os.Stdout, "service %q is NOT running\n", name)
+	return exitLogic
 }
