@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.3.3 - 2026-09-05
+
+### Changed
+
+- Homebrew cask no longer ships a legacy `postflight` hook that re-ran
+  `genv updates start` after upgrades. GoReleaser can only emit
+  `postflight`, not `postflight_steps`, which triggered a brew
+  deprecation warning. Modern `genv updates start` already registers a
+  PATH-stable brew prefix bin path via `selfpath.PreferStable`, so the
+  Caskroom reload is unnecessary. The cask caveat tells users with older
+  LaunchAgents (or a missing-executable hint from `genv updates status`)
+  to run `genv updates start` after upgrading.
+
 ## v4.3.2 - 2026-09-05
 
 ### Added
