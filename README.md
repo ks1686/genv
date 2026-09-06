@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.3.1_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.3.2_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -50,7 +50,7 @@ The bucket is self-hosted (not Scoop extras). `scoop install genv` needs a root
 **Windows (PowerShell zip):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.3.1_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.3.2_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version
