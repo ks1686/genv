@@ -87,18 +87,16 @@ homebrew_casks:
     description: "Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2."
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
-    # Darwin release binaries are Developer ID signed and notarized. After a cask
-    # upgrade the binary path under Caskroom changes; reload the updates
-    # LaunchAgent so launchd picks up the new ProgramArguments path.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            plist = File.expand_path("~/Library/LaunchAgents/genv.updates.plist")
-            if File.exist?(plist)
-              system_command "#{staged_path}/genv", args: ["updates", "start"]
-            end
-          end
+    # PreferStable makes a Caskroom reload unnecessary: modern
+    # `genv updates start` registers a PATH-stable brew prefix bin path,
+    # so launchd does not pin a versioned Caskroom binary. GoReleaser's
+    # homebrew_casks.hooks.post.install always renders as a legacy Ruby
+    # `postflight do` block; there is no field that emits postflight_steps
+    # yet. Caveats below cover agents registered before PreferStable.
+    caveats: |
+      If you use the hourly updates LaunchAgent and it was registered
+      before PATH-stable paths (or `genv updates status` hints a missing
+      executable), run `genv updates start` after upgrading.
 
 # ── Snap Store ────────────────────────────────────────────────────────────────
 # Publishes a snap to the Snap Store on every non-prerelease tag.

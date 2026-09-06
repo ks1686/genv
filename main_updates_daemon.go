@@ -65,7 +65,8 @@ func updatesStartCmd(args []string) int {
 		return exitIO
 	}
 	// Prefer a PATH-stable invocation path (e.g. Homebrew's bin/genv symlink)
-	// over a version-pinned Caskroom path from os.Executable / cask post_install.
+	// over a version-pinned Caskroom path from os.Executable. The Homebrew
+	// cask no longer re-runs updates start after upgrades.
 	exe = selfpath.PreferStable(exe, os.Args[0], updatesSelfLookPath)
 	absFile, err := filepath.Abs(*file)
 	if err != nil {
