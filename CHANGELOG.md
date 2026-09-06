@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.3.2 - 2026-09-05
+
 ### Added
 
 - Spec services can declare a LaunchAgent or systemd --user unit from a
@@ -34,6 +36,12 @@ All notable changes to this project will be documented in this file.
   refreshes the hash. Pre-hash locks omit the field and stay topology-only.
   Hashing is always on for `link` / `managed-link` / templates; `merge-dir`
   trees are not hashed.
+- `files.links[]`, `files.templates[]`, and `files.dirs[]` accept optional
+  `perm`, an octal string (`0600`, `0700`). Apply chmods the managed-link
+  source, rendered template, or directory after creating the entry. A second
+  apply is a no-op when the mode already matches. `genv status` reports
+  `perm-mismatch`. `mode` on links stays the link kind (`link` /
+  `managed-link` / `merge-dir`); it is still rejected on dirs.
 - Per-entry `backup: true` on a files link (or template) replaces that
   entry's mismatched regular file without `--force`, and keeps a
   `*.backup.*` copy. Other mismatches still report and still need `--force`.
@@ -41,6 +49,29 @@ All notable changes to this project will be documented in this file.
 - `genv files adopt <target>` seeds a missing source from the live file,
   backs the live file up, creates the link, and records it in the lock.
   `--dry-run` prints the copy/backup/link steps without writing.
+- Lifecycle hooks now receive `GENV_SPEC_FILE`, `GENV_SPEC_DIR`, and
+  `GENV_LOCK_FILE`. A hook with `continueOnError: true` reports a failure
+  without failing apply. Each hook phase prints a name/exit/duration
+  summary after hooks run.
+
+### Fixed
+
+- `genv adopt` and `genv disown` rewrite only the changed `packages` arrays
+  when the rest of the spec is unchanged, so empty objects and original key
+  order survive in `genv.json`.
+- Applying a spec with `--file` no longer rewrites the live default lock or
+  env/shell fragments. Lock and fragments default to the spec directory;
+  `--state-dir` relocates all three. Plan output names the paths.
+  `adopt --file` reads the sibling lock. Wet apply refuses writes outside
+  that directory without an explicit `--lock-file` or `--state-dir`.
+- `genv adopt` now queries the adapter for the installed version and writes
+  it to the lock. `genv status` shows `*` for no constraint and `?` when the
+  installed version is unknown. Apply backfills empty lock versions from
+  `VersionLister` inventory so existing adopted entries pick up versions on
+  the next apply.
+- Lock mutations no longer leave a zero-byte `<lock>.mutex` sidecar after
+  apply and other writes. Unlock unlinks it, re-checking inode identity so
+  concurrent holders stay exclusive.
 
 ## v4.3.1 - 2026-09-05
 
@@ -78,12 +109,6 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `files.links[]`, `files.templates[]`, and `files.dirs[]` accept optional
-  `perm`, an octal string (`0600`, `0700`). Apply chmods the managed-link
-  source, rendered template, or directory after creating the entry. A second
-  apply is a no-op when the mode already matches. `genv status` reports
-  `perm-mismatch`. `mode` on links stays the link kind (`link` /
-  `managed-link` / `merge-dir`); it is still rejected on dirs.
 - Tracked-package planning now refreshes each index-based manager once before
   outdated detection. `genv upgrade`, `genv updates check`, and the hourly
   `__run-once` / `autoApply` worker share that path. Refresh argv: `brew update`
