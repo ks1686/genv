@@ -74,7 +74,7 @@ func destinationPackages(f *schema.GenvFile, destTarget string) []schema.Package
 	if f == nil {
 		return nil
 	}
-	if f.SchemaVersion == schema.Version8 && f.Targets != nil {
+	if schema.IsPortableVersion(f.SchemaVersion) && f.Targets != nil {
 		if _, ok := f.Targets[destTarget]; !ok {
 			return nil
 		}

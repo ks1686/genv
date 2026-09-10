@@ -242,7 +242,7 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 }
 
 func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, int) {
-	if f.SchemaVersion != schema.Version8 {
+	if !schema.IsPortableVersion(f.SchemaVersion) {
 		return "", exitOK
 	}
 	targetID, err := target.Resolve(targetFlag)
@@ -288,7 +288,7 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 		return nil, "", fmt.Errorf("genv file is nil")
 	}
 	useSpecAdapters(f)
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		targetID, err := target.Resolve(targetFlag)
 		if err != nil {
 			return nil, "", err
@@ -757,7 +757,7 @@ func runRemove(opts removeOptions) int {
 	if isTerminal() {
 		if f, err := genvfile.Read(file); err == nil {
 			packages := f.Packages
-			if f.SchemaVersion == schema.Version8 {
+			if schema.IsPortableVersion(f.SchemaVersion) {
 				effective, _, exit := materializeSpecForCommand("remove", file, f, opts.Host, opts.Target)
 				if exit != exitOK {
 					return exit
@@ -1439,7 +1439,7 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	if lf == nil {
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
-	isV8 := f.SchemaVersion == schema.Version8
+	isV8 := schema.IsPortableVersion(f.SchemaVersion)
 	effective, activeTarget, code := materializeSpecForCommand("apply", opts.File, f, opts.Host, opts.Target)
 	if code != exitOK {
 		return code
@@ -3033,7 +3033,7 @@ func scanCmd(args []string) int {
 	// package tracked as {"id":"xcode","managers":{"mas":"497799835"}} would
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
 	trackedPackages := f.Packages
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		active, err := schema.MergeTarget(f, targetID)
 		if err != nil {
 			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
@@ -4122,7 +4122,7 @@ func upgradeCmd(args []string) int {
 		fprintf(os.Stderr, "genv upgrade: reading lock: %v\n", err)
 		return exitIO
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		available := resolver.Detect()
 		_, code := applyLockGate("upgrade", lockPath, lf, activeTarget, available, true, false, *dryRun, "")
 		if code != exitOK {

@@ -68,7 +68,7 @@ func exportCmd(args []string) int {
 			fprintf(os.Stderr, "genv export: warning: %s\n", warning)
 		}
 		f = migrated
-	} else if f.SchemaVersion != schema.Version8 {
+	} else if !schema.IsPortableVersion(f.SchemaVersion) {
 		fprintf(os.Stderr, "genv export: schemaVersion %q is not exportable; rerun with --from-v7 to migrate in memory\n", f.SchemaVersion)
 		return exitUsage
 	}

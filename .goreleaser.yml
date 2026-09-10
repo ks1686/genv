@@ -98,29 +98,10 @@ homebrew_casks:
       before PATH-stable paths (or `genv updates status` hints a missing
       executable), run `genv updates start` after upgrading.
 
-# ── Snap Store ────────────────────────────────────────────────────────────────
-# Publishes a snap to the Snap Store on every non-prerelease tag.
-# Requires secret: SNAPCRAFT_STORE_CREDENTIALS
-#
-# Install after setup:
-#   snap install genv
-snapcrafts:
-  - name: genv
-    summary: "Declarative package and environment manager."
-    description: "genv is a command-line tool to track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2. It helps you manage packages, environment variables, and shell configuration declaratively."
-    license: MIT
-    grade: stable
-    confinement: strict
-    channel_templates:
-      - stable
-    publish: true
-
-
-
 # ── Scoop bucket ──────────────────────────────────────────────────────────────
 # Publishes a manifest to ks1686/scoop-bucket on every non-prerelease tag
 # Empty or unset SCOOP_BUCKET_GITHUB_TOKEN → skip upload so the
-# rest of the release (GitHub, Homebrew, Snap) still succeeds.
+# rest of the release (GitHub and Homebrew) still succeeds.
 # Requires secret: SCOOP_BUCKET_GITHUB_TOKEN (fine-grained PAT with
 # Contents: read+write on the scoop-bucket repo).
 #

@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ks1686/genv/schema/v9/genv.json",
+  "title": "genv.json",
+  "description": "genv portable targets manifest with managed external releases - schema version 9",
+  "type": "object",
+  "required": ["schemaVersion", "targets"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string"},
+    "schemaVersion": {"type": "string", "const": "9"},
+    "repo": {"type": "object"},
+    "updates": {"type": "object"},
+    "defaults": {"$ref": "#/$defs/defaultBundle"},
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"enum": ["macos", "windows", "arch", "ubuntu", "wsl-arch", "linux"]},
+      "additionalProperties": {"$ref": "#/$defs/targetBundle"}
+    },
+    "packages": {"type": "array", "maxItems": 0},
+    "env": {"type": "null"},
+    "shell": {"type": "null"},
+    "files": {"type": "null"},
+    "services": {"type": "null"},
+    "hooks": {"type": "null"}
+  },
+  "$defs": {
+    "defaultBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {"type": "array", "items": {"$ref": "#/$defs/package"}},
+        "env": {"type": "object"},
+        "shell": {"type": "object"},
+        "files": {"type": "object"},
+        "services": {"type": "object"},
+        "hooks": {"type": "object"}
+      }
+    },
+    "targetBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {"type": "array", "items": {"$ref": "#/$defs/package"}},
+        "env": {"type": "object"},
+        "shell": {"type": "object"},
+        "files": {"type": "object"},
+        "services": {"type": "object"},
+        "hooks": {"type": "object"}
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "string"},
+        "prefer": {"type": "string"},
+        "managers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "external": {"$ref": "#/$defs/externalRecipe"}
+      }
+    },
+    "externalRecipe": {
+      "type": "object",
+      "required": ["detect", "source", "platforms"],
+      "additionalProperties": false,
+      "properties": {
+        "detect": {"$ref": "#/$defs/externalDetect"},
+        "source": {"$ref": "#/$defs/externalSource"},
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/externalPlatform"}
+        },
+        "verify": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/externalVerification"}
+        },
+        "allowUnverified": {"type": "boolean"},
+        "allowInsecureHTTP": {"type": "boolean"},
+        "allowBackgroundExecution": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"verify": {"maxItems": 0}}},
+          "then": {"properties": {"allowUnverified": {"const": true}}, "required": ["allowUnverified"]}
+        }
+      ]
+    },
+    "externalDetect": {
+      "type": "object",
+      "required": ["command", "versionRegex"],
+      "additionalProperties": false,
+      "properties": {
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "versionRegex": {"type": "string", "minLength": 1}
+      }
+    },
+    "externalSource": {
+      "oneOf": [
+        {"$ref": "#/$defs/githubSource"},
+        {"$ref": "#/$defs/httpSource"}
+      ]
+    },
+    "githubSource": {
+      "type": "object",
+      "required": ["type", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "githubRelease"},
+        "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+        "release": {"enum": ["stable", "prerelease", "any"]},
+        "tagRegex": {"type": "string"},
+        "apiBase": {"type": "string", "format": "uri"}
+      }
+    },
+    "httpSource": {
+      "type": "object",
+      "required": ["type", "versionURL", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "httpRelease"},
+        "versionURL": {"type": "string", "format": "uri"},
+        "format": {"enum": ["json", "text"]},
+        "versionPointer": {"type": "string"},
+        "versionRegex": {"type": "string"}
+      },
+      "oneOf": [
+        {"properties": {"format": {"const": "json"}}, "required": ["versionPointer"]},
+        {"properties": {"format": {"const": "text"}}, "required": ["versionRegex"]}
+      ]
+    },
+    "externalPlatform": {
+      "type": "object",
+      "required": ["os", "arch", "install"],
+      "additionalProperties": false,
+      "properties": {
+        "os": {"type": "array", "minItems": 1, "items": {"enum": ["linux", "darwin", "windows"]}},
+        "arch": {"type": "array", "minItems": 1, "items": {"enum": ["amd64", "arm64"]}},
+        "libc": {"type": "array", "items": {"enum": ["glibc", "musl"]}},
+        "assetRegex": {"type": "string"},
+        "artifactURL": {"type": "string"},
+        "install": {"$ref": "#/$defs/externalInstall"}
+      },
+      "oneOf": [
+        {"required": ["assetRegex"], "not": {"required": ["artifactURL"]}},
+        {"required": ["artifactURL"], "not": {"required": ["assetRegex"]}}
+      ]
+    },
+    "externalInstall": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["direct", "archive", "script"]},
+        "scope": {"enum": ["user", "system"]},
+        "destination": {"type": "string"},
+        "stripComponents": {"type": "integer", "minimum": 0},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/externalInstallFile"}},
+        "interpreter": {"enum": ["sh", "bash", "pwsh", "powershell"]},
+        "args": {"type": "array", "items": {"type": "string"}},
+        "env": {"type": "object", "additionalProperties": {"type": "string"}},
+        "uninstall": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "externalInstallFile": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1},
+        "mode": {"type": "string", "pattern": "^0?[0-7]{3}$"}
+      }
+    },
+    "externalVerification": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": ["githubDigest", "sha256", "sha256File", "sigstore", "minisign", "openpgp"]},
+        "assetRegex": {"type": "string"},
+        "url": {"type": "string"},
+        "value": {"type": "string"},
+        "valuePointer": {"type": "string"},
+        "signatureAssetRegex": {"type": "string"},
+        "bundleAssetRegex": {"type": "string"},
+        "identity": {"type": "string"},
+        "issuer": {"type": "string"},
+        "publicKey": {"type": "string"},
+        "publicKeyFile": {"type": "string"},
+        "fingerprint": {"type": "string"}
+      }
+    }
+  }
+}

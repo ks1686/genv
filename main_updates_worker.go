@@ -119,7 +119,7 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		logger.Warn("updates.check.lock", slog.Any("err", err))
 		return exitIO
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		available := resolver.Detect()
 		_, code := applyLockGate("updates", lockPath, lf, activeTarget, available, true, false, true, "")
 		if code != exitOK {

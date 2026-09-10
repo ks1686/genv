@@ -1,6 +1,6 @@
 # genv.json schema
 
-Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/validate.go`. JSON Schema mirror for v8: `schema/v8/genv.json` (Go validator remains source of truth).
+Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/validate.go`. JSON Schema mirrors: `schema/v8/genv.json` and `schema/v9/genv.json` (Go validator remains source of truth).
 
 ## Supported versions
 
@@ -14,8 +14,11 @@ Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/val
 | v6 | `"6"` | expanded lifecycle hooks, `updates` |
 | v7 | `"7"` | `"shell": "powershell"` targeting |
 | v8 | `"8"` | portable `defaults` + `targets.*`; optional top-level `adapters` |
+| v9 | `"9"` | managed external release recipes |
 
-Older versions still load. Prefer **v8** for new multi-machine specs. Convert with `genv migrate`.
+Older versions still load. Prefer **v8** unless a managed external recipe requires
+v9. Both versions use portable `defaults` and `targets.*` buckets. Convert legacy
+specs with `genv migrate`.
 
 ## Common rules
 
@@ -23,7 +26,7 @@ Older versions still load. Prefer **v8** for new multi-machine specs. Convert wi
 - Empty optional objects/arrays are omitted when marshaling (`omitempty`).
 - Paths support `~` and `$VAR` / `${VAR}` expansion.
 - **v1–v7:** optional per-record `host` is a string or string array (`"macos"` or `["arch","macos"]`). Empty means “all hosts”. Legacy literal `"wsl2"` is obsolete for classification (see [WSL guide](docs/wsl2-install.md)); migrate to `ubuntu` / `wsl-arch` targets.
-- **v8:** `host` is illegal. Use `targets.<id>` buckets.
+- **v8-v9:** `host` is illegal. Use `targets.<id>` buckets.
 
 ## v8 — portable targets (recommended)
 
@@ -160,7 +163,13 @@ Relative template paths resolve against the spec directory (or `repo.url` when s
 
 `prefer` and `managers` accept registered manager IDs (see README table) or a v8 `adapters` name. Without an explicit selection, fallback uses **system** package managers only. Language, toolchain, and plugin managers are explicit-only.
 
-`external` is a track-only manager for apps with an official installer (not winget/scoop). Apply records them when the binary is on PATH; it never installs them.
+On v1-v8, `external` is a track-only manager for apps with an official installer
+(not winget/scoop). Apply records them when the binary is on PATH; it never
+installs them. Schema v9 permits an `external` recipe on a package with
+`prefer: "external"`; the recipe declares local version detection, a GitHub
+Release or structured HTTP source, platform artifacts, installation type, and
+verification policy. Recipes without a verifier must explicitly set
+`allowUnverified: true`.
 
 ## Spec adapters (v8)
 

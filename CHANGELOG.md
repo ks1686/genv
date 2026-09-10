@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Removed
+
+- Snap packaging and automatic Snap Store publication. The published snap used
+  strict confinement, which exposed Ubuntu Core instead of the host system,
+  redirected genv's config home, and prevented access to host package managers.
+  The `snap` adapter remains supported for managing other installed snaps.
+
 ## v4.3.3 - 2026-09-05
 
 ### Changed

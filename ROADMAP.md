@@ -278,7 +278,7 @@ Checklist:
 - [ ] Implement Linux adapter: `xbps` (Void Linux). Historical checklist item — not in `KnownManagers`.
 - [ ] Implement Linux adapter: `emerge` (Gentoo). Historical checklist item — not in `KnownManagers`.
 - [x] Publish genv as `.deb` and `.rpm` release artifacts via GoReleaser `nfpms` (covers apt, dnf, and zypper direct-install).
-- [x] Publish genv to the Snap Store (`snapcraft.yaml` + GoReleaser snapcraft section).
+- [x] Publish genv to the Snap Store (historical; withdrawn because strict confinement prevents host package and configuration management).
 - [x] Extend `genv.json` schema to accept a `services` block with per-service `start`, `stop`, and optional `restart` commands.
 - [x] Implement `genv service add <name> --start <cmd> [--stop <cmd>]` and `genv service remove <name>`.
 - [x] Implement `genv service start <name>`, `genv service stop <name>`, and `genv service status <name>`.
@@ -418,7 +418,7 @@ These gates apply to every milestone.
 - [x] v0.2.0 — M3–M5 complete and validated, with cross-platform support, reproducibility, and reliability improvements
 - [x] v1.0.0 — M6 and M7 complete; stable API and behavior guarantees, with a formal deprecation policy
 - [x] v2.0.0 — M8 and M9 complete; full environment reproducibility: packages, global shell variables, and basic shell configuration managed as a single declarative spec
-- [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), Snap packaging
+- [x] v2.1.0 — M10 complete; services management, new adapters (zypper/xbps/emerge), historical Snap packaging (later withdrawn)
 - [x] v2.2.0 — scoped M13 surface shipped: schema v5 `files`, `hooks`, host selectors, repo metadata, and `pull`/`status --files`/`adopt --files` commands
 - [x] v2.3.0 — native Windows support shipped ahead of the original v3.0.0 milestone: `windows` host classification, `winget`/`scoop`/`choco` adapters, and `merge-dir` file links
 - [x] v3.0.0 — M11 updates checker, M12 named profiles, M13 lifecycle hooks, upgrade JSON/filtering, and tracked-only ecosystem adapters complete.

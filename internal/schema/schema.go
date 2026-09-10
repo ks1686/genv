@@ -30,8 +30,14 @@ const Version7 = "7"
 // Version8 is the accepted value for genv.json v8 (adds portable defaults/targets).
 const Version8 = "8"
 
+// Version9 is the accepted value for genv.json v9 (adds managed external releases).
+const Version9 = "9"
+
 // versionOrder lists known schemaVersion values from oldest to newest.
-var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8}
+var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8, Version9}
+
+// IsPortableVersion reports whether v uses the defaults/targets data model.
+func IsPortableVersion(v string) bool { return v == Version8 || v == Version9 }
 
 // versionRank returns the ordinal of a schemaVersion string within versionOrder,
 // or -1 if the value is not a recognized version.
@@ -181,12 +187,12 @@ type GenvFile struct {
 	Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 }
 
-// MarshalJSON preserves the legacy v1-v7 top-level shape while letting v8 omit
+// MarshalJSON preserves the legacy v1-v7 top-level shape while portable versions omit
 // empty legacy top-level blocks. In particular, nil/empty Packages must not
 // serialize as "packages": null in portable target files.
 func (f GenvFile) MarshalJSON() ([]byte, error) {
 	type alias GenvFile
-	if f.SchemaVersion != Version8 {
+	if !IsPortableVersion(f.SchemaVersion) {
 		return json.Marshal(alias(f))
 	}
 	type v8File struct {
@@ -262,7 +268,7 @@ func ValidAdapterName(name string) bool {
 	return true
 }
 
-// TargetBundle is a v8 defaults or target-scoped config block.
+// TargetBundle is a portable defaults or target-scoped config block.
 //
 // Env and Services use pointer map values so target entries can unmarshal JSON
 // null as tombstones. Defaults must not contain tombstones.
@@ -432,4 +438,81 @@ type Package struct {
 	Prefer   string            `json:"prefer,omitempty"`
 	Managers map[string]string `json:"managers,omitempty"`
 	Host     HostPredicate     `json:"host,omitempty"`
+	External *ExternalRecipe   `json:"external,omitempty"`
+}
+
+// ExternalRecipe declares how to discover and manage a release outside a package manager.
+type ExternalRecipe struct {
+	Detect                   ExternalDetect         `json:"detect"`
+	Source                   ExternalSource         `json:"source"`
+	Platforms                []ExternalPlatform     `json:"platforms"`
+	Verify                   []ExternalVerification `json:"verify,omitempty"`
+	AllowUnverified          bool                   `json:"allowUnverified,omitempty"`
+	AllowInsecureHTTP        bool                   `json:"allowInsecureHTTP,omitempty"`
+	AllowBackgroundExecution bool                   `json:"allowBackgroundExecution,omitempty"`
+}
+
+// ExternalDetect describes local executable and version detection.
+type ExternalDetect struct {
+	Command      []string `json:"command"`
+	VersionRegex string   `json:"versionRegex"`
+}
+
+// ExternalSource describes a GitHub Release or structured HTTP version endpoint.
+type ExternalSource struct {
+	Type           string `json:"type"`
+	Repository     string `json:"repository,omitempty"`
+	Release        string `json:"release,omitempty"`
+	TagRegex       string `json:"tagRegex,omitempty"`
+	APIBase        string `json:"apiBase,omitempty"`
+	VersionURL     string `json:"versionURL,omitempty"`
+	Format         string `json:"format,omitempty"`
+	VersionPointer string `json:"versionPointer,omitempty"`
+	VersionRegex   string `json:"versionRegex,omitempty"`
+}
+
+// ExternalPlatform selects one artifact and installation recipe for a host.
+type ExternalPlatform struct {
+	OS          []string        `json:"os"`
+	Arch        []string        `json:"arch"`
+	Libc        []string        `json:"libc,omitempty"`
+	AssetRegex  string          `json:"assetRegex,omitempty"`
+	ArtifactURL string          `json:"artifactURL,omitempty"`
+	Install     ExternalInstall `json:"install"`
+}
+
+// ExternalInstall describes direct, archive, or script installation.
+type ExternalInstall struct {
+	Type            string                `json:"type"`
+	Scope           string                `json:"scope,omitempty"`
+	Destination     string                `json:"destination,omitempty"`
+	StripComponents int                   `json:"stripComponents,omitempty"`
+	Files           []ExternalInstallFile `json:"files,omitempty"`
+	Interpreter     string                `json:"interpreter,omitempty"`
+	Args            []string              `json:"args,omitempty"`
+	Env             map[string]string     `json:"env,omitempty"`
+	Uninstall       []string              `json:"uninstall,omitempty"`
+}
+
+// ExternalInstallFile maps one archive member to a destination.
+type ExternalInstallFile struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Mode string `json:"mode,omitempty"`
+}
+
+// ExternalVerification describes one required payload verifier.
+type ExternalVerification struct {
+	Type                string `json:"type"`
+	AssetRegex          string `json:"assetRegex,omitempty"`
+	URL                 string `json:"url,omitempty"`
+	Value               string `json:"value,omitempty"`
+	ValuePointer        string `json:"valuePointer,omitempty"`
+	SignatureAssetRegex string `json:"signatureAssetRegex,omitempty"`
+	BundleAssetRegex    string `json:"bundleAssetRegex,omitempty"`
+	Identity            string `json:"identity,omitempty"`
+	Issuer              string `json:"issuer,omitempty"`
+	PublicKey           string `json:"publicKey,omitempty"`
+	PublicKeyFile       string `json:"publicKeyFile,omitempty"`
+	Fingerprint         string `json:"fingerprint,omitempty"`
 }
