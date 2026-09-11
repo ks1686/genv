@@ -85,6 +85,7 @@ func TestSchtasksScheduledJob_registerStatusStop(t *testing.T) {
 	if !strings.Contains(xmlText, "<LogonType>InteractiveToken</LogonType>") {
 		t.Fatalf("XML = %q, want InteractiveToken so desktop notifications still work", xmlText)
 	}
+	assertSchtasksPerUserXML(t, xmlText)
 
 	if len(calls) < 2 || !schtasksCallHas(calls, "/Create", "/TN", "genv-updates", "/XML") || !schtasksCallHas(calls, "/Run", "/TN", "genv-updates") {
 		t.Fatalf("schtasks calls = %#v, want /Create then /Run of genv-updates", calls)
@@ -136,6 +137,15 @@ func TestSchtasksXML_action_is_windowless(t *testing.T) {
 	assertSchtasksWindowlessXML(t, xml, vbs)
 	if !strings.Contains(xml, "<LogonType>InteractiveToken</LogonType>") || !strings.Contains(xml, "<Hidden>true</Hidden>") {
 		t.Fatalf("XML = %q, want InteractiveToken and Hidden", xml)
+	}
+	assertSchtasksPerUserXML(t, xml)
+}
+
+func TestSchtasksXML_includes_current_user_id(t *testing.T) {
+	xml := SchtasksScheduledTaskXML("updates", `C:\Windows\System32\wscript.exe`, `C:\genv-updates.vbs`, time.Hour)
+	assertSchtasksPerUserXML(t, xml)
+	if !strings.Contains(xml, "<RunLevel>LeastPrivilege</RunLevel>") {
+		t.Fatalf("XML = %q, want LeastPrivilege (do not elevate to HighestAvailable)", xml)
 	}
 }
 
@@ -310,6 +320,46 @@ func TestSchtasksCreate_failure_surfaces_schtasks_output(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Access is denied") {
 		t.Fatalf("start error = %v, want schtasks output", err)
 	}
+	if !strings.Contains(err.Error(), "elevated PowerShell") || !strings.Contains(err.Error(), "foreign-owned") {
+		t.Fatalf("start error = %v, want actionable access-denied hint", err)
+	}
+}
+
+func TestSchtasksCreate_access_denied_hint_covers_win32_5(t *testing.T) {
+	home := t.TempDir()
+	testutil.SetHome(t, home)
+	withSchtasksRun(t, func(_ context.Context, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "/Create" {
+			return []byte("ERROR: Access is denied. (5)\r\n"), errors.New("exit status 1")
+		}
+		return []byte("SUCCESS\n"), nil
+	})
+	err := startSchtasksScheduledJob(context.Background(), ScheduledJob{
+		Name:     "updates",
+		Command:  []string{`C:\genv.exe`, "updates", "__run-once"},
+		Interval: time.Hour,
+	})
+	if err == nil || !strings.Contains(err.Error(), "elevated PowerShell") {
+		t.Fatalf("start error = %v, want access-denied hint for Win32 5", err)
+	}
+}
+
+func TestSchtasksAccessDenied_detects_common_forms(t *testing.T) {
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"ERROR: Access is denied.\r\n", true},
+		{"ERROR: Access is denied. (5)", true},
+		{"Create failed: 0x80070005", true},
+		{"ERROR: The system cannot find the file specified.", false},
+		{"SUCCESS", false},
+	}
+	for _, tt := range cases {
+		if got := schtasksAccessDenied(tt.output); got != tt.want {
+			t.Fatalf("schtasksAccessDenied(%q) = %v, want %v", tt.output, got, tt.want)
+		}
+	}
 }
 
 func TestSchtasksStop_missing_task_is_ok(t *testing.T) {
@@ -424,6 +474,29 @@ func TestRemoveScheduledArtifact_nonBusyFailsImmediately(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("attempts = %d, want 1 (no retry)", n)
+	}
+}
+
+func assertSchtasksPerUserXML(t *testing.T, xml string) {
+	t.Helper()
+	userID := schtasksCurrentUserID()
+	if userID == "" {
+		t.Fatalf("schtasksCurrentUserID() empty; cannot assert per-user XML")
+	}
+	want := "<UserId>" + xmlEscape(userID) + "</UserId>"
+	if strings.Count(xml, want) < 2 {
+		t.Fatalf("XML = %q, want UserId under Principal and LogonTrigger (%q)", xml, want)
+	}
+	principalIdx := strings.Index(xml, `<Principal id="Author">`)
+	logonIdx := strings.Index(xml, "<LogonTrigger>")
+	if principalIdx < 0 || logonIdx < 0 {
+		t.Fatalf("XML missing Principal or LogonTrigger: %q", xml)
+	}
+	if !strings.Contains(xml[principalIdx:principalIdx+200], want) {
+		t.Fatalf("XML Principal missing UserId %q: %q", want, xml)
+	}
+	if !strings.Contains(xml[logonIdx:logonIdx+200], want) {
+		t.Fatalf("XML LogonTrigger missing UserId %q: %q", want, xml)
 	}
 }
 
