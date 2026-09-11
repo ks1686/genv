@@ -38,6 +38,10 @@ type Step struct {
 	SkipReason string
 	Commands   [][]string
 	Apply      func(ctx context.Context) error
+	// MapError optionally rewrites an apply/exec error before it is recorded
+	// (e.g. Windows WUA ResultCode → human-readable message). Returning nil
+	// marks the step as successful (soft success).
+	MapError func(error) error
 }
 
 // Outcome is the recorded result of running one Step.
@@ -78,6 +82,9 @@ func runOne(ctx context.Context, mode Mode, step Step, exec ExecFunc) Outcome {
 		err = step.Apply(ctx)
 	} else {
 		err = execCommands(ctx, step.Commands, exec)
+	}
+	if err != nil && step.MapError != nil {
+		err = step.MapError(err)
 	}
 	if err != nil {
 		o.Status = StatusFailed

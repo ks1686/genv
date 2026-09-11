@@ -87,7 +87,22 @@ genv list
 genv status
 ```
 
-## 5. Updates checker
+## 5. OS upgrades (`genv upgrade`)
+
+After tracked packages, `genv upgrade` runs a **system** step that drives the
+Windows Update Agent COM API through `pwsh` (else `powershell` /
+`powershell.exe`). This is not `winget` — winget upgrades packages, not the OS.
+
+The COM install often needs an **elevated** PowerShell session (Administrator).
+genv does **not** auto-elevate. If the step fails with a WUA `ResultCode`
+(for example `4` Failed), re-run `genv upgrade` from elevated PowerShell, or
+finish updates in **Settings → Windows Update**. A reboot message is printed
+when WUA reports `RebootRequired`. `SucceededWithErrors` without any
+per-update Failed result is treated as soft success with a warning.
+
+Firmware updates stay skipped on Windows (vendor-specific).
+
+## 6. Updates checker
 
 `genv updates start` registers a per-user Task Scheduler job (`schtasks`)
 that runs `genv updates __run-once` at logon and then on `updates.interval`.

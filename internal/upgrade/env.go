@@ -51,7 +51,12 @@ func stepFromPlan(name string, plan CommandPlan) Step {
 
 // SystemStep is the OS vendor updater for the active genv target.
 func SystemStep(env Env) Step {
-	return stepFromPlan("system", PlanSystem(env))
+	plan := PlanSystem(env)
+	step := stepFromPlan("system", plan)
+	if env.Target == "windows" && plan.SkipReason == "" {
+		step.MapError = wrapWindowsUpdateError
+	}
+	return step
 }
 
 // FirmwareStep is fwupd on Linux. macOS firmware ships through softwareupdate
