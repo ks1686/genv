@@ -137,6 +137,41 @@ func TestExternalRecipeRejectsUnknownNestedField(t *testing.T) {
 	}
 }
 
+func TestExternalRecipeAllowsHTTPArtifactWithExplicitAcknowledgement(t *testing.T) {
+	input := `{"schemaVersion":"9","targets":{"linux":{"packages":[{"id":"tool","prefer":"external","external":{` +
+		`"detect":{"command":["tool","--version"],"versionRegex":"([0-9.]+)"},` +
+		`"source":{"type":"httpRelease","versionURL":"http://example.test/latest","format":"text","versionRegex":"([0-9.]+)"},` +
+		`"platforms":[{"os":["linux"],"arch":["amd64"],"artifactURL":"http://example.test/tool-{version}","install":{"type":"direct","destination":"~/.local/bin/tool"}}],` +
+		`"allowUnverified":true,"allowInsecureHTTP":true}}]}}}`
+	_, errs, parseErr := ParseAndValidate([]byte(input))
+	if parseErr != nil {
+		t.Fatalf("ParseAndValidate() parse error: %v", parseErr)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("ParseAndValidate() errors: %v", errs)
+	}
+}
+
+func TestExternalScriptValidationRejectsUnsafeDefinitions(t *testing.T) {
+	tests := []struct {
+		name    string
+		install ExternalInstall
+		want    string
+	}{
+		{name: "unknown template", install: ExternalInstall{Type: "script", Interpreter: "sh", Args: []string{"{unknown}"}}, want: "unknown template placeholder"},
+		{name: "shell uninstall", install: ExternalInstall{Type: "script", Interpreter: "sh", Uninstall: []string{"sh", "-c", "rm tool"}}, want: "explicit argv"},
+		{name: "conflicting direct fields", install: ExternalInstall{Type: "direct", Destination: "~/tool", Args: []string{"--install"}}, want: "another install type"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validateExternalInstall(tt.install, "external.install", nil)
+			if !validationErrorsContain(errs, tt.want) {
+				t.Fatalf("errors = %v, want %q", errs, tt.want)
+			}
+		})
+	}
+}
+
 func validationErrorsContain(errs []ValidationError, want string) bool {
 	for _, err := range errs {
 		if strings.Contains(err.Error(), want) {

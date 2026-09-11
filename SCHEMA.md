@@ -226,6 +226,33 @@ Commands are split into argv (quotes supported). There is no shell piping or red
 
 `genv scan` runs each available adapter’s `list` and, for spec adapters, writes `prefer` so the adopted package stays bound. `genv export` copies `adapters` into the snapshot so `prefer` still validates.
 
+### Managed external releases (v9)
+
+Schema v9 keeps the v8 `defaults` and `targets.*` model and adds an optional
+`external` recipe to packages whose `prefer` is `external`. A recipe contains:
+
+- `detect`: explicit version command and one-capture-group `versionRegex`
+- `source`: `githubRelease` or structured JSON/text `httpRelease` metadata
+- `platforms`: OS/architecture/libc selectors, one artifact, and one install recipe
+- `verify`: required verifier chain unless `allowUnverified` is explicitly true
+
+Supported installs are `direct`, explicit-file `archive` mappings for ZIP and
+tar/gzip/xz/zstd, and downloaded `script` installers using `sh`, `bash`, `pwsh`,
+or `powershell`. Script argv and environment values use only `{version}`, `{tag}`,
+`{os}`, `{arch}`, `{script}`, and `{destination}` placeholders. Script removals
+require explicit uninstall argv.
+
+Supported verification methods are GitHub asset digests, literal/metadata
+SHA-256, checksum files, Sigstore bundles with pinned issuer/identity, minisign,
+and OpenPGP with a pinned full fingerprint. HTTP transport requires
+`allowInsecureHTTP`; it is never scheduler-eligible. Unverified actions always
+require a dedicated interactive acknowledgement, even with `--yes`. Verified
+scripts additionally require `allowBackgroundExecution` before unattended use.
+
+The machine-local lock records release, artifact, verifier, recipe, ownership,
+and installed-path digests. Status detects version, recipe, and owned-file drift.
+Removal refuses modified owned files and never guesses files created by scripts.
+
 `genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` and service `launchd.plist` / `systemd.unit` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`.

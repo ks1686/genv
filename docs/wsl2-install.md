@@ -39,6 +39,12 @@ rm genv.tar.gz
 
 Update the version segment in the URL when a newer release is current.
 
+The former Snap distribution of genv itself is discontinued; use the GitHub
+Release archive above. The `snap` adapter remains available inside WSL when
+`snapd` and systemd are configured. Schema v9 managed external recipes use Linux
+assets in WSL and follow the verification rules in
+[SCHEMA.md](../SCHEMA.md#managed-external-releases-v9).
+
 Verify:
 
 ```bash

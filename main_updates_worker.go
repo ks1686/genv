@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
@@ -157,7 +158,7 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		return exitOK
 	}
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
-	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics})
+	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics, ExternalMode: externalpkg.ExecutionUnattended})
 	matchedErrors := make([]bool, len(runResult.Errors))
 	for _, failure := range runResult.Failures {
 		sanitizedIDs := make([]string, len(failure.IDs))

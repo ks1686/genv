@@ -54,10 +54,10 @@ func ActiveBundle(f *schema.GenvFile, targetID string) (*schema.TargetBundle, er
 		return nil, fmt.Errorf("genv file is nil")
 	}
 	if !schema.IsPortableVersion(f.SchemaVersion) {
-		return nil, fmt.Errorf("active target is only valid for schemaVersion %q", schema.Version8)
+		return nil, fmt.Errorf("active target is only valid for portable schema versions")
 	}
 	if targetID == "" {
-		return nil, fmt.Errorf("schemaVersion %q requires an active target", schema.Version8)
+		return nil, fmt.Errorf("portable schema versions require an active target")
 	}
 	if !schema.KnownTargets[targetID] {
 		return nil, fmt.Errorf("unknown target %q", targetID)

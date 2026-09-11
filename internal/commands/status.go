@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"context"
 	"strings"
 
 	"github.com/ks1686/genv/internal/adapter"
+	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/version"
@@ -81,6 +83,27 @@ func StatusWithLive(f *schema.GenvFile, lf *genvfile.LockFile, live map[string]m
 
 	for _, pkg := range f.Packages {
 		lp, inLock := lockByID[pkg.ID]
+		if pkg.External != nil {
+			var locked *genvfile.LockedPackage
+			if inLock {
+				locked = &lp
+			}
+			state := externalpkg.InspectLocal(context.Background(), pkg, locked)
+			if !inLock {
+				kind := StatusMissing
+				if state.Present {
+					kind = StatusPresent
+				}
+				entries = append(entries, StatusEntry{ID: pkg.ID, Manager: "external", PkgName: pkg.ID, Kind: kind, SpecVersion: pkg.Version, InstalledVersion: state.Version})
+				continue
+			}
+			kind := StatusOK
+			if !state.Present || state.Drift || !version.Satisfies(pkg.Version, state.Version) {
+				kind = StatusDrift
+			}
+			entries = append(entries, StatusEntry{ID: pkg.ID, Manager: lp.Manager, PkgName: lp.PkgName, Kind: kind, SpecVersion: pkg.Version, InstalledVersion: state.Version})
+			continue
+		}
 		if !inLock {
 			if mgr, name, ok := liveMatch(pkg, live); ok {
 				entries = append(entries, StatusEntry{

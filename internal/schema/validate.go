@@ -335,7 +335,7 @@ func validateExternalRecipe(pkg Package, pkgPath, schemaVersion string, position
 		errs = append(errs, externalValidation(field+".platforms", "at least one platform is required", positions))
 	}
 	for i, platform := range r.Platforms {
-		errs = append(errs, validateExternalPlatform(platform, fmt.Sprintf("%s.platforms[%d]", field, i), r.Source.Type, positions)...)
+		errs = append(errs, validateExternalPlatform(platform, fmt.Sprintf("%s.platforms[%d]", field, i), r.Source.Type, r.AllowInsecureHTTP, positions)...)
 	}
 	if len(r.Verify) == 0 && !r.AllowUnverified {
 		errs = append(errs, externalValidation(field+".verify", "verify is required unless allowUnverified is true", positions))
@@ -388,7 +388,7 @@ func validateExternalSource(source ExternalSource, field string, allowInsecure b
 	return errs
 }
 
-func validateExternalPlatform(platform ExternalPlatform, field, sourceType string, positions map[string]Position) []ValidationError {
+func validateExternalPlatform(platform ExternalPlatform, field, sourceType string, allowInsecure bool, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if len(platform.OS) == 0 {
 		errs = append(errs, externalValidation(field+".os", "at least one os is required", positions))
@@ -421,7 +421,7 @@ func validateExternalPlatform(platform ExternalPlatform, field, sourceType strin
 		if platform.ArtifactURL == "" || platform.AssetRegex != "" {
 			errs = append(errs, externalValidation(field, "HTTP platform requires artifactURL and forbids assetRegex", positions))
 		} else {
-			errs = append(errs, validateExternalURL(platform.ArtifactURL, field+".artifactURL", false, positions)...)
+			errs = append(errs, validateExternalURL(platform.ArtifactURL, field+".artifactURL", allowInsecure, positions)...)
 		}
 	}
 	errs = append(errs, validateExternalInstall(platform.Install, field+".install", positions)...)
@@ -438,6 +438,9 @@ func validateExternalInstall(install ExternalInstall, field string, positions ma
 		if install.Destination == "" {
 			errs = append(errs, externalValidation(field+".destination", "destination is required for direct install", positions))
 		}
+		if len(install.Files) > 0 || install.StripComponents != 0 || install.Interpreter != "" || len(install.Args) > 0 || len(install.Env) > 0 || len(install.Uninstall) > 0 {
+			errs = append(errs, externalValidation(field, "direct install contains fields for another install type", positions))
+		}
 	case "archive":
 		if len(install.Files) == 0 {
 			errs = append(errs, externalValidation(field+".files", "at least one file is required for archive install", positions))
@@ -446,13 +449,57 @@ func validateExternalInstall(install ExternalInstall, field string, positions ma
 			if file.From == "" || file.To == "" {
 				errs = append(errs, externalValidation(fmt.Sprintf("%s.files[%d]", field, i), "from and to are required", positions))
 			}
+			errs = append(errs, validateExternalTemplate(file.To, fmt.Sprintf("%s.files[%d].to", field, i), positions)...)
+		}
+		if install.Destination != "" || install.Interpreter != "" || len(install.Args) > 0 || len(install.Env) > 0 || len(install.Uninstall) > 0 {
+			errs = append(errs, externalValidation(field, "archive install contains fields for another install type", positions))
 		}
 	case "script":
 		if install.Interpreter != "sh" && install.Interpreter != "bash" && install.Interpreter != "pwsh" && install.Interpreter != "powershell" {
 			errs = append(errs, externalValidation(field+".interpreter", "interpreter must be sh, bash, pwsh, or powershell", positions))
 		}
+		if len(install.Files) > 0 || install.StripComponents != 0 {
+			errs = append(errs, externalValidation(field, "script install contains archive fields", positions))
+		}
+		if len(install.Uninstall) > 0 && (install.Uninstall[0] == "sh" || install.Uninstall[0] == "bash" || install.Uninstall[0] == "pwsh" || install.Uninstall[0] == "powershell") {
+			errs = append(errs, externalValidation(field+".uninstall", "uninstall must be explicit argv, not a shell interpreter", positions))
+		}
+		for i, value := range install.Args {
+			errs = append(errs, validateExternalTemplate(value, fmt.Sprintf("%s.args[%d]", field, i), positions)...)
+		}
+		for key, value := range install.Env {
+			if matched, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, key); !matched {
+				errs = append(errs, externalValidation(field+".env", fmt.Sprintf("invalid environment variable name %q", key), positions))
+			}
+			errs = append(errs, validateExternalTemplate(value, field+".env."+key, positions)...)
+		}
+		for i, value := range install.Uninstall {
+			if value == "" {
+				errs = append(errs, externalValidation(fmt.Sprintf("%s.uninstall[%d]", field, i), "uninstall argv entries cannot be empty", positions))
+			}
+			errs = append(errs, validateExternalTemplate(value, fmt.Sprintf("%s.uninstall[%d]", field, i), positions)...)
+		}
 	default:
 		errs = append(errs, externalValidation(field+".type", "install type must be direct, archive, or script", positions))
+	}
+	if install.Destination != "" {
+		errs = append(errs, validateExternalTemplate(install.Destination, field+".destination", positions)...)
+	}
+	return errs
+}
+
+func validateExternalTemplate(value, field string, positions map[string]Position) []ValidationError {
+	re := regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9]*)\}`)
+	allowed := map[string]bool{"version": true, "tag": true, "os": true, "arch": true, "script": true, "destination": true}
+	var errs []ValidationError
+	for _, match := range re.FindAllStringSubmatch(value, -1) {
+		if !allowed[match[1]] {
+			errs = append(errs, externalValidation(field, fmt.Sprintf("unknown template placeholder %q", match[1]), positions))
+		}
+	}
+	withoutPlaceholders := re.ReplaceAllString(value, "")
+	if strings.ContainsAny(withoutPlaceholders, "{}") {
+		errs = append(errs, externalValidation(field, "invalid template syntax", positions))
 	}
 	return errs
 }
@@ -470,15 +517,15 @@ func validateExternalVerification(verify ExternalVerification, field string, pos
 			errs = append(errs, externalValidation(field, "sha256File requires assetRegex or url", positions))
 		}
 	case "sigstore":
-		if verify.Identity == "" || verify.Issuer == "" || (verify.BundleAssetRegex == "" && verify.SignatureAssetRegex == "") {
-			errs = append(errs, externalValidation(field, "sigstore requires identity, issuer, and bundle or signature asset", positions))
+		if verify.Identity == "" || verify.Issuer == "" || (verify.BundleAssetRegex == "" && verify.URL == "") {
+			errs = append(errs, externalValidation(field, "sigstore requires identity, issuer, and bundle asset or URL", positions))
 		}
 	case "minisign":
-		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || verify.SignatureAssetRegex == "" {
+		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || (verify.SignatureAssetRegex == "" && verify.URL == "") {
 			errs = append(errs, externalValidation(field, "minisign requires exactly one public key source and a signature asset", positions))
 		}
 	case "openpgp":
-		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || verify.SignatureAssetRegex == "" || len(verify.Fingerprint) < 40 {
+		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || (verify.SignatureAssetRegex == "" && verify.URL == "") || len(verify.Fingerprint) < 40 {
 			errs = append(errs, externalValidation(field, "openpgp requires exactly one public key source, a signature asset, and full fingerprint", positions))
 		}
 	default:

@@ -3,7 +3,9 @@ package external
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/ks1686/genv/internal/schema"
@@ -14,6 +16,18 @@ type Host struct {
 	OS   string
 	Arch string
 	Libc string
+}
+
+// CurrentHost returns normalized release-selection facts for the running host.
+func CurrentHost() Host {
+	host := Host{OS: runtime.GOOS, Arch: runtime.GOARCH}
+	if runtime.GOOS == "linux" {
+		host.Libc = "glibc"
+		if matches, _ := filepath.Glob("/lib/ld-musl-*.so.1"); len(matches) > 0 {
+			host.Libc = "musl"
+		}
+	}
+	return host
 }
 
 // SelectPlatform requires exactly one platform recipe to match host.

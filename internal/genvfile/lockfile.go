@@ -33,6 +33,7 @@ type ExternalReceipt struct {
 	InstallType    string                `json:"installType"`
 	Owned          bool                  `json:"owned"`
 	Paths          []ExternalPathReceipt `json:"paths,omitempty"`
+	Uninstall      []string              `json:"uninstall,omitempty"`
 }
 
 // ExternalPathReceipt records one installed path and its post-install digest.

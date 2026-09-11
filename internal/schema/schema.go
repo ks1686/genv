@@ -1,4 +1,4 @@
-// Package schema defines the genv.json v1–v8 data model and validation logic.
+// Package schema defines the genv.json v1–v9 data model and validation logic.
 package schema
 
 import (

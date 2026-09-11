@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Schema v9 managed external release recipes for GitHub Releases and structured
+  HTTP metadata. Recipes support platform-specific direct, ZIP/tar archive, and
+  explicit interpreter script installs; SHA-256/checksum, Sigstore, minisign,
+  and OpenPGP verification; machine-local ownership receipts; local drift
+  status; update/upgrade planning; safe removal; and exported signer key assets.
+  Unverified, insecure-transport, and installer-script actions enforce dedicated
+  interactive/background policy rather than inheriting a generic `--yes`.
+
 ### Removed
 
 - Snap packaging and automatic Snap Store publication. The published snap used

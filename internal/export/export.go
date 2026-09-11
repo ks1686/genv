@@ -48,11 +48,14 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 	if err := rewriteAndCopyServiceAssets(bundle.Services, opts.BaseDir, outDir); err != nil {
 		return report.sorted(), err
 	}
+	if err := rewriteAndCopyExternalKeyAssets(bundle.Packages, opts.BaseDir, outDir); err != nil {
+		return report.sorted(), err
+	}
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return report.sorted(), fmt.Errorf("creating export directory %s: %w", outDir, err)
 	}
-	if err := writeSnapshot(filepath.Join(outDir, "genv.json"), targetID, bundle, f.Adapters); err != nil {
+	if err := writeSnapshot(filepath.Join(outDir, "genv.json"), f.SchemaVersion, targetID, bundle, f.Adapters); err != nil {
 		return report.sorted(), err
 	}
 	if err := writeReport(filepath.Join(outDir, "report.json"), report); err != nil {
@@ -70,9 +73,12 @@ type snapshotDocument struct {
 	Targets       map[string]*schema.TargetBundle `json:"targets"`
 }
 
-func writeSnapshot(path, targetID string, bundle *schema.TargetBundle, adapters map[string]schema.AdapterDef) error {
+func writeSnapshot(path, schemaVersion, targetID string, bundle *schema.TargetBundle, adapters map[string]schema.AdapterDef) error {
+	if schemaVersion != schema.Version9 {
+		schemaVersion = schema.Version8
+	}
 	doc := snapshotDocument{
-		SchemaVersion: schema.Version8,
+		SchemaVersion: schemaVersion,
 		Adapters:      adapters,
 		Targets: map[string]*schema.TargetBundle{
 			targetID: bundle,
@@ -99,6 +105,28 @@ func writeSnapshot(path, targetID string, bundle *schema.TargetBundle, adapters 
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("saving %s: %w", path, err)
+	}
+	return nil
+}
+
+func rewriteAndCopyExternalKeyAssets(packages []schema.Package, baseDir, outDir string) error {
+	keyIndex := 0
+	for i := range packages {
+		if packages[i].External == nil {
+			continue
+		}
+		for j := range packages[i].External.Verify {
+			keyFile := packages[i].External.Verify[j].PublicKeyFile
+			if keyFile == "" || isAbsolutePath(keyFile) {
+				continue
+			}
+			rel, err := copyAsset(baseDir, outDir, keyFile, "external-key", keyIndex)
+			if err != nil {
+				return err
+			}
+			packages[i].External.Verify[j].PublicKeyFile = rel
+			keyIndex++
+		}
 	}
 	return nil
 }
@@ -446,8 +474,29 @@ func copyPackages(in []schema.Package) []schema.Package {
 		out[i] = pkg
 		out[i].Host = nil
 		out[i].Managers = copyStringMap(pkg.Managers)
+		out[i].External = copyExternalRecipe(pkg.External)
 	}
 	return out
+}
+
+func copyExternalRecipe(in *schema.ExternalRecipe) *schema.ExternalRecipe {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Detect.Command = copyStrings(in.Detect.Command)
+	out.Platforms = append([]schema.ExternalPlatform(nil), in.Platforms...)
+	for i := range out.Platforms {
+		out.Platforms[i].OS = copyStrings(in.Platforms[i].OS)
+		out.Platforms[i].Arch = copyStrings(in.Platforms[i].Arch)
+		out.Platforms[i].Libc = copyStrings(in.Platforms[i].Libc)
+		out.Platforms[i].Install.Args = copyStrings(in.Platforms[i].Install.Args)
+		out.Platforms[i].Install.Uninstall = copyStrings(in.Platforms[i].Install.Uninstall)
+		out.Platforms[i].Install.Files = append([]schema.ExternalInstallFile(nil), in.Platforms[i].Install.Files...)
+		out.Platforms[i].Install.Env = copyStringMap(in.Platforms[i].Install.Env)
+	}
+	out.Verify = append([]schema.ExternalVerification(nil), in.Verify...)
+	return &out
 }
 
 func copyStringMap(in map[string]string) map[string]string {

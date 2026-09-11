@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 
+	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/output"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/version"
 )
 
 type UpgradeOptions struct {
@@ -38,12 +40,14 @@ type Options = UpgradeOptions
 type Plan = UpgradePlan
 
 type UpgradeRunOptions struct {
-	Plan     UpgradePlan
-	Lock     *genvfile.LockFile
-	LockPath string
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
+	Plan                UpgradePlan
+	Lock                *genvfile.LockFile
+	LockPath            string
+	Stdin               io.Reader
+	Stdout              io.Writer
+	Stderr              io.Writer
+	ExternalMode        externalpkg.ExecutionMode
+	AcknowledgeExternal func(message string) bool
 }
 
 type UpgradeRunResult struct {
@@ -177,9 +181,34 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 	}
 
 	var upgradeablePackages []genvfile.LockedPackage
+	var externalActions []resolver.UpgradeAction
 	var skippedByConstraint []resolver.SkippedPackage
 	for _, lp := range filteredPackages {
-		if packagesByID[lp.ID].Version != "" {
+		pkg := packagesByID[lp.ID]
+		if lp.Manager == "external" && pkg.External != nil {
+			latest := ""
+			if !opts.Filters.All {
+				var err error
+				latest, err = externalLatestVersion(context.Background(), pkg)
+				if err != nil {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("could not determine external update for %s: %v", lp.ID, err))
+					plan.Skipped = append(plan.Skipped, resolver.SkippedPackage{ID: lp.ID, Manager: lp.Manager, Reason: "external update check failed"})
+					continue
+				}
+				state := externalpkg.InspectLocal(context.Background(), pkg, &lp)
+				if state.Present && state.Version == latest {
+					continue
+				}
+				if !version.Satisfies(pkg.Version, latest) {
+					skippedByConstraint = append(skippedByConstraint, resolver.SkippedPackage{ID: lp.ID, Manager: lp.Manager, Reason: "latest external release does not satisfy version constraint"})
+					continue
+				}
+			}
+			pkgCopy := pkg
+			externalActions = append(externalActions, resolver.UpgradeAction{LPs: []genvfile.LockedPackage{lp}, Cmd: []string{"external-release"}, External: &pkgCopy, RemoteVersion: latest})
+			continue
+		}
+		if pkg.Version != "" {
 			skippedByConstraint = append(skippedByConstraint, resolver.SkippedPackage{
 				ID:      lp.ID,
 				Manager: lp.Manager,
@@ -205,15 +234,18 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 	}
 
 	actions, skipped := resolver.PlanUpgrade(upgradeablePackages)
-	plan.Actions = actions
-	plan.Skipped = append(skipped, skippedByFilter...)
+	plan.Actions = append(externalActions, actions...)
+	plan.Skipped = append(plan.Skipped, skipped...)
+	plan.Skipped = append(plan.Skipped, skippedByFilter...)
 	plan.Skipped = append(plan.Skipped, skippedByConstraint...)
 
 	return plan, nil
 }
 
 func RunUpgrade(ctx context.Context, opts UpgradeRunOptions) UpgradeRunResult {
-	execResult := resolver.ExecuteUpgrade(ctx, opts.Plan.Actions, opts.Stdin, opts.Stdout, opts.Stderr)
+	execResult := resolver.ExecuteUpgrade(ctx, opts.Plan.Actions, opts.Stdin, opts.Stdout, opts.Stderr, resolver.ApplyExecutionOptions{
+		ExternalMode: opts.ExternalMode, AcknowledgeExternal: opts.AcknowledgeExternal,
+	})
 	applyUpgradedVersions(opts.Lock, execResult.Upgraded)
 
 	result := UpgradeRunResult{
@@ -258,6 +290,10 @@ func mergeAfterOutdated(original []genvfile.LockedPackage, keepAll map[string]bo
 	return out
 }
 
+var externalLatestVersion = func(ctx context.Context, pkg schema.Package) (string, error) {
+	return (externalpkg.Engine{Host: externalpkg.CurrentHost()}).LatestVersion(ctx, pkg)
+}
+
 func applyUpgradedVersions(lf *genvfile.LockFile, upgraded []genvfile.LockedPackage) {
 	if lf == nil {
 		return
@@ -269,6 +305,9 @@ func applyUpgradedVersions(lf *genvfile.LockFile, upgraded []genvfile.LockedPack
 	for _, u := range upgraded {
 		if idx, ok := lockIndex[u.ID]; ok {
 			lf.Packages[idx].InstalledVersion = u.InstalledVersion
+			if u.External != nil {
+				lf.Packages[idx].External = u.External
+			}
 		}
 	}
 }

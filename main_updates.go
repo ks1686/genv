@@ -181,7 +181,14 @@ func updatesCheckHuman(w io.Writer, plan upgrade.UpgradePlan) int {
 		for i, lp := range action.LPs {
 			ids[i] = lp.ID
 		}
-		fprintf(w, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), action.LPs[0].Manager, strings.Join(action.Cmd, " "))
+		detail := strings.Join(action.Cmd, " ")
+		if action.External != nil {
+			detail = "managed external release"
+			if action.RemoteVersion != "" {
+				detail += " " + action.RemoteVersion
+			}
+		}
+		fprintf(w, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), action.LPs[0].Manager, detail)
 	}
 	return exitOK
 }
