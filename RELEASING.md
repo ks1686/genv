@@ -44,6 +44,7 @@ publishes the AUR packages.
 | `v4.3.2` | Spec adapters; apply `--source-root`; file `contentHash` / `perm` / per-entry backup; `files adopt`; launchd/systemd service templates; hook `continueOnError`; lock/adopt/disown fixes |
 | `v4.3.3` | Drop legacy Homebrew cask `postflight` hook (PreferStable + caveat); silences brew `postflight_steps` deprecation |
 | `v4.4.0` | Schema v9 managed external releases (replace Snap ship); Windows schtasks per-user + WUA ResultCode messaging |
+| `v4.4.1` | Non-interactive scheduled updates + system-scope elevate for managed external installs (Fixes #173); grpc 1.83.2 |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop

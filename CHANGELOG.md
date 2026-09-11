@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.4.1 - 2026-09-11
+
 ### Fixed
 
 - Scheduled `genv updates __run-once` (including `updates.autoApply`) never
