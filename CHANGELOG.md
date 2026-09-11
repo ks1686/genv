@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.4.0 - 2026-09-10
+
 ### Added
 
 - Schema v9 managed external release recipes for GitHub Releases and structured
@@ -23,13 +25,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Windows `genv updates start` pins the Task Scheduler (`schtasks`) job
+  `UserId` to the current account with `InteractiveToken` + `LeastPrivilege`,
+  so registration stays the unelevated per-user path. Access-denied creates
+  surface a short elevated/GPO/foreign-owned-task hint (Fixes #167).
 - Windows `genv upgrade` system step maps Windows Update Agent `ResultCode`
   values to readable errors (notably `4` Failed) instead of opaque
   `exit status 4`, accepts EULAs, checks download results, lists failed
   update titles/HRESULTs, and treats `SucceededWithErrors` as soft success
   unless a per-update result is Failed. Elevation is documented; genv does
-  not auto-elevate.
-
+  not auto-elevate (Fixes #168).
 
 ## v4.3.3 - 2026-09-05
 

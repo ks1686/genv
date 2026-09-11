@@ -43,6 +43,7 @@ publishes the AUR packages.
 | `v4.3.1` | Index refresh before outdated; user-facing `scan` default; apply `--skip-packages` quiet; vscode prefers `cursor`; hidden Windows updates host; upgrade `--json`/`--only` polish |
 | `v4.3.2` | Spec adapters; apply `--source-root`; file `contentHash` / `perm` / per-entry backup; `files adopt`; launchd/systemd service templates; hook `continueOnError`; lock/adopt/disown fixes |
 | `v4.3.3` | Drop legacy Homebrew cask `postflight` hook (PreferStable + caveat); silences brew `postflight_steps` deprecation |
+| `v4.4.0` | Schema v9 managed external releases (replace Snap ship); Windows schtasks per-user + WUA ResultCode messaging |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
