@@ -106,7 +106,6 @@ func resolveInterpreter(name string) (string, []string, error) {
 	}
 }
 
-
 // ensureScriptExtension gives PowerShell installers a .ps1 path. Download
 // staging uses extensionless temp names, and pwsh -File rejects those on Windows.
 func ensureScriptExtension(scriptPath, interpreter string) (string, error) {
