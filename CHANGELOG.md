@@ -21,6 +21,16 @@ All notable changes to this project will be documented in this file.
   redirected genv's config home, and prevented access to host package managers.
   The `snap` adapter remains supported for managing other installed snaps.
 
+### Fixed
+
+- Windows `genv upgrade` system step maps Windows Update Agent `ResultCode`
+  values to readable errors (notably `4` Failed) instead of opaque
+  `exit status 4`, accepts EULAs, checks download results, lists failed
+  update titles/HRESULTs, and treats `SucceededWithErrors` as soft success
+  unless a per-update result is Failed. Elevation is documented; genv does
+  not auto-elevate.
+
+
 ## v4.3.3 - 2026-09-05
 
 ### Changed
