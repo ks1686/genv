@@ -8,15 +8,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestEngineInstallsVerifiedDirectArtifactAndReturnsReceipt(t *testing.T) {
-	payload := []byte("#!/bin/sh\necho 'tool 1.2.3'\n")
+	payload, suffix := testutil.DirectToolArtifact("tool 1.2.3")
 	digestBytes := sha256.Sum256(payload)
 	digest := hex.EncodeToString(digestBytes[:])
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +35,7 @@ func TestEngineInstallsVerifiedDirectArtifactAndReturnsReceipt(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	destination := filepath.Join(t.TempDir(), "bin", "tool")
+	destination := filepath.Join(t.TempDir(), "bin", "tool"+suffix)
 	pkg := schema.Package{ID: "tool", Prefer: "external", External: &schema.ExternalRecipe{
 		Detect: schema.ExternalDetect{Command: []string{destination, "--version"}, VersionRegex: `tool ([0-9.]+)`},
 		Source: schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest.json", Format: "json", VersionPointer: "/version"},
@@ -59,7 +62,7 @@ func TestEngineInstallsVerifiedDirectArtifactAndReturnsReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o755 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
 		t.Fatalf("mode = %o", info.Mode().Perm())
 	}
 }
@@ -98,8 +101,27 @@ func TestEngineLeavesExistingDestinationAfterFailedDetection(t *testing.T) {
 
 func TestEngineRunsVerifiedScriptAndStoresUninstallReceipt(t *testing.T) {
 	dir := t.TempDir()
-	destination := filepath.Join(dir, "tool")
-	payload := []byte("#!/bin/sh\nprintf '#!/bin/sh\\necho tool-1.2.3\\n' > \"$1\"\nchmod 755 \"$1\"\n")
+	var (
+		destination string
+		payload     []byte
+		interpreter string
+		uninstall   []string
+	)
+	if runtime.GOOS == "windows" {
+		// Script installs on Windows use pwsh; bash/sh are not guaranteed on CI.
+		if _, err := exec.LookPath("pwsh"); err != nil {
+			t.Skip("pwsh unavailable; script installs use pwsh on Windows")
+		}
+		destination = filepath.Join(dir, "tool.cmd")
+		interpreter = "pwsh"
+		payload = []byte("$dest = $args[0]\nSet-Content -Path $dest -Value \"@echo off`r`necho tool-1.2.3`r`n\"\n")
+		uninstall = []string{"cmd", "/C", "del", "{destination}"}
+	} else {
+		destination = filepath.Join(dir, "tool")
+		interpreter = "sh"
+		payload = []byte("#!/bin/sh\nprintf '#!/bin/sh\\necho tool-1.2.3\\n' > \"$1\"\nchmod 755 \"$1\"\n")
+		uninstall = []string{"rm", "{destination}"}
+	}
 	digestBytes := sha256.Sum256(payload)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
@@ -113,7 +135,7 @@ func TestEngineRunsVerifiedScriptAndStoresUninstallReceipt(t *testing.T) {
 		Detect: schema.ExternalDetect{Command: []string{destination}, VersionRegex: `tool-([0-9.]+)`},
 		Source: schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest", Format: "text", VersionRegex: `([0-9.]+)`},
 		Platforms: []schema.ExternalPlatform{{OS: []string{"linux"}, Arch: []string{"amd64"}, ArtifactURL: server.URL + "/install.sh", Install: schema.ExternalInstall{
-			Type: "script", Interpreter: "sh", Destination: destination, Args: []string{"{destination}"}, Uninstall: []string{"rm", "{destination}"},
+			Type: "script", Interpreter: interpreter, Destination: destination, Args: []string{"{destination}"}, Uninstall: uninstall,
 		}}},
 		Verify: []schema.ExternalVerification{{Type: "sha256", Value: hex.EncodeToString(digestBytes[:])}}, AllowInsecureHTTP: true,
 	}}
@@ -121,13 +143,13 @@ func TestEngineRunsVerifiedScriptAndStoresUninstallReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install() error: %v", err)
 	}
-	if installed.Receipt.Owned || len(installed.Receipt.Paths) != 0 || len(installed.Receipt.Uninstall) != 2 || installed.Receipt.Uninstall[1] != destination {
+	if installed.Receipt.Owned || len(installed.Receipt.Paths) != 0 || len(installed.Receipt.Uninstall) != len(uninstall) || installed.Receipt.Uninstall[len(installed.Receipt.Uninstall)-1] != destination {
 		t.Fatalf("receipt = %+v", installed.Receipt)
 	}
 }
 
 func TestEngineVerifiesChecksumFileMaterial(t *testing.T) {
-	payload := []byte("#!/bin/sh\necho 'tool 1.2.3'\n")
+	payload, suffix := testutil.DirectToolArtifact("tool 1.2.3")
 	digestBytes := sha256.Sum256(payload)
 	checksums := hex.EncodeToString(digestBytes[:]) + "  tool\n"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +165,7 @@ func TestEngineVerifiesChecksumFileMaterial(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	destination := filepath.Join(t.TempDir(), "tool")
+	destination := filepath.Join(t.TempDir(), "tool"+suffix)
 	pkg := schema.Package{ID: "tool", External: &schema.ExternalRecipe{
 		Detect:    schema.ExternalDetect{Command: []string{destination}, VersionRegex: `tool ([0-9.]+)`},
 		Source:    schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest", Format: "text", VersionRegex: `([0-9.]+)`},

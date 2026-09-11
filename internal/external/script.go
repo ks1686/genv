@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -16,6 +17,10 @@ import (
 // RunInstallerScript executes a downloaded script through its declared interpreter.
 func RunInstallerScript(ctx context.Context, scriptPath string, install schema.ExternalInstall, values TemplateValues, stdin io.Reader, stderr io.Writer) error {
 	interpreter, prefix, err := resolveInterpreter(install.Interpreter)
+	if err != nil {
+		return err
+	}
+	scriptPath, err = ensureScriptExtension(scriptPath, install.Interpreter)
 	if err != nil {
 		return err
 	}
@@ -99,6 +104,33 @@ func resolveInterpreter(name string) (string, []string, error) {
 	default:
 		return "", nil, fmt.Errorf("unsupported external installer interpreter %q", name)
 	}
+}
+
+
+// ensureScriptExtension gives PowerShell installers a .ps1 path. Download
+// staging uses extensionless temp names, and pwsh -File rejects those on Windows.
+func ensureScriptExtension(scriptPath, interpreter string) (string, error) {
+	var ext string
+	switch interpreter {
+	case "pwsh", "powershell":
+		ext = ".ps1"
+	default:
+		return scriptPath, nil
+	}
+	if strings.EqualFold(filepath.Ext(scriptPath), ext) {
+		return scriptPath, nil
+	}
+	staged := scriptPath + ext
+	if err := os.Rename(scriptPath, staged); err != nil {
+		in, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return "", fmt.Errorf("stage installer script extension: %w", err)
+		}
+		if err := os.WriteFile(staged, in, 0o700); err != nil {
+			return "", fmt.Errorf("stage installer script extension: %w", err)
+		}
+	}
+	return staged, nil
 }
 
 func environmentMap(values []string) map[string]string {

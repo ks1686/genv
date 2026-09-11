@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -28,7 +29,10 @@ func TestDownloadStagesPrivateArtifactAndHashesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 || filepath.Dir(artifact.Path) != dir {
+	if filepath.Dir(artifact.Path) != dir {
+		t.Fatalf("path=%q", artifact.Path)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode=%o path=%q", info.Mode().Perm(), artifact.Path)
 	}
 }

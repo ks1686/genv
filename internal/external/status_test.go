@@ -8,13 +8,11 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestInspectLocalReportsPresentAndRecipeDrift(t *testing.T) {
-	tool := filepath.Join(t.TempDir(), "tool")
-	if err := os.WriteFile(tool, []byte("#!/bin/sh\necho tool-1.2.3\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	tool := testutil.WriteStdoutTool(t, filepath.Join(t.TempDir(), "tool"), "tool-1.2.3")
 	pkg := schema.Package{ID: "tool", External: &schema.ExternalRecipe{Detect: schema.ExternalDetect{Command: []string{tool}, VersionRegex: `tool-([0-9.]+)`}}}
 	if got := InspectLocal(context.Background(), pkg, nil); !got.Present || got.Version != "1.2.3" || got.Drift {
 		t.Fatalf("unlocked = %+v", got)
@@ -55,7 +53,7 @@ func TestRecipeSHA256IsStable(t *testing.T) {
 
 func TestExpandDestinationHomeRelative(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetHome(t, home)
 	got, err := expandDestination("~/bin/tool")
 	if err != nil {
 		t.Fatal(err)

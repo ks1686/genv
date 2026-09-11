@@ -15,10 +15,11 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestExecuteApplyInstallsManagedExternalRecipe(t *testing.T) {
-	payload := []byte("#!/bin/sh\necho 'tool 1.2.3'\n")
+	payload, suffix := testutil.DirectToolArtifact("tool 1.2.3")
 	digestBytes := sha256.Sum256(payload)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
@@ -29,7 +30,7 @@ func TestExecuteApplyInstallsManagedExternalRecipe(t *testing.T) {
 		_, _ = w.Write(payload)
 	}))
 	t.Cleanup(server.Close)
-	destination := filepath.Join(t.TempDir(), "tool")
+	destination := filepath.Join(t.TempDir(), "tool"+suffix)
 	pkg := schema.Package{ID: "tool", Prefer: "external", External: &schema.ExternalRecipe{
 		Detect:    schema.ExternalDetect{Command: []string{destination}, VersionRegex: `tool ([0-9.]+)`},
 		Source:    schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest", Format: "text", VersionRegex: `([0-9.]+)`},
