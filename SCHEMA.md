@@ -103,7 +103,7 @@ Aliases/functions may set `"shell": "powershell"`. Omitted `shell` stays POSIX-o
 - `notify`
 - `onlyManagers`, `skipManagers`, `only`, `skip` — same filters as `genv upgrade`’s tracked-package step
 
-Tracked packages only; the checker never plans or applies OS vendor or firmware updates. Use `genv upgrade` for those. Not a remote SSH updater.
+Tracked packages only; the checker never plans or applies OS vendor or firmware updates. Use `genv upgrade` for those. Not a remote SSH updater. The scheduled `__run-once` job is non-interactive: it never prompts for sudo/UAC. Packages that need elevation are skipped and logged; run `genv upgrade` from a terminal (or an elevated Windows session) to apply them.
 
 `genv updates start` registers the checker with systemd --user (Linux),
 launchd (macOS), or Task Scheduler / `schtasks` (Windows).

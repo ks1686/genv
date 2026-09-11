@@ -127,6 +127,10 @@ identity and OIDC issuer and validates the transparency evidence in the bundle.
   `--yes` or `updates.autoApply` execution.
 - User-scope direct/archive destinations must stay under the user's home.
   Destinations elsewhere require `scope: "system"` and appropriate elevation.
+  Interactive `genv apply` / `genv upgrade` elevate the staging write and
+  atomic replacement (Unix `sudo`; Windows needs an already-elevated
+  session). Scheduled `updates.autoApply` never elevates: system-scope
+  installs that are not writable are skipped and logged.
 - Script-created files are never inferred. Removal requires the declared
   uninstall argv; adopted external installations remain unowned.
 

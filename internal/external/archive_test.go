@@ -20,7 +20,7 @@ func TestInstallArchiveCopiesDeclaredFile(t *testing.T) {
 	receipts, restore, finish, err := installArchive(archivePath, "tool.zip", schema.ExternalInstall{
 		Type: "archive", StripComponents: 1,
 		Files: []schema.ExternalInstallFile{{From: "bin/tool", To: destination, Mode: "0755"}},
-	})
+	}, installPolicy{})
 	if err != nil {
 		t.Fatalf("installArchive() error: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestInstallCompressedTarFormats(t *testing.T) {
 			destination := filepath.Join(t.TempDir(), "tool")
 			_, restore, finish, err := installArchive(archivePath, filepath.Base(archivePath), schema.ExternalInstall{
 				Type: "archive", Files: []schema.ExternalInstallFile{{From: "tool", To: destination}},
-			})
+			}, installPolicy{})
 			if err != nil {
 				t.Fatalf("installArchive() error: %v", err)
 			}
@@ -62,7 +62,7 @@ func TestInstallArchiveRejectsTraversalEvenWhenNotSelected(t *testing.T) {
 	writeZipFixture(t, archivePath, map[string]string{"../escape": "bad", "tool": "good"})
 	_, _, _, err := installArchive(archivePath, "tool.zip", schema.ExternalInstall{
 		Type: "archive", Files: []schema.ExternalInstallFile{{From: "tool", To: filepath.Join(t.TempDir(), "tool")}},
-	})
+	}, installPolicy{})
 	if err == nil {
 		t.Fatal("installArchive() accepted traversal entry")
 	}

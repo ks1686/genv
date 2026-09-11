@@ -27,6 +27,9 @@ type UpgradeOptions struct {
 	// Stdin is forwarded to refresh commands so interactive sudo can prompt.
 	// The hourly worker passes an empty reader.
 	Stdin io.Reader
+	// Unattended is set only by updates __run-once. Refresh and apply never
+	// prompt for elevation; interactive genv upgrade/apply leave this false.
+	Unattended bool
 }
 
 type UpgradePlan struct {
@@ -48,11 +51,13 @@ type UpgradeRunOptions struct {
 	Stderr              io.Writer
 	ExternalMode        externalpkg.ExecutionMode
 	AcknowledgeExternal func(message string) bool
+	Unattended          bool
 }
 
 type UpgradeRunResult struct {
 	Plan           UpgradePlan
 	Upgraded       []genvfile.LockedPackage
+	Skipped        []resolver.SkippedPackage
 	Errors         []error
 	Failures       []resolver.UpgradeFailure
 	LockWriteError error
@@ -220,8 +225,9 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 	}
 
 	refresh, keepAll, refreshWarns := resolver.RefreshIndexes(upgradeablePackages, resolver.RefreshOptions{
-		Context: opts.Context,
-		Stdin:   opts.Stdin,
+		Context:    opts.Context,
+		Stdin:      opts.Stdin,
+		Unattended: opts.Unattended,
 	})
 	plan.Refresh = refresh
 	plan.Warnings = append(plan.Warnings, refreshWarns...)
@@ -244,13 +250,14 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 
 func RunUpgrade(ctx context.Context, opts UpgradeRunOptions) UpgradeRunResult {
 	execResult := resolver.ExecuteUpgrade(ctx, opts.Plan.Actions, opts.Stdin, opts.Stdout, opts.Stderr, resolver.ApplyExecutionOptions{
-		ExternalMode: opts.ExternalMode, AcknowledgeExternal: opts.AcknowledgeExternal,
+		ExternalMode: opts.ExternalMode, AcknowledgeExternal: opts.AcknowledgeExternal, Unattended: opts.Unattended,
 	})
 	applyUpgradedVersions(opts.Lock, execResult.Upgraded)
 
 	result := UpgradeRunResult{
 		Plan:     opts.Plan,
 		Upgraded: execResult.Upgraded,
+		Skipped:  append([]resolver.SkippedPackage(nil), execResult.Skipped...),
 		Errors:   append([]error(nil), execResult.Errors...),
 		Failures: append([]resolver.UpgradeFailure(nil), execResult.Failures...),
 	}
