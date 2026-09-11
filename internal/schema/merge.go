@@ -18,7 +18,7 @@ func MergeTarget(f *GenvFile, targetID string) (*GenvFile, error) {
 	}
 
 	out := &GenvFile{
-		SchemaVersion: Version8,
+		SchemaVersion: f.SchemaVersion,
 		Repo:          copyRepo(f.Repo),
 		Updates:       copyUpdatesConfig(f.Updates),
 		Adapters:      copyAdapters(f.Adapters),
@@ -300,8 +300,30 @@ func copyPackages(in []Package) []Package {
 		out[i] = pkg
 		out[i].Managers = copyStringMap(pkg.Managers)
 		out[i].Host = copyHostPredicate(pkg.Host)
+		out[i].External = copyExternalRecipe(pkg.External)
 	}
 	return out
+}
+
+func copyExternalRecipe(in *ExternalRecipe) *ExternalRecipe {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Detect.Command = copyStrings(in.Detect.Command)
+	out.Platforms = make([]ExternalPlatform, len(in.Platforms))
+	for i, platform := range in.Platforms {
+		out.Platforms[i] = platform
+		out.Platforms[i].OS = copyStrings(platform.OS)
+		out.Platforms[i].Arch = copyStrings(platform.Arch)
+		out.Platforms[i].Libc = copyStrings(platform.Libc)
+		out.Platforms[i].Install.Args = copyStrings(platform.Install.Args)
+		out.Platforms[i].Install.Uninstall = copyStrings(platform.Install.Uninstall)
+		out.Platforms[i].Install.Env = copyStringMap(platform.Install.Env)
+		out.Platforms[i].Install.Files = append([]ExternalInstallFile(nil), platform.Install.Files...)
+	}
+	out.Verify = append([]ExternalVerification(nil), in.Verify...)
+	return &out
 }
 
 func copyService(in Service) Service {

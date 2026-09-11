@@ -42,7 +42,7 @@ func ServicePut(f *schema.GenvFile, name string, svc schema.Service, targetID st
 	if hasSupervisor && (len(svc.Start) > 0 || svc.BrewFormula != "") {
 		return errors.New("launchd/systemd templates are mutually exclusive with --start and --brew-formula")
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err
@@ -66,7 +66,7 @@ func ServicePut(f *schema.GenvFile, name string, svc schema.Service, targetID st
 // ServiceRemove removes the service from f's services block.
 // Returns ErrServiceNotFound when name is absent.
 func ServiceRemove(f *schema.GenvFile, name, targetID string) error {
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err

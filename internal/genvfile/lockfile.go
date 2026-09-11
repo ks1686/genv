@@ -14,10 +14,32 @@ import (
 // was chosen, what concrete package name was passed to it, and the version that
 // was installed. InstalledVersion is empty for entries written before M3.
 type LockedPackage struct {
-	ID               string `json:"id"`
-	Manager          string `json:"manager"`
-	PkgName          string `json:"pkgName"`
-	InstalledVersion string `json:"installedVersion,omitempty"`
+	ID               string           `json:"id"`
+	Manager          string           `json:"manager"`
+	PkgName          string           `json:"pkgName"`
+	InstalledVersion string           `json:"installedVersion,omitempty"`
+	External         *ExternalReceipt `json:"external,omitempty"`
+}
+
+// ExternalReceipt records the resolved release and files owned by genv.
+type ExternalReceipt struct {
+	SourceType     string                `json:"sourceType"`
+	ReleaseID      string                `json:"releaseId,omitempty"`
+	ReleaseTag     string                `json:"releaseTag,omitempty"`
+	ArtifactURL    string                `json:"artifactUrl"`
+	ArtifactSHA256 string                `json:"artifactSha256"`
+	Verification   string                `json:"verification"`
+	RecipeSHA256   string                `json:"recipeSha256"`
+	InstallType    string                `json:"installType"`
+	Owned          bool                  `json:"owned"`
+	Paths          []ExternalPathReceipt `json:"paths,omitempty"`
+	Uninstall      []string              `json:"uninstall,omitempty"`
+}
+
+// ExternalPathReceipt records one installed path and its post-install digest.
+type ExternalPathReceipt struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
 }
 
 // LockedEnvVar records how one environment variable was last applied by genv.

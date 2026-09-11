@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -92,7 +93,7 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateRepo(f, raw, positions)...)
 	errs = append(errs, validateUpdates(f, raw, positions)...)
 	errs = append(errs, validateAdapters(f, raw, positions)...)
-	errs = append(errs, validateV8(f, positions)...)
+	errs = append(errs, validatePortable(f, positions)...)
 
 	return f, errs, nil
 }
@@ -227,11 +228,11 @@ func validateSchemaVersion(f *GenvFile, raw map[string]json.RawMessage, position
 			Field:   "schemaVersion",
 			Message: "required field is missing",
 		})
-	} else if f.SchemaVersion != Version && f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+	} else if versionRank(f.SchemaVersion) < 0 {
 		errs = append(errs, ValidationError{
 			Position: positions["schemaVersion"],
 			Field:    "schemaVersion",
-			Message:  fmt.Sprintf("unsupported version %q; expected %q, %q, %q, %q, %q, %q, %q, or %q", f.SchemaVersion, Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8),
+			Message:  fmt.Sprintf("unsupported version %q; expected one of %s", f.SchemaVersion, strings.Join(versionOrder, ", ")),
 		})
 	}
 	return errs
@@ -242,7 +243,7 @@ func validatePackages(f *GenvFile, raw map[string]json.RawMessage, positions map
 	if _, ok := raw["packages"]; !ok {
 		// Schema v5 adds files/hooks/repo blocks and v6 adds updates; a spec may
 		// legitimately contain only those blocks, so packages is optional there.
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version5) {
 			errs = append(errs, ValidationError{
 				Field:   "packages",
 				Message: "required field is missing",
@@ -308,14 +309,271 @@ func validatePackageList(f *GenvFile, packages []Package, fieldPrefix string, po
 				})
 			}
 		}
+		if pkg.External != nil {
+			errs = append(errs, validateExternalRecipe(pkg, pkgPath, f.SchemaVersion, positions)...)
+		}
 	}
 	return errs
+}
+
+func validateExternalRecipe(pkg Package, pkgPath, schemaVersion string, positions map[string]Position) []ValidationError {
+	field := pkgPath + ".external"
+	if schemaVersion != Version9 {
+		return []ValidationError{{Position: positions[field], Field: field, Message: "managed external recipe requires schemaVersion \"9\""}}
+	}
+	var errs []ValidationError
+	if pkg.Prefer != "external" {
+		errs = append(errs, ValidationError{Position: positions[field], Field: field, Message: "managed external recipe requires prefer \"external\""})
+	}
+	r := pkg.External
+	if len(r.Detect.Command) == 0 || r.Detect.Command[0] == "" {
+		errs = append(errs, externalValidation(field+".detect.command", "at least one non-empty argv element is required", positions))
+	}
+	errs = append(errs, validateCaptureRegex(r.Detect.VersionRegex, field+".detect.versionRegex", true, positions)...)
+	errs = append(errs, validateExternalSource(r.Source, field+".source", r.AllowInsecureHTTP, positions)...)
+	if len(r.Platforms) == 0 {
+		errs = append(errs, externalValidation(field+".platforms", "at least one platform is required", positions))
+	}
+	for i, platform := range r.Platforms {
+		errs = append(errs, validateExternalPlatform(platform, fmt.Sprintf("%s.platforms[%d]", field, i), r.Source.Type, r.AllowInsecureHTTP, positions)...)
+	}
+	if len(r.Verify) == 0 && !r.AllowUnverified {
+		errs = append(errs, externalValidation(field+".verify", "verify is required unless allowUnverified is true", positions))
+	}
+	for i, verify := range r.Verify {
+		errs = append(errs, validateExternalVerification(verify, fmt.Sprintf("%s.verify[%d]", field, i), positions)...)
+	}
+	return errs
+}
+
+func validateExternalSource(source ExternalSource, field string, allowInsecure bool, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	switch source.Type {
+	case "githubRelease":
+		parts := strings.Split(source.Repository, "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			errs = append(errs, externalValidation(field+".repository", "repository must be owner/name", positions))
+		}
+		if source.Release != "" && source.Release != "stable" && source.Release != "prerelease" && source.Release != "any" {
+			errs = append(errs, externalValidation(field+".release", "release must be stable, prerelease, or any", positions))
+		}
+		if source.VersionURL != "" || source.Format != "" || source.VersionPointer != "" || source.VersionRegex != "" {
+			errs = append(errs, externalValidation(field, "githubRelease source cannot contain HTTP release fields", positions))
+		}
+		errs = append(errs, validateCaptureRegex(source.TagRegex, field+".tagRegex", false, positions)...)
+		if source.APIBase != "" {
+			errs = append(errs, validateExternalURL(source.APIBase, field+".apiBase", allowInsecure, positions)...)
+		}
+	case "httpRelease":
+		errs = append(errs, validateExternalURL(source.VersionURL, field+".versionURL", allowInsecure, positions)...)
+		if source.Repository != "" || source.Release != "" || source.TagRegex != "" || source.APIBase != "" {
+			errs = append(errs, externalValidation(field, "httpRelease source cannot contain GitHub release fields", positions))
+		}
+		switch source.Format {
+		case "json":
+			if source.VersionPointer == "" || source.VersionRegex != "" {
+				errs = append(errs, externalValidation(field, "json source requires versionPointer and forbids versionRegex", positions))
+			}
+		case "text":
+			if source.VersionPointer != "" {
+				errs = append(errs, externalValidation(field, "text source forbids versionPointer", positions))
+			}
+			errs = append(errs, validateCaptureRegex(source.VersionRegex, field+".versionRegex", true, positions)...)
+		default:
+			errs = append(errs, externalValidation(field+".format", "format must be json or text", positions))
+		}
+	default:
+		errs = append(errs, externalValidation(field+".type", "source type must be githubRelease or httpRelease", positions))
+	}
+	return errs
+}
+
+func validateExternalPlatform(platform ExternalPlatform, field, sourceType string, allowInsecure bool, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if len(platform.OS) == 0 {
+		errs = append(errs, externalValidation(field+".os", "at least one os is required", positions))
+	}
+	for _, value := range platform.OS {
+		if value != "linux" && value != "darwin" && value != "windows" {
+			errs = append(errs, externalValidation(field+".os", fmt.Sprintf("unknown os %q", value), positions))
+		}
+	}
+	if len(platform.Arch) == 0 {
+		errs = append(errs, externalValidation(field+".arch", "at least one arch is required", positions))
+	}
+	for _, value := range platform.Arch {
+		if value != "amd64" && value != "arm64" {
+			errs = append(errs, externalValidation(field+".arch", fmt.Sprintf("unknown arch %q", value), positions))
+		}
+	}
+	for _, value := range platform.Libc {
+		if value != "glibc" && value != "musl" {
+			errs = append(errs, externalValidation(field+".libc", fmt.Sprintf("unknown libc %q", value), positions))
+		}
+	}
+	if sourceType == "githubRelease" {
+		if platform.AssetRegex == "" || platform.ArtifactURL != "" {
+			errs = append(errs, externalValidation(field, "GitHub platform requires assetRegex and forbids artifactURL", positions))
+		} else {
+			errs = append(errs, validateRegex(platform.AssetRegex, field+".assetRegex", positions)...)
+		}
+	} else if sourceType == "httpRelease" {
+		if platform.ArtifactURL == "" || platform.AssetRegex != "" {
+			errs = append(errs, externalValidation(field, "HTTP platform requires artifactURL and forbids assetRegex", positions))
+		} else {
+			errs = append(errs, validateExternalURL(platform.ArtifactURL, field+".artifactURL", allowInsecure, positions)...)
+		}
+	}
+	errs = append(errs, validateExternalInstall(platform.Install, field+".install", positions)...)
+	return errs
+}
+
+func validateExternalInstall(install ExternalInstall, field string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if install.Scope != "" && install.Scope != "user" && install.Scope != "system" {
+		errs = append(errs, externalValidation(field+".scope", "scope must be user or system", positions))
+	}
+	switch install.Type {
+	case "direct":
+		if install.Destination == "" {
+			errs = append(errs, externalValidation(field+".destination", "destination is required for direct install", positions))
+		}
+		if len(install.Files) > 0 || install.StripComponents != 0 || install.Interpreter != "" || len(install.Args) > 0 || len(install.Env) > 0 || len(install.Uninstall) > 0 {
+			errs = append(errs, externalValidation(field, "direct install contains fields for another install type", positions))
+		}
+	case "archive":
+		if len(install.Files) == 0 {
+			errs = append(errs, externalValidation(field+".files", "at least one file is required for archive install", positions))
+		}
+		for i, file := range install.Files {
+			if file.From == "" || file.To == "" {
+				errs = append(errs, externalValidation(fmt.Sprintf("%s.files[%d]", field, i), "from and to are required", positions))
+			}
+			errs = append(errs, validateExternalTemplate(file.To, fmt.Sprintf("%s.files[%d].to", field, i), positions)...)
+		}
+		if install.Destination != "" || install.Interpreter != "" || len(install.Args) > 0 || len(install.Env) > 0 || len(install.Uninstall) > 0 {
+			errs = append(errs, externalValidation(field, "archive install contains fields for another install type", positions))
+		}
+	case "script":
+		if install.Interpreter != "sh" && install.Interpreter != "bash" && install.Interpreter != "pwsh" && install.Interpreter != "powershell" {
+			errs = append(errs, externalValidation(field+".interpreter", "interpreter must be sh, bash, pwsh, or powershell", positions))
+		}
+		if len(install.Files) > 0 || install.StripComponents != 0 {
+			errs = append(errs, externalValidation(field, "script install contains archive fields", positions))
+		}
+		if len(install.Uninstall) > 0 && (install.Uninstall[0] == "sh" || install.Uninstall[0] == "bash" || install.Uninstall[0] == "pwsh" || install.Uninstall[0] == "powershell") {
+			errs = append(errs, externalValidation(field+".uninstall", "uninstall must be explicit argv, not a shell interpreter", positions))
+		}
+		for i, value := range install.Args {
+			errs = append(errs, validateExternalTemplate(value, fmt.Sprintf("%s.args[%d]", field, i), positions)...)
+		}
+		for key, value := range install.Env {
+			if matched, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, key); !matched {
+				errs = append(errs, externalValidation(field+".env", fmt.Sprintf("invalid environment variable name %q", key), positions))
+			}
+			errs = append(errs, validateExternalTemplate(value, field+".env."+key, positions)...)
+		}
+		for i, value := range install.Uninstall {
+			if value == "" {
+				errs = append(errs, externalValidation(fmt.Sprintf("%s.uninstall[%d]", field, i), "uninstall argv entries cannot be empty", positions))
+			}
+			errs = append(errs, validateExternalTemplate(value, fmt.Sprintf("%s.uninstall[%d]", field, i), positions)...)
+		}
+	default:
+		errs = append(errs, externalValidation(field+".type", "install type must be direct, archive, or script", positions))
+	}
+	if install.Destination != "" {
+		errs = append(errs, validateExternalTemplate(install.Destination, field+".destination", positions)...)
+	}
+	return errs
+}
+
+func validateExternalTemplate(value, field string, positions map[string]Position) []ValidationError {
+	re := regexp.MustCompile(`\{([A-Za-z][A-Za-z0-9]*)\}`)
+	allowed := map[string]bool{"version": true, "tag": true, "os": true, "arch": true, "script": true, "destination": true}
+	var errs []ValidationError
+	for _, match := range re.FindAllStringSubmatch(value, -1) {
+		if !allowed[match[1]] {
+			errs = append(errs, externalValidation(field, fmt.Sprintf("unknown template placeholder %q", match[1]), positions))
+		}
+	}
+	withoutPlaceholders := re.ReplaceAllString(value, "")
+	if strings.ContainsAny(withoutPlaceholders, "{}") {
+		errs = append(errs, externalValidation(field, "invalid template syntax", positions))
+	}
+	return errs
+}
+
+func validateExternalVerification(verify ExternalVerification, field string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	switch verify.Type {
+	case "githubDigest":
+	case "sha256":
+		if verify.Value == "" && verify.ValuePointer == "" {
+			errs = append(errs, externalValidation(field, "sha256 requires value or valuePointer", positions))
+		}
+	case "sha256File":
+		if verify.AssetRegex == "" && verify.URL == "" {
+			errs = append(errs, externalValidation(field, "sha256File requires assetRegex or url", positions))
+		}
+	case "sigstore":
+		if verify.Identity == "" || verify.Issuer == "" || (verify.BundleAssetRegex == "" && verify.URL == "") {
+			errs = append(errs, externalValidation(field, "sigstore requires identity, issuer, and bundle asset or URL", positions))
+		}
+	case "minisign":
+		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || (verify.SignatureAssetRegex == "" && verify.URL == "") {
+			errs = append(errs, externalValidation(field, "minisign requires exactly one public key source and a signature asset", positions))
+		}
+	case "openpgp":
+		if (verify.PublicKey == "") == (verify.PublicKeyFile == "") || (verify.SignatureAssetRegex == "" && verify.URL == "") || len(verify.Fingerprint) < 40 {
+			errs = append(errs, externalValidation(field, "openpgp requires exactly one public key source, a signature asset, and full fingerprint", positions))
+		}
+	default:
+		errs = append(errs, externalValidation(field+".type", "unknown verification type", positions))
+	}
+	return errs
+}
+
+func validateCaptureRegex(expr, field string, required bool, positions map[string]Position) []ValidationError {
+	if expr == "" {
+		if required {
+			return []ValidationError{externalValidation(field, "required field is missing or empty", positions)}
+		}
+		return nil
+	}
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return []ValidationError{externalValidation(field, fmt.Sprintf("invalid regex: %v", err), positions)}
+	}
+	if re.NumSubexp() != 1 {
+		return []ValidationError{externalValidation(field, "regex must contain exactly one capture group", positions)}
+	}
+	return nil
+}
+
+func validateRegex(expr, field string, positions map[string]Position) []ValidationError {
+	if _, err := regexp.Compile(expr); err != nil {
+		return []ValidationError{externalValidation(field, fmt.Sprintf("invalid regex: %v", err), positions)}
+	}
+	return nil
+}
+
+func validateExternalURL(value, field string, allowInsecure bool, positions map[string]Position) []ValidationError {
+	u, err := url.Parse(value)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && !(allowInsecure && u.Scheme == "http")) {
+		return []ValidationError{externalValidation(field, "must be an absolute HTTPS URL", positions)}
+	}
+	return nil
+}
+
+func externalValidation(field, message string, positions map[string]Position) ValidationError {
+	return ValidationError{Position: positions[field], Field: field, Message: message}
 }
 
 func validateEnv(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasEnv := raw["env"]; hasEnv {
-		if f.SchemaVersion != Version2 && f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version2) {
 			errs = append(errs, ValidationError{
 				Position: positions["env"],
 				Field:    "env",
@@ -362,7 +620,7 @@ func validateTargetEnvMap(env map[string]*EnvVar, fieldPrefix string, allowTombs
 func validateShell(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasShell := raw["shell"]; hasShell {
-		if f.SchemaVersion != Version3 && f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version3) {
 			errs = append(errs, ValidationError{
 				Position: positions["shell"],
 				Field:    "shell",
@@ -543,7 +801,7 @@ func requirePowerShellV7(f *GenvFile, fieldPrefix string, aliasShells, funcShell
 func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasServices := raw["services"]; hasServices {
-		if f.SchemaVersion != Version4 && f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version4) {
 			errs = append(errs, ValidationError{
 				Position: positions["services"],
 				Field:    "services",
@@ -697,7 +955,7 @@ func expandPath(s string) (string, error) {
 func validateFiles(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasFiles := raw["files"]; hasFiles {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version5) {
 			errs = append(errs, ValidationError{
 				Position: positions["files"],
 				Field:    "files",
@@ -774,7 +1032,7 @@ func validateFilesConfig(files *FilesConfig, fieldPrefix string) []ValidationErr
 func validateHooks(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasHooks := raw["hooks"]; hasHooks {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version5) {
 			errs = append(errs, ValidationError{
 				Position: positions["hooks"],
 				Field:    "hooks",
@@ -797,7 +1055,7 @@ func validateHooksConfig(f *GenvFile, hooks *HooksConfig, fieldPrefix string, po
 	errs = append(errs, err...)
 	err = validateHookPhase(fieldPrefix, "postUpgrade", hooks.PostUpgrade)
 	errs = append(errs, err...)
-	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+	if versionRank(f.SchemaVersion) < versionRank(Version6) {
 		errs = append(errs, validateNoV6Hooks(hooks, fieldPrefix, positions)...)
 		return errs
 	}
@@ -872,7 +1130,7 @@ func validateNoV6Hooks(h *HooksConfig, fieldPrefix string, positions map[string]
 func validateRepo(f *GenvFile, raw map[string]json.RawMessage, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	if _, hasRepo := raw["repo"]; hasRepo {
-		if f.SchemaVersion != Version5 && f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+		if versionRank(f.SchemaVersion) < versionRank(Version5) {
 			errs = append(errs, ValidationError{
 				Position: positions["repo"],
 				Field:    "repo",
@@ -910,7 +1168,7 @@ func validateUpdates(f *GenvFile, raw map[string]json.RawMessage, positions map[
 	if _, hasUpdates := raw["updates"]; !hasUpdates {
 		return errs
 	}
-	if f.SchemaVersion != Version6 && f.SchemaVersion != Version7 && f.SchemaVersion != Version8 {
+	if versionRank(f.SchemaVersion) < versionRank(Version6) {
 		errs = append(errs, ValidationError{
 			Position: positions["updates"],
 			Field:    "updates",
@@ -973,11 +1231,11 @@ func validateAdapters(f *GenvFile, raw map[string]json.RawMessage, positions map
 	if _, hasAdapters := raw["adapters"]; !hasAdapters {
 		return errs
 	}
-	if f.SchemaVersion != Version8 {
+	if !IsPortableVersion(f.SchemaVersion) {
 		errs = append(errs, ValidationError{
 			Position: positions["adapters"],
 			Field:    "adapters",
-			Message:  fmt.Sprintf("adapters block requires schemaVersion %q (current: %q)", Version8, f.SchemaVersion),
+			Message:  fmt.Sprintf("adapters block requires schemaVersion %q or %q (current: %q)", Version8, Version9, f.SchemaVersion),
 		})
 	}
 	if len(f.Adapters) == 0 {
@@ -1033,8 +1291,8 @@ func validateAdapters(f *GenvFile, raw map[string]json.RawMessage, positions map
 	return errs
 }
 
-func validateV8(f *GenvFile, positions map[string]Position) []ValidationError {
-	if f.SchemaVersion != Version8 {
+func validatePortable(f *GenvFile, positions map[string]Position) []ValidationError {
+	if !IsPortableVersion(f.SchemaVersion) {
 		return nil
 	}
 
@@ -1043,42 +1301,42 @@ func validateV8(f *GenvFile, positions map[string]Position) []ValidationError {
 		errs = append(errs, ValidationError{
 			Position: positions["packages"],
 			Field:    "packages",
-			Message:  "top-level packages are not allowed in schemaVersion \"8\"; use targets.<target>.packages",
+			Message:  fmt.Sprintf("top-level packages are not allowed in schemaVersion %q; use targets.<target>.packages", f.SchemaVersion),
 		})
 	}
 	if f.Env != nil {
 		errs = append(errs, ValidationError{
 			Position: positions["env"],
 			Field:    "env",
-			Message:  "top-level env is not allowed in schemaVersion \"8\"; use defaults.env or targets.<target>.env",
+			Message:  fmt.Sprintf("top-level env is not allowed in schemaVersion %q; use defaults.env or targets.<target>.env", f.SchemaVersion),
 		})
 	}
 	if f.Shell != nil {
 		errs = append(errs, ValidationError{
 			Position: positions["shell"],
 			Field:    "shell",
-			Message:  "top-level shell is not allowed in schemaVersion \"8\"; use defaults.shell or targets.<target>.shell",
+			Message:  fmt.Sprintf("top-level shell is not allowed in schemaVersion %q; use defaults.shell or targets.<target>.shell", f.SchemaVersion),
 		})
 	}
 	if f.Files != nil {
 		errs = append(errs, ValidationError{
 			Position: positions["files"],
 			Field:    "files",
-			Message:  "top-level files are not allowed in schemaVersion \"8\"; use defaults.files or targets.<target>.files",
+			Message:  fmt.Sprintf("top-level files are not allowed in schemaVersion %q; use defaults.files or targets.<target>.files", f.SchemaVersion),
 		})
 	}
 	if f.Services != nil {
 		errs = append(errs, ValidationError{
 			Position: positions["services"],
 			Field:    "services",
-			Message:  "top-level services are not allowed in schemaVersion \"8\"; use defaults.services or targets.<target>.services",
+			Message:  fmt.Sprintf("top-level services are not allowed in schemaVersion %q; use defaults.services or targets.<target>.services", f.SchemaVersion),
 		})
 	}
 	if f.Hooks != nil {
 		errs = append(errs, ValidationError{
 			Position: positions["hooks"],
 			Field:    "hooks",
-			Message:  "top-level hooks are not allowed in schemaVersion \"8\"; use defaults.hooks or targets.<target>.hooks",
+			Message:  fmt.Sprintf("top-level hooks are not allowed in schemaVersion %q; use defaults.hooks or targets.<target>.hooks", f.SchemaVersion),
 		})
 	}
 

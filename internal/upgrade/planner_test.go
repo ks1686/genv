@@ -489,6 +489,25 @@ func TestRunUpgrade_propagates_typed_action_failures(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradePlanIncludesOutdatedExternalRelease(t *testing.T) {
+	tool := filepath.Join(t.TempDir(), "tool")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\necho tool-1.0.0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := externalLatestVersion
+	externalLatestVersion = func(context.Context, schema.Package) (string, error) { return "1.1.0", nil }
+	t.Cleanup(func() { externalLatestVersion = original })
+	pkg := schema.Package{ID: "tool", Prefer: "external", External: &schema.ExternalRecipe{Detect: schema.ExternalDetect{Command: []string{tool}, VersionRegex: `tool-([0-9.]+)`}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{{ID: "tool", Manager: "external", PkgName: "tool", InstalledVersion: "1.0.0", External: &genvfile.ExternalReceipt{}}}}
+	plan, err := BuildUpgradePlan(UpgradeOptions{Spec: &schema.GenvFile{Packages: []schema.Package{pkg}}, Lock: lock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].External == nil || plan.Actions[0].External.ID != "tool" {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
 type upgradeFailureTestAdapter struct{}
 
 func (upgradeFailureTestAdapter) Name() string { return "test-failure" }

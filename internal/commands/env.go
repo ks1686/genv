@@ -20,7 +20,7 @@ func EnvSet(f *schema.GenvFile, name, value string, sensitive bool, targetID str
 	if !schema.ValidEnvName(name) {
 		return fmt.Errorf("invalid variable name %q: must match [A-Za-z_][A-Za-z0-9_]*\nTip: use letters, digits, and underscores only; the name must not start with a digit", name)
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err
@@ -45,7 +45,7 @@ func EnvSet(f *schema.GenvFile, name, value string, sensitive bool, targetID str
 // EnvUnset removes the variable name from f's env block.
 // Returns ErrEnvNotFound when name is absent.
 func EnvUnset(f *schema.GenvFile, name, targetID string) error {
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ks1686/genv/internal/adapter"
+	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/version"
@@ -45,6 +46,8 @@ type Action struct {
 	PkgName      string   // concrete name to pass to the manager
 	Cmd          []string // installation command; nil if unresolved
 	UninstallCmd []string // uninstall command; nil if unresolved
+	Locked       *genvfile.LockedPackage
+	Detail       string
 }
 
 // Resolved reports whether a manager was found for this package.
@@ -77,7 +80,11 @@ func resolveOnGOOS(pkg schema.Package, available map[string]bool, goos string) A
 	if pkg.Prefer != "" && available[pkg.Prefer] {
 		if a := adapter.ByName(pkg.Prefer); a != nil {
 			name, _ := a.NormalizeID(pkg.ID, pkg.Managers)
-			return Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}
+			action := Action{Pkg: pkg, Manager: a.Name(), PkgName: name, Cmd: a.PlanInstall(name), UninstallCmd: a.PlanUninstall(name)}
+			if pkg.External != nil && a.Name() == "external" {
+				action.Detail = externalPlanDetail(pkg.External)
+			}
+			return action
 		}
 	}
 
@@ -110,6 +117,32 @@ func resolveOnGOOS(pkg schema.Package, available map[string]bool, goos string) A
 // PrintPlan writes a human-readable installation plan to w and returns the number
 // of resolved and unresolved packages so callers can act on the counts without
 // a second pass over the actions slice.
+func EnrichExternalPlan(ctx context.Context, result *ReconcileResult) {
+	if result == nil {
+		return
+	}
+	for i := range result.ToInstall {
+		action := &result.ToInstall[i]
+		if action.Pkg.External == nil || action.Manager != "external" {
+			continue
+		}
+		planned, err := planExternal(ctx, action.Pkg)
+		if err != nil {
+			action.Detail = "managed external release (plan failed)"
+			continue
+		}
+		action.Detail = planned
+	}
+}
+
+var planExternal = func(ctx context.Context, pkg schema.Package) (string, error) {
+	planned, err := (externalpkg.Engine{Host: externalpkg.CurrentHost()}).Plan(ctx, pkg)
+	if err != nil {
+		return "", err
+	}
+	return planned.Detail, nil
+}
+
 func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 	for _, a := range actions {
 		if a.Resolved() {
@@ -133,7 +166,7 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range actions {
 		if a.Resolved() {
-			fprintf(tw, "  %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  %s\tvia %s\t%s\n", a.Pkg.ID, a.Manager, actionPlanDetail(a))
 		} else {
 			fprintf(tw, "  %s\tunresolved\t(no manager available)\n", a.Pkg.ID)
 		}
@@ -147,6 +180,32 @@ func PrintPlan(actions []Action, w io.Writer) (resolved, unresolved int) {
 		fPrintln(w, "Use --strict to treat unresolved packages as a hard error.")
 	}
 	return
+}
+
+func actionPlanDetail(action Action) string {
+	if action.Detail != "" {
+		return action.Detail
+	}
+	return strings.Join(action.Cmd, " ")
+}
+
+func externalPlanDetail(recipe *schema.ExternalRecipe) string {
+	platform, err := externalpkg.SelectPlatform(recipe.Platforms, externalpkg.CurrentHost())
+	if err != nil {
+		return "managed external release"
+	}
+	verification := make([]string, 0, len(recipe.Verify))
+	for _, method := range recipe.Verify {
+		verification = append(verification, method.Type)
+	}
+	if len(verification) == 0 {
+		verification = append(verification, "unverified")
+	}
+	scope := platform.Install.Scope
+	if scope == "" {
+		scope = "user"
+	}
+	return fmt.Sprintf("managed %s release; verify=%s; scope=%s", platform.Install.Type, strings.Join(verification, "+"), scope)
 }
 
 // runSubcmd prints the command to stdout, spawns it as a subprocess wiring
@@ -213,9 +272,11 @@ func Execute(ctx context.Context, actions []Action, stdin io.Reader, stdout, std
 // one action per package; adapters implementing BatchUpgrader may produce one
 // action for several packages.
 type UpgradeAction struct {
-	LPs []genvfile.LockedPackage
-	Mgr adapter.Adapter
-	Cmd []string
+	LPs           []genvfile.LockedPackage
+	Mgr           adapter.Adapter
+	Cmd           []string
+	External      *schema.Package
+	RemoteVersion string
 }
 
 // SkippedPackage records a package that was skipped during upgrade planning.
@@ -370,12 +431,34 @@ type UpgradeFailure struct {
 // ExecuteUpgrade runs each resolved upgrade action sequentially, updating the
 // InstalledVersion for packages whose version changed. Returns an UpgradeExecution
 // holding the updated packages and any errors encountered.
-func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, stdout, stderr io.Writer) UpgradeExecution {
+func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, stdout, stderr io.Writer, options ...ApplyExecutionOptions) UpgradeExecution {
 	var out UpgradeExecution
+	var executionOptions ApplyExecutionOptions
+	if len(options) > 0 {
+		executionOptions = options[0]
+	}
 	for _, a := range plan {
 		ids := make([]string, len(a.LPs))
 		for i, lp := range a.LPs {
 			ids[i] = lp.ID
+		}
+
+		if a.External != nil {
+			installed, err := (externalpkg.Engine{
+				Host: externalpkg.CurrentHost(), Mode: executionOptions.ExternalMode,
+				Acknowledge: executionOptions.AcknowledgeExternal, Stdin: stdin, Output: stderr,
+			}).Install(ctx, *a.External)
+			if err != nil {
+				wrappedErr := fmt.Errorf("upgrade %q: %w", ids, err)
+				out.Errors = append(out.Errors, wrappedErr)
+				out.Failures = append(out.Failures, UpgradeFailure{IDs: ids, Err: wrappedErr})
+				continue
+			}
+			lp := a.LPs[0]
+			lp.InstalledVersion = installed.Version
+			lp.External = installed.Receipt
+			out.Upgraded = append(out.Upgraded, lp)
+			continue
 		}
 
 		cmdErr := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr)
@@ -435,6 +518,14 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 // (old lock entries without version data are never treated as drifted).
 func versionDrifted(pkg schema.Package, lp genvfile.LockedPackage) bool {
 	return lp.InstalledVersion != "" && !version.Satisfies(pkg.Version, lp.InstalledVersion)
+}
+
+func packageDrifted(pkg schema.Package, lp genvfile.LockedPackage) bool {
+	if pkg.External != nil {
+		state := externalpkg.InspectLocal(context.Background(), pkg, &lp)
+		return !state.Present || state.Drift || !version.Satisfies(pkg.Version, state.Version)
+	}
+	return versionDrifted(pkg, lp)
 }
 
 // ReconcileResult holds the delta between the desired state (genv.json) and the
@@ -633,7 +724,7 @@ func ReconcileWith(desired []schema.Package, managed []genvfile.LockedPackage, a
 		// Package is already in the lock. Check version constraint: if the lock
 		// recorded an InstalledVersion and it no longer satisfies the spec
 		// constraint, queue for reinstallation.
-		if versionDrifted(pkg, lp) {
+		if packageDrifted(pkg, lp) {
 			toInstall = append(toInstall, resolveOnGOOS(pkg, available, runtime.GOOS))
 		}
 	}
@@ -654,11 +745,12 @@ func ReconcileWith(desired []schema.Package, managed []genvfile.LockedPackage, a
 				Manager:      lp.Manager,
 				PkgName:      lp.PkgName,
 				UninstallCmd: a.PlanUninstall(lp.PkgName),
+				Locked:       &lp,
 			})
 			continue
 		}
 		// In desired — skip packages queued for reinstall; they must not appear in Unchanged.
-		if versionDrifted(specByID[lp.ID], lp) {
+		if packageDrifted(specByID[lp.ID], lp) {
 			continue
 		}
 		unchanged = append(unchanged, lp)
@@ -704,7 +796,7 @@ func PrintReconcilePlan(result ReconcileResult, w io.Writer) (toInstall, toRemov
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, a := range result.ToInstall {
 		if a.Resolved() {
-			fprintf(tw, "  + %s	via %s	%s\n", a.Pkg.ID, a.Manager, strings.Join(a.Cmd, " "))
+			fprintf(tw, "  + %s	via %s	%s\n", a.Pkg.ID, a.Manager, actionPlanDetail(a))
 		} else {
 			fprintf(tw, "  + %s	unresolved	(no manager available)\n", a.Pkg.ID)
 		}
@@ -742,17 +834,41 @@ type ApplyExecution struct {
 	Errors      []error
 }
 
+// ApplyExecutionOptions controls external-package interaction policy.
+type ApplyExecutionOptions struct {
+	ExternalMode        externalpkg.ExecutionMode
+	AcknowledgeExternal func(message string) bool
+}
+
 // ExecuteApply runs all removals then all installs from a ReconcileResult.
 // Removals are run first (mirrors how package managers handle upgrades/downgrades).
 // Cache-clean commands run once per manager that had at least one successful removal.
 // ctx controls the deadline for every subprocess; use context.Background() for no timeout.
 // Returns an ApplyExecution so the caller can write an updated lock file that
 // reflects only what actually succeeded.
-func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, stdout, stderr io.Writer) ApplyExecution {
+func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, stdout, stderr io.Writer, options ...ApplyExecutionOptions) ApplyExecution {
 	var out ApplyExecution
+	var executionOptions ApplyExecutionOptions
+	if len(options) > 0 {
+		executionOptions = options[0]
+	}
 	cleanManagers := make(map[string]bool)
 
 	for _, a := range result.ToRemove {
+		if a.Manager == "external" && a.Locked != nil && a.Locked.External != nil {
+			var err error
+			if a.Locked.External.Owned {
+				err = externalpkg.Remove(a.Locked.External)
+			} else {
+				err = externalpkg.RunUninstall(ctx, a.Locked.External.Uninstall, stdin, stderr)
+			}
+			if err != nil {
+				out.Errors = append(out.Errors, fmt.Errorf("remove %q (via external): %w", a.Pkg.ID, err))
+			} else {
+				out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
+			}
+			continue
+		}
 		mgr := adapter.ByName(a.Manager)
 		if adapter.Absent(mgr, a.PkgName) {
 			out.Uninstalled = append(out.Uninstalled, a.Pkg.ID)
@@ -794,6 +910,21 @@ func ExecuteApply(ctx context.Context, result ReconcileResult, stdin io.Reader, 
 
 	for _, a := range result.ToInstall {
 		if !a.Resolved() {
+			continue
+		}
+		if a.Manager == "external" && a.Pkg.External != nil {
+			installed, err := (externalpkg.Engine{
+				Host: externalpkg.CurrentHost(), Mode: executionOptions.ExternalMode,
+				Acknowledge: executionOptions.AcknowledgeExternal, Stdin: stdin, Output: stderr,
+			}).Install(ctx, a.Pkg)
+			if err != nil {
+				out.Errors = append(out.Errors, fmt.Errorf("install %q (via external): %w", a.Pkg.ID, err))
+				continue
+			}
+			out.Installed = append(out.Installed, genvfile.LockedPackage{
+				ID: a.Pkg.ID, Manager: a.Manager, PkgName: a.PkgName,
+				InstalledVersion: installed.Version, External: installed.Receipt,
+			})
 			continue
 		}
 		if mgr := getAdapter(a.Manager); mgr != nil {

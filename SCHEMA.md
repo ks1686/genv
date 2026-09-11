@@ -1,6 +1,6 @@
 # genv.json schema
 
-Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/validate.go`. JSON Schema mirror for v8: `schema/v8/genv.json` (Go validator remains source of truth).
+Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/validate.go`. JSON Schema mirrors: `schema/v8/genv.json` and `schema/v9/genv.json` (Go validator remains source of truth).
 
 ## Supported versions
 
@@ -14,8 +14,11 @@ Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/val
 | v6 | `"6"` | expanded lifecycle hooks, `updates` |
 | v7 | `"7"` | `"shell": "powershell"` targeting |
 | v8 | `"8"` | portable `defaults` + `targets.*`; optional top-level `adapters` |
+| v9 | `"9"` | managed external release recipes |
 
-Older versions still load. Prefer **v8** for new multi-machine specs. Convert with `genv migrate`.
+Older versions still load. Prefer **v8** unless a managed external recipe requires
+v9. Both versions use portable `defaults` and `targets.*` buckets. Convert legacy
+specs with `genv migrate`.
 
 ## Common rules
 
@@ -23,7 +26,7 @@ Older versions still load. Prefer **v8** for new multi-machine specs. Convert wi
 - Empty optional objects/arrays are omitted when marshaling (`omitempty`).
 - Paths support `~` and `$VAR` / `${VAR}` expansion.
 - **v1–v7:** optional per-record `host` is a string or string array (`"macos"` or `["arch","macos"]`). Empty means “all hosts”. Legacy literal `"wsl2"` is obsolete for classification (see [WSL guide](docs/wsl2-install.md)); migrate to `ubuntu` / `wsl-arch` targets.
-- **v8:** `host` is illegal. Use `targets.<id>` buckets.
+- **v8-v9:** `host` is illegal. Use `targets.<id>` buckets.
 
 ## v8 — portable targets (recommended)
 
@@ -160,7 +163,13 @@ Relative template paths resolve against the spec directory (or `repo.url` when s
 
 `prefer` and `managers` accept registered manager IDs (see README table) or a v8 `adapters` name. Without an explicit selection, fallback uses **system** package managers only. Language, toolchain, and plugin managers are explicit-only.
 
-`external` is a track-only manager for apps with an official installer (not winget/scoop). Apply records them when the binary is on PATH; it never installs them.
+On v1-v8, `external` is a track-only manager for apps with an official installer
+(not winget/scoop). Apply records them when the binary is on PATH; it never
+installs them. Schema v9 permits an `external` recipe on a package with
+`prefer: "external"`; the recipe declares local version detection, a GitHub
+Release or structured HTTP source, platform artifacts, installation type, and
+verification policy. Recipes without a verifier must explicitly set
+`allowUnverified: true`.
 
 ## Spec adapters (v8)
 
@@ -216,6 +225,33 @@ List parsing order: JSON when `idField` is set and stdout looks like JSON; else 
 Commands are split into argv (quotes supported). There is no shell piping or redirection — wrap in `sh -c` if needed. Adapter names are `claude-plugin`-style kebab-case and must not collide with a built-in manager. Spec adapters are explicit-only: they never win `genv add git` fallback.
 
 `genv scan` runs each available adapter’s `list` and, for spec adapters, writes `prefer` so the adopted package stays bound. `genv export` copies `adapters` into the snapshot so `prefer` still validates.
+
+### Managed external releases (v9)
+
+Schema v9 keeps the v8 `defaults` and `targets.*` model and adds an optional
+`external` recipe to packages whose `prefer` is `external`. A recipe contains:
+
+- `detect`: explicit version command and one-capture-group `versionRegex`
+- `source`: `githubRelease` or structured JSON/text `httpRelease` metadata
+- `platforms`: OS/architecture/libc selectors, one artifact, and one install recipe
+- `verify`: required verifier chain unless `allowUnverified` is explicitly true
+
+Supported installs are `direct`, explicit-file `archive` mappings for ZIP and
+tar/gzip/xz/zstd, and downloaded `script` installers using `sh`, `bash`, `pwsh`,
+or `powershell`. Script argv and environment values use only `{version}`, `{tag}`,
+`{os}`, `{arch}`, `{script}`, and `{destination}` placeholders. Script removals
+require explicit uninstall argv.
+
+Supported verification methods are GitHub asset digests, literal/metadata
+SHA-256, checksum files, Sigstore bundles with pinned issuer/identity, minisign,
+and OpenPGP with a pinned full fingerprint. HTTP transport requires
+`allowInsecureHTTP`; it is never scheduler-eligible. Unverified actions always
+require a dedicated interactive acknowledgement, even with `--yes`. Verified
+scripts additionally require `allowBackgroundExecution` before unattended use.
+
+The machine-local lock records release, artifact, verifier, recipe, ownership,
+and installed-path digests. Status detects version, recipe, and owned-file drift.
+Removal refuses modified owned files and never guesses files created by scripts.
 
 `genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` and service `launchd.plist` / `systemd.unit` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 

@@ -1,10 +1,9 @@
 # Releasing genv
 
 This repository publishes GitHub releases, a Homebrew cask, a Scoop manifest,
-and an AUR package automatically when an annotated tag is pushed. GoReleaser
-handles GitHub releases, Homebrew, Scoop, and the Snap Store automatically; a
-follow-up macOS workflow job publishes the AUR packages.
-— no external reviewer sign-off required.
+and AUR packages automatically when an annotated tag is pushed. GoReleaser
+handles GitHub releases, Homebrew, and Scoop; a follow-up macOS workflow job
+publishes the AUR packages.
 
 ---
 
@@ -17,7 +16,7 @@ follow-up macOS workflow job publishes the AUR packages.
 | `v0.2.0` | M3–M5 complete (scan, status, JSON output, --yes/--timeout/--debug, macOS + WSL2 validation) |
 | `v1.0.0` | M6 and M7 complete (stable API/quality bar + UX command set) |
 | `v2.0.0` | M8 and M9 complete (env and shell configuration management) |
-| `v2.1.0` | M10 complete (services management, new adapters: zypper/xbps/emerge, Snap Store publishing) |
+| `v2.1.0` | M10 complete (services management, new adapters: zypper/xbps/emerge, historical Snap Store publishing) |
 | `v2.2.0` | Scoped M13 surface (schema v5 `files`/`hooks`, host selectors, `pull` / `status --files` / `adopt --files`) |
 | `v2.3.0` | Native Windows support (`windows` host, `winget`/`scoop`/`choco`, merge-dir file links) |
 | `v3.0.0` | M11 updates checker, M12 named profiles, full M13 lifecycle hooks, upgrade JSON/filtering, tracked ecosystem adapters |
@@ -46,9 +45,9 @@ follow-up macOS workflow job publishes the AUR packages.
 | `v4.3.3` | Drop legacy Homebrew cask `postflight` hook (PreferStable + caveat); silences brew `postflight_steps` deprecation |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
-validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew, Scoop,
-and Snap publishers for pre-release tags, and the AUR publish job skips
-pre-release versions itself — so only stable tags reach those channels.
+validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
+publishers for pre-release tags, and the AUR publish job skips pre-release
+versions itself — so only stable tags reach those channels.
 
 ---
 
@@ -377,8 +376,6 @@ paru -S genv       # builds from source
    # or
    paru -Sy genv && genv version       # from source
    ```
-
-10. **Snap Store:** handled automatically by GoReleaser's `snapcrafts` section — no manual step needed.
 
 ---
 

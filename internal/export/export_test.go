@@ -135,6 +135,37 @@ func TestBuildDoesNotDeferNativeLinuxManagers(t *testing.T) {
 	}
 }
 
+func TestBuildVersion9BundlesExternalPublicKeyFile(t *testing.T) {
+	base := t.TempDir()
+	if err := os.WriteFile(filepath.Join(base, "minisign.pub"), []byte("public key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recipe := &schema.ExternalRecipe{
+		Detect:    schema.ExternalDetect{Command: []string{"tool", "--version"}, VersionRegex: `([0-9.]+)`},
+		Source:    schema.ExternalSource{Type: "httpRelease", VersionURL: "https://example.test/latest", Format: "text", VersionRegex: `([0-9.]+)`},
+		Platforms: []schema.ExternalPlatform{{OS: []string{"linux"}, Arch: []string{"amd64"}, ArtifactURL: "https://example.test/tool-{version}", Install: schema.ExternalInstall{Type: "direct", Destination: "~/bin/tool"}}},
+		Verify:    []schema.ExternalVerification{{Type: "minisign", URL: "https://example.test/tool.minisig", PublicKeyFile: "minisign.pub"}},
+	}
+	f := &schema.GenvFile{SchemaVersion: schema.Version9, Targets: map[string]*schema.TargetBundle{"linux": {Packages: []schema.Package{{ID: "tool", Prefer: "external", External: recipe}}}}}
+	out := filepath.Join(t.TempDir(), "export")
+	if _, err := BuildWithOptions(f, "linux", out, Options{BaseDir: base}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "genv.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"schemaVersion": "9"`) || !strings.Contains(string(data), `"publicKeyFile": "files/minisign.pub"`) {
+		t.Fatalf("snapshot did not preserve v9 external key: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(out, "files", "minisign.pub")); err != nil {
+		t.Fatalf("bundled key missing: %v", err)
+	}
+	if recipe.Verify[0].PublicKeyFile != "minisign.pub" {
+		t.Fatal("export mutated source recipe")
+	}
+}
+
 func assertGoldenFile(t *testing.T, gotPath, wantPath string) {
 	t.Helper()
 	got, err := os.ReadFile(gotPath)

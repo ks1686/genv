@@ -22,6 +22,7 @@ import (
 	"github.com/ks1686/genv/internal/commands"
 	"github.com/ks1686/genv/internal/complete"
 	genvenv "github.com/ks1686/genv/internal/env"
+	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/hooks"
@@ -242,7 +243,7 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 }
 
 func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, int) {
-	if f.SchemaVersion != schema.Version8 {
+	if !schema.IsPortableVersion(f.SchemaVersion) {
 		return "", exitOK
 	}
 	targetID, err := target.Resolve(targetFlag)
@@ -288,7 +289,7 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 		return nil, "", fmt.Errorf("genv file is nil")
 	}
 	useSpecAdapters(f)
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		targetID, err := target.Resolve(targetFlag)
 		if err != nil {
 			return nil, "", err
@@ -757,7 +758,7 @@ func runRemove(opts removeOptions) int {
 	if isTerminal() {
 		if f, err := genvfile.Read(file); err == nil {
 			packages := f.Packages
-			if f.SchemaVersion == schema.Version8 {
+			if schema.IsPortableVersion(f.SchemaVersion) {
 				effective, _, exit := materializeSpecForCommand("remove", file, f, opts.Host, opts.Target)
 				if exit != exitOK {
 					return exit
@@ -859,28 +860,42 @@ func runRemove(opts removeOptions) int {
 	}
 
 	// 3. Uninstall from the system using the manager recorded in the lock.
-	mgr := adapter.ByName(locked.Manager)
-	if mgr == nil {
-		fprintf(os.Stderr, "genv: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
-		return exitLogic
-	}
-
-	if !adapter.Absent(mgr, locked.PkgName) {
-		uninstallCmd := mgr.PlanUninstall(locked.PkgName)
-		fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
-		fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
-		if uninstallErr := runForegroundCommand(uninstallCmd); uninstallErr != nil && !adapter.Absent(mgr, locked.PkgName) {
+	if locked.Manager == "external" && locked.External != nil {
+		fprintf(os.Stdout, "removed %s from spec — uninstalling via external receipt\n", id)
+		var uninstallErr error
+		if locked.External.Owned {
+			uninstallErr = externalpkg.Remove(locked.External)
+		} else {
+			uninstallErr = externalpkg.RunUninstall(context.Background(), locked.External.Uninstall, os.Stdin, os.Stderr)
+		}
+		if uninstallErr != nil {
 			fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
 			return exitLogic
 		}
-		for _, cleanCmd := range mgr.PlanClean() {
-			fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
-			if err := runForegroundCommand(cleanCmd); err != nil {
-				fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
-			}
-		}
 	} else {
-		fprintf(os.Stdout, "removed %s from spec — already absent via %s\n", id, locked.Manager)
+		mgr := adapter.ByName(locked.Manager)
+		if mgr == nil {
+			fprintf(os.Stderr, "genv: adapter %q no longer registered; cannot uninstall — remove manually\n", locked.Manager)
+			return exitLogic
+		}
+
+		if !adapter.Absent(mgr, locked.PkgName) {
+			uninstallCmd := mgr.PlanUninstall(locked.PkgName)
+			fprintf(os.Stdout, "removed %s from spec — uninstalling via %s\n", id, locked.Manager)
+			fprintf(os.Stdout, "\n==> %s\n", strings.Join(uninstallCmd, " "))
+			if uninstallErr := runForegroundCommand(uninstallCmd); uninstallErr != nil && !adapter.Absent(mgr, locked.PkgName) {
+				fprintf(os.Stderr, "genv: uninstall failed: %v\n", uninstallErr)
+				return exitLogic
+			}
+			for _, cleanCmd := range mgr.PlanClean() {
+				fprintf(os.Stdout, "\n==> %s\n", strings.Join(cleanCmd, " "))
+				if err := runForegroundCommand(cleanCmd); err != nil {
+					fprintf(os.Stderr, "genv: cache clean warning: %v\n", err)
+				}
+			}
+		} else {
+			fprintf(os.Stdout, "removed %s from spec — already absent via %s\n", id, locked.Manager)
+		}
 	}
 
 	if exit := writePreparedSpec(file, prepared); exit != exitOK {
@@ -999,6 +1014,7 @@ func adoptCmd(args []string) int {
 			if len(managers) == 0 {
 				specPkg.Managers = p.Managers
 			}
+			specPkg.External = p.External
 			break
 		}
 	}
@@ -1010,19 +1026,35 @@ func adoptCmd(args []string) int {
 		return exitLogic
 	}
 
-	mgr := adapter.ByName(action.Manager)
-	installed, err := mgr.Query(action.PkgName)
-	if err != nil {
-		fprintf(os.Stderr, "genv adopt: querying %s: %v\n", action.Manager, err)
-		return exitLogic
-	}
-	if !installed {
-		fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
-		return exitLogic
-	}
-	installedVersion := ""
-	if v, err := mgr.QueryVersion(action.PkgName); err == nil {
-		installedVersion = v
+	var installedVersion string
+	var externalReceipt *genvfile.ExternalReceipt
+	if specPkg.External != nil {
+		state := externalpkg.InspectLocal(context.Background(), specPkg, nil)
+		if !state.Present {
+			fprintf(os.Stderr, "genv adopt: %q is not detected by its external recipe — use 'genv add %s' to install it\n", id, id)
+			return exitLogic
+		}
+		installedVersion = state.Version
+		recipeDigest, digestErr := externalpkg.RecipeSHA256(specPkg.External)
+		if digestErr != nil {
+			fprintf(os.Stderr, "genv adopt: hashing external recipe: %v\n", digestErr)
+			return exitLogic
+		}
+		externalReceipt = &genvfile.ExternalReceipt{SourceType: specPkg.External.Source.Type, RecipeSHA256: recipeDigest, Owned: false}
+	} else {
+		mgr := adapter.ByName(action.Manager)
+		installed, queryErr := mgr.Query(action.PkgName)
+		if queryErr != nil {
+			fprintf(os.Stderr, "genv adopt: querying %s: %v\n", action.Manager, queryErr)
+			return exitLogic
+		}
+		if !installed {
+			fprintf(os.Stderr, "genv adopt: %q is not installed via %s — use 'genv add %s' to install it\n", id, action.Manager, id)
+			return exitLogic
+		}
+		if v, err := mgr.QueryVersion(action.PkgName); err == nil {
+			installedVersion = v
+		}
 	}
 
 	lockPath := lockPathForState(*file, *stateDir, *lockFile)
@@ -1057,6 +1089,7 @@ func adoptCmd(args []string) int {
 		Manager:          action.Manager,
 		PkgName:          action.PkgName,
 		InstalledVersion: installedVersion,
+		External:         externalReceipt,
 	}, targetID); exit != exitOK {
 		return exit
 	}
@@ -1439,7 +1472,7 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	if lf == nil {
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
-	isV8 := f.SchemaVersion == schema.Version8
+	isV8 := schema.IsPortableVersion(f.SchemaVersion)
 	effective, activeTarget, code := materializeSpecForCommand("apply", opts.File, f, opts.Host, opts.Target)
 	if code != exitOK {
 		return code
@@ -1460,6 +1493,9 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 			fprintf(os.Stderr, "genv apply: warning: %s\n", w)
 		}
 		result = resolver.ReconcileWith(f.Packages, lf.Packages, available, live)
+	}
+	if opts.DryRun {
+		resolver.EnrichExternalPlan(ctx, &result)
 	}
 
 	if opts.JSONOut {
@@ -1500,7 +1536,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 			return writeJSON(os.Stdout, output.Envelope{Version: output.SchemaVersion, Command: "apply", OK: false, Data: output.ApplyResult{FailedHooks: preErrs}, Errors: preErrs})
 		}
 	}
-	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr)
+	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stderr, os.Stderr, resolver.ApplyExecutionOptions{ExternalMode: externalpkg.ExecutionAssumeYes})
 	errs := errStrings(execResult.Errors)
 
 	var envApplied, envRemoved, shellApplied, shellRemoved []string
@@ -1682,7 +1718,16 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		}
 	}
 
-	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr)
+	mode := externalpkg.ExecutionInteractive
+	if opts.Yes {
+		mode = externalpkg.ExecutionAssumeYes
+	}
+	execResult := resolver.ExecuteApply(ctx, result, os.Stdin, os.Stdout, os.Stderr, resolver.ApplyExecutionOptions{
+		ExternalMode: mode,
+		AcknowledgeExternal: func(message string) bool {
+			return confirm(message + " [y/N] ")
+		},
+	})
 
 	var svcErrs []error
 	var fileErrs []error
@@ -1903,10 +1948,15 @@ func buildPlanResult(f *schema.GenvFile, lf *genvfile.LockFile, result resolver.
 	var unresolved int
 	for _, a := range result.ToInstall {
 		if a.Resolved() {
+			cmd := strings.Join(a.Cmd, " ")
+			if a.Detail != "" {
+				cmd = a.Detail
+			}
 			toInstall = append(toInstall, output.PlanPackage{
-				ID:      a.Pkg.ID,
-				Manager: a.Manager,
-				Cmd:     strings.Join(a.Cmd, " "),
+				ID:       a.Pkg.ID,
+				Manager:  a.Manager,
+				Cmd:      cmd,
+				External: externalOutputDetails(a.Pkg, ""),
 			})
 		} else {
 			unresolved++
@@ -3033,7 +3083,7 @@ func scanCmd(args []string) int {
 	// package tracked as {"id":"xcode","managers":{"mas":"497799835"}} would
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
 	trackedPackages := f.Packages
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		active, err := schema.MergeTarget(f, targetID)
 		if err != nil {
 			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
@@ -3348,6 +3398,10 @@ func statusCmd(args []string) int {
 
 	if *jsonOut {
 		jsonEntries := make([]output.StatusEntry, 0, len(entries))
+		packagesByID := make(map[string]schema.Package, len(f.Packages))
+		for _, pkg := range f.Packages {
+			packagesByID[pkg.ID] = pkg
+		}
 		var hasDrift bool
 		for _, e := range entries {
 			jsonEntries = append(jsonEntries, output.StatusEntry{
@@ -3356,6 +3410,7 @@ func statusCmd(args []string) int {
 				Kind:             string(e.Kind),
 				SpecVersion:      e.SpecVersion,
 				InstalledVersion: e.InstalledVersion,
+				External:         externalOutputDetails(packagesByID[e.ID], e.InstalledVersion),
 			})
 			if e.Kind == commands.StatusDrift || e.Kind == commands.StatusExtra {
 				hasDrift = true
@@ -4122,7 +4177,7 @@ func upgradeCmd(args []string) int {
 		fprintf(os.Stderr, "genv upgrade: reading lock: %v\n", err)
 		return exitIO
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		available := resolver.Detect()
 		_, code := applyLockGate("upgrade", lockPath, lf, activeTarget, available, true, false, *dryRun, "")
 		if code != exitOK {
@@ -4211,7 +4266,14 @@ func upgradeCmd(args []string) int {
 			for i, lp := range a.LPs {
 				ids[i] = lp.ID
 			}
-			fprintf(os.Stdout, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), a.LPs[0].Manager, strings.Join(a.Cmd, " "))
+			detail := strings.Join(a.Cmd, " ")
+			if a.External != nil {
+				detail = "managed external release"
+				if a.RemoteVersion != "" {
+					detail += " " + a.RemoteVersion
+				}
+			}
+			fprintf(os.Stdout, "  %s  via %s  ==> %s\n", strings.Join(ids, ", "), a.LPs[0].Manager, detail)
 		}
 		printExtraUpgradePlan(os.Stdout, extraPlan)
 	}
@@ -4261,13 +4323,19 @@ func upgradeCmd(args []string) int {
 
 	var runResult upgrade.UpgradeRunResult
 	if len(plan) > 0 {
+		mode := externalpkg.ExecutionInteractive
+		if *yes {
+			mode = externalpkg.ExecutionAssumeYes
+		}
 		runResult = upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
-			Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped, Warnings: planResult.Warnings},
-			Lock:     lf,
-			LockPath: lockPath,
-			Stdin:    os.Stdin,
-			Stdout:   os.Stdout,
-			Stderr:   os.Stderr,
+			Plan:                upgrade.UpgradePlan{Actions: plan, Skipped: skipped, Warnings: planResult.Warnings},
+			Lock:                lf,
+			LockPath:            lockPath,
+			Stdin:               os.Stdin,
+			Stdout:              os.Stdout,
+			Stderr:              os.Stderr,
+			ExternalMode:        mode,
+			AcknowledgeExternal: func(message string) bool { return confirm(message + " [y/N] ") },
 		})
 	}
 
@@ -4362,13 +4430,38 @@ func upgradeBatchFromAction(a resolver.UpgradeAction, status string) output.Upgr
 	if len(a.LPs) > 0 {
 		manager = a.LPs[0].Manager
 	}
-	return output.UpgradeBatch{
+	batch := output.UpgradeBatch{
 		Manager:  manager,
 		IDs:      ids,
 		PkgNames: pkgNames,
 		Cmd:      strings.Join(a.Cmd, " "),
 		Status:   status,
 	}
+	if a.External != nil {
+		batch.External = externalOutputDetails(*a.External, a.RemoteVersion)
+	}
+	return batch
+}
+
+func externalOutputDetails(pkg schema.Package, releaseVersion string) *output.ExternalDetails {
+	if pkg.External == nil {
+		return nil
+	}
+	details := &output.ExternalDetails{
+		SourceType: pkg.External.Source.Type, Repository: pkg.External.Source.Repository, Version: releaseVersion,
+		AllowBackgroundExecution: pkg.External.AllowBackgroundExecution,
+	}
+	for _, verification := range pkg.External.Verify {
+		details.Verification = append(details.Verification, verification.Type)
+	}
+	if platform, err := externalpkg.SelectPlatform(pkg.External.Platforms, externalpkg.CurrentHost()); err == nil {
+		details.InstallType = platform.Install.Type
+		details.Scope = platform.Install.Scope
+		if details.Scope == "" {
+			details.Scope = "user"
+		}
+	}
+	return details
 }
 
 // upgradeSkippedEntries converts resolver skip records into JSON payload entries.
@@ -4494,12 +4587,13 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 	if len(plan) > 0 {
 		// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
 		runResult = upgrade.RunUpgrade(ctx, upgrade.UpgradeRunOptions{
-			Plan:     upgrade.UpgradePlan{Actions: plan, Skipped: skipped},
-			Lock:     lf,
-			LockPath: lockPath,
-			Stdin:    os.Stdin,
-			Stdout:   os.Stderr,
-			Stderr:   os.Stderr,
+			Plan:         upgrade.UpgradePlan{Actions: plan, Skipped: skipped},
+			Lock:         lf,
+			LockPath:     lockPath,
+			Stdin:        os.Stdin,
+			Stdout:       os.Stderr,
+			Stderr:       os.Stderr,
+			ExternalMode: externalpkg.ExecutionAssumeYes,
 		})
 	}
 	batches := make([]output.UpgradeBatch, 0, len(plan))

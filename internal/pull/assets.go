@@ -34,7 +34,7 @@ func BundleAssetSources(f *schema.GenvFile) []string {
 		}
 	}
 
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		if f.Defaults != nil {
 			addFiles(f.Defaults.Files)
 		}

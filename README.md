@@ -62,7 +62,7 @@ winget, Scoop, and Chocolatey.
 
 Release archives ship cosign-signed checksums (keyless). Darwin binaries are also Developer ID signed and notarized when Apple secrets are configured — see [SECURITY.md](SECURITY.md).
 
-Platform walkthroughs: [macOS](docs/macos-install.md) · [Windows](docs/windows-install.md) · [WSL2](docs/wsl2-install.md) · [multi-machine](docs/multi-machine.md)
+Platform walkthroughs: [Linux](docs/linux-install.md) · [macOS](docs/macos-install.md) · [Windows](docs/windows-install.md) · [WSL2](docs/wsl2-install.md) · [multi-machine](docs/multi-machine.md)
 
 ---
 
@@ -119,7 +119,7 @@ WSL2 does **not** inherit native `arch` automatically. Put shared bits in `defau
 
 **Also available** (explicit `prefer` / `managers`): `bun`, `npm`, `pnpm`, `yarn`, `deno`, `volta`, `uv`, `pipx`, `pip-user`, `poetry`, `conda`, `mamba`, `pixi`, `cargo`, `go`, `rustup`, `gem`, `composer`, `dotnet-tool`, `ghcup`, `stack`, `opam`, `juliaup`, `sdkman`, `asdf`, `mise`, `krew`, `helm`, `vscode`.
 
-`external` is a track-only pseudo-manager: packages installed outside any manager (official installers, vendor downloads). Apply records them in the lock when the binary is on PATH; genv never installs or removes them itself.
+On schema v1-v8, `external` is a track-only pseudo-manager for software installed outside a package manager. Schema v9 can instead attach a managed external recipe that discovers GitHub Releases or structured HTTP releases, verifies the selected artifact, and installs/removes direct executables, archives, or installer scripts. See [managed external releases](docs/external-releases.md) and [SCHEMA.md](SCHEMA.md#managed-external-releases-v9).
 
 Schema v8 also accepts top-level `adapters` for plugin CLIs genv does not ship built-in (`claude plugin`, `gh extension`, …). Set `prefer` to the adapter name. Details and examples: [SCHEMA.md](SCHEMA.md#spec-adapters-v8).
 
@@ -127,7 +127,7 @@ Native `apt`, `dnf`, and `apk` adapters are registered system managers (`prefer:
 
 ---
 
-## Spec format (schema v8)
+## Spec format (schema v8/v9)
 
 Recommended shape for new configs:
 

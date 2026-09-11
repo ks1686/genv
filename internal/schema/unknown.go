@@ -37,23 +37,30 @@ var (
 		"list", "install", "remove", "upgrade", "version", "outdated",
 		"listMatch", "idField", "versionField",
 	)
-	packageFields = strSet("id", "version", "prefer", "managers", "host")
-	envVarFields  = strSet("value", "sensitive")
-	shellFields   = strSet("aliases", "functions", "source")
-	aliasFields   = strSet("value", "shell")
-	funcFields    = strSet("body", "shell")
-	serviceFields = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "host")
-	launchdFields = strSet("plist")
-	systemdFields = strSet("unit")
-	filesFields   = strSet("links", "templates", "dirs")
-	linkFields    = strSet("source", "target", "mode", "host", "backup", "perm")
-	tmplFields    = strSet("source", "target", "host", "backup", "perm")
-	dirFields     = strSet("target", "host", "perm")
-	hooksFields   = strSet("preApply", "postApply", "preAdd", "postAdd", "preRemove", "postRemove", "preUpgrade", "postUpgrade")
-	hookFields    = strSet("command", "file", "host", "name", "continueOnError")
-	repoFields    = strSet("url", "ref")
-	updatesFields = strSet("enabled", "interval", "autoApply", "notify", "onlyManagers", "skipManagers", "only", "skip")
-	bundleFields  = strSet("packages", "env", "shell", "services", "files", "hooks")
+	packageFields             = strSet("id", "version", "prefer", "managers", "host", "external")
+	externalFields            = strSet("detect", "source", "platforms", "verify", "allowUnverified", "allowInsecureHTTP", "allowBackgroundExecution")
+	externalDetectFields      = strSet("command", "versionRegex")
+	externalSourceFields      = strSet("type", "repository", "release", "tagRegex", "apiBase", "versionURL", "format", "versionPointer", "versionRegex")
+	externalPlatformFields    = strSet("os", "arch", "libc", "assetRegex", "artifactURL", "install")
+	externalInstallFields     = strSet("type", "scope", "destination", "stripComponents", "files", "interpreter", "args", "env", "uninstall")
+	externalInstallFileFields = strSet("from", "to", "mode")
+	externalVerifyFields      = strSet("type", "assetRegex", "url", "value", "valuePointer", "signatureAssetRegex", "bundleAssetRegex", "identity", "issuer", "publicKey", "publicKeyFile", "fingerprint")
+	envVarFields              = strSet("value", "sensitive")
+	shellFields               = strSet("aliases", "functions", "source")
+	aliasFields               = strSet("value", "shell")
+	funcFields                = strSet("body", "shell")
+	serviceFields             = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "host")
+	launchdFields             = strSet("plist")
+	systemdFields             = strSet("unit")
+	filesFields               = strSet("links", "templates", "dirs")
+	linkFields                = strSet("source", "target", "mode", "host", "backup", "perm")
+	tmplFields                = strSet("source", "target", "host", "backup", "perm")
+	dirFields                 = strSet("target", "host", "perm")
+	hooksFields               = strSet("preApply", "postApply", "preAdd", "postAdd", "preRemove", "postRemove", "preUpgrade", "postUpgrade")
+	hookFields                = strSet("command", "file", "host", "name", "continueOnError")
+	repoFields                = strSet("url", "ref")
+	updatesFields             = strSet("enabled", "interval", "autoApply", "notify", "onlyManagers", "skipManagers", "only", "skip")
+	bundleFields              = strSet("packages", "env", "shell", "services", "files", "hooks")
 )
 
 func strSet(keys ...string) map[string]bool {
@@ -135,7 +142,37 @@ func walkPackages(raw json.RawMessage, path string, positions map[string]Positio
 		}
 		pkgPath := fmt.Sprintf("%s[%d]", path, i)
 		errs = append(errs, rejectUnknown(obj, pkgPath, packageFields, positions)...)
+		errs = append(errs, walkExternal(obj["external"], pkgPath+".external", positions)...)
 	}
+	return errs
+}
+
+func walkExternal(raw json.RawMessage, path string, positions map[string]Position) []ValidationError {
+	obj, ok := asObject(raw)
+	if !ok {
+		return nil
+	}
+	var errs []ValidationError
+	errs = append(errs, rejectUnknown(obj, path, externalFields, positions)...)
+	errs = append(errs, walkObject(obj["detect"], path+".detect", externalDetectFields, positions)...)
+	errs = append(errs, walkObject(obj["source"], path+".source", externalSourceFields, positions)...)
+	platforms, _ := asArray(obj["platforms"])
+	for i, rawPlatform := range platforms {
+		platform, ok := asObject(rawPlatform)
+		if !ok {
+			continue
+		}
+		platformPath := fmt.Sprintf("%s.platforms[%d]", path, i)
+		errs = append(errs, rejectUnknown(platform, platformPath, externalPlatformFields, positions)...)
+		install, ok := asObject(platform["install"])
+		if !ok {
+			continue
+		}
+		installPath := platformPath + ".install"
+		errs = append(errs, rejectUnknown(install, installPath, externalInstallFields, positions)...)
+		errs = append(errs, walkObjectArray(install["files"], installPath+".files", externalInstallFileFields, positions)...)
+	}
+	errs = append(errs, walkObjectArray(obj["verify"], path+".verify", externalVerifyFields, positions)...)
 	return errs
 }
 

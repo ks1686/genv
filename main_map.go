@@ -49,7 +49,7 @@ func mapCmd(args []string) int {
 		}
 		return exitIO
 	}
-	if f.SchemaVersion != schema.Version8 {
+	if !schema.IsPortableVersion(f.SchemaVersion) {
 		fprintf(os.Stderr, "genv map: schemaVersion %q is not mappable; run 'genv migrate --write' first\n", f.SchemaVersion)
 		return exitUsage
 	}

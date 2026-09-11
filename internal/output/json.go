@@ -26,9 +26,21 @@ type Envelope struct {
 
 // PlanPackage is a single entry in a PlanResult list.
 type PlanPackage struct {
-	ID      string `json:"id"`
-	Manager string `json:"manager,omitempty"`
-	Cmd     string `json:"cmd,omitempty"`
+	ID       string           `json:"id"`
+	Manager  string           `json:"manager,omitempty"`
+	Cmd      string           `json:"cmd,omitempty"`
+	External *ExternalDetails `json:"external,omitempty"`
+}
+
+// ExternalDetails describes a managed external release without exposing credentials.
+type ExternalDetails struct {
+	SourceType               string   `json:"sourceType"`
+	Repository               string   `json:"repository,omitempty"`
+	Version                  string   `json:"version,omitempty"`
+	Verification             []string `json:"verification,omitempty"`
+	InstallType              string   `json:"installType,omitempty"`
+	Scope                    string   `json:"scope,omitempty"`
+	AllowBackgroundExecution bool     `json:"allowBackgroundExecution,omitempty"`
 }
 
 // FilePlanEntry is one planned filesystem change in an apply plan.
@@ -63,11 +75,12 @@ type PlanResult struct {
 
 // StatusEntry is a single package entry in a StatusResult.
 type StatusEntry struct {
-	ID               string `json:"id"`
-	Manager          string `json:"manager,omitempty"`
-	Kind             string `json:"kind"` // "ok" | "drift" | "missing" | "present" | "extra"
-	SpecVersion      string `json:"specVersion,omitempty"`
-	InstalledVersion string `json:"installedVersion,omitempty"`
+	ID               string           `json:"id"`
+	Manager          string           `json:"manager,omitempty"`
+	Kind             string           `json:"kind"` // "ok" | "drift" | "missing" | "present" | "extra"
+	SpecVersion      string           `json:"specVersion,omitempty"`
+	InstalledVersion string           `json:"installedVersion,omitempty"`
+	External         *ExternalDetails `json:"external,omitempty"`
 }
 
 // StatusResult is the Data payload for `genv status --json`.
@@ -163,12 +176,13 @@ type UpgradeFilters struct {
 
 // UpgradeBatch represents a single batched command in the upgrade plan.
 type UpgradeBatch struct {
-	Manager  string   `json:"manager"`
-	IDs      []string `json:"ids"`
-	PkgNames []string `json:"pkgNames"`
-	Cmd      string   `json:"cmd"`
-	Status   string   `json:"status"`
-	Error    string   `json:"error,omitempty"`
+	Manager  string           `json:"manager"`
+	IDs      []string         `json:"ids"`
+	PkgNames []string         `json:"pkgNames"`
+	Cmd      string           `json:"cmd"`
+	Status   string           `json:"status"`
+	Error    string           `json:"error,omitempty"`
+	External *ExternalDetails `json:"external,omitempty"`
 }
 
 // UpgradeSkipped represents a package skipped during upgrade planning.

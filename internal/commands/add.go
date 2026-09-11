@@ -27,7 +27,7 @@ func Add(f *schema.GenvFile, id, version, prefer string, managers map[string]str
 	}
 
 	packages := &f.Packages
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		targetPackages, err := activePackageSlice(f, targetID)
 		if err != nil {
 			return err

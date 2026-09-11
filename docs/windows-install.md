@@ -124,3 +124,4 @@ genv completion install powershell
 - `.ps1` profile writes are Windows-only (macOS/Linux never write them even if `pwsh` exists).
 - Symlinks may need Developer Mode or an elevated shell.
 - Native Windows and WSL2 are different targets and binaries — model them as `targets.windows` vs `targets.ubuntu` / `targets.wsl-arch` in one v8 spec (see [multi-machine.md](multi-machine.md)). Do **not** rely on legacy `host` selectors for new configs.
+- Schema v9 managed external recipes support Windows direct executables, ZIP archives, and downloaded `pwsh`/`powershell` scripts when the artifact is verified. PowerShell availability is checked before execution, and scheduler execution additionally requires `allowBackgroundExecution`. See [SCHEMA.md](../SCHEMA.md#managed-external-releases-v9).

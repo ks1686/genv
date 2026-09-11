@@ -28,7 +28,7 @@ func ShellAliasSet(f *schema.GenvFile, name, value, shell, targetID string) erro
 	if shell != "" && !schema.KnownShellTargets[shell] {
 		return fmt.Errorf("unknown shell %q; expected %s", shell, schema.ValidShellTargetsMsg)
 	}
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err
@@ -57,7 +57,7 @@ func ShellAliasSet(f *schema.GenvFile, name, value, shell, targetID string) erro
 // ShellAliasUnset removes the alias name from f's shell block.
 // Returns ErrShellAliasNotFound when name is absent.
 func ShellAliasUnset(f *schema.GenvFile, name, targetID string) error {
-	if f.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(f.SchemaVersion) {
 		bundle, err := ActiveBundle(f, targetID)
 		if err != nil {
 			return err

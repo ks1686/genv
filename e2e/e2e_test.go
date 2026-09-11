@@ -25,7 +25,11 @@ package e2e_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +39,56 @@ import (
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
 )
+
+func TestE2EExternalReleaseLifecycle(t *testing.T) {
+	if isWindows() {
+		t.Skip("POSIX executable fixture")
+	}
+	schemaTarget := "linux"
+	r := newRunner(t, "external")
+	destination := filepath.Join(filepath.Dir(r.genvJSON), "tool")
+	payload := []byte("#!/bin/sh\necho tool-1.0.0\n")
+	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/latest" {
+			fmt.Fprint(w, "1.0.0")
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	spec := &schema.GenvFile{SchemaVersion: schema.Version9, Targets: map[string]*schema.TargetBundle{schemaTarget: {Packages: []schema.Package{{
+		ID: "tool", Prefer: "external", External: &schema.ExternalRecipe{
+			Detect:    schema.ExternalDetect{Command: []string{destination}, VersionRegex: `tool-([0-9.]+)`},
+			Source:    schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest", Format: "text", VersionRegex: `([0-9.]+)`},
+			Platforms: []schema.ExternalPlatform{{OS: []string{"linux", "darwin"}, Arch: []string{"amd64", "arm64"}, ArtifactURL: server.URL + "/tool", Install: schema.ExternalInstall{Type: "direct", Scope: "system", Destination: destination}}},
+			Verify:    []schema.ExternalVerification{{Type: "sha256", Value: digest}}, AllowInsecureHTTP: true,
+		},
+	}}}}}
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.genvJSON, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, stderr, code := r.genv("y\n", "apply", "--target="+schemaTarget); code != 0 {
+		t.Fatalf("apply code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	if stdout, stderr, code := r.genv("", "status", "--target="+schemaTarget); code != 0 || !strings.Contains(stdout, "tool") {
+		t.Fatalf("status code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	if stdout, stderr, code := r.rawExec("", "remove", "--file", r.genvJSON, "--lock-file", r.lockJSON, "--target="+schemaTarget, "tool"); code != 0 {
+		t.Fatalf("remove code=%d stdout=%s stderr=%s", code, stdout, stderr)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("external destination remains: %v", err)
+	}
+}
+
+func isWindows() bool {
+	return filepath.Separator == '\\'
+}
 
 // genvBin is the path to the compiled genv binary, populated by TestMain.
 var genvBin string

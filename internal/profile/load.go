@@ -71,7 +71,7 @@ func LoadMerged(specPath, name string) (*schema.GenvFile, error) {
 	if name == "" || name == "base" {
 		return base, nil
 	}
-	if base.SchemaVersion == schema.Version8 {
+	if schema.IsPortableVersion(base.SchemaVersion) {
 		return nil, ErrV8ProfilesUnsupported
 	}
 	ext, err := Load(specPath, name)
@@ -83,7 +83,7 @@ func LoadMerged(specPath, name string) (*schema.GenvFile, error) {
 
 // Create scaffolds a new empty profile.
 func Create(specPath, name string) error {
-	if base, err := genvfile.Read(specPath); err == nil && base.SchemaVersion == schema.Version8 {
+	if base, err := genvfile.Read(specPath); err == nil && schema.IsPortableVersion(base.SchemaVersion) {
 		return ErrV8ProfilesUnsupported
 	}
 	path := Path(specPath, name)

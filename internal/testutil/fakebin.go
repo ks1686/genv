@@ -37,3 +37,36 @@ func InstallFakeBinary(t *testing.T, name, body string) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+// WriteStdoutTool writes a runnable tool at path that prints line to stdout.
+// On Windows the path gains a .cmd suffix when it has no extension, because
+// extensionless shell scripts are not executable there. Returns the path to
+// pass to exec / Detect.Command.
+func WriteStdoutTool(t *testing.T, path, line string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		if filepath.Ext(path) == "" {
+			path += ".cmd"
+		}
+		body := "@echo off\r\necho " + line + "\r\n"
+		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatalf("WriteStdoutTool(%q): %v", path, err)
+		}
+		return path
+	}
+	body := "#!/bin/sh\necho '" + line + "'\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatalf("WriteStdoutTool(%q): %v", path, err)
+	}
+	return path
+}
+
+// DirectToolArtifact returns payload bytes and a destination-path suffix for a
+// direct-install fake tool that prints line when executed on the host OS.
+// Suffix is ".cmd" on Windows and "" elsewhere.
+func DirectToolArtifact(line string) (payload []byte, destSuffix string) {
+	if runtime.GOOS == "windows" {
+		return []byte("@echo off\r\necho " + line + "\r\n"), ".cmd"
+	}
+	return []byte("#!/bin/sh\necho '" + line + "'\n"), ""
+}
