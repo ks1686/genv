@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -101,7 +102,8 @@ func startSchtasksScheduledJob(ctx context.Context, job ScheduledJob) error {
 	}
 	taskName := schtasksTaskName(job.Name)
 	if out, err := schtasksRun(ctx, "/Create", "/TN", taskName, "/XML", xmlPath, "/F"); err != nil {
-		return fmt.Errorf("creating scheduled task %q: %w\n%s", taskName, err, decodeSchtasksOutput(out))
+		decoded := decodeSchtasksOutput(out)
+		return fmt.Errorf("creating scheduled task %q: %w\n%s%s", taskName, err, decoded, schtasksCreateAccessDeniedHint(decoded))
 	}
 	// Kick once through Task Scheduler so the process is a child of the
 	// scheduler service, not this session. OpenSSH on Windows assigns a job
@@ -203,12 +205,69 @@ func SchtasksScheduledCmdContent(job ScheduledJob) string {
 	return b.String()
 }
 
+// schtasksCurrentUserID resolves the Windows identity for a per-user task.
+// Prefer os/user.Current(); fall back to USERDOMAIN\USERNAME / USERNAME so
+// InteractiveToken + LeastPrivilege registration stays scoped to this account.
+func schtasksCurrentUserID() string {
+	if u, err := user.Current(); err == nil {
+		if id := strings.TrimSpace(u.Username); id != "" {
+			return id
+		}
+	}
+	domain := strings.TrimSpace(os.Getenv("USERDOMAIN"))
+	name := strings.TrimSpace(os.Getenv("USERNAME"))
+	switch {
+	case domain != "" && name != "":
+		return domain + `\` + name
+	case name != "":
+		return name
+	default:
+		return ""
+	}
+}
+
+func schtasksUserIDXML(userID string) string {
+	userID = strings.TrimSpace(stripLineBreaks(userID))
+	if userID == "" {
+		return ""
+	}
+	return "      <UserId>" + xmlEscape(userID) + "</UserId>\r\n"
+}
+
+func schtasksAccessDenied(output string) bool {
+	message := strings.ToLower(output)
+	if strings.Contains(message, "access is denied") {
+		return true
+	}
+	// Win32 ERROR_ACCESS_DENIED (5) / HRESULT 0x80070005 variants from schtasks.
+	if strings.Contains(message, "0x80070005") {
+		return true
+	}
+	if strings.Contains(message, "error code = 5") || strings.Contains(message, "error code: 5") {
+		return true
+	}
+	if strings.Contains(message, "(5)") && (strings.Contains(message, "denied") || strings.Contains(message, "access")) {
+		return true
+	}
+	return false
+}
+
+func schtasksCreateAccessDeniedHint(output string) string {
+	if !schtasksAccessDenied(output) {
+		return ""
+	}
+	return "\nHint: Task Scheduler denied creating the current-user genv-updates task. Retry from an elevated PowerShell, check Task Scheduler / Group Policy permissions, or delete a foreign-owned genv-updates task and retry."
+}
+
 // SchtasksScheduledTaskXML renders a Task Scheduler 1.3 XML definition:
 // logon trigger (reboot/logon) plus repetition matching interval. command is
 // the windowless host (wscript.exe); scriptPath is the .vbs wrapper.
+// UserId is set under Principal and LogonTrigger so registration stays
+// per-user with InteractiveToken + LeastPrivilege (no elevation required).
 func SchtasksScheduledTaskXML(name, command, scriptPath string, interval time.Duration) string {
 	name = stripLineBreaks(name)
 	taskName := schtasksTaskName(name)
+	userIDXML := schtasksUserIDXML(schtasksCurrentUserID())
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -217,7 +276,7 @@ func SchtasksScheduledTaskXML(name, command, scriptPath string, interval time.Du
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
-      <Enabled>true</Enabled>
+%s      <Enabled>true</Enabled>
       <Delay>PT1M</Delay>
       <Repetition>
         <Interval>%s</Interval>
@@ -228,7 +287,7 @@ func SchtasksScheduledTaskXML(name, command, scriptPath string, interval time.Du
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <LogonType>InteractiveToken</LogonType>
+%s      <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
@@ -260,7 +319,7 @@ func SchtasksScheduledTaskXML(name, command, scriptPath string, interval time.Du
     </Exec>
   </Actions>
 </Task>
-`, xmlEscape(name), xmlEscape(taskName), schtasksRepetitionInterval(interval), schtasksRepetitionDuration, schtasksExecutionTimeLimit(interval), xmlEscape(stripLineBreaks(command)), xmlEscape(schtasksWscriptArguments(scriptPath)))
+`, xmlEscape(name), xmlEscape(taskName), userIDXML, schtasksRepetitionInterval(interval), schtasksRepetitionDuration, userIDXML, schtasksExecutionTimeLimit(interval), xmlEscape(stripLineBreaks(command)), xmlEscape(schtasksWscriptArguments(scriptPath)))
 }
 
 func schtasksWscriptArguments(scriptPath string) string {

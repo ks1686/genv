@@ -95,6 +95,12 @@ that runs `genv updates __run-once` at logon and then on `updates.interval`.
 the scheduler service (not as a child of the current shell) so an OpenSSH
 session teardown cannot kill it.
 
+Registration is the **unelevated current-user** path: the task XML pins
+`UserId` to your account with `InteractiveToken` + `LeastPrivilege`. An
+elevated shell is not required in the normal case. If create fails with
+Access denied, retry from elevated PowerShell, check Task Scheduler / Group
+Policy permissions, or delete a foreign-owned `genv-updates` task and retry.
+
 ```powershell
 genv updates start
 genv updates status
