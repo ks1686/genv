@@ -126,6 +126,39 @@ func TestEngineRunsVerifiedScriptAndStoresUninstallReceipt(t *testing.T) {
 	}
 }
 
+func TestEngineVerifiesChecksumFileMaterial(t *testing.T) {
+	payload := []byte("#!/bin/sh\necho 'tool 1.2.3'\n")
+	digestBytes := sha256.Sum256(payload)
+	checksums := hex.EncodeToString(digestBytes[:]) + "  tool\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/latest":
+			fmt.Fprint(w, "1.2.3")
+		case "/checksums.txt":
+			fmt.Fprint(w, checksums)
+		case "/tool":
+			_, _ = w.Write(payload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	destination := filepath.Join(t.TempDir(), "tool")
+	pkg := schema.Package{ID: "tool", External: &schema.ExternalRecipe{
+		Detect:    schema.ExternalDetect{Command: []string{destination}, VersionRegex: `tool ([0-9.]+)`},
+		Source:    schema.ExternalSource{Type: "httpRelease", VersionURL: server.URL + "/latest", Format: "text", VersionRegex: `([0-9.]+)`},
+		Platforms: []schema.ExternalPlatform{{OS: []string{"linux"}, Arch: []string{"amd64"}, ArtifactURL: server.URL + "/tool", Install: schema.ExternalInstall{Type: "direct", Scope: "system", Destination: destination}}},
+		Verify:    []schema.ExternalVerification{{Type: "sha256File", URL: server.URL + "/checksums.txt"}}, AllowInsecureHTTP: true,
+	}}
+	installed, err := (Engine{Client: Client{HTTPClient: server.Client()}, Host: Host{OS: "linux", Arch: "amd64"}}).Install(context.Background(), pkg)
+	if err != nil {
+		t.Fatalf("Install() error: %v", err)
+	}
+	if installed.Receipt.Verification != "sha256File" {
+		t.Fatalf("verification = %q", installed.Receipt.Verification)
+	}
+}
+
 func TestEngineLatestVersionUsesMetadataOnly(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/latest" {
