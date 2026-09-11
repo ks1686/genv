@@ -121,6 +121,12 @@ genv updates start
 genv updates status
 ```
 
+The hourly job never requests UAC. `autoApply` upgrades user-scope tools
+(scoop, bun, uv, …) when it can; winget/choco packages that need
+Administrator are skipped and written to `updates.log`. Apply those with an
+interactive `genv upgrade` (admin prompt expected) or from elevated
+PowerShell. Check/notify still reports them as outdated.
+
 Until this is registered, UniGetUI or `genv upgrade` still work as a manual
 workaround.
 

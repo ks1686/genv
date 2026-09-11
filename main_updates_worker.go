@@ -131,11 +131,12 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 	filters := output.UpgradeFilters{Only: cfg.Only, Skip: cfg.Skip, OnlyManager: cfg.OnlyManagers, SkipManager: cfg.SkipManagers, HooksSkipped: true}
 	planStarted := time.Now()
 	plan, err := updatesBuildPlan(upgrade.UpgradeOptions{
-		Spec:    f,
-		Lock:    lf,
-		Filters: filters,
-		Context: ctx,
-		Stdin:   strings.NewReader(""),
+		Spec:       f,
+		Lock:       lf,
+		Filters:    filters,
+		Context:    ctx,
+		Stdin:      strings.NewReader(""),
+		Unattended: true,
 	})
 	planDur := time.Since(planStarted).Round(time.Millisecond)
 	if err != nil {
@@ -158,7 +159,7 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		return exitOK
 	}
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
-	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics, ExternalMode: externalpkg.ExecutionUnattended})
+	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics, ExternalMode: externalpkg.ExecutionUnattended, Unattended: true})
 	matchedErrors := make([]bool, len(runResult.Errors))
 	for _, failure := range runResult.Failures {
 		sanitizedIDs := make([]string, len(failure.IDs))
@@ -181,7 +182,10 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 	if rendered := strings.TrimSpace(sanitizeAndBoundUpdatesDiagnostic(diagnostics.String(), updatesDiagnosticLimit)); rendered != "" {
 		logger.Warn("updates.apply.diagnostics", slog.String("diagnostics", rendered))
 	}
-	logger.Info("updates.apply.completed", slog.Int("upgraded", len(runResult.Upgraded)), slog.Int("errors", len(runResult.Errors)), slog.Bool("auto_apply", true))
+	for _, skipped := range runResult.Skipped {
+		logger.Info("updates.apply.skipped", slog.String("id", skipped.ID), slog.String("manager", skipped.Manager), slog.String("reason", skipped.Reason))
+	}
+	logger.Info("updates.apply.completed", slog.Int("upgraded", len(runResult.Upgraded)), slog.Int("skipped", len(runResult.Skipped)), slog.Int("errors", len(runResult.Errors)), slog.Bool("auto_apply", true))
 	notifyUpdates(ctx, cfg.Notify, "genv updates", fmt.Sprintf("auto-apply completed: %d upgraded, %d error(s)", len(runResult.Upgraded), len(runResult.Errors)), logger)
 	if runResult.LockWriteError != nil {
 		logger.Warn("updates.apply.lock", slog.Any("err", runResult.LockWriteError))

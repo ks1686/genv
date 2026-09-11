@@ -108,19 +108,20 @@ func (e Engine) Install(ctx context.Context, pkg schema.Package) (Installed, err
 	var uninstall []string
 	var restore func()
 	var finish func() error
+	policy := installPolicy{Scope: install.Scope, Mode: e.Mode, Stdin: e.Stdin, Output: e.Output}
 	switch install.Type {
 	case "direct":
 		destination, expandErr := expandDestination(install.Destination)
 		if expandErr != nil {
 			return Installed{}, expandErr
 		}
-		restore, finish, err = installDirect(artifact.Path, destination)
+		restore, finish, err = installDirect(artifact.Path, destination, policy)
 		if err != nil {
 			err = wrapSystemScopeError(install.Scope, destination, err)
 		}
 		paths = []genvfile.ExternalPathReceipt{{Path: destination, SHA256: artifact.SHA256}}
 	case "archive":
-		paths, restore, finish, err = installArchive(artifact.Path, asset.Name, install)
+		paths, restore, finish, err = installArchive(artifact.Path, asset.Name, install, policy)
 	case "script":
 		values := templateValues
 		values.Script = artifact.Path
@@ -366,17 +367,20 @@ func localKey(inline, path string) ([]byte, error) {
 	return key, nil
 }
 
-func installDirect(source, destination string) (restore func(), finish func() error, err error) {
-	return installDirectWithMode(source, destination, 0o755)
+func installDirect(source, destination string, policy installPolicy) (restore func(), finish func() error, err error) {
+	return installDirectWithMode(source, destination, 0o755, policy)
 }
 
-func installDirectWithMode(source, destination string, mode os.FileMode) (restore func(), finish func() error, err error) {
+func installDirectWithMode(source, destination string, mode os.FileMode, policy installPolicy) (restore func(), finish func() error, err error) {
+	if policy.Scope == "system" && destinationRequiresElevation(destination) {
+		return elevateSystemScopeInstall(source, destination, mode, policy)
+	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-		return nil, nil, err
+		return nil, nil, wrapSystemScopeError(policy.Scope, destination, err)
 	}
 	staged, err := os.CreateTemp(filepath.Dir(destination), ".genv-install-*")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, wrapSystemScopeError(policy.Scope, destination, err)
 	}
 	stagedPath := staged.Name()
 	cleanupStaged := true

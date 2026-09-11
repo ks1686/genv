@@ -26,6 +26,9 @@ type RefreshOptions struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	// Unattended is set by the scheduled updates worker. Refresh commands
+	// that would prompt for elevation are skipped instead of run.
+	Unattended bool
 }
 
 // DefaultIndexRefreshTimeout bounds one index refresh so a hung
@@ -115,10 +118,19 @@ func RefreshIndexes(packages []genvfile.LockedPackage, opts RefreshOptions) (act
 
 	for _, job := range jobs {
 		display := job.managers[0]
-		actions = append(actions, RefreshAction{Manager: display, Cmd: job.cmd})
+		cmd := job.cmd
+		if opts.Unattended {
+			cmd = withNoninteractiveSudo(cmd)
+			if skipUnattendedElevation(true, cmd) {
+				actions = append(actions, RefreshAction{Manager: display, Cmd: cmd})
+				warnings = append(warnings, refreshSkipWarning(job.managers))
+				continue
+			}
+		}
+		actions = append(actions, RefreshAction{Manager: display, Cmd: cmd})
 		runCtx, cancel := boundIndexRefresh(parent)
 		started := time.Now()
-		err := runIndexRefresh(runCtx, job.cmd, opts.Stdin, opts.Stdout, opts.Stderr)
+		err := runIndexRefresh(runCtx, cmd, opts.Stdin, opts.Stdout, opts.Stderr)
 		elapsed := time.Since(started).Round(time.Millisecond)
 		cancel()
 		if err != nil {

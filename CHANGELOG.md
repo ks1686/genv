@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Scheduled `genv updates __run-once` (including `updates.autoApply`) never
+  prompts for admin. Refresh/apply use `sudo -n` on Unix; unelevated Windows
+  skips mutating winget/choco (and paru/yay) instead of stacking UAC consent
+  dialogs. Elevation skips are logged and are not apply errors. Interactive
+  `genv apply` / `genv upgrade` still may sudo or UAC.
+- System-scope managed external archive and direct installs elevate the
+  staging write and atomic replacement (Unix `sudo`) instead of creating
+  `.genv-install-*` as the current user under `/usr/local/bin`. Unattended
+  runs refuse elevation rather than prompting. Windows still requires an
+  elevated session for system-scope destinations (Fixes #173).
+
+### Changed
+
+- `google.golang.org/grpc` (indirect, via Sigstore) 1.82.1 → 1.83.2.
+
 ## v4.4.0 - 2026-09-10
 
 ### Added

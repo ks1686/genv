@@ -26,7 +26,7 @@ type stagedArchiveFile struct {
 	spec schema.ExternalInstallFile
 }
 
-func installArchive(archivePath, assetName string, install schema.ExternalInstall) ([]genvfile.ExternalPathReceipt, func(), func() error, error) {
+func installArchive(archivePath, assetName string, install schema.ExternalInstall, policy installPolicy) ([]genvfile.ExternalPathReceipt, func(), func() error, error) {
 	staging, err := os.MkdirTemp("", "genv-archive-*")
 	if err != nil {
 		return nil, nil, nil, err
@@ -81,10 +81,10 @@ func installArchive(archivePath, assetName string, install schema.ExternalInstal
 			rollback()
 			return nil, nil, nil, err
 		}
-		restore, finish, err := installDirectWithMode(item.path, destination, archiveMode(item.spec.Mode))
+		restore, finish, err := installDirectWithMode(item.path, destination, archiveMode(item.spec.Mode), policy)
 		if err != nil {
 			rollback()
-			return nil, nil, nil, err
+			return nil, nil, nil, wrapSystemScopeError(policy.Scope, destination, err)
 		}
 		transactions = append(transactions, transaction{restore: restore, finish: finish})
 		digest, err := fileSHA256(destination)

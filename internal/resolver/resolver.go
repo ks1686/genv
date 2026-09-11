@@ -4,6 +4,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -418,6 +419,7 @@ func FilterOutdated(packages []genvfile.LockedPackage) (kept []genvfile.LockedPa
 // the lock file with new versions.
 type UpgradeExecution struct {
 	Upgraded []genvfile.LockedPackage
+	Skipped  []SkippedPackage
 	Errors   []error
 	Failures []UpgradeFailure
 }
@@ -449,6 +451,14 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 				Acknowledge: executionOptions.AcknowledgeExternal, Stdin: stdin, Output: stderr,
 			}).Install(ctx, *a.External)
 			if err != nil {
+				if errors.Is(err, externalpkg.ErrUnattendedElevation) {
+					id := ""
+					if len(a.LPs) > 0 {
+						id = a.LPs[0].ID
+					}
+					out.Skipped = append(out.Skipped, SkippedPackage{ID: id, Manager: "external", Reason: unattendedElevationReason})
+					continue
+				}
 				wrappedErr := fmt.Errorf("upgrade %q: %w", ids, err)
 				out.Errors = append(out.Errors, wrappedErr)
 				out.Failures = append(out.Failures, UpgradeFailure{IDs: ids, Err: wrappedErr})
@@ -461,7 +471,16 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 			continue
 		}
 
-		cmdErr := runSubcmd(ctx, a.Cmd, stdin, stdout, stderr)
+		argv := a.Cmd
+		if executionOptions.Unattended {
+			argv = withNoninteractiveSudo(argv)
+			if skipUnattendedElevation(true, argv) {
+				out.Skipped = append(out.Skipped, skippedElevation(a.LPs, argv)...)
+				continue
+			}
+		}
+
+		cmdErr := runSubcmd(ctx, argv, stdin, stdout, stderr)
 		if cmdErr != nil {
 			wrappedErr := fmt.Errorf("upgrade %q: %w", ids, cmdErr)
 			out.Errors = append(out.Errors, wrappedErr)
@@ -486,6 +505,9 @@ func ExecuteUpgrade(ctx context.Context, plan []UpgradeAction, stdin io.Reader, 
 		}
 		for _, lp := range a.LPs {
 			if _, ok := versions[lp.ID]; ok {
+				continue
+			}
+			if a.Mgr == nil {
 				continue
 			}
 			if v, err := CallTimed(func() (string, error) { return a.Mgr.QueryVersion(lp.PkgName) }, DefaultLiveListTimeout); err == nil && v != "" {
@@ -838,6 +860,9 @@ type ApplyExecution struct {
 type ApplyExecutionOptions struct {
 	ExternalMode        externalpkg.ExecutionMode
 	AcknowledgeExternal func(message string) bool
+	// Unattended is set by the scheduled updates worker. It never prompts for
+	// elevation; commands that would need admin are skipped or fail closed.
+	Unattended bool
 }
 
 // ExecuteApply runs all removals then all installs from a ReconcileResult.
