@@ -25,7 +25,7 @@ func TestBuildGoldenSnapshotAndReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !report.HasErrors() {
-		t.Fatal("expected report errors for incompatible manager and absolute source")
+		t.Fatal("expected report errors for absolute source")
 	}
 
 	assertGoldenFile(t, filepath.Join(outDir, "genv.json"), filepath.Join(fixtureDir, "golden", "arch", "genv.json"))
@@ -132,6 +132,69 @@ func TestBuildDoesNotDeferNativeLinuxManagers(t *testing.T) {
 		if item.Code == "apt-dnf-deferred" || item.Code == "manager-not-supported" {
 			t.Fatalf("unexpected report item: %+v", item)
 		}
+	}
+}
+
+func TestBuildDoesNotFlagManagersThatApplyWouldResolve(t *testing.T) {
+	tests := []struct {
+		name   string
+		target string
+		pkg    schema.Package
+	}{
+		{
+			name:   "brew prefer is usable on ubuntu",
+			target: "ubuntu",
+			pkg:    schema.Package{ID: "bat", Prefer: "brew"},
+		},
+		{
+			name:   "brew prefer is usable on macos",
+			target: "macos",
+			pkg:    schema.Package{ID: "git", Prefer: "brew"},
+		},
+		{
+			name:   "macos falls back to brew when managers map is foreign",
+			target: "macos",
+			pkg:    schema.Package{ID: "node", Managers: map[string]string{"pacman": "nodejs", "scoop": "nodejs"}},
+		},
+		{
+			name:   "arch falls back to pacman when managers map is brew-only",
+			target: "arch",
+			pkg:    schema.Package{ID: "cmake", Managers: map[string]string{"brew": "cmake"}},
+		},
+		{
+			name:   "wsl-arch falls back to pacman when managers map is brew-only",
+			target: "wsl-arch",
+			pkg:    schema.Package{ID: "just", Managers: map[string]string{"brew": "just"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &schema.GenvFile{
+				SchemaVersion: schema.Version8,
+				Targets: map[string]*schema.TargetBundle{
+					tt.target: {Packages: []schema.Package{tt.pkg}},
+				},
+			}
+			report, err := Build(f, tt.target, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if item := findReportItem(report, "manager-not-supported", tt.pkg.ID); item != nil {
+				t.Fatalf("unexpected manager-not-supported: %+v", item)
+			}
+		})
+	}
+}
+
+func TestPackageUsableOnTarget_unknownTargetNeedsExplicitManager(t *testing.T) {
+	allowed := managerAllowlist("freebsd")
+	if packageUsableOnTarget(schema.Package{ID: "git"}, allowed, "freebsd") != true {
+		t.Fatal("unconstrained packages remain usable when the target has no OS fallback")
+	}
+	wingetOnly := schema.Package{ID: "windows-terminal", Prefer: "winget"}
+	if packageUsableOnTarget(wingetOnly, allowed, "freebsd") {
+		t.Fatal("winget-only package should stay manager-not-supported on a target with no OS fallback")
 	}
 }
 

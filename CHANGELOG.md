@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `genv export` no longer emits error-class `manager-not-supported` for
+  packages that `genv apply` / `genv status` would resolve. Homebrew is
+  treated as usable on Linux, and implicit default OS managers (for example
+  pacman on Arch) count when `prefer` / `managers` names are absent on the
+  target (Fixes #175).
+
 ## v4.4.1 - 2026-09-11
 
 ### Fixed

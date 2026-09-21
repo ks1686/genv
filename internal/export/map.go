@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -43,7 +44,7 @@ func Suggest(f *schema.GenvFile, destTarget string) []ReportItem {
 	for _, id := range ids {
 		pkg := sourcePackages[id]
 		if destPkg, ok := destPackages[id]; ok {
-			if packageUsableOnTarget(destPkg, allowed) {
+			if packageUsableOnTarget(destPkg, allowed, destTarget) {
 				continue
 			}
 			pkg = destPkg
@@ -145,9 +146,40 @@ func sortedPackageIDs(packages map[string]schema.Package) []string {
 	return ids
 }
 
-func packageUsableOnTarget(pkg schema.Package, allowed map[string]bool) bool {
+func packageUsableOnTarget(pkg schema.Package, allowed map[string]bool, targetID string) bool {
 	constraints := managerConstraints(pkg)
-	return len(constraints) == 0 || intersects(constraints, allowed)
+	if len(constraints) == 0 || intersects(constraints, allowed) {
+		return true
+	}
+	// apply/status fall back to the first default-eligible OS manager using the
+	// package ID when prefer/managers names are absent on the host. Export must
+	// not error-class those packages as manager-not-supported.
+	return hasImplicitDefaultFallback(allowed, targetID)
+}
+
+func hasImplicitDefaultFallback(allowed map[string]bool, targetID string) bool {
+	goos := targetGOOS(targetID)
+	for name := range allowed {
+		a := adapter.ByName(name)
+		if a == nil {
+			continue
+		}
+		if adapter.IsDefaultFallbackEligible(a) && adapter.AutomaticOnGOOS(name, goos) {
+			return true
+		}
+	}
+	return false
+}
+
+func targetGOOS(targetID string) string {
+	switch targetID {
+	case "macos":
+		return "darwin"
+	case "windows":
+		return "windows"
+	default:
+		return "linux"
+	}
 }
 
 func usableManagers(constraints, allowed map[string]bool) []string {
@@ -167,13 +199,13 @@ func preferredManagersForTarget(targetID string, allowed map[string]bool) []stri
 	case "macos":
 		preferred = []string{"brew", "mas", "linuxbrew"}
 	case "arch", "wsl-arch":
-		preferred = []string{"pacman", "paru", "yay", "snap", "linuxbrew"}
+		preferred = []string{"pacman", "paru", "yay", "snap", "brew", "linuxbrew"}
 	case "ubuntu":
-		preferred = []string{"apt", "snap", "linuxbrew"}
+		preferred = []string{"apt", "snap", "brew", "linuxbrew"}
 	case "windows":
 		preferred = []string{"winget", "scoop", "choco"}
 	case "linux":
-		preferred = []string{"pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "linuxbrew"}
+		preferred = []string{"pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "brew", "linuxbrew"}
 	}
 	var out []string
 	for _, manager := range preferred {

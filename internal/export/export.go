@@ -199,15 +199,15 @@ func buildReport(packages []schema.Package, files *schema.FilesConfig, services 
 	var report Report
 	allowed := managerAllowlist(targetID)
 	for _, pkg := range packages {
-		constraints := managerConstraints(pkg)
-		if len(constraints) > 0 && !intersects(constraints, allowed) {
-			report = append(report, ReportItem{
-				Class:     ClassError,
-				Code:      "manager-not-supported",
-				Message:   fmt.Sprintf("package %q has no managers usable on target %q", pkg.ID, targetID),
-				PackageID: pkg.ID,
-			})
+		if packageUsableOnTarget(pkg, allowed, targetID) {
+			continue
 		}
+		report = append(report, ReportItem{
+			Class:     ClassError,
+			Code:      "manager-not-supported",
+			Message:   fmt.Sprintf("package %q has no managers usable on target %q", pkg.ID, targetID),
+			PackageID: pkg.ID,
+		})
 	}
 	if files != nil {
 		for i, link := range files.Links {
@@ -268,13 +268,13 @@ func managerAllowlist(targetID string) map[string]bool {
 	case "macos":
 		return set("brew", "mas", "linuxbrew", universalManagers)
 	case "arch", "wsl-arch":
-		return set("pacman", "paru", "yay", "snap", "linuxbrew", universalManagers)
+		return set("pacman", "paru", "yay", "snap", "brew", "linuxbrew", universalManagers)
 	case "ubuntu":
-		return set("apt", "snap", "linuxbrew", universalManagers)
+		return set("apt", "snap", "brew", "linuxbrew", universalManagers)
 	case "windows":
 		return set("winget", "scoop", "choco", universalManagers)
 	case "linux":
-		return set("pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "linuxbrew", universalManagers)
+		return set("pacman", "paru", "yay", "apt", "dnf", "apk", "snap", "brew", "linuxbrew", universalManagers)
 	default:
 		return set(universalManagers)
 	}
