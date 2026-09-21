@@ -16,14 +16,14 @@ func migrateCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv migrate [flags]")
 		fPrintln(os.Stderr)
-		fPrintln(os.Stderr, "Convert a legacy genv.json with host predicates to schemaVersion 8 targets.")
+		fPrintln(os.Stderr, "Convert a legacy genv.json with host predicates to portable targets.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	write := fs.Bool("write", false, "overwrite genv.json with the migrated schemaVersion 8 spec")
+	write := fs.Bool("write", false, "overwrite genv.json with the migrated portable spec")
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)

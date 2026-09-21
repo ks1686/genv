@@ -43,7 +43,7 @@ func updatesRunOnceCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
 	}

@@ -70,6 +70,13 @@ const (
 	exitLogic      = 4 // semantic error (duplicate id, not found, etc.)
 )
 
+// --target applies to every portable spec (schemaVersion 8+). Keep these
+// version-agnostic so help does not go stale when the current schemaVersion moves.
+const (
+	targetFlagHelp            = "portable target id for current schemaVersion specs"
+	targetFlagHelpWithDefault = "portable target id for current schemaVersion specs (defaults to $GENV_TARGET or host classification)"
+)
+
 var (
 	version = "dev"
 	commit  = "none"
@@ -563,7 +570,7 @@ func addCmd(args []string) int {
 	noHooks := fs.Bool("no-hooks", false, "skip pre-add and post-add hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	id, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -720,7 +727,7 @@ func removeCmd(args []string) int {
 	noHooks := fs.Bool("no-hooks", false, "skip pre-remove and post-remove hooks")
 	hookTimeout := fs.Duration("hook-timeout", 0, "per-hook timeout, e.g. 5m or 30s (0 means no timeout)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -950,7 +957,7 @@ func adoptCmd(args []string) int {
 	prefer := fs.String("prefer", "", "preferred package manager (e.g. brew)")
 	managerFlag := fs.String("manager", "", `manager-specific names, comma-separated mgr:name pairs (e.g. snap:hello,brew:hello)`)
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 	filesOnly := fs.Bool("files", false, "adopt matching files block entries into the lock without changing targets")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 
@@ -1172,7 +1179,7 @@ func disownCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -1358,7 +1365,7 @@ func applyCmd(args []string) int {
 	fs.BoolVar(&opts.SkipPackages, "skip-packages", false, "skip package install/remove; still apply env, shell, files, and services")
 	fs.BoolVar(&opts.Debug, "debug", false, "emit debug-level structured logs to stderr")
 	fs.StringVar(&opts.Host, "host", "", "host name for host-specific records (defaults to host classification)")
-	fs.StringVar(&opts.Target, "target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	fs.StringVar(&opts.Target, "target", "", targetFlagHelpWithDefault)
 	fs.BoolVar(&opts.ForceNewLock, "force-new-lock", false, "back up a foreign lock file and start with a new local lock")
 	fs.StringVar(&opts.SourceRoot, "source-root", "", "resolve files.links/templates and service launchd/systemd template sources relative to this directory instead of the spec file directory")
 
@@ -2484,7 +2491,7 @@ func envSetCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	sensitive := fs.Bool("sensitive", false, "mark value as sensitive (redacted in output and logs)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -2537,7 +2544,7 @@ func envUnsetCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -2594,7 +2601,7 @@ func envListCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -2705,7 +2712,7 @@ func shellAliasSetCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	shell := fs.String("shell", "", "target shell: "+schema.ValidShellTargetsMsg)
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -2761,7 +2768,7 @@ func shellAliasUnsetCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -2818,7 +2825,7 @@ func shellStatusCmd(args []string) int {
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -3026,7 +3033,7 @@ func scanCmd(args []string) int {
 
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
-	targetFlag := fs.String("target", "", "target ID for schemaVersion 8 (default: $GENV_TARGET or detected host target)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	dryRun := fs.Bool("dry-run", false, "list packages that would be adopted without writing the spec or lock")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt (for CI and scripts)")
@@ -3309,7 +3316,7 @@ func statusCmd(args []string) int {
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem (topology plus content hashes)")
 	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -4082,7 +4089,7 @@ func upgradeCmd(args []string) int {
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text (wet-run requires --yes)")
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to upgrade (positional IDs are also --only)")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to upgrade")
@@ -4911,14 +4918,14 @@ Commands:
   service     Manage user-space services
   files       Adopt a live file into a managed link (adopt)
   pull        Fetch genv.json from the configured spec repository
-  migrate     Convert legacy host predicates to schemaVersion 8 targets
+  migrate     Convert legacy host predicates to portable targets
   completion  Print or install the shell completion script (bash, zsh, fish, or powershell)
   validate    Validate genv.json against the schema
   upgrade     Upgrade tracked packages plus OS vendor updates (--all for every unconstrained package)
   updates     Check for available updates to genv-tracked packages
   export      Build a single-target portable snapshot and report
   map         Print assist-only manager mapping suggestions for a target
-  profile     Named overlays (list/create/switch; refused on schemaVersion 8)
+  profile     Named overlays (list/create/switch; refused on portable specs)
   init        Create a new genv.json interactively
   version     Show genv build version information
   help        Show this help text
@@ -4928,7 +4935,7 @@ Flags common to all commands:
 
 Host-specific flags (used by apply, status, upgrade, updates check/start, adopt):
   --host <name>   Legacy host filter for v1–v7 records (default: host classification, not hostname)
-  --target <id>   Portable target id for schemaVersion 8 specs (default: $GENV_TARGET or host classification)
+  --target <id>   Portable target id for current schemaVersion specs (default: $GENV_TARGET or host classification)
 
 Add/Adopt-specific flags:
   --version <ver>              Version constraint, e.g. "0.10.*"
@@ -4937,7 +4944,7 @@ Add/Adopt-specific flags:
                                snap:hello,brew:hello
   --no-hooks                   Skip add lifecycle hooks without skipping install
   --hook-timeout <duration>    Per-hook timeout, e.g. 5m or 30s
-  --target <id>                Portable target id for schemaVersion 8 specs
+  --target <id>                Portable target id for current schemaVersion specs
 
 Apply-specific flags:
   --dry-run            Print the reconcile plan without executing
@@ -4950,7 +4957,7 @@ Apply-specific flags:
   --skip-packages      Skip package install/remove; still apply env, shell, files, services
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
-  --target <id>        Portable target id for schemaVersion 8 specs
+  --target <id>        Portable target id for current schemaVersion specs
   --force-new-lock     Back up a foreign lock and start a new local lock
   --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
   --source-root <dir>  Resolve files.links/templates and service template sources relative to this directory
@@ -4959,7 +4966,7 @@ Export-specific flags:
   --target <id>        Target id to export
   --out <dir>          Directory to write genv.json, report.json, and report.md
   --strict             Exit nonzero if the report contains errors
-  --from-v7            Migrate v1-v7 input to schemaVersion 8 in memory first
+  --from-v7            Migrate v1-v7 input to a portable spec in memory first
 
 Map-specific flags:
   --target <id>        Destination target id for suggestions
@@ -4967,7 +4974,7 @@ Map-specific flags:
 Remove-specific flags:
   --no-hooks                Skip remove lifecycle hooks without skipping uninstall
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
-  --target <id>             Portable target id for schemaVersion 8 specs
+  --target <id>             Portable target id for current schemaVersion specs
 
 Upgrade-specific flags:
   --dry-run                 Print the upgrade commands without executing
@@ -4981,7 +4988,7 @@ Upgrade-specific flags:
   --skip-manager <mgrs>     Comma-separated managers to skip
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug                   Emit debug-level structured logs to stderr
-  --target <id>             Portable target id for schemaVersion 8 specs
+  --target <id>             Portable target id for current schemaVersion specs
 
 Updates-specific flags:
   check                         Plan available updates for genv-tracked packages only
@@ -4994,9 +5001,9 @@ Updates-specific flags:
   check --only-manager <mgrs>   Comma-separated managers to check
   check --skip-manager <mgrs>   Comma-separated managers to skip
   check --host <name>           Host name for host-specific records
-  check --target <id>           Portable target id for schemaVersion 8 specs
+  check --target <id>           Portable target id for current schemaVersion specs
   check --lock-file <path>      Path to genv lock file
-  start --target <id>           Portable target id for schemaVersion 8 specs
+  start --target <id>           Portable target id for current schemaVersion specs
 
 Status-specific flags:
   --json    Emit machine-readable JSON to stdout
@@ -5094,7 +5101,7 @@ func serviceAddCmd(args []string) int {
 	brewFormula := fs.String("brew-formula", "", "homebrew formula to manage via `brew services` (macOS only)")
 	launchdPlist := fs.String("launchd-plist", "", "LaunchAgent plist template (rendered like files.templates)")
 	systemdUnit := fs.String("systemd-unit", "", "systemd --user unit template (rendered like files.templates)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -5195,7 +5202,7 @@ func serviceRemoveCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -5251,7 +5258,7 @@ func serviceListCmd(args []string) int {
 		fs.PrintDefaults()
 	}
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -5270,7 +5277,7 @@ func serviceListCmd(args []string) int {
 func serviceStartCmd(args []string) int {
 	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -5321,7 +5328,7 @@ func serviceStartCmd(args []string) int {
 func serviceStopCmd(args []string) int {
 	fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
@@ -5366,7 +5373,7 @@ func serviceStopCmd(args []string) int {
 func serviceStatusCmd(args []string) int {
 	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	name, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {

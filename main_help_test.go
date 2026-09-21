@@ -102,3 +102,22 @@ func assertHelpOK(t *testing.T, args []string) {
 		t.Fatalf("run(%v): stderr = %q, must not report unknown command for help", args, errOut)
 	}
 }
+
+func TestHelp_doesNotHardcodeStaleSchemaVersion8(t *testing.T) {
+	cmds := [][]string{{"--help"}}
+	for _, cmd := range registeredHelpCommands {
+		cmds = append(cmds, append(append([]string{}, cmd...), "--help"))
+	}
+	for _, args := range cmds {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var code int
+			errOut := captureStderr(t, func() { code = run(args) })
+			if code != exitOK {
+				t.Fatalf("run(%v): expected exitOK (%d), got %d\nstderr: %s", args, exitOK, code, errOut)
+			}
+			if strings.Contains(errOut, "schemaVersion 8") {
+				t.Errorf("help still hardcodes stale schemaVersion 8:\n%s", errOut)
+			}
+		})
+	}
+}

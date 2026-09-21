@@ -48,7 +48,7 @@ func filesAdoptCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 	dryRun := fs.Bool("dry-run", false, "print the seed/backup/link steps without writing")
 
 	want, flagArgs := extractPositional(args)
