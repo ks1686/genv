@@ -463,6 +463,77 @@ func TestBuildUpgradePlan_is_callable_without_cli_side_effects(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradePlan_SkipFilter_unmatched_is_config_drift(t *testing.T) {
+	withAvailableManagers(t, "brew")
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{
+		Spec:    spec,
+		Lock:    lock,
+		Filters: output.UpgradeFilters{All: true, Skip: []string{"docker-desktop"}},
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git", "jq"}) {
+		t.Fatalf("unmatched skip must not drop packages: got %v", gotIDs)
+	}
+	joined := strings.Join(plan.Warnings, "\n")
+	if !strings.Contains(joined, "config-drift") {
+		t.Fatalf("warnings = %v, want config-drift for unmatched skip", plan.Warnings)
+	}
+	if !strings.Contains(joined, "docker-desktop") || !strings.Contains(joined, "matched no tracked packages") {
+		t.Fatalf("warnings = %v, want skip filter name and no-match reason", plan.Warnings)
+	}
+}
+
+func TestBuildUpgradePlan_SkipFilter_match_skips_without_config_drift(t *testing.T) {
+	withAvailableManagers(t, "brew")
+	spec := &schema.GenvFile{Packages: []schema.Package{{ID: "git"}, {ID: "jq"}}}
+	lock := &genvfile.LockFile{Packages: []genvfile.LockedPackage{
+		{ID: "git", Manager: "brew", PkgName: "git"},
+		{ID: "jq", Manager: "brew", PkgName: "jq"},
+	}}
+
+	plan, err := BuildUpgradePlan(UpgradeOptions{
+		Spec:    spec,
+		Lock:    lock,
+		Filters: output.UpgradeFilters{All: true, Skip: []string{"jq"}},
+	})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+
+	var gotIDs []string
+	for _, a := range plan.Actions {
+		for _, lp := range a.LPs {
+			gotIDs = append(gotIDs, lp.ID)
+		}
+	}
+	if !slices.Equal(gotIDs, []string{"git"}) {
+		t.Fatalf("matched skip plan packages = %v, want [git]", gotIDs)
+	}
+	if len(plan.Skipped) != 1 || plan.Skipped[0].ID != "jq" || plan.Skipped[0].Reason != "excluded by --skip" {
+		t.Fatalf("skipped = %#v, want jq excluded by --skip", plan.Skipped)
+	}
+	for _, warn := range plan.Warnings {
+		if strings.Contains(warn, "config-drift") || strings.Contains(warn, "matched no tracked packages") {
+			t.Fatalf("matched skip should not warn about no-match, got %v", plan.Warnings)
+		}
+	}
+}
+
 func TestRunUpgrade_propagates_typed_action_failures(t *testing.T) {
 	// Given: one synthetic failed upgrade action.
 	mgr := upgradeFailureTestAdapter{}
