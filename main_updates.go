@@ -60,7 +60,7 @@ func updatesCheckCmd(args []string) int {
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	jsonOut := fs.Bool("json", false, "emit machine-readable JSON to stdout instead of human-readable text")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 	onlyFlag := fs.String("only", "", "comma-separated list of package IDs or names to check")
 	skipFlag := fs.String("skip", "", "comma-separated list of package IDs or names to skip")
 	onlyManagerFlag := fs.String("only-manager", "", "comma-separated list of managers to check")

@@ -176,12 +176,12 @@ func BuildUpgradePlan(opts UpgradeOptions) (UpgradePlan, error) {
 
 	for _, o := range opts.Filters.Only {
 		if !matchedOnly[o] {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("warning: --only filter %q matched no tracked packages", o))
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("config-drift: --only filter %q matched no tracked packages", o))
 		}
 	}
 	for _, s := range opts.Filters.Skip {
 		if !matchedSkip[s] {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("warning: --skip filter %q matched no tracked packages", s))
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("config-drift: --skip filter %q matched no tracked packages", s))
 		}
 	}
 

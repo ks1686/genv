@@ -117,7 +117,7 @@ complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell c
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade tracked packages plus OS vendor updates'
 complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'
-complete -c genv -n __fish_genv_no_subcommand -f -a migrate -d 'Convert legacy host predicates to schemaVersion 8 targets'
+complete -c genv -n __fish_genv_no_subcommand -f -a migrate -d 'Convert legacy host predicates to portable targets'
 complete -c genv -n __fish_genv_no_subcommand -f -a export -d 'Build a single-target portable snapshot and report'
 complete -c genv -n __fish_genv_no_subcommand -f -a map -d 'Print assist-only manager mapping suggestions for a target'
 complete -c genv -n __fish_genv_no_subcommand -f -a pull -d 'Fetch the spec from a git repository and update genv.json'
@@ -141,7 +141,7 @@ complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_comm
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l no-hooks -d 'Skip pre-remove and post-remove hooks'
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command remove; or __fish_genv_using_command rm; or __fish_genv_using_command disown' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # list / ls
 complete -c genv -n '__fish_genv_using_command list; or __fish_genv_using_command ls' -l lock-file -d 'Path to genv lock file' -r
@@ -159,7 +159,7 @@ complete -c genv -n '__fish_genv_using_command add' -l no-search -d 'Skip intera
 complete -c genv -n '__fish_genv_using_command add' -l no-hooks -d 'Skip pre-add and post-add hooks'
 complete -c genv -n '__fish_genv_using_command add' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command add' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command add; or __fish_genv_using_command adopt' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # adopt-only
 complete -c genv -n '__fish_genv_using_command adopt' -l host -d 'Host name for host-specific records' -x
@@ -182,7 +182,7 @@ complete -c genv -n '__fish_genv_using_command upgrade' -l skip-manager -d 'Mana
 complete -c genv -n '__fish_genv_using_command upgrade' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command upgrade' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command upgrade' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command upgrade' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command upgrade' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # updates
 complete -c genv -n '__fish_genv_at_subcommand updates check start stop status' -f -a check -d 'Plan available updates for genv-tracked packages only'
@@ -196,10 +196,10 @@ complete -c genv -n '__fish_genv_seen_sub updates check' -l skip -d 'Package IDs
 complete -c genv -n '__fish_genv_seen_sub updates check' -l only-manager -d 'Managers to check' -x
 complete -c genv -n '__fish_genv_seen_sub updates check' -l skip-manager -d 'Managers to skip' -x
 complete -c genv -n '__fish_genv_seen_sub updates check' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_seen_sub updates check' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub updates check' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_seen_sub updates start' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_seen_sub updates start' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_seen_sub updates start' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub updates start' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # apply
 complete -c genv -n '__fish_genv_using_command apply' -l lock-file -d 'Path to genv lock file' -r
@@ -217,18 +217,18 @@ complete -c genv -n '__fish_genv_using_command apply' -l skip-packages -d 'Skip 
 complete -c genv -n '__fish_genv_using_command apply' -l hook-timeout -d 'Per-hook timeout' -x
 complete -c genv -n '__fish_genv_using_command apply' -l debug -d 'Emit debug-level structured logs to stderr'
 complete -c genv -n '__fish_genv_using_command apply' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command apply' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command apply' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_using_command apply' -l force-new-lock -d 'Back up a foreign lock and start a new local lock'
 complete -c genv -n '__fish_genv_using_command apply' -l source-root -d 'Resolve files.links/templates sources relative to this directory' -r
 
 # migrate
-complete -c genv -n '__fish_genv_using_command migrate' -l write -d 'Overwrite genv.json with the migrated schemaVersion 8 spec'
+complete -c genv -n '__fish_genv_using_command migrate' -l write -d 'Overwrite genv.json with the migrated portable spec'
 
 # export
 complete -c genv -n '__fish_genv_using_command export' -l target -d 'Target id to export' -x
 complete -c genv -n '__fish_genv_using_command export' -l out -d 'Directory to write genv.json and report.json' -r
 complete -c genv -n '__fish_genv_using_command export' -l strict -d 'Exit nonzero if the report contains errors'
-complete -c genv -n '__fish_genv_using_command export' -l from-v7 -d 'Migrate v1-v7 input to schemaVersion 8 in memory first'
+complete -c genv -n '__fish_genv_using_command export' -l from-v7 -d 'Migrate v1-v7 input to a portable spec in memory first'
 
 # map
 complete -c genv -n '__fish_genv_using_command map' -l target -d 'Destination target id' -x
@@ -241,11 +241,11 @@ complete -c genv -n '__fish_genv_using_command scan' -l dry-run -d 'List package
 complete -c genv -n '__fish_genv_using_command scan' -l yes -d 'Skip the confirmation prompt'
 complete -c genv -n '__fish_genv_using_command scan' -l all -d 'Include manager dependencies and language stdlib'
 complete -c genv -n '__fish_genv_using_command scan' -l deps -d 'Include manager dependencies and language stdlib'
-complete -c genv -n '__fish_genv_using_command scan' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command scan' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_using_command status' -l files -d 'Check files block against the live filesystem only'
 complete -c genv -n '__fish_genv_using_command status' -l offline -d 'Compare spec vs lock only (skip live manager probe)'
 complete -c genv -n '__fish_genv_using_command status' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_using_command status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_using_command status' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # clean
 complete -c genv -n '__fish_genv_using_command clean' -l dry-run -d 'Print the clean commands without executing'
@@ -260,9 +260,9 @@ complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a set 
 complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a unset -d 'Remove a variable from the spec'
 complete -c genv -n '__fish_genv_at_subcommand env set unset list ls' -f -a 'list ls' -d 'Show all declared variables'
 complete -c genv -n '__fish_genv_seen_sub env set' -l sensitive -d 'Mark value as sensitive (redacted in output and logs)'
-complete -c genv -n '__fish_genv_seen_sub env set; or __fish_genv_seen_sub env unset' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub env set; or __fish_genv_seen_sub env unset' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_seen_sub env list; or __fish_genv_seen_sub env ls' -l json -d 'Emit machine-readable JSON to stdout'
-complete -c genv -n '__fish_genv_seen_sub env list; or __fish_genv_seen_sub env ls' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub env list; or __fish_genv_seen_sub env ls' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # shell subcommands
 complete -c genv -n '__fish_genv_at_subcommand shell alias status edit' -f -a alias -d 'Add, update, or remove a shell alias'
@@ -271,16 +271,16 @@ complete -c genv -n '__fish_genv_at_subcommand shell alias status edit' -f -a ed
 complete -c genv -n '__fish_genv_at_subsubcommand shell alias set unset' -f -a set -d 'Add or update an alias'
 complete -c genv -n '__fish_genv_at_subsubcommand shell alias set unset' -f -a unset -d 'Remove an alias'
 complete -c genv -n '__fish_genv_seen_subsub shell alias set' -l shell -d 'Target shell' -x -a 'bash zsh fish'
-complete -c genv -n '__fish_genv_seen_subsub shell alias set; or __fish_genv_seen_subsub shell alias unset' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_subsub shell alias set; or __fish_genv_seen_subsub shell alias unset' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_seen_sub shell status' -l json -d 'Emit machine-readable JSON to stdout'
-complete -c genv -n '__fish_genv_seen_sub shell status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub shell status' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # files subcommands
 complete -c genv -n '__fish_genv_at_subcommand files adopt' -f -a adopt -d 'Seed missing source from the live file, back it up, and link it'
 complete -c genv -n '__fish_genv_seen_sub files adopt' -l dry-run -d 'Print the seed/backup/link steps without writing'
 complete -c genv -n '__fish_genv_seen_sub files adopt' -l lock-file -d 'Path to genv lock file' -r
 complete -c genv -n '__fish_genv_seen_sub files adopt' -l host -d 'Host name for host-specific records' -x
-complete -c genv -n '__fish_genv_seen_sub files adopt' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub files adopt' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # service subcommands
 complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a add -d 'Add or update a service'
@@ -296,8 +296,8 @@ complete -c genv -n '__fish_genv_seen_sub service add' -l status -d 'Command to 
 complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homebrew formula to manage via brew services (macOS only)' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l launchd-plist -d 'LaunchAgent plist template' -r
 complete -c genv -n '__fish_genv_seen_sub service add' -l systemd-unit -d 'systemd --user unit template' -r
-complete -c genv -n '__fish_genv_seen_sub service add; or __fish_genv_seen_sub service remove; or __fish_genv_seen_sub service rm' -l target -d 'Portable target id for schemaVersion 8 specs' -x
-complete -c genv -n '__fish_genv_seen_sub service list; or __fish_genv_seen_sub service ls; or __fish_genv_seen_sub service start; or __fish_genv_seen_sub service stop; or __fish_genv_seen_sub service status' -l target -d 'Portable target id for schemaVersion 8 specs' -x
+complete -c genv -n '__fish_genv_seen_sub service add; or __fish_genv_seen_sub service remove; or __fish_genv_seen_sub service rm' -l target -d 'Portable target id for current schemaVersion specs' -x
+complete -c genv -n '__fish_genv_seen_sub service list; or __fish_genv_seen_sub service ls; or __fish_genv_seen_sub service start; or __fish_genv_seen_sub service stop; or __fish_genv_seen_sub service status' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # profile
 complete -c genv -n '__fish_genv_at_subcommand profile list ls create switch' -f -a 'list ls' -d 'List available profiles and mark the active one'

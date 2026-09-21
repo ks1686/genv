@@ -43,7 +43,7 @@ func updatesRunOnceCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs")
+	targetFlag := fs.String("target", "", targetFlagHelp)
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
 	}
@@ -144,6 +144,10 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		return exitUsage
 	}
 	for _, warn := range plan.Warnings {
+		if isUpdatesConfigDriftWarning(warn) {
+			logger.Warn("updates.check.warning", slog.String("kind", "config-drift"), slog.String("warning", warn))
+			continue
+		}
 		logger.Info("updates.check.warning", slog.String("warning", warn))
 	}
 	if err := ctx.Err(); err != nil {
@@ -246,6 +250,10 @@ func rotateUpdatesLog(path string) error {
 		return fmt.Errorf("rotate updates log: %w", err)
 	}
 	return nil
+}
+
+func isUpdatesConfigDriftWarning(warn string) bool {
+	return strings.Contains(warn, "config-drift") || strings.Contains(warn, "matched no tracked packages")
 }
 
 // countPlannedPackages returns the total number of packages across all planned

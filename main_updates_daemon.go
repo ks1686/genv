@@ -46,7 +46,7 @@ func updatesStartCmd(args []string) int {
 	file := fs.String("file", defaultSpecPath(), "path to genv.json")
 	lockFile := fs.String("lock-file", "", "path to genv lock file")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to $GENV_HOST or os.Hostname())")
-	targetFlag := fs.String("target", "", "portable target id for schemaVersion 8 specs (defaults to $GENV_TARGET or host classification)")
+	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
 	}
