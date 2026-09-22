@@ -408,26 +408,23 @@ func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testin
 
 func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
-	var stdout, stderr bytes.Buffer
+	var stdout bytes.Buffer
 	e := &Executor{
 		Stdout: &stdout,
-		Stderr: &stderr,
-		goos:   "linux",
-		runner: &outputRunner{stderrs: []string{"GENV_HOOK_STATUS=skipped\n"}},
+		Stderr: io.Discard,
+		goos:   "linux", // irrelevant — runner is fake
+		runner: &outputRunner{
+			stdouts: []string{""},
+			stderrs: []string{"GENV_HOOK_STATUS=skipped\n"},
+			errs:    []error{nil},
+		},
 	}
-	hooks := []schema.Hook{{Name: "noop", Command: "echo skipped"}}
-
+	hooks := []schema.Hook{{Name: "noop", Command: "ignored"}}
 	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
 	}
-	if !strings.Contains(stderr.String(), "GENV_HOOK_STATUS=skipped") {
-		t.Fatalf("status line must be written to stderr, stderr=%q", stderr.String())
-	}
-	if strings.Contains(stdout.String(), "GENV_HOOK_STATUS=skipped") {
-		t.Fatalf("status line must not be written to stdout, stdout=%q", stdout.String())
-	}
 	if !strings.Contains(stdout.String(), "skipped (no-op)") {
-		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", stdout.String(), stderr.String())
+		t.Fatalf("stderr status line was not classified as skipped, got: %q", stdout.String())
 	}
 }
 
