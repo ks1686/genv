@@ -80,7 +80,7 @@ Merge order: copy `defaults`, overlay `targets.<id>`. Arrays defined on the targ
 | ------- | ---- |
 | `genv migrate [--write]` | v1–v7 → v8 buckets |
 | `genv map --target <id>` | assist-only mapping suggestions (never mutates) |
-| `genv export --target <id> --out <dir>` | single-target snapshot + `report.json` / `report.md` + relative assets; omits locks and sensitive env |
+| `genv export --target <id> --out <dir>` | single-target snapshot + `report.json` / `report.md` + relative assets; omits locks and sensitive env. `--verify` queries live managers and records install proof failures in the report |
 
 ### Locks
 

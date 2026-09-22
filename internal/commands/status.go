@@ -8,6 +8,7 @@ import (
 	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/verify"
 	"github.com/ks1686/genv/internal/version"
 )
 
@@ -65,6 +66,91 @@ func (e StatusEntry) DisplayVersion() string {
 // the record of what genv last installed.
 func Status(f *schema.GenvFile, lf *genvfile.LockFile) []StatusEntry {
 	return StatusWithLive(f, lf, nil)
+}
+
+// StatusWithVerify is Status using per-package manager Query results instead of
+// the lock-trusted installed set or a bulk ListInstalled inventory.
+func StatusWithVerify(f *schema.GenvFile, lf *genvfile.LockFile, results []verify.Result) []StatusEntry {
+	if lf == nil {
+		lf = &genvfile.LockFile{}
+	}
+	lockByID := make(map[string]genvfile.LockedPackage, len(lf.Packages))
+	for _, lp := range lf.Packages {
+		lockByID[lp.ID] = lp
+	}
+	specByID := make(map[string]bool, len(f.Packages))
+	for _, pkg := range f.Packages {
+		specByID[pkg.ID] = true
+	}
+	byID := make(map[string]verify.Result, len(results))
+	for _, r := range results {
+		byID[r.PackageID] = r
+	}
+
+	var entries []StatusEntry
+	for _, pkg := range f.Packages {
+		r := byID[pkg.ID]
+		lp, inLock := lockByID[pkg.ID]
+		manager := r.Manager
+		pkgName := r.PkgName
+		if manager == "" && inLock {
+			manager = lp.Manager
+			pkgName = lp.PkgName
+		}
+		if !inLock {
+			if r.OK() {
+				entries = append(entries, StatusEntry{
+					ID:               pkg.ID,
+					Manager:          manager,
+					PkgName:          pkgName,
+					Kind:             StatusPresent,
+					SpecVersion:      pkg.Version,
+					InstalledVersion: r.Version,
+				})
+				continue
+			}
+			entries = append(entries, StatusEntry{
+				ID:          pkg.ID,
+				Manager:     manager,
+				PkgName:     pkgName,
+				Kind:        StatusMissing,
+				SpecVersion: pkg.Version,
+			})
+			continue
+		}
+		installedVersion := r.Version
+		if installedVersion == "" && r.OK() {
+			installedVersion = lp.InstalledVersion
+		}
+		kind := StatusOK
+		if !r.OK() {
+			kind = StatusDrift
+			installedVersion = ""
+		} else if r.Drift || (installedVersion != "" && !version.Satisfies(pkg.Version, installedVersion)) {
+			kind = StatusDrift
+		}
+		entries = append(entries, StatusEntry{
+			ID:               pkg.ID,
+			Manager:          manager,
+			PkgName:          pkgName,
+			Kind:             kind,
+			SpecVersion:      pkg.Version,
+			InstalledVersion: installedVersion,
+		})
+	}
+
+	for _, lp := range lf.Packages {
+		if !specByID[lp.ID] {
+			entries = append(entries, StatusEntry{
+				ID:               lp.ID,
+				Manager:          lp.Manager,
+				PkgName:          lp.PkgName,
+				Kind:             StatusExtra,
+				InstalledVersion: lp.InstalledVersion,
+			})
+		}
+	}
+	return entries
 }
 
 // StatusWithLive is Status plus a live inventory (manager → native names).

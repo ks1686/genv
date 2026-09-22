@@ -12,6 +12,12 @@ All notable changes to this project will be documented in this file.
   `error` next to the name, exit code, and duration. Exit 0 without a status
   line is treated as `changed` so existing exit-only hooks stay compatible
   (Fixes #182).
+- `genv status --verify` and `genv export --verify` query each tracked package's
+  resolved (or locked) manager to prove it is installed, instead of inferring
+  from allowlists or trusting the lock. Locked packages that Query reports
+  absent become status drift; export writes `package-not-installed` (and related)
+  error-class report items so `--strict` can fail. `--verify` cannot be combined
+  with `status --offline` or `status --files` (Fixes #184).
 
 ### Fixed
 

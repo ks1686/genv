@@ -229,6 +229,7 @@ complete -c genv -n '__fish_genv_using_command export' -l target -d 'Target id t
 complete -c genv -n '__fish_genv_using_command export' -l out -d 'Directory to write genv.json and report.json' -r
 complete -c genv -n '__fish_genv_using_command export' -l strict -d 'Exit nonzero if the report contains errors'
 complete -c genv -n '__fish_genv_using_command export' -l from-v7 -d 'Migrate v1-v7 input to a portable spec in memory first'
+complete -c genv -n '__fish_genv_using_command export' -l verify -d 'Query live managers to prove each exported package is installed'
 
 # map
 complete -c genv -n '__fish_genv_using_command map' -l target -d 'Destination target id' -x
@@ -244,6 +245,7 @@ complete -c genv -n '__fish_genv_using_command scan' -l deps -d 'Include manager
 complete -c genv -n '__fish_genv_using_command scan' -l target -d 'Portable target id for current schemaVersion specs' -x
 complete -c genv -n '__fish_genv_using_command status' -l files -d 'Check files block against the live filesystem only'
 complete -c genv -n '__fish_genv_using_command status' -l offline -d 'Compare spec vs lock only (skip live manager probe)'
+complete -c genv -n '__fish_genv_using_command status' -l verify -d 'Query each tracked package manager to prove it is installed'
 complete -c genv -n '__fish_genv_using_command status' -l host -d 'Host name for host-specific records' -x
 complete -c genv -n '__fish_genv_using_command status' -l target -d 'Portable target id for current schemaVersion specs' -x
 

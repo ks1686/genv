@@ -10,7 +10,9 @@ import (
 	exportpkg "github.com/ks1686/genv/internal/export"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/migrate"
+	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/verify"
 )
 
 func exportCmd(args []string) int {
@@ -19,6 +21,7 @@ func exportCmd(args []string) int {
 		fPrintln(os.Stderr, "usage: genv export --target <id> --out <dir> [flags]")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "Build a portable snapshot for one target plus report.json/report.md.")
+		fPrintln(os.Stderr, "Use --verify to query live managers and prove each exported package is installed.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
@@ -29,6 +32,7 @@ func exportCmd(args []string) int {
 	outDir := fs.String("out", "", "directory to write genv.json, report.json, and report.md")
 	strict := fs.Bool("strict", false, "exit nonzero when the report contains error-class items")
 	fromV7 := fs.Bool("from-v7", false, "migrate a v1-v7 spec to a portable spec in memory before exporting")
+	verifyLive := fs.Bool("verify", false, "query live managers to prove each exported package is installed")
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
@@ -73,7 +77,14 @@ func exportCmd(args []string) int {
 		return exitUsage
 	}
 
-	report, err := exportpkg.BuildWithOptions(f, *targetID, *outDir, exportpkg.Options{BaseDir: filepath.Dir(*file)})
+	opts := exportpkg.Options{BaseDir: filepath.Dir(*file)}
+	if *verifyLive {
+		available := resolver.Detect()
+		opts.Verify = func(pkgs []schema.Package) []verify.Result {
+			return verify.Packages(pkgs, nil, verify.Options{Available: available})
+		}
+	}
+	report, err := exportpkg.BuildWithOptions(f, *targetID, *outDir, opts)
 	if err != nil {
 		fprintf(os.Stderr, "genv export: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {

@@ -225,7 +225,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `adopt` / `disown` | Track without install / untrack without uninstall |
 | `scan` | Bulk-adopt user-facing installs (`--dry-run`, `--yes`; `--all` / `--deps` for full trees) |
 | `list` (`ls`) | Show lock-tracked packages |
-| `status` | Spec ↔ lock drift (`--files` includes content `drifted`, `--offline`, `--target`) |
+| `status` | Spec ↔ lock drift (`--files` includes content `drifted`, `--offline`, `--verify`, `--target`) |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`, `--source-root <dir>`) |
 | `validate` | Validate spec + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
@@ -233,7 +233,7 @@ Convenience commands (`add` / `remove` / `adopt` / `disown` / `scan`) update the
 | `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
 | `pull` | Fetch spec + file assets from `repo` |
 | `migrate` | v1–v7 → v8 targets |
-| `export` | Single-target snapshot + report + assets |
+| `export` | Single-target snapshot + report + assets (`--verify` proves live installs) |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |
 | `env` / `shell` / `service` / `files` | Env vars, aliases, user services (`launchd` / `systemd` templates), `files adopt` |
@@ -273,8 +273,10 @@ genv files adopt ~/.foo --dry-run                 # seed missing source, backup 
 genv apply --target ubuntu --force-new-lock --yes   # after a foreign lock refuse
 genv apply --dry-run --file ./worktree/genv.json --source-root ~/.config/genv
 genv status --target windows                      # present vs missing vs ok
+genv status --verify                              # Query each manager: is this package actually installed?
 genv adopt cursor --target windows                # lock Anysphere.Cursor if already installed
 genv export --target macos --out ./dist/macos --strict
+genv export --target macos --out ./dist/macos --verify --strict
 genv migrate --write
 ```
 

@@ -104,7 +104,7 @@ function script:Get-GenvCompletions {
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'export' } {
-			$flags = @('--file', '--target', '--out', '--strict', '--from-v7')
+			$flags = @('--file', '--target', '--out', '--strict', '--from-v7', '--verify')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'map' } {
@@ -236,6 +236,10 @@ function script:Get-GenvCompletions {
 		}
 		{ $_ -in 'scan' } {
 			$flags = @('--file', '--lock-file', '--dry-run', '--yes', '--all', '--deps', '--json', '--debug', '--target')
+			return (& $completeCandidates -Candidates $flags)
+		}
+		{ $_ -in 'status' } {
+			$flags = @('--file', '--lock-file', '--json', '--debug', '--files', '--offline', '--verify', '--host', '--target')
 			return (& $completeCandidates -Candidates $flags)
 		}
 		{ $_ -in 'completion' } {

@@ -221,7 +221,8 @@ _genv() {
 				'--target=[Target id to export]:target:' \
 				'--out=[Directory to write genv.json and report.json]:path:_files -/' \
 				'--strict[Exit nonzero if the report contains errors]' \
-				'--from-v7[Migrate v1-v7 input to a portable spec in memory first]'
+				'--from-v7[Migrate v1-v7 input to a portable spec in memory first]' \
+				'--verify[Query live managers to prove each exported package is installed]'
 			;;
 		map)
 			_arguments \
@@ -236,6 +237,7 @@ _genv() {
 				'--debug[Emit debug-level structured logs to stderr]' \
 				'--files[Check files block against the live filesystem only]' \
 				'--offline[Compare spec vs lock only (skip live manager probe)]' \
+				'--verify[Query each tracked package manager to prove it is installed]' \
 				'--host=[Host name for host-specific records]:host:' \
 				'--target=[Portable target id for current schemaVersion specs]:target:'
 			;;

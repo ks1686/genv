@@ -119,13 +119,13 @@ _genv() {
 		opts="--file --write"
 		;;
 	export)
-		opts="--file --target --out --strict --from-v7"
+		opts="--file --target --out --strict --from-v7 --verify"
 		;;
 	map)
 		opts="--file --target"
 		;;
 	status)
-		opts="--file --lock-file --json --debug --files --offline --host --target"
+		opts="--file --lock-file --json --debug --files --offline --verify --host --target"
 		;;
 	scan)
 		opts="--file --lock-file --json --debug --target --dry-run --yes --all --deps"
