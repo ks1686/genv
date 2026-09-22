@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.5.0 - 2026-09-21
+
 ### Added
 
 - Apply lifecycle hooks have an idempotency contract: check-then-act, then
@@ -26,6 +28,11 @@ All notable changes to this project will be documented in this file.
   treated as usable on Linux, and implicit default OS managers (for example
   pacman on Arch) count when `prefer` / `managers` names are absent on the
   target (Fixes #175).
+- CLI help and shell completions no longer hardcode `schemaVersion 8`
+  (`genv migrate` still writes 8) (Fixes #183).
+- Unmatched `--skip` / `--only` filters are tagged as `config-drift` and
+  logged at WARN in the scheduled updates worker instead of INFO
+  (Fixes #177).
 
 ## v4.4.1 - 2026-09-11
 
