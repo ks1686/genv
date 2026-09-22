@@ -2,6 +2,7 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -167,6 +168,7 @@ func (e *Executor) PostUpgradeWithOptions(ctx context.Context, hooks []schema.Ho
 
 type hookResult struct {
 	Name     string
+	Status   string
 	ExitCode int
 	Duration time.Duration
 }
@@ -205,7 +207,13 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		args, err := e.hookArgs(h)
 		if err != nil {
 			err = fmt.Errorf("%s hook %s: %w", phase, desc, err)
-			results = append(results, hookResult{Name: hookSummaryName(h), ExitCode: hookExitCode(err), Duration: time.Since(start)})
+			code := hookExitCode(err)
+			results = append(results, hookResult{
+				Name:     hookSummaryName(h),
+				Status:   classifyHookStatus(code, nil),
+				ExitCode: code,
+				Duration: time.Since(start),
+			})
 			if h.ContinueOnError {
 				fprintf(e.Stderr, "%s (continuing)\n", err)
 				continue
@@ -218,14 +226,23 @@ func (e *Executor) runPhase(ctx context.Context, phase string, hooks []schema.Ho
 		if opts.Timeout > 0 {
 			runCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
 		}
-		err = e.runner.Run(runCtx, args, opts.Env, opts.Stdin, e.Stdout, e.Stderr)
+		var captured bytes.Buffer
+		stdout := io.MultiWriter(e.Stdout, &captured)
+		stderr := io.MultiWriter(e.Stderr, &captured)
+		err = e.runner.Run(runCtx, args, opts.Env, opts.Stdin, stdout, stderr)
 		cancel()
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("%s hook timed out after %s %s: %w", phase, opts.Timeout, desc, context.DeadlineExceeded)
 		} else if err != nil {
 			err = fmt.Errorf("%s hook %s: %w", phase, desc, err)
 		}
-		results = append(results, hookResult{Name: hookSummaryName(h), ExitCode: hookExitCode(err), Duration: time.Since(start)})
+		code := hookExitCode(err)
+		results = append(results, hookResult{
+			Name:     hookSummaryName(h),
+			Status:   classifyHookStatus(code, captured.Bytes()),
+			ExitCode: code,
+			Duration: time.Since(start),
+		})
 		if err != nil {
 			if h.ContinueOnError {
 				fprintf(e.Stderr, "%s (continuing)\n", err)
@@ -245,7 +262,7 @@ func (e *Executor) printHookSummary(results []hookResult) {
 	}
 	fprintf(e.Stdout, "hooks:\n")
 	for _, r := range results {
-		fprintf(e.Stdout, "  %s  exit %d  %s\n", r.Name, r.ExitCode, formatHookDuration(r.Duration))
+		fprintf(e.Stdout, "  %s  %s  exit %d  %s\n", r.Name, formatHookStatus(r.Status), r.ExitCode, formatHookDuration(r.Duration))
 	}
 }
 

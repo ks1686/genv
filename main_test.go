@@ -3614,6 +3614,17 @@ func TestApplyCmd_HelpMentionsTenMinuteTimeout(t *testing.T) {
 	}
 }
 
+func TestApplyCmd_HelpMentionsHookIdempotencyContract(t *testing.T) {
+	errOut := captureStderr(t, func() {
+		_ = run([]string{"apply", "--help"})
+	})
+	for _, want := range []string{"GENV_HOOK_STATUS", "changed", "skipped", "check-then-act"} {
+		if !strings.Contains(errOut, want) {
+			t.Fatalf("apply --help = %q, want %q", errOut, want)
+		}
+	}
+}
+
 func TestApplyCmd_PackageFailure_StillAppliesEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

@@ -276,6 +276,48 @@ func TestExecutor_ContinueOnError_reports_but_keeps_running(t *testing.T) {
 	}
 }
 
+func TestClassifyHookStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		exit   int
+		output string
+		want   string
+	}{
+		{name: "legacy exit 0 without marker is changed", exit: 0, output: "rebuilding...\n", want: StatusChanged},
+		{name: "empty output exit 0 is changed", exit: 0, output: "", want: StatusChanged},
+		{name: "explicit skipped", exit: 0, output: "GENV_HOOK_STATUS=skipped\n", want: StatusSkipped},
+		{name: "explicit changed", exit: 0, output: "installing\nGENV_HOOK_STATUS=changed\n", want: StatusChanged},
+		{name: "nonzero exit is error even with skipped marker", exit: 1, output: "GENV_HOOK_STATUS=skipped\n", want: StatusError},
+		{name: "timeout-style exit is error", exit: 1, output: "", want: StatusError},
+		{name: "last status line wins", exit: 0, output: "GENV_HOOK_STATUS=changed\nGENV_HOOK_STATUS=skipped\n", want: StatusSkipped},
+		{name: "unknown marker is treated as changed", exit: 0, output: "GENV_HOOK_STATUS=maybe\n", want: StatusChanged},
+		{name: "error marker with exit 0 is still changed", exit: 0, output: "GENV_HOOK_STATUS=error\n", want: StatusChanged},
+		{name: "trims trailing whitespace and crlf", exit: 0, output: "GENV_HOOK_STATUS=skipped\r\n", want: StatusSkipped},
+		{name: "marker may appear on stderr mixed with logs", exit: 0, output: "checking\nGENV_HOOK_STATUS=skipped\ndone\n", want: StatusSkipped},
+		{name: "prefix noise on the same line is ignored", exit: 0, output: "note GENV_HOOK_STATUS=skipped\n", want: StatusChanged},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyHookStatus(tc.exit, []byte(tc.output))
+			if got != tc.want {
+				t.Fatalf("classifyHookStatus(%d, %q) = %q, want %q", tc.exit, tc.output, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatHookStatus(t *testing.T) {
+	if got := formatHookStatus(StatusSkipped); got != "skipped (no-op)" {
+		t.Fatalf("formatHookStatus(skipped) = %q, want skipped (no-op)", got)
+	}
+	if got := formatHookStatus(StatusChanged); got != StatusChanged {
+		t.Fatalf("formatHookStatus(changed) = %q, want changed", got)
+	}
+	if got := formatHookStatus(StatusError); got != StatusError {
+		t.Fatalf("formatHookStatus(error) = %q, want error", got)
+	}
+}
+
 func TestExecutor_PrintsHookSummary_name_exit_duration(t *testing.T) {
 	ctx := context.Background()
 	var stdout bytes.Buffer
@@ -310,6 +352,77 @@ func TestExecutor_PrintsHookSummary_name_exit_duration(t *testing.T) {
 	if selfIdx < 0 || cmdIdx < 0 || selfIdx > cmdIdx {
 		t.Fatalf("summary order wrong, got: %q", got)
 	}
+	if !strings.Contains(got, "changed") {
+		t.Fatalf("legacy exit-only hooks should summarize as changed, got: %q", got)
+	}
+}
+
+func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testing.T) {
+	ctx := context.Background()
+	var stdout bytes.Buffer
+	e := NewExecutor(&stdout, io.Discard)
+	hooks := []schema.Hook{
+		{Name: "noop", Command: "echo GENV_HOOK_STATUS=skipped"},
+		{Name: "mutate", Command: "echo GENV_HOOK_STATUS=changed"},
+		{Name: "legacy", Command: "true"},
+		{Name: "boom", Command: "echo GENV_HOOK_STATUS=skipped; exit 1", ContinueOnError: true},
+	}
+
+	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
+		t.Fatalf("PostApply() error = %v, want nil when continueOnError", err)
+	}
+	got := stdout.String()
+	lines := summaryLinesByName(t, got, "noop", "mutate", "legacy", "boom")
+	if !strings.Contains(lines["noop"], "skipped (no-op)") {
+		t.Fatalf("noop line = %q, want skipped (no-op)", lines["noop"])
+	}
+	if !strings.Contains(lines["mutate"], "changed") {
+		t.Fatalf("mutate line = %q, want changed", lines["mutate"])
+	}
+	if !strings.Contains(lines["legacy"], "changed") {
+		t.Fatalf("legacy line = %q, want changed", lines["legacy"])
+	}
+	if strings.Contains(lines["legacy"], "skipped") {
+		t.Fatalf("legacy line = %q, must not look like a no-op", lines["legacy"])
+	}
+	if !strings.Contains(lines["boom"], "error") {
+		t.Fatalf("boom line = %q, want error", lines["boom"])
+	}
+	if strings.Contains(lines["boom"], "skipped") {
+		t.Fatalf("failed hook must not report skipped, got: %q", lines["boom"])
+	}
+}
+
+func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
+	ctx := context.Background()
+	var stdout, stderr bytes.Buffer
+	e := NewExecutor(&stdout, &stderr)
+	hooks := []schema.Hook{{Name: "noop", Command: "echo GENV_HOOK_STATUS=skipped >&2"}}
+
+	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
+		t.Fatalf("PostApply() error = %v, want nil", err)
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "skipped (no-op)") {
+		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", got, stderr.String())
+	}
+}
+
+func summaryLinesByName(t *testing.T, got string, names ...string) map[string]string {
+	t.Helper()
+	out := make(map[string]string, len(names))
+	for _, name := range names {
+		idx := strings.Index(got, name)
+		if idx < 0 {
+			t.Fatalf("summary missing %q, got: %q", name, got)
+		}
+		rest := got[idx:]
+		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+			rest = rest[:nl]
+		}
+		out[name] = rest
+	}
+	return out
 }
 
 func TestExecutor_AbortsOnFirstFailure(t *testing.T) {

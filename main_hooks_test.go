@@ -105,6 +105,45 @@ func TestApply_HookSummary_lists_name_exit_and_duration(t *testing.T) {
 	}
 }
 
+func TestApply_HookSummary_distinguishes_skipped_changed_error_and_legacy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	installLog := filepath.Join(dir, "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: installLog})
+	spec := `{"schemaVersion":"6","packages":[{"id":"alpha","prefer":"test-hook-manager"}],"hooks":{"postApply":[` +
+		`{"name":"noop","command":"echo GENV_HOOK_STATUS=skipped"},` +
+		`{"name":"mutate","command":"echo GENV_HOOK_STATUS=changed"},` +
+		`{"name":"legacy","command":"true"},` +
+		`{"name":"boom","continueOnError":true,"command":"echo GENV_HOOK_STATUS=skipped; exit 1"}` +
+		`]}}`
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "1s"})
+	})
+
+	if code != exitOK {
+		t.Fatalf("apply hook status summary: expected exitOK (%d), got %d; stdout=%s", exitOK, code, out)
+	}
+	if !strings.Contains(out, "noop") || !strings.Contains(out, "skipped (no-op)") {
+		t.Fatalf("summary missing skipped no-op, stdout=%s", out)
+	}
+	if !strings.Contains(out, "mutate") || !strings.Contains(out, "changed") {
+		t.Fatalf("summary missing changed, stdout=%s", out)
+	}
+	if !strings.Contains(out, "legacy") {
+		t.Fatalf("summary missing legacy hook, stdout=%s", out)
+	}
+	if !strings.Contains(out, "boom") || !strings.Contains(out, "error") {
+		t.Fatalf("summary missing error status, stdout=%s", out)
+	}
+}
+
 func TestApply_NoHooks_skips_hooks_but_runs_primary_op(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
