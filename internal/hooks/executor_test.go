@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,16 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/testutil"
 )
+
+const hookHelperStderrSkipped = "stderr-skipped"
+
+func TestMain(m *testing.M) {
+	if os.Getenv("GENV_HOOK_HELPER") == hookHelperStderrSkipped {
+		fmt.Fprintln(os.Stderr, "GENV_HOOK_STATUS=skipped")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 // fakeRunner records command invocations and returns a programmed error.
 type fakeRunner struct {
@@ -409,21 +421,28 @@ func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testin
 func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	e := &Executor{
-		Stdout: &stdout,
-		Stderr: &stderr,
-		goos:   "linux",
-		runner: &outputRunner{stderrs: []string{"GENV_HOOK_STATUS=skipped\n"}},
-	}
-	hooks := []schema.Hook{{Name: "noop", Command: "echo skipped"}}
+	e := NewExecutor(&stdout, &stderr)
+	hooks := []schema.Hook{{Name: "noop", Command: quoteHookHelperCommand(os.Args[0])}}
 
-	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
+	err := e.PostApplyWithOptions(ctx, hooks, RunOptions{
+		Host: "any",
+		Env:  []string{"GENV_HOOK_HELPER=" + hookHelperStderrSkipped},
+	})
+	if err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
 	}
 	got := stdout.String()
 	if !strings.Contains(got, "skipped (no-op)") {
 		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", got, stderr.String())
 	}
+}
+
+// quoteHookHelperCommand quotes a helper path for sh -c, cmd /C, and PowerShell -Command.
+func quoteHookHelperCommand(path string) string {
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(path, `"`, `""`) + `"`
+	}
+	return "'" + strings.ReplaceAll(path, `'`, `'"'"'`) + "'"
 }
 
 type outputRunner struct {
