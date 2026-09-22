@@ -411,7 +411,7 @@ func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	e := NewExecutor(&stdout, &stderr)
-	hooks := []schema.Hook{{Name: "noop", Command: echoHookStatusToStderr("skipped")}}
+	hooks := []schema.Hook{{Name: "noop", File: writeSkippedStatusHookFile(t)}}
 
 	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
@@ -422,15 +422,35 @@ func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	}
 }
 
-// echoHookStatusToStderr prints GENV_HOOK_STATUS on stderr. POSIX `>&2` is
-// invalid under Windows cmd /C (the CI fallback when PowerShell is missing);
-// `1>&2` is valid in both cmd and PowerShell.
-func echoHookStatusToStderr(status string) string {
-	line := "echo GENV_HOOK_STATUS=" + status
-	if runtime.GOOS == "windows" {
-		return line + " 1>&2"
+// writeSkippedStatusHookFile writes a host-native hook script that prints
+// GENV_HOOK_STATUS=skipped on stderr. Inline `echo … >&2` is not portable:
+// POSIX >&2 fails under cmd /C, and Go's Windows quoting of 1>&2 inside
+// cmd /C also exits 1. A script file lets cmd/PowerShell/sh parse the
+// redirect themselves.
+func writeSkippedStatusHookFile(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		path := filepath.Join(dir, "hook.sh")
+		if err := os.WriteFile(path, []byte("#!/bin/sh\necho GENV_HOOK_STATUS=skipped >&2\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return path
 	}
-	return line + " >&2"
+	if _, ok := profilebackend.DetectEngine(); ok {
+		path := filepath.Join(dir, "hook.ps1")
+		body := "[Console]::Error.WriteLine('GENV_HOOK_STATUS=skipped')\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	path := filepath.Join(dir, "hook.cmd")
+	body := "@echo off\r\necho GENV_HOOK_STATUS=skipped 1>&2\r\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 type outputRunner struct {
