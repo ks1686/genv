@@ -1344,6 +1344,8 @@ func applyCmd(args []string) int {
 	fs.Usage = func() {
 		fPrintln(os.Stderr, "usage: genv apply [flags]")
 		fPrintln(os.Stderr)
+		fPrintln(os.Stderr, "Lifecycle hooks should check-then-act and print GENV_HOOK_STATUS=changed or GENV_HOOK_STATUS=skipped on stdout or stderr when they exit 0. Exit 0 without a status line is treated as changed. Non-zero exit is error. The hook summary prints changed, skipped (no-op), or error.")
+		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
 		fs.PrintDefaults()
 	}
@@ -4961,6 +4963,11 @@ Apply-specific flags:
   --force-new-lock     Back up a foreign lock and start a new local lock
   --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
   --source-root <dir>  Resolve files.links/templates and service template sources relative to this directory
+
+Apply hooks (check-then-act):
+  Print GENV_HOOK_STATUS=changed or GENV_HOOK_STATUS=skipped when exiting 0.
+  Exit 0 without a status line is treated as changed. Non-zero exit is error.
+  The hook summary prints changed, skipped (no-op), or error.
 
 Export-specific flags:
   --target <id>        Target id to export

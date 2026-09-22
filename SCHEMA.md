@@ -116,7 +116,16 @@ Each hook is `{ "command": "..." }` or `{ "file": "..." }` (exactly one), option
 
 Context env: `GENV_EVENT`, `GENV_PHASE`, `GENV_HOST`, `GENV_PROFILE`, `GENV_SPEC_FILE`, `GENV_SPEC_DIR`, `GENV_LOCK_FILE`, `GENV_YES`, `GENV_INSTALLED`, `GENV_REMOVED`, `GENV_UPGRADED`, `GENV_FAILED`, `GENV_SKIPPED`.
 
-`continueOnError: true` reports a non-zero hook and continues the phase instead of failing the command. After a phase, genv prints a hook summary: `name` (or the first 40 characters of the command), exit code, and duration, in run order.
+Hooks are expected to **check-then-act** and short-circuit when the work is already done. After a successful run they print a status line on stdout or stderr:
+
+```
+GENV_HOOK_STATUS=changed
+GENV_HOOK_STATUS=skipped
+```
+
+Non-zero exit is `error` (the status line is ignored). Exit `0` without a `GENV_HOOK_STATUS` line is treated as `changed`, so existing exit-only hooks stay visible as work rather than a silent no-op. `GENV_HOOK_STATUS=error` on exit `0` is ignored.
+
+`continueOnError: true` reports a non-zero hook and continues the phase instead of failing the command. After a phase, genv prints a hook summary in run order: `name` (or the first 40 characters of the command), status (`changed`, `skipped (no-op)`, or `error`), exit code, and duration.
 
 Hooks run as the current user and are arbitrary code by design — treat the spec as trusted.
 

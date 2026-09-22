@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Apply lifecycle hooks have an idempotency contract: check-then-act, then
+  report `GENV_HOOK_STATUS=changed` or `GENV_HOOK_STATUS=skipped` on stdout or
+  stderr. The per-phase hook summary prints `changed`, `skipped (no-op)`, or
+  `error` next to the name, exit code, and duration. Exit 0 without a status
+  line is treated as `changed` so existing exit-only hooks stay compatible
+  (Fixes #182).
+
 ### Fixed
 
 - `genv export` no longer emits error-class `manager-not-supported` for

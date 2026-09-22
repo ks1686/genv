@@ -280,6 +280,17 @@ genv migrate --write
 
 File mismatches without `--force` no longer block packages/services: non-conflicting file ops still apply, each mismatched path is printed, and apply exits `4` if any remain.
 
+### Lifecycle hooks
+
+Hooks should **check-then-act** and exit without doing work when the system is already current. On success, print one of:
+
+```bash
+echo GENV_HOOK_STATUS=changed
+echo GENV_HOOK_STATUS=skipped
+```
+
+Non-zero exit is `error`. Exit 0 without a status line is treated as `changed` (legacy exit-only hooks). After each phase, apply prints `changed`, `skipped (no-op)`, or `error` next to the hook name, exit code, and duration. See [SCHEMA.md](SCHEMA.md#hooks).
+
 ### User services (launchd / systemd)
 
 Declare a LaunchAgent or systemd --user unit in the spec instead of a `postApply` hook:
