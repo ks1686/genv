@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -410,47 +409,26 @@ func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testin
 func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	e := NewExecutor(&stdout, &stderr)
-	hooks := []schema.Hook{{Name: "noop", File: writeSkippedStatusHookFile(t)}}
+	e := &Executor{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		goos:   "linux",
+		runner: &outputRunner{stderrs: []string{"GENV_HOOK_STATUS=skipped\n"}},
+	}
+	hooks := []schema.Hook{{Name: "noop", Command: "echo skipped"}}
 
 	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
 	}
-	got := stdout.String()
-	if !strings.Contains(got, "skipped (no-op)") {
-		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", got, stderr.String())
+	if !strings.Contains(stderr.String(), "GENV_HOOK_STATUS=skipped") {
+		t.Fatalf("status line must be written to stderr, stderr=%q", stderr.String())
 	}
-}
-
-// writeSkippedStatusHookFile writes a host-native hook script that prints
-// GENV_HOOK_STATUS=skipped on stderr. Inline `echo … >&2` is not portable:
-// POSIX >&2 fails under cmd /C, and Go's Windows quoting of 1>&2 inside
-// cmd /C also exits 1. A script file lets cmd/PowerShell/sh parse the
-// redirect themselves.
-func writeSkippedStatusHookFile(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if runtime.GOOS != "windows" {
-		path := filepath.Join(dir, "hook.sh")
-		if err := os.WriteFile(path, []byte("#!/bin/sh\necho GENV_HOOK_STATUS=skipped >&2\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		return path
+	if strings.Contains(stdout.String(), "GENV_HOOK_STATUS=skipped") {
+		t.Fatalf("status line must not be written to stdout, stdout=%q", stdout.String())
 	}
-	if _, ok := profilebackend.DetectEngine(); ok {
-		path := filepath.Join(dir, "hook.ps1")
-		body := "[Console]::Error.WriteLine('GENV_HOOK_STATUS=skipped')\n"
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return path
+	if !strings.Contains(stdout.String(), "skipped (no-op)") {
+		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	path := filepath.Join(dir, "hook.cmd")
-	body := "@echo off\r\necho GENV_HOOK_STATUS=skipped 1>&2\r\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 type outputRunner struct {
