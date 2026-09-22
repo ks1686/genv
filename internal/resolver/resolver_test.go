@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +17,13 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/testutil"
 )
+
+func cheapSuccessCmd() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd", "/c", "exit", "0"}
+	}
+	return []string{"true"}
+}
 
 func TestRunSubcmd_EmptyArgv(t *testing.T) {
 	err := runSubcmd(context.Background(), nil, nil, &bytes.Buffer{}, &bytes.Buffer{})
@@ -36,11 +44,11 @@ func TestRunSubcmd_PerSpawnTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected sleep to hit per-spawn timeout")
 	}
-	// `true` is not reliable on Windows CI (LookPath can find a non-POSIX
-	// true.exe that exits 1). `go` is on PATH wherever these tests run.
-	// 50ms was too tight: after killing sleep, `go env GOVERSION` often
-	// exceeds 50ms on Windows runners and fails the reuse assertion.
-	if err := runSubcmd(ctx, []string{"go", "env", "GOVERSION"}, nil, io.Discard, io.Discard); err != nil {
+	// Do not use `go env` here: parallel `go test ./...` can lock the
+	// toolchain, and Windows then reports a killed spawn as exit status 1.
+	// `true` is also unreliable on Windows CI (LookPath can find a non-POSIX
+	// true.exe that exits 1).
+	if err := runSubcmd(ctx, cheapSuccessCmd(), nil, io.Discard, io.Discard); err != nil {
 		t.Fatalf("later command after a timed-out spawn: %v", err)
 	}
 }
@@ -53,7 +61,7 @@ func TestExecuteApply_TimeoutDoesNotSkipLaterPackages(t *testing.T) {
 	result := ReconcileResult{
 		ToInstall: []Action{
 			{Pkg: schema.Package{ID: "hang"}, Manager: "test", PkgName: "hang", Cmd: []string{"sleep", "20"}},
-			{Pkg: schema.Package{ID: "ok"}, Manager: "test", PkgName: "ok", Cmd: []string{"go", "env", "GOVERSION"}},
+			{Pkg: schema.Package{ID: "ok"}, Manager: "test", PkgName: "ok", Cmd: cheapSuccessCmd()},
 		},
 	}
 	got := ExecuteApply(ctx, result, nil, io.Discard, io.Discard)

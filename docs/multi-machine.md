@@ -77,7 +77,8 @@ genv export --target ubuntu --out ./dist/ubuntu
 `genv map` is assist-only and never edits your spec. `genv export` writes a
 single-target schema v8 snapshot plus `report.json` and `report.md`; it omits
 locks and sensitive env values, and copies relative file assets into the bundle.
-Use `--strict` when an export with report errors should fail CI.
+Use `--strict` when an export with report errors should fail CI. Add `--verify`
+to query live managers and prove each exported package is actually installed.
 
 On each machine:
 
@@ -86,6 +87,7 @@ git clone <your-dotfiles-repo>
 cd <your-dotfiles-repo>
 genv apply --target ubuntu --dry-run
 genv apply --target ubuntu --yes
+genv status --verify
 ```
 
 You can omit `--target` when classification is enough, or set `GENV_TARGET` in

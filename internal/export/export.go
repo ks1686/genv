@@ -11,12 +11,16 @@ import (
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/verify"
 )
 
 // Options controls filesystem behavior for BuildWithOptions.
 type Options struct {
 	// BaseDir resolves relative file assets. Empty means the current directory.
 	BaseDir string
+	// Verify, when set, queries live managers for each exported package and
+	// appends error-class report items for packages that cannot be proved.
+	Verify func(packages []schema.Package) []verify.Result
 }
 
 // Build materializes targetID into outDir as genv.json plus report artifacts.
@@ -40,6 +44,9 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 	}
 
 	report := buildReport(effective.Packages, effective.Files, effective.Services, targetID)
+	if opts.Verify != nil {
+		report = append(report, verifyReportItems(opts.Verify(effective.Packages))...)
+	}
 	bundle, envReport := bundleFromFlat(effective)
 	report = append(report, envReport...)
 	if err := rewriteAndCopyFileAssets(bundle.Files, opts.BaseDir, outDir); err != nil {
@@ -228,6 +235,26 @@ func buildReport(packages []schema.Package, files *schema.FilesConfig, services 
 		if svc.DeclaresSystemd() && isAbsolutePath(svc.Systemd.Unit) {
 			report = append(report, absoluteSourceItem("services."+name+".systemd.unit", svc.Systemd.Unit))
 		}
+	}
+	return report
+}
+
+func verifyReportItems(results []verify.Result) Report {
+	var report Report
+	for _, r := range results {
+		if r.OK() {
+			continue
+		}
+		msg := r.Message
+		if msg == "" {
+			msg = fmt.Sprintf("package %q: %s", r.PackageID, r.Code)
+		}
+		report = append(report, ReportItem{
+			Class:     ClassError,
+			Code:      r.Code,
+			Message:   msg,
+			PackageID: r.PackageID,
+		})
 	}
 	return report
 }

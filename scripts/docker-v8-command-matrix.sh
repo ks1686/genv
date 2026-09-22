@@ -204,6 +204,10 @@ run_matrix() {
 	assert_ok "status --json" "$code"
 	assert_contains "status json ok" "$out" '"ok":true'
 
+	run status --file "$SPEC" --lock-file "$LOCK" --target arch --verify
+	assert_ok "status --verify" "$code" "$out$err"
+	assert_contains "status --verify reports ok" "$out" "ok"
+
 	run list --file "$SPEC" --lock-file "$LOCK"
 	assert_ok "list" "$code"
 	assert_contains "list shows tree" "$out" "tree"
@@ -317,6 +321,8 @@ run_matrix() {
 	run export --file "$SPEC" --target arch --out "$WORK/out/export"
 	assert_ok "export" "$code" "$out$err"
 	[[ -f "$WORK/out/export/genv.json" ]] && record PASS "export wrote genv.json" || record FAIL "export wrote genv.json"
+	run export --file "$SPEC" --target arch --out "$WORK/out/export-verify" --verify --strict
+	assert_ok "export --verify --strict" "$code" "$out$err"
 	run map --file "$SPEC" --target ubuntu
 	assert_ok "map" "$code" "$out$err"
 	run apply --file "$SPEC" --lock-file "$LOCK" --target arch --dry-run --yes

@@ -39,6 +39,7 @@ import (
 	"github.com/ks1686/genv/internal/shellcfg"
 	"github.com/ks1686/genv/internal/target"
 	"github.com/ks1686/genv/internal/upgrade"
+	"github.com/ks1686/genv/internal/verify"
 )
 
 func runForegroundCommand(argv []string) error {
@@ -3305,6 +3306,7 @@ func statusCmd(args []string) int {
 		fPrintln(os.Stderr, "Unlocked packages that are already installed are reported as present.")
 		fPrintln(os.Stderr, "Use --offline to compare spec vs lock only.")
 		fPrintln(os.Stderr, "Use --files to check live file topology and content hashes (drifted).")
+		fPrintln(os.Stderr, "Use --verify to query each tracked package's manager instead of trusting the lock.")
 		fPrintln(os.Stderr, "Run 'genv apply' to reconcile any differences shown. File content drift is reported only; apply does not revert bodies.")
 		fPrintln(os.Stderr)
 		fPrintln(os.Stderr, "flags:")
@@ -3317,11 +3319,20 @@ func statusCmd(args []string) int {
 	debug := fs.Bool("debug", false, "emit debug-level structured logs to stderr")
 	filesOnly := fs.Bool("files", false, "check files block against the live filesystem (topology plus content hashes)")
 	offline := fs.Bool("offline", false, "compare spec vs lock only (skip live manager probe)")
+	verifyLive := fs.Bool("verify", false, "query each tracked package's manager to prove it is installed")
 	hostFlag := fs.String("host", "", "host name for host-specific records (defaults to host classification)")
 	targetFlag := fs.String("target", "", targetFlagHelpWithDefault)
 
 	if err := fs.Parse(args); err != nil {
 		return flagParseExit(err)
+	}
+	if *verifyLive && *offline {
+		fPrintln(os.Stderr, "genv status: --verify cannot be used with --offline")
+		return exitUsage
+	}
+	if *verifyLive && *filesOnly {
+		fPrintln(os.Stderr, "genv status: --verify cannot be used with --files")
+		return exitUsage
 	}
 	if *debug {
 		logging.Init(true)
@@ -3393,7 +3404,11 @@ func statusCmd(args []string) int {
 	}
 
 	entries := commands.Status(f, lf)
-	if !*offline {
+	if *verifyLive {
+		available := resolver.Detect()
+		results := verify.Packages(f.Packages, lf.Packages, verify.Options{Available: available})
+		entries = commands.StatusWithVerify(f, lf, results)
+	} else if !*offline {
 		available := resolver.Detect()
 		live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
 		for _, w := range liveWarns {
@@ -3506,8 +3521,17 @@ func statusCmd(args []string) int {
 			note := "(installed, not in lock — apply will adopt)"
 			fprintf(tw, "  present	%s	%s	%s\n", e.ID, mgr, note)
 		case commands.StatusDrift:
-			fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
-				e.ID, mgr, e.SpecVersion, e.InstalledVersion)
+			if e.InstalledVersion == "" {
+				note := "(not installed"
+				if mgr != "—" {
+					note += " via " + mgr
+				}
+				note += ")"
+				fprintf(tw, "  drift\t%s\t%s\t%s\n", e.ID, mgr, note)
+			} else {
+				fprintf(tw, "  drift\t%s\t%s\t(spec: %s, installed: %s)\n",
+					e.ID, mgr, e.SpecVersion, e.InstalledVersion)
+			}
 		case commands.StatusMissing:
 			note := "(in spec, not in lock — run 'genv apply')"
 			fprintf(tw, "  missing\t%s\t%s\t%s\n", e.ID, mgr, note)
@@ -4974,6 +4998,7 @@ Export-specific flags:
   --out <dir>          Directory to write genv.json, report.json, and report.md
   --strict             Exit nonzero if the report contains errors
   --from-v7            Migrate v1-v7 input to a portable spec in memory first
+  --verify             Query live managers to prove each exported package is installed
 
 Map-specific flags:
   --target <id>        Destination target id for suggestions
@@ -5013,8 +5038,11 @@ Updates-specific flags:
   start --target <id>           Portable target id for current schemaVersion specs
 
 Status-specific flags:
-  --json    Emit machine-readable JSON to stdout
-  --debug   Emit debug-level structured logs to stderr
+  --json     Emit machine-readable JSON to stdout
+  --debug    Emit debug-level structured logs to stderr
+  --offline  Compare spec vs lock only (skip live manager probe)
+  --files    Check files block against the live filesystem only
+  --verify   Query each tracked package's manager to prove it is installed
 
 Scan-specific flags:
   --dry-run   List packages that would be adopted without writing
