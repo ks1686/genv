@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,16 +17,6 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/testutil"
 )
-
-const hookHelperStderrSkipped = "stderr-skipped"
-
-func TestMain(m *testing.M) {
-	if os.Getenv("GENV_HOOK_HELPER") == hookHelperStderrSkipped {
-		fmt.Fprintln(os.Stderr, "GENV_HOOK_STATUS=skipped")
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
 
 // fakeRunner records command invocations and returns a programmed error.
 type fakeRunner struct {
@@ -422,13 +411,9 @@ func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	e := NewExecutor(&stdout, &stderr)
-	hooks := []schema.Hook{{Name: "noop", Command: quoteHookHelperCommand(os.Args[0])}}
+	hooks := []schema.Hook{{Name: "noop", Command: echoHookStatusToStderr("skipped")}}
 
-	err := e.PostApplyWithOptions(ctx, hooks, RunOptions{
-		Host: "any",
-		Env:  []string{"GENV_HOOK_HELPER=" + hookHelperStderrSkipped},
-	})
-	if err != nil {
+	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
 	}
 	got := stdout.String()
@@ -437,12 +422,15 @@ func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	}
 }
 
-// quoteHookHelperCommand quotes a helper path for sh -c, cmd /C, and PowerShell -Command.
-func quoteHookHelperCommand(path string) string {
+// echoHookStatusToStderr prints GENV_HOOK_STATUS on stderr. POSIX `>&2` is
+// invalid under Windows cmd /C (the CI fallback when PowerShell is missing);
+// `1>&2` is valid in both cmd and PowerShell.
+func echoHookStatusToStderr(status string) string {
+	line := "echo GENV_HOOK_STATUS=" + status
 	if runtime.GOOS == "windows" {
-		return `"` + strings.ReplaceAll(path, `"`, `""`) + `"`
+		return line + " 1>&2"
 	}
-	return "'" + strings.ReplaceAll(path, `'`, `'"'"'`) + "'"
+	return line + " >&2"
 }
 
 type outputRunner struct {
