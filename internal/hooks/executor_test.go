@@ -360,12 +360,25 @@ func TestExecutor_PrintsHookSummary_name_exit_duration(t *testing.T) {
 func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testing.T) {
 	ctx := context.Background()
 	var stdout bytes.Buffer
-	e := NewExecutor(&stdout, io.Discard)
+	e := &Executor{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		goos:   "linux",
+		runner: &outputRunner{
+			stdouts: []string{
+				"GENV_HOOK_STATUS=skipped\n",
+				"GENV_HOOK_STATUS=changed\n",
+				"",
+				"GENV_HOOK_STATUS=skipped\n",
+			},
+			errs: []error{nil, nil, nil, errors.New("exit 1")},
+		},
+	}
 	hooks := []schema.Hook{
-		{Name: "noop", Command: "echo GENV_HOOK_STATUS=skipped"},
-		{Name: "mutate", Command: "echo GENV_HOOK_STATUS=changed"},
+		{Name: "noop", Command: "echo skipped"},
+		{Name: "mutate", Command: "echo changed"},
 		{Name: "legacy", Command: "true"},
-		{Name: "boom", Command: "echo GENV_HOOK_STATUS=skipped; exit 1", ContinueOnError: true},
+		{Name: "boom", Command: "echo skipped; exit 1", ContinueOnError: true},
 	}
 
 	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
@@ -396,8 +409,13 @@ func TestExecutor_HookSummary_reports_skipped_changed_error_and_legacy(t *testin
 func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	e := NewExecutor(&stdout, &stderr)
-	hooks := []schema.Hook{{Name: "noop", Command: "echo GENV_HOOK_STATUS=skipped >&2"}}
+	e := &Executor{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		goos:   "linux",
+		runner: &outputRunner{stderrs: []string{"GENV_HOOK_STATUS=skipped\n"}},
+	}
+	hooks := []schema.Hook{{Name: "noop", Command: "echo skipped"}}
 
 	if err := e.PostApply(ctx, hooks, "any", false); err != nil {
 		t.Fatalf("PostApply() error = %v, want nil", err)
@@ -406,6 +424,28 @@ func TestExecutor_HookSummary_reads_status_from_stderr(t *testing.T) {
 	if !strings.Contains(got, "skipped (no-op)") {
 		t.Fatalf("stderr status line was not classified as skipped, stdout=%q stderr=%q", got, stderr.String())
 	}
+}
+
+type outputRunner struct {
+	stdouts []string
+	stderrs []string
+	errs    []error
+	i       int
+}
+
+func (r *outputRunner) Run(_ context.Context, _ []string, _ []string, _ io.Reader, stdout, stderr io.Writer) error {
+	if r.i < len(r.stdouts) {
+		_, _ = io.WriteString(stdout, r.stdouts[r.i])
+	}
+	if r.i < len(r.stderrs) {
+		_, _ = io.WriteString(stderr, r.stderrs[r.i])
+	}
+	var err error
+	if r.i < len(r.errs) {
+		err = r.errs[r.i]
+	}
+	r.i++
+	return err
 }
 
 func summaryLinesByName(t *testing.T, got string, names ...string) map[string]string {
