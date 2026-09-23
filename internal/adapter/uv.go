@@ -27,7 +27,7 @@ func (Uv) PlanInstall(pkgName string) []string {
 }
 
 func (Uv) PlanUninstall(pkgName string) []string {
-	return []string{"uv", "tool", "uninstall", uvToolName(pkgName)}
+	return []string{"uv", "tool", "uninstall", uvResolveToolName(pkgName)}
 }
 
 // PlanUpgrade reuses "uv tool install --upgrade", which upgrades an installed
@@ -43,17 +43,12 @@ func (Uv) PlanClean() [][]string {
 }
 
 func (Uv) Query(pkgName string) (bool, error) {
-	name := uvToolName(pkgName)
 	entries, err := Uv{}.listEntries()
 	if err != nil {
 		return false, err
 	}
-	for _, entry := range entries {
-		if entry.name == name {
-			return true, nil
-		}
-	}
-	return false, nil
+	_, ok := uvMatchEntry(pkgName, entries)
+	return ok, nil
 }
 
 // ListInstalled parses "uv tool list" output. Header lines name the tool
@@ -73,15 +68,12 @@ func (Uv) ListInstalled() ([]string, error) {
 // QueryVersion parses the installed version from "uv tool list" output.
 // Returns "", nil when the tool is not installed or has no reported version.
 func (Uv) QueryVersion(pkgName string) (string, error) {
-	name := uvToolName(pkgName)
 	entries, err := Uv{}.listEntries()
 	if err != nil {
 		return "", err
 	}
-	for _, entry := range entries {
-		if entry.name == name {
-			return entry.version, nil
-		}
+	if entry, ok := uvMatchEntry(pkgName, entries); ok {
+		return entry.version, nil
 	}
 	return "", nil
 }
@@ -107,12 +99,18 @@ func (Uv) ListOutdated(pkgNames []string) (map[string]string, error) {
 	}
 	return listRegistryOutdated(versionMapOf(entries, func(e uvEntry) (string, string) {
 		return e.name, e.version
-	}), pkgNames, uvToolName, pypiLatestVersion)
+	}), pkgNames, func(raw string) string {
+		if entry, ok := uvMatchEntry(raw, entries); ok {
+			return entry.name
+		}
+		return uvToolName(raw)
+	}, pypiLatestVersion)
 }
 
 type uvEntry struct {
-	name    string
-	version string
+	name     string
+	version  string
+	required string
 }
 
 func (Uv) listEntries() ([]uvEntry, error) {
@@ -147,29 +145,113 @@ func parseUvToolHeader(line string) (uvEntry, bool) {
 	if len(ver) < 2 || ver[0] != 'v' || ver[1] < '0' || ver[1] > '9' {
 		return uvEntry{}, false
 	}
-	return uvEntry{name: fields[0], version: ver[1:]}, true
+	return uvEntry{name: fields[0], version: ver[1:], required: parseUvRequired(line)}, true
 }
 
-// runUvToolList runs "uv tool list" and returns stdout split into lines,
-// preserving leading whitespace so indented entrypoint lines can be detected.
-// A non-zero exit code is treated as "no tools" (nil, nil), not an error.
+func parseUvRequired(line string) string {
+	const prefix = "[required:"
+	i := strings.Index(line, prefix)
+	if i < 0 {
+		return ""
+	}
+	rest, _, _ := strings.Cut(line[i+len(prefix):], "]")
+	return strings.TrimSpace(rest)
+}
+
+// runUvToolList runs "uv tool list --show-version-specifiers" and returns
+// stdout split into lines, preserving leading whitespace so indented
+// entrypoint lines can be detected. The extra suffix lets git URL specs match
+// the listed [required: ...] value. If that flag is unknown, fall back to
+// plain "uv tool list". A non-zero exit from the fallback is "no tools".
 func runUvToolList() ([]string, error) {
-	out, err := runProbe("uv", "tool", "list")
+	out, err := runProbe("uv", "tool", "list", "--show-version-specifiers")
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return nil, nil
+		if !errors.As(err, &exitErr) {
+			return nil, err
 		}
-		return nil, err
+		out, err = runProbe("uv", "tool", "list")
+		if err != nil {
+			if errors.As(err, &exitErr) {
+				return nil, nil
+			}
+			return nil, err
+		}
 	}
 	return nonEmptyLines(string(out)), nil
 }
 
-// uvToolName strips an optional @version suffix so that "ruff@0.6.0" is
-// treated as the tool "ruff". uv tool uninstall and status checks expect the
-// bare tool name, while uv tool install accepts the full specifier.
+// uvToolName maps a uv install spec to the tool name uv lists. Bare names and
+// name@version stay on atVersionBaseName. Git URL specs use the repo basename
+// (strip .git, @ref, #fragment) instead of cutting at the git@host separator.
+// name@url keeps the explicit package name so the documented workaround still
+// works when the repo basename is not the package name.
 func uvToolName(s string) string {
-	return atVersionBaseName(s)
+	s = strings.TrimSpace(s)
+	schemeEnd := strings.Index(s, "://")
+	if schemeEnd < 0 {
+		return atVersionBaseName(s)
+	}
+	if at := strings.Index(s[:schemeEnd], "@"); at > 0 {
+		return s[:at]
+	}
+	rest := s[schemeEnd+len("://"):]
+	rest, _, _ = strings.Cut(rest, "#")
+	rest = strings.TrimRight(rest, "/")
+	seg := rest[strings.LastIndex(rest, "/")+1:]
+	seg, _, _ = strings.Cut(seg, "@")
+	return strings.TrimSuffix(seg, ".git")
+}
+
+func uvCanonicalSpec(s string) string {
+	s = strings.TrimSpace(s)
+	if schemeEnd := strings.Index(s, "://"); schemeEnd >= 0 {
+		if at := strings.Index(s[:schemeEnd], "@"); at > 0 {
+			s = strings.TrimSpace(s[at+1:])
+		}
+	}
+	s, _, _ = strings.Cut(s, "#")
+	s = strings.TrimRight(s, "/")
+	if slash := strings.LastIndex(s, "/"); slash >= 0 {
+		base := s[slash+1:]
+		if at := strings.Index(base, "@"); at >= 0 {
+			s = s[:slash+1] + base[:at]
+		}
+	}
+	return s
+}
+
+func uvMatchEntry(pkgName string, entries []uvEntry) (uvEntry, bool) {
+	name := uvToolName(pkgName)
+	want := uvCanonicalSpec(pkgName)
+	for _, entry := range entries {
+		if entry.required != "" && want != "" && uvCanonicalSpec(entry.required) == want {
+			return entry, true
+		}
+	}
+	urlSpec := strings.Contains(pkgName, "://")
+	for _, entry := range entries {
+		if entry.name != name {
+			continue
+		}
+		if entry.required == "" || !urlSpec {
+			return entry, true
+		}
+	}
+	return uvEntry{}, false
+}
+
+// uvResolveToolName returns the name uv tool uninstall expects. When the spec
+// is a git URL whose repo basename is not the package name, this prefers the
+// listed tool that advertises the same required specifier.
+func uvResolveToolName(pkgName string) string {
+	entries, err := (Uv{}).listEntries()
+	if err == nil {
+		if entry, ok := uvMatchEntry(pkgName, entries); ok {
+			return entry.name
+		}
+	}
+	return uvToolName(pkgName)
 }
 
 // isIndented reports whether line starts with horizontal whitespace.
