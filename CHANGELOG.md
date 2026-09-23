@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Per-entry `backup: true` on a `files.templates[]` entry replaces a mismatched
+  target without `--force` and keeps `*.backup.<ts>`, matching managed-links.
+  File apply errors now include the underlying messages in human and `--json`
+  output instead of only `N error(s)` (Fixes #190).
+
 ## v4.5.0 - 2026-09-21
 
 ### Added
