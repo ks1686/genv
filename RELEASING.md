@@ -46,6 +46,7 @@ publishes the AUR packages.
 | `v4.4.0` | Schema v9 managed external releases (replace Snap ship); Windows schtasks per-user + WUA ResultCode messaging |
 | `v4.4.1` | Non-interactive scheduled updates + system-scope elevate for managed external installs (Fixes #173); grpc 1.83.2 |
 | `v4.5.0` | Hook changed/skipped/error contract; status/export `--verify`; export manager-not-supported FPs; help no longer hardcodes schemaVersion 8; unmatched skip/only config-drift WARN |
+| `v4.5.1` | Template backup:true without --force (#190); uv git URL tool-name matching (#191) |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
