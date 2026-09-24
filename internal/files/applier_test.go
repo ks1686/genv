@@ -106,4 +106,7 @@ func TestApply_errorUnwrapsToUnderlyingFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "error(s)") {
 		t.Fatalf("summary text = %q, want it to still contain the human-readable %q count", err.Error(), "error(s)")
 	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Fatalf("summary text = %q, want it to include the underlying path %q rather than only the count", err.Error(), missing)
+	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,98 @@ func TestApply_PerEntryBackupReplacesWithoutForce(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("expected one backup file, got %v", matches)
+	}
+}
+
+func TestApply_PerEntryTemplateBackupReplacesWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	sourcePath := filepath.Join(dir, "source.toml")
+	targetPath := filepath.Join(dir, "target.toml")
+
+	writeTestFile(t, sourcePath, "home = __HOME__\n")
+	writeTestFile(t, targetPath, "home = /old/home\n")
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"5",`+
+		`"files":{"templates":[{"source":`+jsonString(sourcePath)+`,"target":`+jsonString(targetPath)+`,"backup":true}]}`+
+		`}`)
+
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks"})
+	if code != exitOK {
+		t.Fatalf("apply with per-entry template backup: expected exitOK, got %d", code)
+	}
+	got, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	want := "home = " + dir + "\n"
+	if string(got) != want {
+		t.Fatalf("target = %q, want %q", got, want)
+	}
+	matches, err := filepath.Glob(targetPath + ".backup.*")
+	if err != nil {
+		t.Fatalf("glob backup: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one backup file, got %v", matches)
+	}
+}
+
+func TestApply_FileErrorsSurfaceUnderlyingMessages(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	testutil.SetHome(t, dir)
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	missing := filepath.Join(dir, "does-not-exist.toml")
+	okSource := filepath.Join(dir, "ok.toml")
+	missingTarget := filepath.Join(dir, "missing.toml")
+	okTarget := filepath.Join(dir, "ok-target.toml")
+
+	writeTestFile(t, okSource, "ok\n")
+	writeTestFile(t, specPath, `{`+
+		`"schemaVersion":"5",`+
+		`"files":{"templates":[`+
+		`{"source":`+jsonString(missing)+`,"target":`+jsonString(missingTarget)+`},`+
+		`{"source":`+jsonString(okSource)+`,"target":`+jsonString(okTarget)+`}`+
+		`]}}`)
+
+	var code int
+	var stdout, stderr string
+	stdout = captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks"})
+		})
+	})
+	if code != exitLogic {
+		t.Fatalf("apply missing template source: expected exitLogic, got %d\nstdout=%s\nstderr=%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, missing) {
+		t.Fatalf("human apply errors should include the underlying path %q; stderr=%q", missing, stderr)
+	}
+
+	jsonOut := captureStdout(t, func() {
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--no-hooks", "--json"})
+	})
+	if code != exitLogic {
+		t.Fatalf("apply --json missing template source: expected exitLogic, got %d\noutput=%s", code, jsonOut)
+	}
+	var env struct {
+		OK     bool     `json:"ok"`
+		Errors []string `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &env); err != nil {
+		t.Fatalf("apply --json: %v\noutput=%s", err, jsonOut)
+	}
+	joined := strings.Join(env.Errors, "\n")
+	if !strings.Contains(joined, missing) {
+		t.Fatalf("apply --json errors should include the underlying path %q; errors=%v", missing, env.Errors)
+	}
+	if len(env.Errors) == 1 && env.Errors[0] == "1 error(s)" {
+		t.Fatal("apply --json should not report only the error count")
 	}
 }
 

@@ -194,6 +194,123 @@ func TestApply_templateMismatchForceBackup(t *testing.T) {
 	}
 }
 
+func TestApply_templateMismatchBackupTrueReplacesWithoutForce(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	repo := filepath.Join(home, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+	source := filepath.Join(repo, "config.toml")
+	if err := os.WriteFile(source, []byte("home = __HOME__\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	target := filepath.Join(home, ".config", "codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target parent: %v", err)
+	}
+	original := []byte("home = /old/home\n")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Templates: []schema.FileTemplate{{
+			Source: "config.toml",
+			Target: "~/.config/codex/config.toml",
+			Backup: true,
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{SourceRoot: repo})
+	if err != nil {
+		t.Fatalf("Apply error = %v, want nil", err)
+	}
+	if len(res.Updated) != 1 || res.Updated[0] != target {
+		t.Fatalf("Updated = %v, want [%s]", res.Updated, target)
+	}
+	if len(res.Mismatched) != 0 {
+		t.Fatalf("Mismatched = %v, want none", res.Mismatched)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	want := "home = " + home + "\n"
+	if string(got) != want {
+		t.Fatalf("target = %q, want %q", got, want)
+	}
+
+	matches, err := filepath.Glob(target + ".backup.*")
+	if err != nil {
+		t.Fatalf("glob backups: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one backup, got %v", matches)
+	}
+	backupData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if !bytes.Equal(backupData, original) {
+		t.Fatalf("backup data mismatch: got %q, want %q", backupData, original)
+	}
+}
+
+func TestApply_templateGlobalBackupWithoutForceDoesNotReplace(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	repo := filepath.Join(home, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+	source := filepath.Join(repo, "config.toml")
+	if err := os.WriteFile(source, []byte("home = __HOME__\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	target := filepath.Join(home, ".config", "codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target parent: %v", err)
+	}
+	original := []byte("home = /old/home\n")
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	cfg := &schema.FilesConfig{
+		Templates: []schema.FileTemplate{{
+			Source: "config.toml",
+			Target: "~/.config/codex/config.toml",
+		}},
+	}
+	res, err := Apply(context.Background(), cfg, "any", ApplyOptions{SourceRoot: repo, Backup: true})
+	if err == nil {
+		t.Fatal("Apply error = nil, want mismatch error")
+	}
+	if len(res.Mismatched) != 1 || res.Mismatched[0] != target {
+		t.Fatalf("Mismatched = %v, want [%s]", res.Mismatched, target)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("target was modified: got %q, want %q", got, original)
+	}
+	matches, err := filepath.Glob(target + ".backup.*")
+	if err != nil {
+		t.Fatalf("glob backups: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no backups, got %v", matches)
+	}
+}
+
 func TestApply_templateDryRunWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

@@ -107,7 +107,7 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 	}
 
 	renderOpts := RenderOptions{
-		Force:  opts.Force,
+		Force:  opts.Force || tmpl.Backup,
 		Backup: opts.Backup || tmpl.Backup,
 		DryRun: opts.DryRun,
 	}
@@ -172,14 +172,27 @@ func applyTemplate(ctx context.Context, tmpl schema.FileTemplate, hostName strin
 }
 
 // summaryError reports the aggregate mismatch/error counts as a
-// human-readable string via Error, while Unwrap exposes the underlying
-// collected errors so callers can errors.Is / errors.As past the summary.
+// human-readable string via Error, followed by any collected error
+// messages. Unwrap exposes the underlying errors so callers can
+// errors.Is / errors.As past the summary.
 type summaryError struct {
 	summary string
 	errs    []error
 }
 
-func (e *summaryError) Error() string { return e.summary }
+func (e *summaryError) Error() string {
+	if len(e.errs) == 0 {
+		return e.summary
+	}
+	msgs := make([]string, 0, 1+len(e.errs))
+	msgs = append(msgs, e.summary)
+	for _, err := range e.errs {
+		if err != nil {
+			msgs = append(msgs, err.Error())
+		}
+	}
+	return strings.Join(msgs, ": ")
+}
 
 func (e *summaryError) Unwrap() []error { return e.errs }
 
