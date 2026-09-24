@@ -48,6 +48,7 @@ func TestAtVersionBaseName_whenSpecsUseFirstAtSeparator(t *testing.T) {
 		{"empty", "", ""},
 		{"lone at sign", "@", ""},
 		{"scoped input keeps legacy first at behavior", "@scope/pkg@1", ""},
+		{"git ssh url keeps first at cut", "git+ssh://git@github.com/Org/tool.git", "git+ssh://git"},
 	}
 
 	for _, tc := range tests {

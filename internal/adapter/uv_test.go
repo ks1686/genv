@@ -69,6 +69,19 @@ func TestParseUvToolList(t *testing.T) {
 			lines: []string{"", "   "},
 			want:  nil,
 		},
+		{
+			name: "headers with required version specifiers",
+			lines: []string{
+				"ruff v0.6.9 [required: ruff]",
+				"- ruff",
+				"guild-ai-cli v0.1.0 [required:  git+ssh://git@github.com/Org/guild-ai-cli.git]",
+				"- guild-ai",
+			},
+			want: []uvEntry{
+				{name: "ruff", version: "0.6.9", required: "ruff"},
+				{name: "guild-ai-cli", version: "0.1.0", required: "git+ssh://git@github.com/Org/guild-ai-cli.git"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -175,6 +188,91 @@ fi`)
 	}
 }
 
+func fakeUvToolListWithSpecifiers(body string) string {
+	return `if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
+` + body + `
+fi`
+}
+
+// TestUv_Query_MatchesGitSSHURL verifies a bare git+ssh spec matches the
+// installed tool name uv lists, rather than the truncated git@host fragment.
+func TestUv_Query_MatchesGitSSHURL(t *testing.T) {
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "guild-ai-cli v0.1.0 [required:  git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git]"`))
+	ok, err := Uv{}.Query("git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git")
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(git+ssh URL): expected true")
+	}
+}
+
+// TestUv_Query_MatchesGitHTTPSURL verifies git+https specs without an @user
+// still match uv's listed package name instead of the full URL.
+func TestUv_Query_MatchesGitHTTPSURL(t *testing.T) {
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "tool v1.0.0 [required: git+https://github.com/Org/tool]"`))
+	ok, err := Uv{}.Query("git+https://github.com/Org/tool")
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(git+https URL): expected true")
+	}
+}
+
+// TestUv_Query_MatchesRequiredSpecifierWhenRepoNameDiffers verifies Query
+// matches via [required: ...] when the repo basename is not the package name.
+func TestUv_Query_MatchesRequiredSpecifierWhenRepoNameDiffers(t *testing.T) {
+	spec := "git+ssh://git@github.com/Org/repo-name.git"
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "actual-pkg v0.2.0 [required:  `+spec+`]"`))
+	ok, err := Uv{}.Query(spec)
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(git URL whose repo name differs): expected true via required specifier")
+	}
+
+	ok, err = Uv{}.Query(spec + "@v1.2.0")
+	if err != nil {
+		t.Fatalf("Uv.Query(git URL@ref): %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(git URL@ref whose repo name differs): expected true via required specifier")
+	}
+}
+
+// TestUv_Query_MatchesPrefixedGitURL keeps the documented workaround of
+// prefixing the package name before @git+...
+func TestUv_Query_MatchesPrefixedGitURL(t *testing.T) {
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "guild-ai-cli v0.1.0 [required:  git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git]"`))
+	ok, err := Uv{}.Query("guild-ai-cli@git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git")
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(prefixed git URL): expected true")
+	}
+}
+
+// TestUv_Query_GitURLDoesNotMatchUnrelatedSameBasename verifies a git URL
+// spec does not inherit a PyPI-installed tool that happens to share the repo name.
+func TestUv_Query_GitURLDoesNotMatchUnrelatedSameBasename(t *testing.T) {
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "ruff v0.6.9 [required: ruff]"`))
+	ok, err := Uv{}.Query("git+https://github.com/Org/ruff.git")
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if ok {
+		t.Error("Uv.Query(git URL named ruff): expected false when listed ruff is not from that URL")
+	}
+}
+
 // TestUv_QueryVersion_ParsesVersion verifies the version is extracted and the
 // leading "v" is stripped.
 func TestUv_QueryVersion_ParsesVersion(t *testing.T) {
@@ -197,6 +295,28 @@ fi`)
 	}
 	if ver != "24.10.0" {
 		t.Errorf("version: got %q, want %q", ver, "24.10.0")
+	}
+}
+
+// TestUv_QueryVersion_GitURLSpec verifies QueryVersion reads the listed
+// version for a bare git URL spec.
+func TestUv_QueryVersion_GitURLSpec(t *testing.T) {
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "guild-ai-cli v0.1.0 [required:  git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git]"`))
+	ver, err := Uv{}.QueryVersion("git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git")
+	if err != nil {
+		t.Fatalf("Uv.QueryVersion: %v", err)
+	}
+	if ver != "0.1.0" {
+		t.Errorf("version: got %q, want %q", ver, "0.1.0")
+	}
+
+	ver, err = Uv{}.QueryVersion("git+ssh://git@github.com/Org/repo-name.git@v1.2.0")
+	if err != nil {
+		t.Fatalf("Uv.QueryVersion: %v", err)
+	}
+	if ver != "" {
+		t.Errorf("absent git URL version: got %q, want empty", ver)
 	}
 }
 
@@ -251,6 +371,28 @@ fi`)
 	}
 }
 
+// TestUv_Query_FallsBackWhenShowVersionSpecifiersUnsupported verifies older
+// uv that rejects --show-version-specifiers still answers Query via plain list.
+func TestUv_Query_FallsBackWhenShowVersionSpecifiersUnsupported(t *testing.T) {
+	installFakeBinary(t, "uv",
+		`if [ "$1" = "tool" ] && [ "$2" = "list" ] && [ "$3" = "--show-version-specifiers" ]; then
+  echo "unknown argument" >&2
+  exit 2
+fi
+if [ "$1" = "tool" ] && [ "$2" = "list" ]; then
+  echo "ruff v0.6.9"
+  exit 0
+fi
+exit 1`)
+	ok, err := Uv{}.Query("ruff")
+	if err != nil {
+		t.Fatalf("Uv.Query: %v", err)
+	}
+	if !ok {
+		t.Error("Uv.Query(ruff): expected true after falling back to uv tool list")
+	}
+}
+
 // TestUv_PlanInstall_IncludesSpecifier verifies PlanInstall passes the package
 // name through unchanged, preserving any @version suffix.
 func TestUv_PlanInstall_IncludesSpecifier(t *testing.T) {
@@ -278,6 +420,35 @@ func TestUv_PlanUninstall_StripsSpecifier(t *testing.T) {
 		if args[i] != w {
 			t.Errorf("[%d]: got %q, want %q", i, args[i], w)
 		}
+	}
+}
+
+// TestUv_PlanUninstall_GitURLUsesToolName verifies uninstall plans use the
+// installed tool name, not a truncated git+ssh://git fragment.
+func TestUv_PlanUninstall_GitURLUsesToolName(t *testing.T) {
+	args := Uv{}.PlanUninstall("git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git")
+	want := []string{"uv", "tool", "uninstall", "guild-ai-cli"}
+	if !slices.Equal(args, want) {
+		t.Errorf("PlanUninstall(git+ssh) = %v, want %v", args, want)
+	}
+
+	args = Uv{}.PlanUninstall("git+https://github.com/Org/tool.git@main#egg=tool")
+	want = []string{"uv", "tool", "uninstall", "tool"}
+	if !slices.Equal(args, want) {
+		t.Errorf("PlanUninstall(git+https) = %v, want %v", args, want)
+	}
+}
+
+// TestUv_PlanUninstall_GitURLUsesListedNameWhenRepoDiffers verifies uninstall
+// uses uv's listed name when the repo basename is not the package name.
+func TestUv_PlanUninstall_GitURLUsesListedNameWhenRepoDiffers(t *testing.T) {
+	spec := "git+ssh://git@github.com/Org/repo-name.git"
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "actual-pkg v0.2.0 [required:  `+spec+`]"`))
+	args := Uv{}.PlanUninstall(spec)
+	want := []string{"uv", "tool", "uninstall", "actual-pkg"}
+	if !slices.Equal(args, want) {
+		t.Errorf("PlanUninstall(mismatched git URL) = %v, want %v", args, want)
 	}
 }
 
@@ -313,7 +484,8 @@ func TestUv_PlanClean(t *testing.T) {
 	}
 }
 
-// TestUvToolName strips @version suffixes and leaves bare names untouched.
+// TestUvToolName strips @version suffixes, leaves bare names untouched, and
+// derives a tool name from git URL specs instead of cutting at git@host.
 func TestUvToolName(t *testing.T) {
 	tests := []struct {
 		input string
@@ -323,12 +495,35 @@ func TestUvToolName(t *testing.T) {
 		{"ruff@0.6.0", "ruff"},
 		{"ruff@latest", "ruff"},
 		{"some-pkg@1.2.3", "some-pkg"},
+		{"git+ssh://git@github.com/Org/tool.git", "tool"},
+		{"git+ssh://git@github.com/Org/tool.git@v1.2.0", "tool"},
+		{"git+https://github.com/Org/tool", "tool"},
+		{"git+https://github.com/Org/tool.git@main#egg=tool", "tool"},
+		{"guild-ai-cli@git+ssh://git@github.com/GuildEducationInc/guild-ai-cli.git", "guild-ai-cli"},
 	}
 	for _, tc := range tests {
 		got := uvToolName(tc.input)
 		if got != tc.want {
 			t.Errorf("uvToolName(%q) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestUv_ListOutdated_GitURLSpec maps a git URL tracked spec onto the listed
+// tool name so outdated detection is not skipped as a missing install.
+func TestUv_ListOutdated_GitURLSpec(t *testing.T) {
+	spec := "git+ssh://git@github.com/Org/repo-name.git"
+	installFakeBinary(t, "uv", fakeUvToolListWithSpecifiers(
+		`  echo "actual-pkg v0.2.0 [required:  `+spec+`]"`))
+	defer swapPypiLatest(t, map[string]string{"actual-pkg": "0.3.0"}, nil)()
+
+	got, err := Uv{}.ListOutdated([]string{spec})
+	if err != nil {
+		t.Fatalf("ListOutdated: %v", err)
+	}
+	want := map[string]string{"actual-pkg": "0.3.0"}
+	if !maps.Equal(got, want) {
+		t.Errorf("ListOutdated(git URL) = %v, want %v", got, want)
 	}
 }
 
