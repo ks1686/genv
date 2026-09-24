@@ -4,12 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.5.1 - 2026-09-24
+
 ### Fixed
 
 - Per-entry `backup: true` on a `files.templates[]` entry replaces a mismatched
   target without `--force` and keeps `*.backup.<ts>`, matching managed-links.
   File apply errors now include the underlying messages in human and `--json`
   output instead of only `N error(s)` (Fixes #190).
+- uv git URL install specs (e.g. `git+ssh://git@…`) now resolve to the installed
+  tool name via repo basename / `[required: …]` matching instead of cutting at
+  the first `@`, so `status --verify` / Query / uninstall no longer miss tools
+  uv already lists (Fixes #191).
 
 ## v4.5.0 - 2026-09-21
 
