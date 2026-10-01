@@ -26,7 +26,7 @@ func TestE2EScheduledTaskRegistersAndRemoves(t *testing.T) {
 
 	r := newRunner(t, "")
 	r.writeSpecRaw(t, `{"schemaVersion":"8","defaults":{},"targets":{"windows":{"services":{
-		"genv-e2e-task":{
+		"e2e-task":{
 			"scheduled_task":{
 				"action":"C:\\Windows\\System32\\cmd.exe",
 				"args":["/c","exit 0"],
@@ -45,8 +45,9 @@ func TestE2EScheduledTaskRegistersAndRemoves(t *testing.T) {
 		t.Errorf("expected Task Scheduler registration in the apply output, got: %q", out)
 	}
 
-	// The registered task name is the bare "genv-<slug>" form; a leading
-	// backslash is a *path* in a query, and using it here would test nothing.
+	// genv namespaces a service's task as "genv-<slug>". The service is
+	// deliberately not named genv-*, or the task would be genv-genv-*.
+	// The name is the bare form: a leading backslash is a *path* in a query.
 	taskName := "genv-e2e-task"
 	query, err := exec.Command("schtasks", "/Query", "/TN", taskName).CombinedOutput()
 	if err != nil {
@@ -60,7 +61,7 @@ func TestE2EScheduledTaskRegistersAndRemoves(t *testing.T) {
 	if statusCode != 0 {
 		t.Fatalf("genv status: exit %d, want 0\n%s", statusCode, statusOut)
 	}
-	if !strings.Contains(statusOut, "genv-e2e-task") {
+	if !strings.Contains(statusOut, "e2e-task") {
 		t.Errorf("status does not mention the service: %q", statusOut)
 	}
 
