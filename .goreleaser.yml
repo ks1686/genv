@@ -68,6 +68,11 @@ notarize:
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         wait: true
         timeout: 20m
+        # Staple the ticket onto the binary. Notarization alone leaves the
+        # ticket on Apple's servers, so the first launch after a curl or wget
+        # install has to reach Apple's notary service to pass Gatekeeper, and
+        # fails on a machine that is offline or behind a filtering proxy.
+        stapler: true
 
 # ── Homebrew tap ──────────────────────────────────────────────────────────────
 # Publishes a cask to ks1686/homebrew-tap on every non-prerelease tag.
