@@ -45,7 +45,9 @@ func TestE2EScheduledTaskRegistersAndRemoves(t *testing.T) {
 		t.Errorf("expected Task Scheduler registration in the apply output, got: %q", out)
 	}
 
-	taskName := `\\genv-e2e-task`
+	// The registered task name is the bare "genv-<slug>" form; a leading
+	// backslash is a *path* in a query, and using it here would test nothing.
+	taskName := "genv-e2e-task"
 	query, err := exec.Command("schtasks", "/Query", "/TN", taskName).CombinedOutput()
 	if err != nil {
 		t.Fatalf("task was not registered: %v\n%s", err, query)
