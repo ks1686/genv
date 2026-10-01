@@ -2167,7 +2167,7 @@ func TestApply_LifecycleHooks_receive_env_context(t *testing.T) {
 	writeLockFile(t, lockPath, &genvfile.LockFile{SchemaVersion: "1", ActiveProfile: "work", Packages: nil})
 
 	// When
-	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "1s"})
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "30s"})
 
 	// Then
 	if code != exitOK {
@@ -2198,7 +2198,7 @@ func TestAdd_NoHooks_skips_hooks_but_installs_package(t *testing.T) {
 	}
 
 	// When
-	code := run([]string{"add", "--file", specPath, "--lock-file", lockPath, "--prefer", "test-hook-manager", "--no-search", "--no-hooks", "--hook-timeout", "1s", "alpha"})
+	code := run([]string{"add", "--file", specPath, "--lock-file", lockPath, "--prefer", "test-hook-manager", "--no-search", "--no-hooks", "--hook-timeout", "30s", "alpha"})
 
 	// Then
 	if code != exitOK {
@@ -2232,7 +2232,7 @@ func TestRemove_LifecycleHooks_receive_removed_env(t *testing.T) {
 	writeLock(t, lockPath, []genvfile.LockedPackage{{ID: "alpha", Manager: "test-hook-manager", PkgName: "alpha"}})
 
 	// When
-	code := run([]string{"remove", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--hook-timeout", "1s", "alpha"})
+	code := run([]string{"remove", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--hook-timeout", "30s", "alpha"})
 
 	// Then
 	if code != exitOK {
@@ -3556,7 +3556,7 @@ func TestApply_LifecycleHooks_receive_GENV_YES_when_yes_flag_set(t *testing.T) {
 	writeLockFile(t, lockPath, &genvfile.LockFile{SchemaVersion: "1", Packages: nil})
 
 	// When
-	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "1s"})
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "30s"})
 
 	// Then
 	if code != exitOK {

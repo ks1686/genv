@@ -1,5 +1,11 @@
 package main
 
+// A 1s hook timeout made these tests flaky on the Windows CI runner: the hook
+// there is a PowerShell command, and starting PowerShell alone can exceed a
+// second on a loaded machine, so apply failed with a hook timeout instead of
+// testing what these tests are about — that GENV_YES reaches the hook. The
+// tests that assert a timeout expires still use 1ms on purpose.
+
 import (
 	"os"
 	"path/filepath"
@@ -22,7 +28,7 @@ func TestApply_LifecycleHooks_receive_spec_and_lock_env(t *testing.T) {
 		t.Fatalf("write spec: %v", err)
 	}
 
-	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "1s"})
+	code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--host", "ci", "--yes", "--hook-timeout", "30s"})
 
 	if code != exitOK {
 		t.Fatalf("apply spec/lock hook env: expected exitOK (%d), got %d", exitOK, code)
@@ -55,7 +61,7 @@ func TestApply_ContinueOnError_reports_but_does_not_fail_apply(t *testing.T) {
 
 	var code int
 	errOut := captureStderr(t, func() {
-		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "1s"})
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "30s"})
 	})
 
 	if code != exitOK {
@@ -88,7 +94,7 @@ func TestApply_HookSummary_lists_name_exit_and_duration(t *testing.T) {
 
 	var code int
 	out := captureStdout(t, func() {
-		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "1s"})
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "30s"})
 	})
 
 	if code != exitOK {
@@ -124,7 +130,7 @@ func TestApply_HookSummary_distinguishes_skipped_changed_error_and_legacy(t *tes
 
 	var code int
 	out := captureStdout(t, func() {
-		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "1s"})
+		code = run([]string{"apply", "--file", specPath, "--lock-file", lockPath, "--yes", "--hook-timeout", "30s"})
 	})
 
 	if code != exitOK {
