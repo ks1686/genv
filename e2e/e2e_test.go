@@ -33,6 +33,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -99,7 +100,13 @@ func TestMain(m *testing.M) {
 		panic("mkdirtemp: " + err.Error())
 	}
 
+	// Windows resolves an executable by its .exe name: a binary written as
+	// "genv" cannot be launched at all, and exec fails with a bare "file not
+	// found" rather than anything pointing at the extension.
 	bin := filepath.Join(tmp, "genv")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/ks1686/genv").CombinedOutput()
 	if err != nil {
 		os.RemoveAll(tmp)
