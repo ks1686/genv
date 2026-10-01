@@ -49,9 +49,10 @@ var (
 	shellFields               = strSet("aliases", "functions", "source")
 	aliasFields               = strSet("value", "shell")
 	funcFields                = strSet("body", "shell")
-	serviceFields             = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "host")
+	serviceFields             = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "scheduled_task", "host")
 	launchdFields             = strSet("plist")
 	systemdFields             = strSet("unit")
+	scheduledTaskFields       = strSet("action", "args", "trigger", "at", "day_of_week", "principal", "description", "restart_on_failure", "retry_interval", "execution_time_limit")
 	filesFields               = strSet("links", "templates", "dirs")
 	linkFields                = strSet("source", "target", "mode", "host", "backup", "perm")
 	tmplFields                = strSet("source", "target", "host", "backup", "perm")
@@ -198,6 +199,7 @@ func walkServiceMap(raw json.RawMessage, path string, positions map[string]Posit
 		errs = append(errs, rejectUnknown(svc, svcPath, serviceFields, positions)...)
 		errs = append(errs, walkObject(svc["launchd"], svcPath+".launchd", launchdFields, positions)...)
 		errs = append(errs, walkObject(svc["systemd"], svcPath+".systemd", systemdFields, positions)...)
+		errs = append(errs, walkObject(svc["scheduled_task"], svcPath+".scheduled_task", scheduledTaskFields, positions)...)
 	}
 	return errs
 }

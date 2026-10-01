@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
 	"regexp"
 	"strings"
 	"time"
@@ -873,10 +874,11 @@ func validateServiceName(name, fieldPrefix string) []ValidationError {
 func validateService(name string, svc Service, fieldPrefix string) []ValidationError {
 	var errs []ValidationError
 	hasSupervisor := svc.DeclaresLaunchd() || svc.DeclaresSystemd()
-	if len(svc.Start) == 0 && svc.BrewFormula == "" && !hasSupervisor {
+	hasTask := svc.DeclaresScheduledTask()
+	if len(svc.Start) == 0 && svc.BrewFormula == "" && !hasSupervisor && !hasTask {
 		errs = append(errs, ValidationError{
 			Field:   fmt.Sprintf("%s.%s.start", fieldPrefix, name),
-			Message: "start command is required (or set brew_formula, launchd.plist, or systemd.unit)",
+			Message: "start command is required (or set brew_formula, launchd.plist, systemd.unit, or scheduled_task.action)",
 		})
 	}
 	if svc.BrewFormula != "" && len(svc.Start) > 0 {
@@ -885,10 +887,10 @@ func validateService(name string, svc Service, fieldPrefix string) []ValidationE
 			Message: "brew_formula and start are mutually exclusive; use one or the other",
 		})
 	}
-	if hasSupervisor && (len(svc.Start) > 0 || svc.BrewFormula != "") {
+	if (hasSupervisor || hasTask) && (len(svc.Start) > 0 || svc.BrewFormula != "") {
 		errs = append(errs, ValidationError{
 			Field:   fmt.Sprintf("%s.%s", fieldPrefix, name),
-			Message: "launchd/systemd templates are mutually exclusive with start and brew_formula",
+			Message: "launchd/systemd templates and scheduled_task are mutually exclusive with start and brew_formula",
 		})
 	}
 	if strings.ContainsAny(svc.BrewFormula, "\r\n") {
@@ -903,11 +905,221 @@ func validateService(name string, svc Service, fieldPrefix string) []ValidationE
 	if svc.Systemd != nil {
 		errs = append(errs, validateServicePath(fieldPrefix, name, "systemd.unit", svc.Systemd.Unit, true)...)
 	}
+	if svc.ScheduledTask != nil {
+		errs = append(errs, validateScheduledTask(fieldPrefix, name, *svc.ScheduledTask)...)
+	}
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "start", svc.Start)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "stop", svc.Stop)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "restart", svc.Restart)...)
 	errs = append(errs, validateServiceCommand(fieldPrefix, name, "status", svc.Status)...)
 	return errs
+}
+
+// validateScheduledTask checks a Windows Task Scheduler declaration. Most of
+// these exist because Task Scheduler fails the registration silently or with
+// an opaque error otherwise: a relative action, a daily trigger with no start
+// boundary, or a retry interval that is not an ISO 8601 duration all produce a
+// task that never runs and never says why.
+func validateScheduledTask(name string, fieldPrefix string, t ScheduledTaskSpec) []ValidationError {
+	base := fmt.Sprintf("%s.%s.scheduled_task", fieldPrefix, name)
+	var errs []ValidationError
+	add := func(field, msg string) {
+		errs = append(errs, ValidationError{Field: base + field, Message: msg})
+	}
+
+	if t.Action == "" {
+		add(".action", "scheduled_task.action is required")
+	} else if !isWindowsAbsolutePath(t.Action) {
+		add(".action", fmt.Sprintf("scheduled_task.action must be an absolute Windows path: Task Scheduler does not search PATH, so %q would never resolve", t.Action))
+	}
+	if strings.ContainsAny(t.Action, "\r\n") {
+		add(".action", "scheduled_task.action must not contain newlines")
+	}
+
+	trigger := t.Trigger
+	if trigger == "" {
+		trigger = ScheduledTaskTriggerLogon
+	}
+	switch trigger {
+	case ScheduledTaskTriggerLogon, ScheduledTaskTriggerBoot:
+		// `at` and `day_of_week` only mean something for a wall-clock trigger,
+		// so a stray one is a typo rather than a harmless extra.
+		if t.At != "" {
+			add(".at", "scheduled_task.at applies only to the daily and weekly triggers")
+		}
+		if t.DayOfWeek != "" {
+			add(".day_of_week", "scheduled_task.day_of_week applies only to the weekly trigger")
+		}
+	case ScheduledTaskTriggerDaily:
+		if t.DayOfWeek != "" {
+			add(".day_of_week", "scheduled_task.day_of_week applies only to the weekly trigger")
+		}
+		errs = append(errs, validateScheduledTaskTime(name, fieldPrefix, t)...)
+	case ScheduledTaskTriggerWeekly:
+		errs = append(errs, validateScheduledTaskTime(name, fieldPrefix, t)...)
+		if !validScheduledTaskWeekday(t.DayOfWeek) {
+			add(".day_of_week", fmt.Sprintf("scheduled_task.day_of_week must be one of monday..sunday, got %q", t.DayOfWeek))
+		}
+	default:
+		add(".trigger", fmt.Sprintf("scheduled_task.trigger must be one of logon, boot, daily, weekly, got %q", t.Trigger))
+	}
+
+	switch t.Principal {
+	case "", ScheduledTaskPrincipalUser, ScheduledTaskPrincipalSystem:
+	default:
+		add(".principal", fmt.Sprintf("scheduled_task.principal must be user or system, got %q", t.Principal))
+	}
+
+	if t.RetryInterval != "" && !validISO8601Duration(t.RetryInterval) {
+		add(".retry_interval", fmt.Sprintf("scheduled_task.retry_interval must be an ISO 8601 duration such as PT10M, got %q", t.RetryInterval))
+	}
+	if t.RetryInterval != "" && !t.RestartOnFailure {
+		add(".retry_interval", "scheduled_task.retry_interval only applies when restart_on_failure is set")
+	}
+	if t.ExecutionTimeLimit != "" && !validISO8601Duration(t.ExecutionTimeLimit) {
+		add(".execution_time_limit", fmt.Sprintf("scheduled_task.execution_time_limit must be an ISO 8601 duration such as PT1H, got %q", t.ExecutionTimeLimit))
+	}
+	if strings.ContainsAny(t.Description, "\r\n") {
+		add(".description", "scheduled_task.description must not contain newlines")
+	}
+	for _, a := range t.Args {
+		if strings.ContainsAny(a, "\r\n") {
+			add(".args", "scheduled_task.args must not contain newlines")
+			break
+		}
+	}
+	return errs
+}
+
+// isWindowsAbsolutePath reports whether p is absolute in Windows terms.
+//
+// Deliberately not filepath.IsAbs: a spec is portable, and the same genv.json
+// is validated on the macOS and Linux CI runners as well as on Windows. Using
+// host rules would reject every Windows action path on a Unix host, so a spec
+// that works perfectly on a Windows machine would be refused everywhere else.
+//
+// Accepts drive-letter paths (C:\..., C:/...), UNC shares (\\server\share\...)
+// and the extended-length form (\\?\C:\...).
+func isWindowsAbsolutePath(p string) bool {
+	if len(p) < 2 {
+		return false
+	}
+	if strings.HasPrefix(p, `\\`) {
+		// UNC or \\?\ — both need a host/share or drive component after them.
+		rest := strings.TrimPrefix(p, `\\`)
+		return rest != "" && !strings.HasPrefix(rest, `\`)
+	}
+	// Drive letter, then a separator.
+	c := p[0]
+	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+		return false
+	}
+	return p[1] == ':' && len(p) > 2 && (p[2] == '\\' || p[2] == '/')
+}
+
+func validateScheduledTaskTime(name, fieldPrefix string, t ScheduledTaskSpec) []ValidationError {
+	base := fmt.Sprintf("%s.%s.scheduled_task", fieldPrefix, name)
+	if t.At == "" {
+		return []ValidationError{{
+			Field:   base + ".at",
+			Message: fmt.Sprintf("scheduled_task.at is required for the %s trigger; without a start time the task never fires", t.Trigger),
+		}}
+	}
+	if !validScheduledTaskTime(t.At) {
+		return []ValidationError{{
+			Field:   base + ".at",
+			Message: fmt.Sprintf("scheduled_task.at must be HH:MM in 24-hour time, got %q", t.At),
+		}}
+	}
+	return nil
+}
+
+// validScheduledTaskTime accepts only zero-padded 24-hour HH:MM. "9:30" is a
+// plausible typo that Task Scheduler would reject at registration time with an
+// error that does not mention the field.
+func validScheduledTaskTime(at string) bool {
+	if len(at) != 5 || at[2] != ':' {
+		return false
+	}
+	h, m := at[0:2], at[3:5]
+	if !allDigits(h) || !allDigits(m) {
+		return false
+	}
+	hi, mi := atoiOrNeg(h), atoiOrNeg(m)
+	return hi >= 0 && hi <= 23 && mi >= 0 && mi <= 59
+}
+
+func allDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+func atoiOrNeg(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return -1
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+func validScheduledTaskWeekday(day string) bool {
+	switch strings.ToLower(day) {
+	case "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday":
+		return true
+	}
+	return false
+}
+
+// validISO8601Duration accepts the restricted subset Task Scheduler's XML
+// schema uses for RestartInterval and ExecutionTimeLimit: P[nD]T[nH][nM][nS].
+// A bare "10m" is the ISO 8601 basic form and is silently rejected by
+// schtasks, so it is rejected here instead.
+func validISO8601Duration(d string) bool {
+	if !strings.HasPrefix(d, "P") {
+		return false
+	}
+	rest := d[1:]
+	if rest == "" {
+		return false
+	}
+	timePart := ""
+	if i := strings.Index(rest, "T"); i >= 0 {
+		timePart = rest[i+1:]
+		rest = rest[:i]
+		if timePart == "" {
+			return false
+		}
+	} else {
+		return false
+	}
+	if rest != "" && !durationFields(rest, "D") {
+		return false
+	}
+	return durationFields(timePart, "HMS")
+}
+
+func durationFields(s, units string) bool {
+	for i := 0; i < len(s); {
+		j := i
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j == i || j >= len(s) {
+			return false
+		}
+		if !strings.ContainsRune(units, rune(s[j])) {
+			return false
+		}
+		i = j + 1
+	}
+	return len(s) > 0
 }
 
 func validateServicePath(fieldPrefix, name, field, path string, required bool) []ValidationError {

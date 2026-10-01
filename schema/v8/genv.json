@@ -201,6 +201,61 @@
               "minLength": 1
             }
           }
+        },
+        "scheduled_task": {
+          "type": "object",
+          "description": "Windows Task Scheduler task. Declarative counterpart to the launchd plist and systemd unit backends.",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Absolute path to the executable. Task Scheduler does not search PATH."
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "trigger": {
+              "type": "string",
+              "enum": ["logon", "boot", "daily", "weekly"],
+              "description": "Defaults to logon."
+            },
+            "at": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "HH:MM 24-hour start time. Required for the daily and weekly triggers."
+            },
+            "day_of_week": {
+              "type": "string",
+              "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+              "description": "Required for the weekly trigger."
+            },
+            "principal": {
+              "type": "string",
+              "enum": ["user", "system"],
+              "description": "user registers an unelevated per-user task; system needs an elevated shell. Defaults to user."
+            },
+            "description": {
+              "type": "string"
+            },
+            "restart_on_failure": {
+              "type": "boolean"
+            },
+            "retry_interval": {
+              "type": "string",
+              "pattern": "^P.+T.+$",
+              "description": "ISO 8601 duration such as PT10M. Only used with restart_on_failure."
+            },
+            "execution_time_limit": {
+              "type": "string",
+              "pattern": "^P.+T.+$",
+              "description": "ISO 8601 duration such as PT1H."
+            }
+          }
         }
       }
     },

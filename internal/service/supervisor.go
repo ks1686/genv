@@ -363,6 +363,9 @@ func ProbeRunning(ctx context.Context, name string, svc schema.Service, sourceRo
 		}
 		return systemdUnitActive(ctx, unitBase+".service")
 	}
+	if svc.DeclaresScheduledTask() && probeSchtasksServicesFn() {
+		return schtasksTaskRunning(ctx, name)
+	}
 	if len(svc.Status) > 0 {
 		if err := exec.CommandContext(ctx, svc.Status[0], svc.Status[1:]...).Run(); err == nil {
 			return true
@@ -394,7 +397,10 @@ func applyDeclared(ctx context.Context, name string, svc schema.Service, sourceR
 	if svc.DeclaresSystemd() && probeSystemd() {
 		return applySystemdTemplate(ctx, name, svc, sourceRoot, verbose)
 	}
-	if svc.DeclaresLaunchd() || svc.DeclaresSystemd() {
+	if svc.DeclaresScheduledTask() && probeSchtasksServicesFn() {
+		return applyScheduledTask(ctx, name, svc.ScheduledTask, verbose)
+	}
+	if svc.DeclaresLaunchd() || svc.DeclaresSystemd() || svc.DeclaresScheduledTask() {
 		if verbose {
 			_, _ = fmt.Fprintf(os.Stdout, "  service: skipping %s (supervisor not available on this host)\n", name)
 		}
@@ -439,6 +445,12 @@ func removeLocked(ctx context.Context, name string, ls genvfile.LockedService, v
 			return nil
 		}
 		return removeSystemdTemplate(ctx, name, ls.SystemdName, verbose)
+	}
+	if ls.ScheduledTaskFingerprint != "" || ls.ScheduledTaskName != "" {
+		if !probeSchtasksServicesFn() {
+			return nil
+		}
+		return removeScheduledTask(ctx, name, verbose)
 	}
 	if probeSystemd() {
 		return removeSystemd(ctx, name, verbose)

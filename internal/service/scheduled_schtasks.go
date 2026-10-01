@@ -373,5 +373,7 @@ func schtasksTaskMissing(output string) bool {
 	return strings.Contains(message, "the system cannot find the file specified") ||
 		strings.Contains(message, "cannot find the path specified") ||
 		strings.Contains(message, "does not exist in the system") ||
+		strings.Contains(message, "cannot find the task specified") ||
+		strings.Contains(message, "cannot find the file") ||
 		(strings.Contains(message, "the specified task name") && strings.Contains(message, "does not exist"))
 }

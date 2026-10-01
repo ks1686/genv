@@ -133,7 +133,8 @@ func compareServices(s schema.Service, l genvfile.LockedService) bool {
 		strings.Join(s.Status, " ") == strings.Join(l.Status, " ") &&
 		s.BrewFormula == l.BrewFormula &&
 		launchdPlist == l.LaunchdPlist &&
-		systemdUnit == l.SystemdUnit
+		systemdUnit == l.SystemdUnit &&
+		schema.ScheduledTaskFingerprint(s.ScheduledTask) == l.ScheduledTaskFingerprint
 }
 
 // ApplyServices reconciles the system state with the desired services.
@@ -149,7 +150,7 @@ func ApplyServices(ctx context.Context, specServices map[string]schema.Service, 
 			if !inSpec {
 				continue
 			}
-			if e.Kind == ServiceStatusOK && !svc.DeclaresLaunchd() && !svc.DeclaresSystemd() {
+			if e.Kind == ServiceStatusOK && !svc.DeclaresLaunchd() && !svc.DeclaresSystemd() && !svc.DeclaresScheduledTask() {
 				continue
 			}
 			changed, err := applyDeclared(ctx, e.Name, svc, sourceRoot, verbose)
@@ -205,6 +206,10 @@ func SpecToLock(spec map[string]schema.Service, sourceRoot string) []genvfile.Lo
 			if unitBase, err := systemdNameFor(name, svc); err == nil {
 				ls.SystemdName = unitBase
 			}
+		}
+		if svc.DeclaresScheduledTask() {
+			ls.ScheduledTaskFingerprint = schema.ScheduledTaskFingerprint(svc.ScheduledTask)
+			ls.ScheduledTaskName = schtasksServiceTaskName(name)
 		}
 		lock = append(lock, ls)
 	}

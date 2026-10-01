@@ -83,6 +83,12 @@ type LockedService struct {
 	LaunchdLabel string   `json:"launchdLabel,omitempty"`
 	SystemdUnit  string   `json:"systemdUnit,omitempty"`
 	SystemdName  string   `json:"systemdName,omitempty"`
+	// ScheduledTaskFingerprint digests the declared scheduled_task spec, and
+	// ScheduledTaskName is the registered Task Scheduler task. The fingerprint
+	// is what makes a changed action, argument, trigger or principal show up as
+	// drift rather than staying silently registered with the old definition.
+	ScheduledTaskFingerprint string `json:"scheduledTaskFingerprint,omitempty"`
+	ScheduledTaskName        string `json:"scheduledTaskName,omitempty"`
 }
 
 // LockedFile records a single applied file entry from the spec files block.

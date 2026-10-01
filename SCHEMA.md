@@ -155,8 +155,45 @@ Map of name → one backend:
 - `brew_formula` (mutually exclusive with `start`)
 - `launchd: { "plist": "agents/com.example.agent.plist" }` — LaunchAgent template, rendered like `files.templates[]` (`__HOME__` / `__USER__` / `__HOST__` / `__OS__` / `__ARCH__`)
 - `systemd: { "unit": "units/foo.service" }` — systemd --user unit template, same rendering
+- `scheduled_task: { "action": "C:\\Program Files\\Acme\\agent.exe", ... }` — Windows Task Scheduler task, rendered by genv (no template file)
 
-`launchd` and `systemd` may coexist on one service (portable defaults). They are mutually exclusive with `start` and `brew_formula`.
+`launchd`, `systemd` and `scheduled_task` may coexist on one service (portable defaults). They are mutually exclusive with `start` and `brew_formula`.
+
+#### `scheduled_task`
+
+The declarative Windows backend. genv renders the task definition, registers it with `schtasks /Create /XML`, and deletes it again when the service leaves the spec.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `action` | yes | Absolute path. Task Scheduler does not search `PATH`, so a bare name would never resolve. Validated with Windows rules, not host rules, so a spec checks out on macOS and Linux CI too. |
+| `args` | no | Passed to `action` verbatim, each quoted individually. |
+| `trigger` | no | `logon` (default), `boot`, `daily`, `weekly`. |
+| `at` | for `daily` / `weekly` | `HH:MM`, zero-padded, 24-hour. Rejected on the other triggers rather than silently ignored. |
+| `day_of_week` | for `weekly` | `monday`..`sunday`. |
+| `principal` | no | `user` (default) or `system`. |
+| `description` | no | Lands in the task's registration info. |
+| `restart_on_failure` | no | Re-runs a task that exits non-zero. |
+| `retry_interval` | no | ISO 8601 duration (`PT10M`). Only with `restart_on_failure`. |
+| `execution_time_limit` | no | ISO 8601 duration (`PT1H`). |
+
+```json
+"acme-agent": {
+  "scheduled_task": {
+    "action": "C:\\Program Files\\Acme\\agent.exe",
+    "args": ["--serve", "--config", "C:\\etc\\acme.toml"],
+    "trigger": "daily",
+    "at": "03:00",
+    "restart_on_failure": true,
+    "retry_interval": "PT10M"
+  }
+}
+```
+
+The `user` principal registers unelevated, with `InteractiveToken` + `LeastPrivilege`, so a normal `genv apply` works without elevation. `principal: "system"` needs an elevated shell; genv says so when Task Scheduler denies the registration. Removing the service from the spec unregisters the task and deletes its generated `.cmd`, `.vbs` and `.xml` files under the genv state directory.
+
+The action runs through a `.cmd` wrapper launched by a windowless `wscript.exe`, so no console window flashes on each trigger, and the wrapper propagates the exit code — which is what `restart_on_failure` keys on. `genv service status <name>` reads `schtasks /Query /FO LIST /V`; a `daily` or `logon` task is normally `Ready` rather than `Running`, which is not drift. A task registered outside genv, or deleted by hand, is re-registered on the next apply.
+
+On a non-Windows host a declared `scheduled_task` is skipped, not an error, so one spec can target several platforms.
 
 `genv apply` writes the rendered plist to `~/Library/LaunchAgents/<Label>.plist` and `launchctl bootstrap`s `gui/$UID` when the job is not loaded. A content change boots the job out and bootstraps again. `genv service status <name>` uses `launchctl print gui/$UID/<Label>`. Removing the service from the spec boots it out and deletes the plist.
 

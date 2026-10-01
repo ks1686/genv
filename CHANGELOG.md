@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.6.0 - 2026-10-01
+
+Minor: a new schema block. Closes #212.
+
+### Added
+
+- **`services.*.scheduled_task`** — a declarative Windows Task Scheduler backend,
+  the counterpart to the existing `launchd.plist` and `systemd.unit`
+  backends. Declares an executable, arguments, a trigger (`logon`, `boot`,
+  `daily`, `weekly`), a principal, and a restart policy; genv renders the task
+  definition, registers it with `schtasks /Create /XML`, re-registers it when
+  the spec changes, and unregisters it when the service leaves the spec.
+
+  Previously a Windows user had no supervisor backend at all: `services` meant
+  "run this argv now", which is not a schedule, so a spec could not express
+  anything that survived to a trigger.
+
+  Notes on the design:
+
+  - The default `user` principal registers unelevated
+    (`InteractiveToken` + `LeastPrivilege`), which is the only configuration a
+    non-elevated `genv apply` can create. `principal: "system"` needs an
+    elevated shell, and genv says so rather than failing opaquely.
+  - `action` must be an absolute path, validated with **Windows** path rules on
+    every host. A spec has to validate on the macOS and Linux CI runners as
+    well as on Windows, so `filepath.IsAbs` would have rejected every Windows
+    action path everywhere but on Windows.
+  - A `daily` or `weekly` trigger requires `at` in zero-padded `HH:MM`, and
+    `at` / `day_of_week` are rejected on triggers they do not apply to, rather
+    than silently ignored. A missing start boundary is how a task silently
+    never fires.
+  - The action runs through a `.cmd` wrapper launched by a windowless
+    `wscript.exe`, so no console flashes on each trigger and the exit code
+    reaches Task Scheduler — which is what `restart_on_failure` keys on.
+  - The generated XML strips line breaks from every spec-supplied field, so a
+    description or action carrying a newline cannot inject task XML into genv's
+    own definition.
+  - Drift is tracked by a spec fingerprint in the lock, so changing the action,
+    arguments, trigger, time, weekday, principal or restart policy is reported
+    as `modified` and re-registered. A task deleted outside genv is re-created
+    on the next apply.
+  - On a non-Windows host a declared task is skipped, not an error.
+
+  This is the one change in the v4.5.x → v4.6.0 window that could not be
+  integration-verified from macOS: the pure logic (validation, XML rendering,
+  locking, `schtasks` argv, status parsing) is unit-tested on every platform,
+  and the Windows CI job is what confirms real task registration.
+
 ## v4.5.4 - 2026-09-30
 
 Correctness fixes for #213–#217. No new schema surface, so this is a patch.

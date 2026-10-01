@@ -2,6 +2,7 @@
 package schema
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 )
@@ -366,14 +367,96 @@ type Hook struct {
 // When BrewFormula is set, genv manages the service via `brew services` on macOS.
 // Launchd and Systemd declare user-supervisor units from rendered templates.
 type Service struct {
-	Start       []string      `json:"start,omitempty"`
-	Stop        []string      `json:"stop,omitempty"`
-	Restart     []string      `json:"restart,omitempty"`
-	Status      []string      `json:"status,omitempty"`
-	BrewFormula string        `json:"brew_formula,omitempty"`
-	Launchd     *LaunchdSpec  `json:"launchd,omitempty"`
-	Systemd     *SystemdSpec  `json:"systemd,omitempty"`
-	Host        HostPredicate `json:"host,omitempty"`
+	Start         []string           `json:"start,omitempty"`
+	Stop          []string           `json:"stop,omitempty"`
+	Restart       []string           `json:"restart,omitempty"`
+	Status        []string           `json:"status,omitempty"`
+	BrewFormula   string             `json:"brew_formula,omitempty"`
+	Launchd       *LaunchdSpec       `json:"launchd,omitempty"`
+	Systemd       *SystemdSpec       `json:"systemd,omitempty"`
+	ScheduledTask *ScheduledTaskSpec `json:"scheduled_task,omitempty"`
+	Host          HostPredicate      `json:"host,omitempty"`
+}
+
+// ScheduledTaskSpec declares a Windows Task Scheduler task. genv renders the
+// task definition, registers it with schtasks, and removes it again when the
+// service leaves the spec — the declarative counterpart to the launchd plist
+// and systemd unit backends.
+type ScheduledTaskSpec struct {
+	// Action is the executable to run. Task Scheduler does not search PATH, so
+	// this must be an absolute path.
+	Action string `json:"action"`
+	// Args are passed to Action verbatim.
+	Args []string `json:"args,omitempty"`
+	// Trigger is one of logon, boot, daily, weekly. Empty means logon.
+	Trigger string `json:"trigger,omitempty"`
+	// At is the HH:MM start time, required for daily and weekly triggers.
+	At string `json:"at,omitempty"`
+	// DayOfWeek is required for the weekly trigger.
+	DayOfWeek string `json:"day_of_week,omitempty"`
+	// Principal is user (default) or system.
+	Principal string `json:"principal,omitempty"`
+	// Description lands in the task's registration info.
+	Description string `json:"description,omitempty"`
+	// RestartOnFailure re-runs a task that exits non-zero.
+	RestartOnFailure bool `json:"restart_on_failure,omitempty"`
+	// RetryInterval is an ISO 8601 duration such as PT10M, used only with
+	// RestartOnFailure.
+	RetryInterval string `json:"retry_interval,omitempty"`
+	// ExecutionTimeLimit is an ISO 8601 duration; empty leaves Task Scheduler's
+	// default, which is unlimited.
+	ExecutionTimeLimit string `json:"execution_time_limit,omitempty"`
+}
+
+// Scheduled task trigger and principal vocabularies.
+const (
+	ScheduledTaskTriggerLogon  = "logon"
+	ScheduledTaskTriggerBoot   = "boot"
+	ScheduledTaskTriggerDaily  = "daily"
+	ScheduledTaskTriggerWeekly = "weekly"
+
+	ScheduledTaskPrincipalUser   = "user"
+	ScheduledTaskPrincipalSystem = "system"
+)
+
+// EffectiveScheduledTask returns the service's task spec with defaults applied,
+// or nil when the service declares none.
+func EffectiveScheduledTask(s Service) *ScheduledTaskSpec {
+	if !s.DeclaresScheduledTask() {
+		return nil
+	}
+	return EffectiveScheduledTaskSpec(s.ScheduledTask)
+}
+
+// EffectiveScheduledTaskSpec applies the defaults (logon trigger, user
+// principal) to a task spec. A nil spec yields nil rather than a task that
+// would silently register an empty action.
+func EffectiveScheduledTaskSpec(t *ScheduledTaskSpec) *ScheduledTaskSpec {
+	if t == nil || t.Action == "" {
+		return nil
+	}
+	eff := *t
+	if eff.Trigger == "" {
+		eff.Trigger = ScheduledTaskTriggerLogon
+	}
+	if eff.Principal == "" {
+		eff.Principal = ScheduledTaskPrincipalUser
+	}
+	return &eff
+}
+
+// ScheduledTaskFingerprint is a stable digest of a task spec, recorded in the
+// lock so a changed action, argument, trigger or principal is reported as
+// drift rather than silently left registered.
+func ScheduledTaskFingerprint(t *ScheduledTaskSpec) string {
+	if t == nil {
+		return ""
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(b))
 }
 
 // LaunchdSpec points at a LaunchAgent plist template, rendered like files.templates.
@@ -394,6 +477,11 @@ func (s Service) DeclaresLaunchd() bool {
 // DeclaresSystemd reports whether svc names a systemd --user unit template.
 func (s Service) DeclaresSystemd() bool {
 	return s.Systemd != nil && s.Systemd.Unit != ""
+}
+
+// DeclaresScheduledTask reports whether svc declares a Windows Task Scheduler task.
+func (s Service) DeclaresScheduledTask() bool {
+	return s.ScheduledTask != nil && s.ScheduledTask.Action != ""
 }
 
 // ShellConfig is the shell configuration block in genv.json.

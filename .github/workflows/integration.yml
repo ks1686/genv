@@ -23,6 +23,11 @@ permissions:
 #
 # Skipped adapters and reasons:
 #   linuxbrew   — Brew on Linux; same caching/time constraint as macOS brew.
+#
+# The Windows job exists for the scheduled_task backend (#212): registering a
+# real Task Scheduler task is the only way to confirm Task Scheduler accepts
+# genv's generated definition, and macOS/Linux can only test the rendering with
+# the subprocess faked.
 
 jobs:
   # ── schemaVersion 8 full CLI command matrix ─────────────────────────────────
@@ -232,3 +237,22 @@ jobs:
 
       - name: Files e2e
         run: go test -tags integration -race -v -run TestFiles_ ./e2e/
+
+  # Windows Task Scheduler backend (#212). No package manager involved: the
+  # task is registered with the real schtasks, queried, and unregistered.
+  windows-scheduled-task:
+    name: windows-latest (scheduled task)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: E2E test — TestE2EScheduledTaskRegistersAndRemoves
+        run: go test -tags integration -race -v -run TestE2EScheduledTask ./e2e/

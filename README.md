@@ -242,7 +242,7 @@ Managed links are compared by resolved path, so a relative link pointing at the 
 | `export` | Single-target snapshot + report + assets (`--verify` proves live installs) |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |
-| `env` / `shell` / `service` / `files` | Env vars, aliases, user services (`launchd` / `systemd` templates), `files adopt` |
+| `env` / `shell` / `service` / `files` | Env vars, aliases, user services (`launchd` / `systemd` templates, Windows `scheduled_task`), `files adopt` |
 | `completion` | `bash` / `zsh` / `fish` / `powershell` |
 | `clean` | Clear detected manager caches |
 | `version` / `help` | Build info / usage |
@@ -299,20 +299,30 @@ echo GENV_HOOK_STATUS=skipped
 
 Non-zero exit is `error`. Exit 0 without a status line is treated as `changed` (legacy exit-only hooks). After each phase, apply prints `changed`, `skipped (no-op)`, or `error` next to the hook name, exit code, and duration. See [SCHEMA.md](SCHEMA.md#hooks).
 
-### User services (launchd / systemd)
+### User services (launchd / systemd / Task Scheduler)
 
-Declare a LaunchAgent or systemd --user unit in the spec instead of a `postApply` hook:
+Declare a supervisor-backed service in the spec instead of a `postApply` hook:
 
 ```json
 "services": {
   "syncthing": {
     "launchd": { "plist": "launchd/com.example.syncthing.plist" },
-    "systemd": { "unit": "systemd/syncthing.service" }
+    "systemd": { "unit": "systemd/syncthing.service" },
+    "scheduled_task": {
+      "action": "C:\\Program Files\\Syncthing\\syncthing.exe",
+      "args": ["--no-browser"],
+      "trigger": "logon",
+      "restart_on_failure": true
+    }
   }
 }
 ```
 
-`genv apply` renders the template (`__HOME__` and the other `files.templates[]` placeholders), writes `~/Library/LaunchAgents/<Label>.plist` or `~/.config/systemd/user/<basename>.service`, and loads it. Editing the template and applying again re-bootstraps the launchd job or restarts the systemd unit. `genv service status syncthing` reads supervisor state. Removing the service from the spec unloads it and deletes the unit file. See [SCHEMA.md](SCHEMA.md#v4--services).
+On macOS and Linux, `genv apply` renders the template (`__HOME__` and the other `files.templates[]` placeholders), writes `~/Library/LaunchAgents/<Label>.plist` or `~/.config/systemd/user/<basename>.service`, and loads it. Editing the template and applying again re-bootstraps the launchd job or restarts the systemd unit.
+
+On Windows, `scheduled_task` renders the Task Scheduler definition itself — no template file — and registers it with `schtasks`. `action` must be an absolute path (Task Scheduler does not search `PATH`); `trigger` is `logon` (default), `boot`, `daily` or `weekly`, with `at` (`HH:MM`) required for the last two. The default `user` principal registers without elevation.
+
+`genv service status syncthing` reads supervisor state. Removing the service from the spec unloads it and deletes the unit file or unregisters the task. Declaring a backend for a platform you are not on is skipped, not an error, so one spec can target several. See [SCHEMA.md](SCHEMA.md#v4--services).
 
 ### Updates checker
 
