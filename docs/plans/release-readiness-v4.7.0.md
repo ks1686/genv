@@ -89,7 +89,7 @@ can edit.
 | `semgrep p/gosec` on new packages | 0 findings |
 | v1–v9 output vs `main` binary | **byte-identical** across status/apply/validate |
 
-Review record: `.git/review-passed` for `14d20b3` (3 checks, all passed).
+Review record: recorded by `review-record.sh` against the final commit (3 checks, all passed).
 
 ## Bugs found and fixed during verification
 
@@ -106,6 +106,17 @@ thing:
 Also fixed: `validate` accepted a service `requires` cycle the documentation
 promised it would reject, and `TestBrewServicesList` ran the real `brew`, which
 made `make ci` red on a clean checkout and blocked the review gate.
+
+## Test-harness hazard found and fixed
+
+`TestMain` redirected `XDG_CONFIG_HOME` to a temp dir only when it was unset. Where
+it is set (as on the author's machine), `go test ./...` resolved the real
+`~/.config/genv` and ran the unattended updates worker against it three times
+during verification. Impact: the live `genv.lock.json` was rewritten with
+`upgraded=0`. The live `genv.json` was never modified and no package changed.
+`TestMain` now always overrides the config root, and a regression test fails
+against the old conditional. A full `go test ./...` no longer touches the live
+lock or log.
 
 ## Known limits
 
