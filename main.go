@@ -301,6 +301,13 @@ func useSpecAdapters(f *schema.GenvFile) {
 	adapter.SetSpecAdapters(adapter.CommandsFromDefs(defs))
 }
 
+// hostFilter applies the legacy v1-v7 host predicate. It is a thin wrapper so
+// compositionFor can share one code path without importing host filtering rules
+// into the portable branch.
+func hostFilter(f *schema.GenvFile, hostName string) *schema.GenvFile {
+	return host.FilterForHost(f, hostName)
+}
+
 func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*schema.GenvFile, string, error) {
 	if f == nil {
 		return nil, "", fmt.Errorf("genv file is nil")
@@ -324,44 +331,28 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 }
 
 // materializeSpecForCommand resolves the effective flat spec for read paths
-// (status, upgrade, updates) using the same Resolve+MergeTarget path as apply.
+// (status, upgrade, updates) using the same composition path as apply.
+//
+// It delegates to compositionFor so a v10 spec composes modules and every
+// consumer sees one effective environment. The provenance is intentionally not
+// returned here: commands that need ownership (mutation guards, explain) call
+// materializeComposition directly.
 func materializeSpecForCommand(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag string) (*schema.GenvFile, string, int) {
-	effective, targetID, err := resolveEffectiveSpec(f, hostForCommand(hostFlag), targetFlag)
-	if err == nil {
-		effective = schema.DropInapplicable(effective, runtime.GOOS)
-		return effective, targetID, exitOK
+	c, code := materializeComposition(commandName, file, f, hostFlag, targetFlag, "")
+	if code != exitOK {
+		return nil, "", code
 	}
-	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "resolve target") || strings.Contains(msg, "pass --target"):
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return nil, "", exitUsage
-	case strings.HasPrefix(msg, "no matching targets."):
-		fprintf(os.Stderr, "genv %s: %s in %s\n", commandName, msg, file)
-		return nil, "", exitValidation
-	default:
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return nil, "", exitValidation
-	}
+	return c.Effective, c.Target, exitOK
 }
 
 // readMaterializedSpec loads genv.json and flattens the active v8 target (or
 // applies legacy host filtering) so callers can read top-level fields.
 func readMaterializedSpec(commandName, file, hostFlag, targetFlag string) (*schema.GenvFile, int) {
-	f, err := genvfile.Read(file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv %s: %s not found\n", commandName, file)
-			return nil, exitIO
-		}
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return nil, exitValidation
-		}
-		return nil, exitIO
+	c, code := readComposition(commandName, file, hostFlag, targetFlag, "")
+	if code != exitOK {
+		return nil, code
 	}
-	effective, _, code := materializeSpecForCommand(commandName, file, f, hostFlag, targetFlag)
-	return effective, code
+	return c.Effective, exitOK
 }
 
 // materializedHooks returns the effective hooks block for lifecycle commands.
@@ -1520,9 +1511,16 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
 	isV8 := schema.IsPortableVersion(f.SchemaVersion)
-	effective, activeTarget, code := materializeSpecForCommand("apply", opts.File, f, opts.Host, opts.Target)
+	// Compose once here: the apply path is where package, env, shell, file, and
+	// service reconciliation all read from, so it must see the same effective
+	// environment (including v10 modules) that status and upgrade see.
+	comp, code := materializeComposition("apply", opts.File, f, opts.Host, opts.Target, applySourceRoot(opts, f))
 	if code != exitOK {
 		return code
+	}
+	effective, activeTarget := comp.Effective, comp.Target
+	if drift := compositionDriftNotice(lf, comp); drift != "" {
+		fprintf(os.Stderr, "genv apply: note: %s\n", drift)
 	}
 	if isV8 {
 		reset, code := applyLockGate("apply", lockPath, lf, activeTarget, available, true, opts.ForceNewLock, opts.DryRun, "--force-new-lock")
@@ -1533,6 +1531,9 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
+	// Record the composition that produced this apply so a later run can
+	// explain drift. Advisory only: it never makes the lock foreign.
+	stampCompositionLock(lf, comp)
 	var result resolver.ReconcileResult
 	if !opts.SkipPackages {
 		live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
@@ -3244,12 +3245,13 @@ func scanCmd(args []string) int {
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
 	trackedPackages := f.Packages
 	if schema.IsPortableVersion(f.SchemaVersion) {
-		active, err := schema.MergeTarget(f, targetID)
-		if err != nil {
-			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
-			return exitValidation
+		// Compose rather than plain MergeTarget so a v10 scan sees packages that
+		// arrive through modules and does not re-adopt them into the root spec.
+		comp, code := materializeComposition("scan", *file, f, "", *targetFlag, "")
+		if code != exitOK {
+			return code
 		}
-		trackedPackages = active.Packages
+		trackedPackages = comp.Effective.Packages
 	}
 	trackedInSpec := make(map[string]bool, len(trackedPackages))
 	for _, p := range trackedPackages {
@@ -4301,13 +4303,22 @@ func validateCmd(args []string) int {
 		return flagParseExit(err)
 	}
 
-	_, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
+	spec, readErr := genvfile.Read(*file)
+	if readErr != nil {
+		if errors.Is(readErr, genvfile.ErrNotFound) {
 			fprintf(os.Stderr, "genv validate: %s not found — run 'genv init' to create one\n", *file)
 			return exitValidation
 		}
-		fprintf(os.Stderr, "genv validate: %v\n", err)
+		fprintf(os.Stderr, "genv validate: %v\n", readErr)
+		return exitValidation
+	}
+	// Module documents are the only spec content validate must check beyond the
+	// root file itself: reconciliation loads just the selection closure, so this
+	// is where a registered-but-unused module is still reported.
+	if issues := validateComposition(*file, spec, "", ""); len(issues) > 0 {
+		for _, issue := range issues {
+			fprintf(os.Stderr, "genv validate: %v\n", issue)
+		}
 		return exitValidation
 	}
 	fprintf(os.Stdout, "%s is valid.\n", *file)

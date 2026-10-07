@@ -109,15 +109,22 @@ type LockedFile struct {
 // The Files field is added in M11 (schemaVersion "5") and is absent in v1-v4 lock files.
 // ContentHash on Files entries is additive (omitempty); older locks omit it.
 type LockFile struct {
-	SchemaVersion string             `json:"schemaVersion"`
-	Target        string             `json:"target,omitempty"`
-	GOOS          string             `json:"goos,omitempty"`
-	ActiveProfile string             `json:"activeProfile,omitempty"`
-	Packages      []LockedPackage    `json:"packages"`
-	Env           []LockedEnvVar     `json:"env,omitempty"`
-	Shell         *LockedShellConfig `json:"shell,omitempty"`
-	Services      []LockedService    `json:"services,omitempty"`
-	Files         []LockedFile       `json:"files,omitempty"`
+	SchemaVersion string `json:"schemaVersion"`
+	Target        string `json:"target,omitempty"`
+	GOOS          string `json:"goos,omitempty"`
+	ActiveProfile string `json:"activeProfile,omitempty"`
+	// Modules is the v10 module selection that produced this lock, in
+	// composition order. Machine-local and advisory: it explains drift, and a
+	// changed selection never makes a lock foreign.
+	Modules []string `json:"modules,omitempty"`
+	// Fingerprint is the non-secret structural hash of the composed
+	// environment at apply time. Env values are excluded, so it is safe to log.
+	Fingerprint string             `json:"fingerprint,omitempty"`
+	Packages    []LockedPackage    `json:"packages"`
+	Env         []LockedEnvVar     `json:"env,omitempty"`
+	Shell       *LockedShellConfig `json:"shell,omitempty"`
+	Services    []LockedService    `json:"services,omitempty"`
+	Files       []LockedFile       `json:"files,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),

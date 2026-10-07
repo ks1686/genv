@@ -46,6 +46,10 @@ func newProvenance() *Provenance {
 	return &Provenance{owners: make(map[Identity][]Origin)}
 }
 
+// NewProvenance returns an empty index. Callers that use composition for a
+// spec without modules still get a usable (empty) provenance rather than nil.
+func NewProvenance() *Provenance { return newProvenance() }
+
 // add records an owner for id, keeping declaration order and skipping duplicates
 // so a resource coalesced across many documents lists each file exactly once.
 func (p *Provenance) add(id Identity, origin Origin) {
