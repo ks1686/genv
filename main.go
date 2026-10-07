@@ -21,6 +21,7 @@ import (
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/commands"
 	"github.com/ks1686/genv/internal/complete"
+	"github.com/ks1686/genv/internal/compose"
 	genvenv "github.com/ks1686/genv/internal/env"
 	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/files"
@@ -259,20 +260,31 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 	return &c
 }
 
-func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, int) {
+// resolveMutationTarget resolves the bundle a mutation writes to and returns
+// the composition for that target. The composition is what lets add/remove/
+// disown/env/shell/service/files refuse to touch a module-owned resource; it is
+// nil for v1-v9, where ownership cannot be shared with another document.
+func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, *compose.Composition, int) {
 	if !schema.IsPortableVersion(f.SchemaVersion) {
-		return "", exitOK
+		return "", nil, exitOK
 	}
 	targetID, err := target.Resolve(targetFlag)
 	if err != nil {
 		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return "", exitUsage
+		return "", nil, exitUsage
 	}
 	if _, err := commands.ActiveBundle(f, targetID); err != nil {
 		fprintf(os.Stderr, "genv %s: %v in %s\n", commandName, err, file)
-		return "", exitValidation
+		return "", nil, exitValidation
 	}
-	return targetID, exitOK
+	if len(f.Modules) == 0 {
+		return targetID, nil, exitOK
+	}
+	c, code := materializeComposition(commandName, file, f, "", targetFlag, composeSourceRoot(file, ""))
+	if code != exitOK {
+		return "", nil, code
+	}
+	return targetID, c, exitOK
 }
 
 // resolveEffectiveSpec flattens a schemaVersion 8 target (MergeTarget) or applies
@@ -384,9 +396,12 @@ func prepareAddSpec(file, id, version, prefer string, managers map[string]string
 		}
 		return nil, false, exitIO
 	}
-	targetID, exit := resolveMutationTarget("add", file, f, targetFlag)
+	targetID, comp, exit := resolveMutationTarget("add", file, f, targetFlag)
 	if exit != exitOK {
 		return nil, false, exit
+	}
+	if code := moduleOwnerGuard("add", comp, compose.KindPackage, id); code != exitOK {
+		return nil, false, code
 	}
 	if err := commands.Add(f, id, version, prefer, managers, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
@@ -541,7 +556,10 @@ func prepareRemoveSpec(file, id, targetFlag string) (*schema.GenvFile, string, i
 		}
 		return nil, "", exitIO
 	}
-	targetID, exit := resolveMutationTarget("remove", file, f, targetFlag)
+	targetID, comp, exit := resolveMutationTarget("remove", file, f, targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("remove", comp, compose.KindPackage, id)
+	}
 	if exit != exitOK {
 		return nil, "", exit
 	}
@@ -687,7 +705,10 @@ func addCmd(args []string) int {
 	}
 
 	// 4. Update lock file.
-	targetID, code := resolveMutationTarget("add", *file, prepared, *targetFlag)
+	targetID, comp, code := resolveMutationTarget("add", *file, prepared, *targetFlag)
+	if code == exitOK {
+		code = moduleOwnerGuard("add", comp, compose.KindPackage, id)
+	}
 	if code != exitOK {
 		return code
 	}
@@ -1096,11 +1117,16 @@ func adoptCmd(args []string) int {
 
 	targetID := ""
 	if prepared, err := genvfile.Read(*file); err == nil {
-		var code int
-		targetID, code = resolveMutationTarget("adopt", *file, prepared, *targetFlag)
+		// Refuse a module-owned package before the lock records it: adopt
+		// persists the package into the lock as well as the spec.
+		resolved, comp, code := resolveMutationTarget("adopt", *file, prepared, *targetFlag)
+		if code == exitOK {
+			code = moduleOwnerGuard("adopt", comp, compose.KindPackage, id)
+		}
 		if code != exitOK {
 			return code
 		}
+		targetID = resolved
 	}
 	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:               action.Pkg.ID,
@@ -1222,7 +1248,10 @@ func disownCmd(args []string) int {
 		}
 		return exitIO
 	}
-	targetID, exit := resolveMutationTarget("remove", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("remove", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("remove", comp, compose.KindPackage, id)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2667,7 +2696,10 @@ func envSetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("env set", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("env set", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("env set", comp, compose.KindEnv, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2723,7 +2755,10 @@ func envUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("env unset", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("env unset", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("env unset", comp, compose.KindEnv, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2887,7 +2922,10 @@ func shellAliasSetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("shell alias set", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("shell alias set", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("shell alias set", comp, compose.KindAlias, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2947,7 +2985,10 @@ func shellAliasUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("shell alias unset", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("shell alias unset", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("shell alias unset", comp, compose.KindAlias, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -3210,7 +3251,7 @@ func scanCmd(args []string) int {
 		}
 		return exitIO
 	}
-	targetID, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
+	targetID, _, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
 	if exit != exitOK {
 		return exit
 	}
@@ -5436,7 +5477,10 @@ func serviceAddCmd(args []string) int {
 		}
 	}
 
-	targetID, exit := resolveMutationTarget("service add", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("service add", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("service add", comp, compose.KindService, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -5505,7 +5549,10 @@ func serviceRemoveCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("service remove", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("service remove", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("service remove", comp, compose.KindService, name)
+	}
 	if exit != exitOK {
 		return exit
 	}

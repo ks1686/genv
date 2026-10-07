@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/ks1686/genv/internal/compose"
@@ -100,7 +101,66 @@ func classifyComposeError(commandName, file string, err error) int {
 	}
 }
 
-// composeSourceRoot reports the directory module documents are read from.
+// moduleOwnerGuard refuses a mutation aimed at a resource a module owns.
+//
+// A module's declarations are read-only from the CLI: `genv add ripgrep` when
+// a module already declares it must fail and point at the module, not silently
+// add a second declaration to the root that the module's version would win over
+// (or lose to) on the next compose. The guard runs before any package manager
+// subprocess and before any spec write, so a refusal costs nothing.
+//
+// Returns exitOK when the mutation is allowed, exitLogic when it is refused,
+// and exits nothing for specs without modules (v1-v9, or v10 with no selection).
+func moduleOwnerGuard(commandName string, c *compose.Composition, kind string, key string) int {
+	if c == nil || c.Provenance == nil || key == "" {
+		return exitOK
+	}
+	owners := c.Provenance.Owners(compose.Identity{Kind: kind, Key: key})
+	seen := map[string]bool{}
+	var modules []string
+	for _, o := range owners {
+		if o.Module == "" || seen[o.Module] {
+			continue
+		}
+		seen[o.Module] = true
+		modules = append(modules, o.Module)
+	}
+	if len(modules) == 0 {
+		return exitOK
+	}
+	subject := string(kind) + " " + strconv.Quote(key)
+	if len(modules) == 1 {
+		fprintf(os.Stderr, "genv %s: %s is declared by module %q; edit modules/%s instead of running this command\n",
+			commandName, subject, modules[0], modules[0])
+	} else {
+		fprintf(os.Stderr, "genv %s: %s is declared by modules %s; edit those modules instead of running this command\n",
+			commandName, subject, strings.Join(quoteAll(modules), ", "))
+	}
+	return exitLogic
+}
+
+func quoteAll(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = strconv.Quote(n)
+	}
+	return out
+}
+
+// moduleOwnerGuardFor is the file-based convenience wrapper: it composes the
+// spec on demand and guards the mutation. Callers that already hold a
+// composition should prefer moduleOwnerGuard to avoid loading modules twice.
+func moduleOwnerGuardFor(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag, sourceRoot string, kind string, key string) int {
+	if f == nil || !schema.IsPortableVersion(f.SchemaVersion) || len(f.Modules) == 0 {
+		return exitOK
+	}
+	c, code := materializeComposition(commandName, file, f, hostFlag, targetFlag, sourceRoot)
+	if code != exitOK {
+		return code
+	}
+	return moduleOwnerGuard(commandName, c, kind, key)
+}
+
 // A command's --source-root relocates the whole config tree, so modules move
 // with it; otherwise they sit next to the spec file.
 func composeSourceRoot(file, sourceRoot string) string {

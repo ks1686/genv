@@ -407,3 +407,199 @@ func TestApplyCmd_v10_conflict_exits_before_mutating(t *testing.T) {
 		t.Error("a conflicting composition must not write env fragments")
 	}
 }
+
+// --- ownership guards (Task 5) -------------------------------------------
+//
+// A module's declarations are read-only from the CLI. Each guard must refuse
+// before any subprocess runs and before the spec changes.
+
+func ownedFixture(t *testing.T) (dir, specPath, lockPath string) {
+	t.Helper()
+	dir = t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath = filepath.Join(dir, "genv.json")
+	lockPath = filepath.Join(dir, "genv.lock.json")
+	composeWriteFixture(t, dir, `{
+	  "schemaVersion": "10",
+	  "modules": { "base": "modules/base.json" },
+	  "targets": { "arch": { "useModules": ["base"], "packages": [{ "id": "root-pkg" }] } }
+	}`, map[string]string{
+		"modules/base.json": `{"schemaVersion":"10","defaults":{"packages":[{"id":"jq"}],"env":{"EDITOR":{"value":"nvim"}}}}`,
+	})
+	return dir, specPath, lockPath
+}
+
+func TestAddCmd_refuses_module_owned_package(t *testing.T) {
+	_, specPath, lockPath := ownedFixture(t)
+	marker := filepath.Join(t.TempDir(), "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: marker})
+
+	captureStdout(t, func() {
+		code := run([]string{"add", "jq", "--file", specPath, "--lock-file", lockPath, "--target", "arch", "--prefer", "test-hook-manager", "--no-search", "--no-hooks"})
+		if code != exitLogic {
+			t.Fatalf("add of a module-owned package = %d, want %d", code, exitLogic)
+		}
+	})
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("refused add must not run the install command")
+	}
+	spec, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	// The root spec must still contain only its own declaration: jq lives in the
+	// module, and a refused add must not add a root-level copy.
+	if !strings.Contains(string(spec), `"root-pkg"`) || strings.Contains(string(spec), "jq") {
+		t.Errorf("refused add must leave the root spec untouched:\n%s", spec)
+	}
+}
+
+func TestAddCmd_allows_unowned_package(t *testing.T) {
+	_, specPath, lockPath := ownedFixture(t)
+	marker := filepath.Join(t.TempDir(), "install.log")
+	registerLifecycleHookAdapter(t, lifecycleHookAdapter{installMarker: marker})
+
+	captureStdout(t, func() {
+		code := run([]string{"add", "wget", "--file", specPath, "--lock-file", lockPath, "--target", "arch", "--prefer", "test-hook-manager", "--no-search", "--no-hooks"})
+		if code != exitOK {
+			t.Fatalf("add of an unowned package = %d, want %d", code, exitOK)
+		}
+	})
+	spec, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	if !strings.Contains(string(spec), "wget") {
+		t.Errorf("add should persist an unowned package:\n%s", spec)
+	}
+}
+
+func TestRemoveCmd_refuses_module_owned_package(t *testing.T) {
+	_, specPath, lockPath := ownedFixture(t)
+	captureStdout(t, func() {
+		if code := run([]string{"remove", "jq", "--file", specPath, "--lock-file", lockPath, "--target", "arch"}); code != exitLogic {
+			t.Fatalf("remove of a module-owned package = %d, want %d", code, exitLogic)
+		}
+	})
+}
+
+func TestDisownCmd_refuses_module_owned_package(t *testing.T) {
+	_, specPath, lockPath := ownedFixture(t)
+	captureStdout(t, func() {
+		if code := run([]string{"disown", "jq", "--file", specPath, "--lock-file", lockPath, "--target", "arch"}); code != exitLogic {
+			t.Fatalf("disown of a module-owned package = %d, want %d", code, exitLogic)
+		}
+	})
+}
+
+func TestEnvSetCmd_refuses_module_owned_var(t *testing.T) {
+	_, specPath, _ := ownedFixture(t)
+	captureStdout(t, func() {
+		if code := run([]string{"env", "set", "--file", specPath, "--target", "arch", "EDITOR", "vim"}); code != exitLogic {
+			t.Fatalf("env set of a module-owned var = %d, want %d", code, exitLogic)
+		}
+	})
+}
+
+func TestEnvSetCmd_allows_unowned_var(t *testing.T) {
+	_, specPath, _ := ownedFixture(t)
+	captureStdout(t, func() {
+		if code := run([]string{"env", "set", "--file", specPath, "--target", "arch", "PAGER", "less"}); code != exitOK {
+			t.Fatalf("env set of an unowned var = %d, want %d", code, exitOK)
+		}
+	})
+}
+
+func TestServiceCmd_refuses_module_owned_service(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	composeWriteFixture(t, dir, `{
+	  "schemaVersion": "10",
+	  "modules": { "svc": "modules/svc.json" },
+	  "targets": { "arch": { "useModules": ["svc"] } }
+	}`, map[string]string{
+		"modules/svc.json": `{"schemaVersion":"10","targets":{"arch":{"services":{"proxy":{"start":["run","svc"]}}}}}`,
+	})
+
+	captureStdout(t, func() {
+		code := run([]string{"service", "remove", "proxy", "--file", specPath, "--target", "arch"})
+		if code != exitLogic {
+			t.Fatalf("service remove of a module-owned service = %d, want %d", code, exitLogic)
+		}
+	})
+}
+
+func TestGuard_names_multiple_owning_modules(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "genv.json")
+	composeWriteFixture(t, dir, `{
+	  "schemaVersion": "10",
+	  "modules": { "one": "modules/one.json", "two": "modules/two.json" },
+	  "targets": { "arch": { "useModules": ["one", "two"] } }
+	}`, map[string]string{
+		// Identical declarations coalesce and keep both owners, which is the
+		// case where a guard must name more than one module.
+		"modules/one.json": `{"schemaVersion":"10","defaults":{"env":{"SHARED":{"value":"a"}}}}`,
+		"modules/two.json": `{"schemaVersion":"10","defaults":{"env":{"SHARED":{"value":"a"}}}}`,
+	})
+	f, err := genvfile.Read(specPath)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	c, code := materializeComposition("test", specPath, f, "", "arch", dir)
+	if code != exitOK {
+		t.Fatalf("compose: %d", code)
+	}
+	if got := moduleOwnerGuard("env set", c, compose.KindEnv, "SHARED"); got != exitLogic {
+		t.Fatalf("guard = %d, want %d", got, exitLogic)
+	}
+	// Root-owned and unknown keys stay mutable.
+	if got := moduleOwnerGuard("env set", c, compose.KindEnv, "MINE"); got != exitOK {
+		t.Errorf("guard on an unowned var = %d, want %d", got, exitOK)
+	}
+	if got := moduleOwnerGuard("env set", c, compose.KindEnv, ""); got != exitOK {
+		t.Errorf("guard on an empty key = %d, want %d", got, exitOK)
+	}
+	if got := moduleOwnerGuard("env set", nil, compose.KindEnv, "SHARED"); got != exitOK {
+		t.Errorf("guard with no composition = %d, want %d", got, exitOK)
+	}
+}
+
+func TestGuardShortCircuits_specs_without_modules(t *testing.T) {
+	dir := composeFixture(t, `{"schemaVersion":"8","targets":{"macos":{"packages":[{"id":"jq"}]}}}`, nil)
+	specPath := filepath.Join(dir, "genv.json")
+	f, err := genvfile.Read(specPath)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	// moduleOwnerGuardFor must not even compose when nothing can be module-owned.
+	if got := moduleOwnerGuardFor("add", specPath, f, "", "macos", "", compose.KindPackage, "jq"); got != exitOK {
+		t.Errorf("guard on a module-less spec = %d, want %d", got, exitOK)
+	}
+	if got := moduleOwnerGuardFor("add", specPath, nil, "", "macos", "", compose.KindPackage, "jq"); got != exitOK {
+		t.Errorf("guard with a nil spec = %d, want %d", got, exitOK)
+	}
+}
+
+func TestFilesAdopt_refuses_module_owned_link(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	composeWriteFixture(t, dir, `{
+	  "schemaVersion": "10",
+	  "modules": { "conf": "modules/conf.json" },
+	  "targets": { "arch": { "useModules": ["conf"] } }
+	}`, map[string]string{
+		"modules/conf.json": `{"schemaVersion":"10","defaults":{"files":{"links":[{"source":"conf/app.conf","target":"/etc/genv-app.conf"}]}}}`,
+	})
+	// The module's source file does not exist: adoption must refuse on ownership
+	// before it gets as far as resolving or backing anything up.
+	captureStdout(t, func() {
+		code := run([]string{"files", "adopt", "/etc/genv-app.conf", "--file", specPath, "--lock-file", lockPath, "--target", "arch"})
+		if code != exitLogic {
+			t.Fatalf("files adopt of a module-owned link = %d, want %d", code, exitLogic)
+		}
+	})
+}
