@@ -64,6 +64,11 @@ type restartPhaseRequest struct {
 	SourceRoot string
 	// Background marks an unattended run.
 	Background bool
+	// LockAlreadyHeld tells the phase that the caller already holds the lock
+	// mutex for LockPath. Both the interactive upgrade and the unattended worker
+	// hold it across their whole run, and flock is not re-entrant: acquiring it
+	// again here would block the command forever on its own lock.
+	LockAlreadyHeld bool
 	// Deps inject the side effects.
 	Deps restartDeps
 }
@@ -129,7 +134,7 @@ func runRestartPhase(ctx context.Context, req restartPhaseRequest) []restartOutc
 			continue
 		}
 
-		recordPendingActions(req.LockPath, d.Service, d.Triggers, now)
+		recordPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service, d.Triggers, now)
 
 		if d.Action == service.ActionRestart {
 			if err := req.Deps.stop(ctx, d.Service, svc); err != nil {
@@ -153,10 +158,28 @@ func runRestartPhase(ctx context.Context, req restartPhaseRequest) []restartOutc
 				continue
 			}
 		}
-		out.PendingCleared = clearPendingActions(req.LockPath, d.Service)
+		out.PendingCleared = clearPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service)
 		outcomes = append(outcomes, out)
 	}
 	return outcomes
+}
+
+// pastTenseRestartAction renders an action for the completion line. The report
+// is about what happened, so the present-tense constant would read as an
+// instruction ("service api: restart") and quietly invite a re-run.
+func pastTenseRestartAction(action string) string {
+	switch action {
+	case service.ActionRestart:
+		return "restarted"
+	case service.ActionStart:
+		return "started"
+	case service.ActionSkip:
+		return "left running state alone"
+	case service.ActionDefer:
+		return "deferred"
+	default:
+		return action
+	}
 }
 
 // filterBackgroundServices drops services whose health check is not permitted to
@@ -173,57 +196,61 @@ func filterBackgroundServices(p plan.Plan) plan.Plan {
 	return filtered
 }
 
-// recordPendingActions writes the in-flight record before the service is
-// touched. Failure to record is not fatal: the restart still proceeds, but the
-// outcome says the run left no trace, which is itself worth reporting.
-func recordPendingActions(lockPath, serviceName string, triggers []string, recordedAt string) {
+// mutateLock applies fn to the lock file and writes it back when fn reports a
+// change.
+//
+// alreadyHeld must be true when the caller already holds the mutex: flock on the
+// sidecar is exclusive and not re-entrant, so re-acquiring it inside a command
+// that holds it blocks the command on its own lock forever.
+func mutateLock(lockPath string, alreadyHeld bool, fn func(*genvfile.LockFile) bool) {
 	if lockPath == "" {
 		return
 	}
-	unlock, err := genvfile.LockMutation(lockPath)
-	if err != nil {
-		return
+	if !alreadyHeld {
+		unlock, err := genvfile.LockMutation(lockPath)
+		if err != nil {
+			return
+		}
+		defer unlock()
 	}
-	defer unlock()
-
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		return
 	}
-	for _, trigger := range triggers {
-		lf.PendingActions = append(lf.PendingActions, genvfile.PendingAction{
-			Name:       serviceName,
-			Package:    trigger,
-			Reason:     "restart in progress; readiness not yet confirmed",
-			RecordedAt: recordedAt,
-		})
+	if fn(lf) {
+		_ = genvfile.WriteLock(lockPath, lf)
 	}
-	_ = genvfile.WriteLock(lockPath, lf)
+}
+
+// recordPendingActions writes the in-flight record before the service is
+// touched. Failure to record is not fatal: the restart still proceeds, but the
+// outcome says the run left no trace, which is itself worth reporting.
+func recordPendingActions(lockPath string, alreadyHeld bool, serviceName string, triggers []string, recordedAt string) {
+	mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
+		for _, trigger := range triggers {
+			lf.PendingActions = append(lf.PendingActions, genvfile.PendingAction{
+				Name:       serviceName,
+				Package:    trigger,
+				Reason:     "restart in progress; readiness not yet confirmed",
+				RecordedAt: recordedAt,
+			})
+		}
+		return true
+	})
 }
 
 // clearPendingActions removes the record after the action and readiness both
 // succeeded, and reports whether anything was removed.
-func clearPendingActions(lockPath, serviceName string) bool {
-	if lockPath == "" {
-		return false
-	}
-	unlock, err := genvfile.LockMutation(lockPath)
-	if err != nil {
-		return false
-	}
-	defer unlock()
-
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
-		return false
-	}
-	if lf.ClearPendingActions(serviceName) == 0 {
-		return false
-	}
-	if err := genvfile.WriteLock(lockPath, lf); err != nil {
-		return false
-	}
-	return true
+func clearPendingActions(lockPath string, alreadyHeld bool, serviceName string) bool {
+	cleared := false
+	mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
+		if lf.ClearPendingActions(serviceName) == 0 {
+			return false
+		}
+		cleared = true
+		return true
+	})
+	return cleared
 }
 
 // reportUncertainPendingActions prints the interrupted changes found in the

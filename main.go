@@ -4639,6 +4639,11 @@ func upgradeCmd(args []string) int {
 		}
 	}
 
+	// Snapshot the installed versions *before* the upgrade runs: RunUpgrade
+	// updates the lock in place, so reading them afterwards would compare the
+	// new versions against themselves and conclude that nothing changed.
+	preUpgradeVersions := lockInstalledVersions(lf)
+
 	var runResult upgrade.UpgradeRunResult
 	if len(plan) > 0 {
 		mode := externalpkg.ExecutionInteractive
@@ -4703,13 +4708,14 @@ func upgradeCmd(args []string) int {
 	// changed, and only for services whose watched resource moved. This is the
 	// interactive path, so health checks are allowed to run here.
 	if len(runResult.Upgraded) > 0 {
-		evidence := upgradeEvidenceFromLock(lf, lockPath, runResult.Upgraded)
+		evidence := upgradeEvidenceFromLock(preUpgradeVersions, lockPath, runResult.Upgraded)
 		outcomes := runRestartPhase(ctx, restartPhaseRequest{
-			Services:   f.Services,
-			Evidence:   evidence,
-			LockPath:   lockPath,
-			SourceRoot: sourceRootForSpec(*file, f),
-			Deps:       defaultRestartDeps(sourceRootForSpec(*file, f), f.Services),
+			Services:        f.Services,
+			Evidence:        evidence,
+			LockPath:        lockPath,
+			SourceRoot:      sourceRootForSpec(*file, f),
+			Deps:            defaultRestartDeps(sourceRootForSpec(*file, f), f.Services),
+			LockAlreadyHeld: true, // upgradeCmd holds this mutex for its whole run
 		})
 		for _, o := range outcomes {
 			switch {
@@ -4724,7 +4730,7 @@ func upgradeCmd(args []string) int {
 			case o.Action == service.ActionSkip:
 				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", o.Service, o.Reason)
 			default:
-				fprintf(os.Stdout, "service %s: %sd\n", o.Service, o.Action)
+				fprintf(os.Stdout, "service %s: %s\n", o.Service, pastTenseRestartAction(o.Action))
 			}
 		}
 	}
@@ -4741,13 +4747,18 @@ func upgradeCmd(args []string) int {
 // This is the honest signal available after the fact: an upgrade that changed
 // nothing leaves identical versions, and a manager that never recorded a version
 // leaves empty ones, which is unknown rather than unchanged.
-func upgradeEvidenceFromLock(before *genvfile.LockFile, lockPath string, upgraded []genvfile.LockedPackage) map[string]service.Evidence {
-	beforeVersions := map[string]string{}
-	if before != nil {
-		for _, lp := range before.Packages {
-			beforeVersions[lp.ID] = lp.InstalledVersion
-		}
+func lockInstalledVersions(lf *genvfile.LockFile) map[string]string {
+	out := map[string]string{}
+	if lf == nil {
+		return out
 	}
+	for _, lp := range lf.Packages {
+		out[lp.ID] = lp.InstalledVersion
+	}
+	return out
+}
+
+func upgradeEvidenceFromLock(beforeVersions map[string]string, lockPath string, upgraded []genvfile.LockedPackage) map[string]service.Evidence {
 	afterVersions := map[string]string{}
 	for _, lp := range upgraded {
 		afterVersions[lp.ID] = lp.InstalledVersion

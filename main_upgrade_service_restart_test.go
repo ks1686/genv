@@ -1,0 +1,227 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/ks1686/genv/internal/adapter"
+	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/schema"
+)
+
+// versionBumpAdapter reports a different installed version once its upgrade
+// command has run, which is what a real manager does when it moves a package
+// forward. The existing upgradeNoHooksAdapter always answers 2.0.0, which is
+// right for its tests but cannot express "the version moved".
+type versionBumpAdapter struct {
+	upgraded bool
+	marker   string
+}
+
+func (a *versionBumpAdapter) Name() string    { return "bump-manager" }
+func (a *versionBumpAdapter) Available() bool { return true }
+func (a *versionBumpAdapter) NormalizeID(id string, _ map[string]string) (string, bool) {
+	return id, false
+}
+func (a *versionBumpAdapter) PlanInstall(pkgName string) []string {
+	return shellAppendMarker("install", a.marker)
+}
+func (a *versionBumpAdapter) PlanUninstall(pkgName string) []string {
+	return shellAppendMarker("uninstall", a.marker)
+}
+func (a *versionBumpAdapter) PlanUpgrade(pkgName string) []string {
+	a.upgraded = true
+	return shellAppendMarker("upgrade", a.marker)
+}
+func (a *versionBumpAdapter) PlanClean() [][]string            { return nil }
+func (a *versionBumpAdapter) Query(string) (bool, error)       { return true, nil }
+func (a *versionBumpAdapter) ListInstalled() ([]string, error) { return []string{"postgres"}, nil }
+func (a *versionBumpAdapter) QueryVersion(string) (string, error) {
+	if a.upgraded {
+		return "2.0.0", nil
+	}
+	return "1.0.0", nil
+}
+
+// staticVersionAdapter never changes version, so an upgrade against it is a
+// no-op.
+type staticVersionAdapter struct {
+	version string
+	marker  string
+}
+
+func (a *staticVersionAdapter) Name() string    { return "static-manager" }
+func (a *staticVersionAdapter) Available() bool { return true }
+func (a *staticVersionAdapter) NormalizeID(id string, _ map[string]string) (string, bool) {
+	return id, false
+}
+func (a *staticVersionAdapter) PlanInstall(pkgName string) []string {
+	return shellAppendMarker("install", a.marker)
+}
+func (a *staticVersionAdapter) PlanUninstall(pkgName string) []string {
+	return shellAppendMarker("uninstall", a.marker)
+}
+func (a *staticVersionAdapter) PlanUpgrade(pkgName string) []string {
+	return shellAppendMarker("upgrade", a.marker)
+}
+func (a *staticVersionAdapter) PlanClean() [][]string            { return nil }
+func (a *staticVersionAdapter) Query(string) (bool, error)       { return true, nil }
+func (a *staticVersionAdapter) ListInstalled() ([]string, error) { return []string{"postgres"}, nil }
+func (a *staticVersionAdapter) QueryVersion(string) (string, error) {
+	return a.version, nil
+}
+
+func registerBumpAdapter(t *testing.T, a adapter.Adapter) {
+	t.Helper()
+	original := adapter.All
+	adapter.All = append([]adapter.Adapter{a}, original...)
+	originalKnown := schema.KnownManagers[a.Name()]
+	schema.KnownManagers[a.Name()] = true
+	t.Cleanup(func() {
+		adapter.All = original
+		if originalKnown {
+			schema.KnownManagers[a.Name()] = true
+		} else {
+			delete(schema.KnownManagers, a.Name())
+		}
+	})
+}
+
+// TestUpgrade_restarts_watched_service_end_to_end is the test that matters most
+// in this feature: it runs the real `genv upgrade` and requires that the
+// service is actually restarted.
+//
+// The unit tests around the coordinator all pass against a snapshot taken after
+// the upgrade — at which point the lock has already been overwritten and every
+// comparison reads "unchanged". Only a test that runs the command and watches
+// the service's marker file catches that.
+func TestUpgrade_restarts_watched_service_end_to_end(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+
+	bump := &versionBumpAdapter{marker: filepath.Join(dir, "manager.log")}
+	registerBumpAdapter(t, bump)
+
+	// The service reports itself running via its status command, and records
+	// every lifecycle call so the test can prove a restart happened.
+	spec := `{
+	  "schemaVersion": "10",
+	  "targets": {
+	    "arch": {
+	      "packages": [{ "id": "postgres", "prefer": "bump-manager" }],
+	      "services": {
+	        "api": {
+	          "start": ["sh", "-c", "printf start, >> ` + serviceMarker + `"],
+	          "stop":  ["sh", "-c", "printf stop, >> ` + serviceMarker + `"],
+	          "status": ["true"],
+	          "watch": ["postgres"],
+	          "restart_policy": "ifRunning"
+	        }
+	      }
+	    }
+	  }
+	}`
+	writeTestFile(t, specPath, spec)
+
+	// The lock claims an older version, so a successful upgrade moves it.
+	writeLockFile(t, lockPath, &genvfile.LockFile{
+		SchemaVersion: "8",
+		Target:        "arch",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "postgres", Manager: "bump-manager", PkgName: "postgres", InstalledVersion: "1.0.0"},
+		},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks", "--all"})
+	})
+	if code != exitOK {
+		t.Fatalf("upgrade exit = %d, want %d\n%s", code, exitOK, out)
+	}
+
+	data, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("service was never touched; output:\n%s", out)
+	}
+	var calls []string
+	for _, c := range strings.Split(string(data), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			calls = append(calls, c)
+		}
+	}
+	if strings.Join(calls, ",") != "stop,start" {
+		t.Errorf("service lifecycle calls = %v, want stop then start (output:\n%s)", calls, out)
+	}
+	if !strings.Contains(out, "restarted") {
+		t.Errorf("upgrade should report the restart:\n%s", out)
+	}
+
+	// A confirmed restart must leave nothing pending behind.
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.PendingActions) != 0 {
+		t.Errorf("pending actions = %+v, want cleared", lf.PendingActions)
+	}
+}
+
+// TestUpgrade_no_op_upgrade_does_not_restart_service is the other half: an
+// upgrade that leaves the installed version alone must not restart anything.
+func TestUpgrade_no_op_upgrade_does_not_restart_service(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+
+	// QueryVersion never changes, so the upgrade is a no-op.
+	static := &staticVersionAdapter{version: "1.0.0", marker: filepath.Join(dir, "manager.log")}
+	registerBumpAdapter(t, static)
+
+	spec := `{
+	  "schemaVersion": "10",
+	  "targets": {
+	    "arch": {
+	      "packages": [{ "id": "postgres", "prefer": "static-manager" }],
+	      "services": {
+	        "api": {
+	          "start": ["sh", "-c", "printf start, >> ` + serviceMarker + `"],
+	          "stop":  ["sh", "-c", "printf stop, >> ` + serviceMarker + `"],
+	          "status": ["true"],
+	          "watch": ["postgres"],
+	          "restart_policy": "ifRunning"
+	        }
+	      }
+	    }
+	  }
+	}`
+	writeTestFile(t, specPath, spec)
+	writeLockFile(t, lockPath, &genvfile.LockFile{
+		SchemaVersion: "8",
+		Target:        "arch",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "postgres", Manager: "static-manager", PkgName: "postgres", InstalledVersion: "1.0.0"},
+		},
+	})
+
+	out := captureStdout(t, func() {
+		run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks", "--all"})
+	})
+
+	if _, err := os.Stat(serviceMarker); err == nil {
+		data, _ := os.ReadFile(serviceMarker)
+		t.Errorf("a no-op upgrade must not restart the service, calls = %q (output:\n%s)", data, out)
+	}
+}
