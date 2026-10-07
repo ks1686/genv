@@ -26,6 +26,15 @@ Stop tracking a package without uninstalling it.
 .B scan [flags]
 Discover installed packages and bulk-adopt them. Use --dry-run / --yes.
 .TP
+.B config [flags]
+Show the composed environment for a target: selected modules, fingerprint, and
+resource counts. With --registry, list registered modules without composing.
+With --kind and --name, show every contributor to one resource.
+.TP
+.B explain <kind> <name> [flags]
+Explain where one resource comes from and whether a mutation command may change
+it. Kinds: package, service, env, alias, function, file, dir, hook.
+.TP
 .B status [flags]
 Show drift between the spec, lock file, and live system.
 .TP
@@ -79,6 +88,33 @@ Show genv build version information.
 .TP
 .B help
 Show usage.
+.SS Dependency-aware service changes (schemaVersion 10)
+A service may declare
+.BR requires ,
+.BR watch ,
+.BR restart_policy ,
+and
+.BR health_check .
+.B requires
+is an ordering constraint between services. B watch
+names packages, file destinations, or services whose change may require a
+restart; they are different relationships and are never conflated.
+.B restart_policy
+is B never
+(the default) or B ifRunning.
+.B health_check
+is a readiness probe run after an authorized start or restart. It never runs
+from
+.BR status ,
+from a dry run, or from any other planning path.
+
+.B genv upgrade
+restarts a watched service only when the change was proven: an upgrade that ran
+and left the installed version unchanged produces no restart, and a version that
+could not be established produces a deferral rather than a guess. The unattended
+updates worker defers upgrades whose watched service cannot be restarted and
+verified without a human, and reports a change an interrupted run left
+unconfirmed instead of replaying it.
 .SH COMMON FLAGS
 .TP
 .B \\-\\-file <path>

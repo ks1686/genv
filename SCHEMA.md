@@ -409,6 +409,65 @@ package jq --target macos` prints who declares it and whether a command may
 change it. `genv export` flattens the composition into a single-target snapshot
 and records the materialized modules in `report.json`.
 
+## v10 — service dependencies and change triggers
+
+```json
+{
+  "schemaVersion": "10",
+  "targets": {
+    "macos": {
+      "services": {
+        "api": {
+          "start": ["api-server"],
+          "requires": ["db"],
+          "watch": ["postgres", "api.conf"],
+          "restart_policy": "ifRunning",
+          "health_check": {
+            "command": ["curl", "-fsS", "localhost:8080/health"],
+            "timeout": "30s",
+            "interval": "1s",
+            "allow_background": false
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- `requires` — services this one starts **after** and stops **before**. It is an
+  ordering constraint, not a change trigger. A cycle is a validation-time error
+  naming the services involved, as is a `requires` entry no declared service
+  provides.
+- `watch` — packages, linked file destinations, or services whose change may
+  require a restart. Entries may carry the explicit `watch:` prefix, which is
+  how a package and a service of the same name are told apart.
+- `restart_policy` — `never` (default) leaves a stopped service stopped;
+  `ifRunning` starts one, because the change is what it was waiting for.
+- `health_check` — a readiness probe run **only after** an authorized start or
+  restart. It never runs from `status`, `apply --dry-run`, `upgrade --dry-run`,
+  or any planning path: a plan that runs commands is not a plan. `timeout`
+  defaults to 30s and `interval` to 1s; both must be positive. `allow_background`
+  must be `true` before the unattended updates worker may use the check.
+- All four fields are **refused on v1–v9** rather than ignored. A silently dropped
+  `watch` means a service that quietly never restarts.
+
+### What upgrade does about it
+
+| Situation | Outcome |
+| --------- | ------- |
+| Upgraded, installed version moved | service restarted (or started, under `ifRunning`), then health checked |
+| Upgraded, installed version did not move | no restart — the upgrade was a no-op |
+| Version could not be established before or after | **deferred**: nothing is restarted and nothing is claimed |
+| Watched service stopped, policy `never` | skipped, and said so |
+| Restart or readiness failed | reported, exit non-zero, and the pending record is kept |
+
+The pending record is written **before** a service is stopped and cleared only
+after the action and its readiness check both succeed. An interrupted run
+therefore leaves evidence: the next run reports the unconfirmed change instead of
+assuming it worked. The unattended worker defers upgrades whose watched service
+cannot be restarted *and verified* without a human, before touching any package.
+
 ## Profiles
 
 Named profiles live in `profiles/<name>.json` beside the base spec on schema v1–v7. `genv profile switch` merges the profile over the base, applies, and stores `activeProfile` in the lock. Schema v8 refuses named profiles — use `defaults` plus `targets.*` instead.

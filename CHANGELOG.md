@@ -56,6 +56,33 @@ All notable changes to this project will be documented in this file.
   package a module contributes. `report.json` now records which modules were
   materialized.
 
+- **Dependency-aware service changes (schemaVersion 10).** A service can declare
+  `requires` (ordering between services), `watch` (packages, files, or services
+  whose change may require a restart), `restart_policy` (`never` by default, or
+  `ifRunning`), and `health_check` (a readiness probe).
+
+  `genv upgrade` restarts a watched service only when the change was proven: an
+  upgrade that left the installed version unchanged restarts nothing, and a
+  version that could not be established produces a deferral rather than a guess.
+  Closes #218.
+
+  The honest parts, which are the point:
+
+  - **Unknown is a real outcome.** Many managers never report a version. genv
+    reports `unknown` and defers rather than assuming "nothing changed", which
+    is how a service ends up running against a binary nobody restarted.
+  - **Readiness failure is not restart failure.** They are reported separately,
+    because the service did start and the remedy is different.
+  - **A health check is never run from a plan.** Not from `status`, not from any
+    dry run: a probe runs a command, and a plan that runs commands is not a plan.
+  - **Interrupted runs leave evidence.** A pending record is written before a
+    service is stopped and cleared only after the action and readiness succeed,
+    so the next run reports an unconfirmed change instead of assuming it worked.
+  - **The unattended worker refuses to half-do it.** It defers upgrades whose
+    watched service cannot be restarted and verified without a human, before
+    touching any package, and takes the rest of the plan.
+  - The four fields are **refused on v1–v9** rather than ignored.
+
 ### Changed
 
 - `genv status` on v8/v9 specs is byte-for-byte unchanged; composition only

@@ -363,6 +363,39 @@ On Windows, `scheduled_task` renders the Task Scheduler definition itself — no
 
 `genv service status syncthing` reads supervisor state. Removing the service from the spec unloads it and deletes the unit file or unregisters the task. Declaring a backend for a platform you are not on is skipped, not an error, so one spec can target several. See [SCHEMA.md](SCHEMA.md#v4--services).
 
+### Dependency-aware service changes (schema v10)
+
+A service can say what it depends on and what it watches (schema v10):
+
+```json
+"api": {
+  "start": ["api-server"],
+  "requires": ["db"],
+  "watch": ["postgres", "api.conf"],
+  "restart_policy": "ifRunning",
+  "health_check": { "command": ["curl", "-fsS", "localhost:8080/health"] }
+}
+```
+
+`genv upgrade` then restarts `api` **only when postgres or api.conf actually
+changed**, starts it first if it was stopped (under `ifRunning`), and waits for
+the health check before calling the run done.
+
+The part worth knowing is what it does *not* claim:
+
+- An upgrade that ran and left the installed version unchanged causes **no**
+  restart.
+- A version genv cannot establish — many managers never report one — produces a
+  **deferral**, not a restart on a guess. "I could not tell" is an outcome.
+- A readiness failure is reported separately from a restart failure: the service
+  did start, it is simply not healthy, and the remedies differ.
+- The health check never runs from `status` or any dry run.
+
+If genv is interrupted mid-restart, it says so on the next run instead of
+assuming the service came back. The unattended `updates` worker will not upgrade
+a package whose watched service it cannot restart *and* verify without a human —
+it defers that package and takes the rest.
+
 ### Updates checker
 
 `genv updates start` registers a user systemd timer (Linux), launchd job (macOS), or Task Scheduler task (`schtasks`, Windows). Default behavior is check / log / notify for **tracked packages only**. Set `"autoApply": true` in the `updates` block to apply those tracked upgrades automatically. The timer is non-interactive: it never prompts for sudo or UAC, and skips packages that need elevation (logged in `updates.log`). OS vendor and firmware updates are not part of the checker — use `genv upgrade` for that. Details: [SCHEMA.md](SCHEMA.md#updates).
