@@ -2,6 +2,7 @@ package compose
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -680,5 +681,89 @@ func TestResolve_declared_destinations_reported_in_provenance(t *testing.T) {
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Identities() = %v, want %v", got, want)
+	}
+}
+
+// Attribution must name the block a declaration actually lives in. A module
+// that declares a package under "defaults" but whose target overlay replaces
+// that array must not be reported as declaring it in the overlay: `genv explain`
+// sends the user to a file that does not contain the line.
+func TestResolve_origin_names_the_declaring_block(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "m": "modules/m.json" },
+	  "targets": { "macos": { "useModules": ["m"], "packages": [{ "id": "root-pkg" }] } }
+	}`)
+	writeModule(t, root, "modules/m.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "packages": [{ "id": "in-defaults" }], "env": { "FROM_DEFAULTS": { "value": "1" } } },
+	  "targets": { "macos": { "env": { "FROM_OVERLAY": { "value": "2" } } } }
+	}`)
+
+	c := mustResolve(t, root, parseSpec(t, filepath.Join(root, "genv.json")), "macos")
+
+	for _, tc := range []struct{ key, wantField string }{
+		{"in-defaults", "defaults.packages[in-defaults]"},
+		{"FROM_DEFAULTS", "defaults.env.FROM_DEFAULTS"},
+		{"FROM_OVERLAY", "targets.macos.env.FROM_OVERLAY"},
+	} {
+		kind := KindPackage
+		if strings.HasPrefix(tc.key, "FROM_") {
+			kind = KindEnv
+		}
+		owners := c.Provenance.Owners(Identity{Kind: kind, Key: tc.key})
+		if len(owners) == 0 {
+			t.Fatalf("%s has no owners", tc.key)
+		}
+		if owners[0].Field != tc.wantField {
+			t.Errorf("%s field = %q, want %q", tc.key, owners[0].Field, tc.wantField)
+		}
+	}
+
+	// The root's own origin must point at the root's target block.
+	rootOwners := c.Provenance.Owners(Identity{Kind: KindPackage, Key: "root-pkg"})
+	if len(rootOwners) == 0 || rootOwners[0].Field != "targets.macos.packages[root-pkg]" {
+		t.Errorf("root origin = %+v, want the root target block", rootOwners)
+	}
+}
+
+// Arrays replace within a contributor, so a module's target overlay drops the
+// defaults array it shadows. The dropped package must not appear as owned.
+func TestResolve_origin_omits_shadowed_array_entries(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "m": "modules/m.json" },
+	  "targets": { "macos": { "useModules": ["m"] } }
+	}`)
+	writeModule(t, root, "modules/m.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "packages": [{ "id": "shadowed" }, { "id": "kept" }] },
+	  "targets": { "macos": { "packages": [{ "id": "overlay-pkg" }] } }
+	}`)
+
+	c := mustResolve(t, root, parseSpec(t, filepath.Join(root, "genv.json")), "macos")
+	if len(c.Provenance.Owners(Identity{Kind: KindPackage, Key: "shadowed"})) != 0 {
+		t.Error("a package replaced by the target overlay must have no owner")
+	}
+	owners := c.Provenance.Owners(Identity{Kind: KindPackage, Key: "overlay-pkg"})
+	if len(owners) != 1 || owners[0].Field != "targets.macos.packages[overlay-pkg]" {
+		t.Errorf("overlay package origin = %+v", owners)
+	}
+}
+
+func TestKnownKinds_and_IsKnownKind(t *testing.T) {
+	kinds := KnownKinds()
+	if len(kinds) == 0 {
+		t.Fatal("KnownKinds must not be empty")
+	}
+	for _, k := range kinds {
+		if !IsKnownKind(k) {
+			t.Errorf("IsKnownKind(%q) = false", k)
+		}
+	}
+	if IsKnownKind("nonsense") {
+		t.Error("IsKnownKind(nonsense) = true")
 	}
 }

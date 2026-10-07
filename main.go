@@ -124,6 +124,10 @@ func run(args []string) int {
 		return listCmd(args[1:])
 	case "apply":
 		return applyCmd(args[1:])
+	case "config":
+		return configCmd(args[1:])
+	case "explain":
+		return explainCmd(args[1:])
 	case "edit":
 		return editCmd(args[1:])
 	case "clean":
@@ -5154,6 +5158,18 @@ func initCmd(args []string) int {
 // from the flag arguments, so flags work in any position relative to the id.
 // Handles both "--flag value" and "--flag=value" forms.
 func extractPositional(args []string) (positional string, flagArgs []string) {
+	pos, flagArgs := splitPositionals(args, 1)
+	if len(pos) > 0 {
+		return pos[0], flagArgs
+	}
+	return "", flagArgs
+}
+
+// splitPositionals separates up to n leading non-flag arguments from the flag
+// arguments. Go's flag package stops parsing at the first non-flag argument, so
+// commands with positional arguments must extract them first or a trailing flag
+// is silently ignored and the command runs against its defaults.
+func splitPositionals(args []string, n int) (positionals []string, flagArgs []string) {
 	i := 0
 	for i < len(args) {
 		arg := args[i]
@@ -5164,8 +5180,8 @@ func extractPositional(args []string) (positional string, flagArgs []string) {
 				i++
 				flagArgs = append(flagArgs, args[i])
 			}
-		} else if positional == "" {
-			positional = arg
+		} else if len(positionals) < n {
+			positionals = append(positionals, arg)
 		}
 		i++
 	}
@@ -5219,6 +5235,8 @@ Commands:
   disown <id> Stop tracking a package in genv.json without uninstalling it
   list        List all packages installed by genv                   (alias: ls)
   apply       Reconcile system state with genv.json (install added, remove deleted)
+  config      Show the composed environment for a target and where each resource came from
+  explain     Explain where one resource comes from and whether a command may change it
   scan        Discover user-facing installs and bulk-adopt them (use --dry-run / --yes; --all for full trees)
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers

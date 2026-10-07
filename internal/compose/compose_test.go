@@ -772,3 +772,16 @@ func mustRead(t *testing.T, path string) string {
 }
 
 var _ = json.Marshal
+
+// parseSpec parses a spec file and fails the test on validation errors.
+func parseSpec(t *testing.T, path string) *schema.GenvFile {
+	t.Helper()
+	f, errs, err := schema.ParseAndValidate([]byte(mustRead(t, path)))
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if len(errs) > 0 {
+		t.Fatalf("validate %s: %v", path, errs)
+	}
+	return f
+}

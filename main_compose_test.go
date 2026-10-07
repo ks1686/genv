@@ -686,3 +686,196 @@ func TestExportCmd_v8_unchanged(t *testing.T) {
 		t.Errorf("a module-less export must not claim module attribution:\n%s", report)
 	}
 }
+
+// --- config / explain (Task 7) -------------------------------------------
+
+func TestConfigCmd_summarizes_composition(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+
+	out := captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos"}); code != exitOK {
+			t.Fatalf("config exit = %d", code)
+		}
+	})
+	for _, want := range []string{"target: macos", "modules: base, tools", "fingerprint:", "packages   3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("config output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestConfigCmd_json_matches_text(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+
+	out := captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos", "--json"}); code != exitOK {
+			t.Fatalf("config exit = %d", code)
+		}
+	})
+	var got struct {
+		Target      string   `json:"target"`
+		Modules     []string `json:"modules"`
+		Fingerprint string   `json:"fingerprint"`
+		Counts      struct {
+			Packages int `json:"packages"`
+		} `json:"counts"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("parse: %v\n%s", err, out)
+	}
+	if got.Target != "macos" || len(got.Modules) != 2 || got.Counts.Packages != 3 || got.Fingerprint == "" {
+		t.Errorf("json = %+v", got)
+	}
+}
+
+func TestConfigCmd_registry_lists_unselected_modules(t *testing.T) {
+	dir := composeFixture(t, `{
+	  "schemaVersion": "10",
+	  "modules": { "used": "modules/used.json", "idle": "modules/idle.json" },
+	  "targets": { "macos": { "useModules": ["used"] } }
+	}`, map[string]string{
+		"modules/used.json": `{"schemaVersion":"10","defaults":{"packages":[{"id":"jq"}]}}`,
+	})
+	specPath := filepath.Join(dir, "genv.json")
+
+	out := captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--registry"}); code != exitOK {
+			t.Fatalf("config --registry exit = %d", code)
+		}
+	})
+	if !strings.Contains(out, "selected by: macos") {
+		t.Errorf("registry should show which target selects a module:\n%s", out)
+	}
+	if !strings.Contains(out, "not selected by any target") {
+		t.Errorf("registry should mark unselected modules:\n%s", out)
+	}
+}
+
+func TestExplainCmd_reports_owner_and_ownership(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+
+	out := captureStdout(t, func() {
+		// Flags after positionals: explain must still honour them.
+		if code := run([]string{"explain", "package", "jq", "--file", specPath, "--target", "macos"}); code != exitOK {
+			t.Fatalf("explain exit = %d", code)
+		}
+	})
+	if !strings.Contains(out, `module "base"`) || !strings.Contains(out, "modules/base.json") {
+		t.Errorf("explain should name the owning module and document:\n%s", out)
+	}
+	if !strings.Contains(out, "owned by a module") {
+		t.Errorf("explain should say the resource is not editable:\n%s", out)
+	}
+}
+
+func TestExplainCmd_root_owned_resource_is_editable(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	out := captureStdout(t, func() {
+		if code := run([]string{"explain", "package", "root-pkg", "--file", specPath, "--target", "macos"}); code != exitOK {
+			t.Fatalf("explain exit = %d", code)
+		}
+	})
+	if !strings.Contains(out, "genv.json (root)") {
+		t.Errorf("explain should attribute a root resource to genv.json:\n%s", out)
+	}
+	if strings.Contains(out, "owned by a module") {
+		t.Errorf("a root-owned resource must not be reported as module-owned:\n%s", out)
+	}
+}
+
+func TestExplainCmd_absent_resource_is_not_an_error(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	out := captureStdout(t, func() {
+		if code := run([]string{"explain", "package", "nonexistent", "--file", specPath, "--target", "macos"}); code != exitOK {
+			t.Fatalf("explain of an absent resource = %d, want %d", code, exitOK)
+		}
+	})
+	if !strings.Contains(out, "is not part of this environment") {
+		t.Errorf("unexpected output: %s", out)
+	}
+}
+
+func TestExplainCmd_unknown_kind_lists_valid_kinds(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	captureStdout(t, func() {
+		if code := run([]string{"explain", "packagez", "jq", "--file", specPath, "--target", "macos"}); code != exitUsage {
+			t.Fatalf("unknown kind exit = %d, want %d", code, exitUsage)
+		}
+	})
+}
+
+func TestExplainCmd_requires_both_arguments(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	captureStdout(t, func() {
+		if code := run([]string{"explain", "package", "--file", specPath, "--target", "macos"}); code != exitUsage {
+			t.Fatalf("explain with one argument = %d, want %d", code, exitUsage)
+		}
+	})
+}
+
+func TestConfigCmd_requires_kind_and_name_together(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos", "--kind", "package"}); code != exitUsage {
+			t.Fatalf("--kind without --name = %d, want %d", code, exitUsage)
+		}
+	})
+}
+
+func TestConfigCmd_v8_works_without_modules(t *testing.T) {
+	dir := composeFixture(t, `{"schemaVersion":"8","targets":{"macos":{"packages":[{"id":"jq"}]}}}`, nil)
+	specPath := filepath.Join(dir, "genv.json")
+	out := captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos"}); code != exitOK {
+			t.Fatalf("config exit = %d", code)
+		}
+	})
+	if !strings.Contains(out, "modules: none") {
+		t.Errorf("v8 config should report no modules:\n%s", out)
+	}
+}
+
+func TestConfigCmd_reports_composition_failure(t *testing.T) {
+	dir := composeFixture(t, `{
+	  "schemaVersion": "10",
+	  "modules": { "ghost": "modules/ghost.json" },
+	  "targets": { "macos": { "useModules": ["ghost"] } }
+	}`, nil)
+	specPath := filepath.Join(dir, "genv.json")
+	captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos"}); code != exitValidation {
+			t.Fatalf("config with a missing module = %d, want %d", code, exitValidation)
+		}
+	})
+}
+
+func TestConfigCmd_json_kinds_and_explain_json_shape(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	out := captureStdout(t, func() {
+		if code := run([]string{"config", "--file", specPath, "--target", "macos", "--kind", "package", "--name", "jq", "--json"}); code != exitOK {
+			t.Fatalf("config --kind exit = %d", code)
+		}
+	})
+	var got struct {
+		Found    bool `json:"found"`
+		Editable bool `json:"editable"`
+		Owners   []struct {
+			Module string `json:"module"`
+		} `json:"owners"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("parse: %v\n%s", err, out)
+	}
+	if !got.Found || got.Editable || len(got.Owners) != 1 || got.Owners[0].Module != "base" {
+		t.Errorf("json = %+v", got)
+	}
+}

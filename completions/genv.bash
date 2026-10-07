@@ -10,7 +10,7 @@ _genv() {
 
 	for i in "${COMP_WORDS[@]}"; do
 		case "${i}" in
-		add | remove | rm | adopt | disown | list | ls | apply | edit | clean | scan | status | completion | validate | upgrade | updates | migrate | export | map | pull | init | env | shell | service | files | profile | version | help)
+		add | remove | rm | adopt | disown | list | ls | apply | config | explain | edit | clean | scan | status | completion | validate | upgrade | updates | migrate | export | map | pull | init | env | shell | service | files | profile | version | help)
 			cmd="${i}"
 			break
 			;;
@@ -22,7 +22,7 @@ _genv() {
 			mapfile -t COMPREPLY < <(compgen -W "--file" -- "${cur}")
 			return 0
 		fi
-		cmds="add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service files profile version help"
+		cmds="add remove rm adopt disown list ls apply config explain edit clean scan status completion validate upgrade updates migrate export map pull init env shell service files profile version help"
 		mapfile -t COMPREPLY < <(compgen -W "${cmds}" -- "${cur}")
 		return 0
 	fi

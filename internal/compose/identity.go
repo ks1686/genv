@@ -92,3 +92,20 @@ func CleanPath(p string) string {
 	}
 	return cleaned
 }
+
+// KnownKinds lists every resource kind composition tracks, in the order they
+// are reported. Commands that accept a kind from the user validate against this
+// so a typo produces a list of valid values instead of an empty result.
+func KnownKinds() []string {
+	return []string{KindPackage, KindService, KindEnv, KindAlias, KindFunc, KindFile, KindDir, KindHook}
+}
+
+// IsKnownKind reports whether kind is one composition tracks.
+func IsKnownKind(kind string) bool {
+	for _, k := range KnownKinds() {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}

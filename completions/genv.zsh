@@ -18,6 +18,8 @@ _genv() {
 		'scan:Discover user-facing installed packages and bulk-adopt them into genv.json'
 		'status:Show diff between genv.json, the lock file, and recorded versions'
 		'completion:Print shell completion script'
+		'config:Show the composed environment for a target'
+		'explain:Explain where one resource comes from'
 		'validate:Validate genv.json against the schema'
 		'upgrade:Upgrade tracked packages plus OS vendor updates'
 		'updates:Check available updates for genv-tracked packages'

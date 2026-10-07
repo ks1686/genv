@@ -51,6 +51,13 @@ type contributor struct {
 	dir      string // directory that relative asset paths resolve against
 	target   string // target bucket name, for origins
 	bundle   *schema.TargetBundle
+	// defaults and overlay are the two source bundles this contributor merged
+	// into bundle. They are kept only to attribute each declaration to the
+	// block it actually lives in: a module may declare a package under
+	// "defaults" while the composed value is the target overlay's, and `genv
+	// explain` must not claim the package is in the overlay.
+	defaults *schema.TargetBundle
+	overlay  *schema.TargetBundle
 }
 
 // Resolve composes the effective environment for targetID.
@@ -112,6 +119,8 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 		dir:      "",
 		target:   targetID,
 		bundle:   rootBundle,
+		defaults: f.Defaults,
+		overlay:  f.Targets[targetID],
 	}}
 	for _, name := range selected {
 		mod := docs[name]
@@ -121,6 +130,8 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 			dir:      path.Dir(mod.RelPath),
 			target:   targetID,
 			bundle:   moduleBundle(mod.Doc, targetID),
+			defaults: mod.Doc.Defaults,
+			overlay:  mod.Doc.Targets[targetID],
 		})
 	}
 
@@ -483,11 +494,88 @@ func newAccumulator() *accumulator {
 }
 
 // moduleField names the field prefix used in origins for this contributor.
+// It is the fallback for a declaration whose owning block cannot be determined
+// (for example a resource that arrived through the merge rather than either
+// source block verbatim).
 func (c contributor) moduleField() string {
 	if c.target != "" {
 		return "targets." + c.target
 	}
 	return "defaults"
+}
+
+// fieldFor names the block that actually declares identity key in this
+// contributor: the target overlay when it has one, otherwise the defaults.
+//
+// Without this, every module declaration would be reported under the target
+// bucket, which sends a user editing the wrong file.
+func (c contributor) fieldFor(identity Identity) string {
+	overlayField := "targets." + c.target
+	if c.overlay != nil && declares(c.overlay, identity) {
+		return overlayField
+	}
+	if c.defaults != nil && declares(c.defaults, identity) {
+		return "defaults"
+	}
+	return c.moduleField()
+}
+
+// declares reports whether a bundle itself contains the identity, ignoring
+// what the merge would produce.
+func declares(b *schema.TargetBundle, identity Identity) bool {
+	if b == nil {
+		return false
+	}
+	switch identity.Kind {
+	case KindPackage:
+		for _, p := range b.Packages {
+			if p.ID == identity.Key {
+				return true
+			}
+		}
+	case KindService:
+		_, ok := b.Services[identity.Key]
+		return ok
+	case KindEnv:
+		_, ok := b.Env[identity.Key]
+		return ok
+	case KindAlias:
+		return b.Shell != nil && shellDeclares(b.Shell.Aliases, identity.Key)
+	case KindFunc:
+		return b.Shell != nil && shellDeclares(b.Shell.Functions, identity.Key)
+	case KindFile:
+		if b.Files == nil {
+			return false
+		}
+		for _, l := range b.Files.Links {
+			if CleanPath(l.Target) == CleanPath(identity.Key) {
+				return true
+			}
+		}
+		for _, t := range b.Files.Templates {
+			if CleanPath(t.Target) == CleanPath(identity.Key) {
+				return true
+			}
+		}
+	case KindDir:
+		if b.Files == nil {
+			return false
+		}
+		for _, d := range b.Files.Dirs {
+			if CleanPath(d.Target) == CleanPath(identity.Key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func shellDeclares[T any](m map[string]T, key string) bool {
+	if m == nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
 }
 
 // origin builds the Origin for one declaration in this contributor.
@@ -502,14 +590,17 @@ func (a *accumulator) add(c contributor) error {
 	if b == nil {
 		return nil
 	}
-	rootField := c.moduleField()
+	// fallbackField names the contributor's block when the owning block of a
+	// declaration cannot be determined (hooks, which are per document+phase
+	// rather than per resource).
+	fallbackField := c.moduleField()
 
 	for _, pkg := range b.Packages {
 		if pkg.ID == "" {
 			continue
 		}
 		id := packageIdentity(pkg.ID)
-		origin := c.origin(rootField + ".packages[" + pkg.ID + "]")
+		origin := c.origin(c.fieldFor(id) + ".packages[" + pkg.ID + "]")
 		if existing, ok := a.packages[pkg.ID]; ok {
 			if err := requireEqual(existing, pkg, id, a.provenance.Owners(id), origin); err != nil {
 				return err
@@ -528,11 +619,11 @@ func (a *accumulator) add(c contributor) error {
 		if svc == nil {
 			continue
 		}
-		if err := a.claimDestination(c, rootField+".services."+name, svc, claimantLaunchd); err != nil {
+		if err := a.claimDestination(c, c.fieldFor(serviceIdentity(name))+".services."+name, svc, claimantLaunchd); err != nil {
 			return err
 		}
 		id := serviceIdentity(name)
-		origin := c.origin(rootField + ".services." + name)
+		origin := c.origin(c.fieldFor(id) + ".services." + name)
 		if existing, ok := a.services[name]; ok {
 			if err := requireEqual(existing, *svc, id, a.provenance.Owners(id), origin); err != nil {
 				return err
@@ -551,7 +642,7 @@ func (a *accumulator) add(c contributor) error {
 			continue
 		}
 		id := envIdentity(name)
-		origin := c.origin(rootField + ".env." + name)
+		origin := c.origin(c.fieldFor(id) + ".env." + name)
 		if existing, ok := a.env[name]; ok {
 			if err := requireEqual(existing, *entry, id, a.provenance.Owners(id), origin); err != nil {
 				return err
@@ -571,7 +662,7 @@ func (a *accumulator) add(c contributor) error {
 				continue
 			}
 			id := aliasIdentity(name)
-			origin := c.origin(rootField + ".shell.aliases." + name)
+			origin := c.origin(c.fieldFor(aliasIdentity(name)) + ".shell.aliases." + name)
 			if existing, ok := a.aliases[name]; ok {
 				if err := requireEqual(existing, *entry, id, a.provenance.Owners(id), origin); err != nil {
 					return err
@@ -589,7 +680,7 @@ func (a *accumulator) add(c contributor) error {
 				continue
 			}
 			id := funcIdentity(name)
-			origin := c.origin(rootField + ".shell.functions." + name)
+			origin := c.origin(c.fieldFor(funcIdentity(name)) + ".shell.functions." + name)
 			if existing, ok := a.funcs[name]; ok {
 				if err := requireEqual(existing, *entry, id, a.provenance.Owners(id), origin); err != nil {
 					return err
@@ -608,12 +699,12 @@ func (a *accumulator) add(c contributor) error {
 			if link.Target == "" {
 				continue
 			}
-			if err := a.claimDestination(c, rootField+".files.links["+link.Target+"]", &link, claimantLink); err != nil {
+			if err := a.claimDestination(c, c.fieldFor(fileIdentity(link.Target))+".files.links["+link.Target+"]", &link, claimantLink); err != nil {
 				return err
 			}
 			resolved := a.rewriteLinkPaths(link, c)
 			id := fileIdentity(resolved.Target)
-			origin := c.origin(rootField + ".files.links[" + resolved.Target + "]")
+			origin := c.origin(c.fieldFor(fileIdentity(resolved.Target)) + ".files.links[" + resolved.Target + "]")
 			if existing, ok := a.links[id.Key]; ok {
 				if err := requireEqual(existing, resolved, id, a.provenance.Owners(id), origin); err != nil {
 					return err
@@ -629,12 +720,12 @@ func (a *accumulator) add(c contributor) error {
 			if tmpl.Target == "" {
 				continue
 			}
-			if err := a.claimDestination(c, rootField+".files.templates["+tmpl.Target+"]", &tmpl, claimantTemplate); err != nil {
+			if err := a.claimDestination(c, c.fieldFor(fileIdentity(tmpl.Target))+".files.templates["+tmpl.Target+"]", &tmpl, claimantTemplate); err != nil {
 				return err
 			}
 			resolved := a.rewriteTemplatePaths(tmpl, c)
 			id := fileIdentity(resolved.Target)
-			origin := c.origin(rootField + ".files.templates[" + resolved.Target + "]")
+			origin := c.origin(c.fieldFor(fileIdentity(resolved.Target)) + ".files.templates[" + resolved.Target + "]")
 			if existing, ok := a.templates[id.Key]; ok {
 				if err := requireEqual(existing, resolved, id, a.provenance.Owners(id), origin); err != nil {
 					return err
@@ -650,11 +741,11 @@ func (a *accumulator) add(c contributor) error {
 			if dir.Target == "" {
 				continue
 			}
-			if err := a.claimDestination(c, rootField+".files.dirs["+dir.Target+"]", &dir, claimantDir); err != nil {
+			if err := a.claimDestination(c, c.fieldFor(dirIdentity(dir.Target))+".files.dirs["+dir.Target+"]", &dir, claimantDir); err != nil {
 				return err
 			}
 			id := dirIdentity(CleanPath(dir.Target))
-			origin := c.origin(rootField + ".files.dirs[" + dir.Target + "]")
+			origin := c.origin(c.fieldFor(dirIdentity(dir.Target)) + ".files.dirs[" + dir.Target + "]")
 			if existing, ok := a.dirs[id.Key]; ok {
 				if err := requireEqual(existing, dir, id, a.provenance.Owners(id), origin); err != nil {
 					return err
@@ -678,7 +769,7 @@ func (a *accumulator) add(c contributor) error {
 			for i, hook := range phaseSlice(b.Hooks, phase) {
 				resolved := a.rewriteHookPaths(hook, c)
 				appendPhase(a.hooks, phase, []schema.Hook{resolved})
-				a.provenance.add(hookIdentity(c.document, phase, i), c.origin(rootField+".hooks."+phase))
+				a.provenance.add(hookIdentity(c.document, phase, i), c.origin(fallbackField+".hooks."+phase))
 			}
 		}
 	}
