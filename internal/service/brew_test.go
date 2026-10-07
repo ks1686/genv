@@ -2,7 +2,10 @@ package service
 
 import (
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/ks1686/genv/internal/testutil"
 )
 
 func TestIsBrewServicesAvailable_NonDarwin(t *testing.T) {
@@ -46,19 +49,30 @@ func TestBrewServicesRunning_UnknownFormula(t *testing.T) {
 	}
 }
 
+// TestBrewServicesList shadows brew with a fake rather than calling the real one.
+//
+// The previous version ran `brew services list` on the developer's machine and
+// asserted the output was non-empty, so it failed on any Mac with no brew
+// services registered and passed on any Mac that happened to have some. That is
+// a test of the machine, not of the code, and it made `make ci` red on a clean
+// checkout.
 func TestBrewServicesList(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("skipping darwin-only test")
-	}
-	if !IsBrewServicesAvailable() {
-		t.Skip("brew not available")
-	}
+	testutil.InstallFakeBinary(t, "brew", `case "$1 $2" in
+"services list") printf 'Name Status User File\nfoo started user /opt/homebrew/var/log/foo.log\n' ;;
+*) exit 1 ;;
+esac`)
 	out, err := BrewServicesList()
 	if err != nil {
 		t.Fatalf("BrewServicesList() returned error: %v", err)
 	}
-	// Output should at minimum contain the header line.
-	if len(out) == 0 {
-		t.Error("BrewServicesList() returned empty output")
+	if !strings.Contains(out, "foo") {
+		t.Errorf("BrewServicesList() = %q, want the fake service row", out)
+	}
+}
+
+func TestBrewServicesList_reports_command_failure(t *testing.T) {
+	testutil.InstallFakeBinary(t, "brew", "exit 1")
+	if _, err := BrewServicesList(); err == nil {
+		t.Error("BrewServicesList() should report an error when brew fails")
 	}
 }

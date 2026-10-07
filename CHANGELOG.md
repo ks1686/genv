@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v4.7.0 - 2026-10-07
+
+Minor: a new schema version with two capabilities — composable environments and
+verified service changes. Closes #218.
 
 ### Added
 
