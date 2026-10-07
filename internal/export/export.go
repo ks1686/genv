@@ -21,6 +21,10 @@ type Options struct {
 	// Verify, when set, queries live managers for each exported package and
 	// appends error-class report items for packages that cannot be proved.
 	Verify func(packages []schema.Package) []verify.Result
+	// MaterializedFrom names the v10 modules whose declarations were composed
+	// into this snapshot. The snapshot is flat by design, so this is the only
+	// record of where its entries came from.
+	MaterializedFrom []string
 }
 
 // Build materializes targetID into outDir as genv.json plus report artifacts.
@@ -44,6 +48,13 @@ func BuildWithOptions(f *schema.GenvFile, targetID string, outDir string, opts O
 	}
 
 	report := buildReport(effective.Packages, effective.Files, effective.Services, effective.Hooks, targetID)
+	for _, module := range opts.MaterializedFrom {
+		report = append(report, ReportItem{
+			Class:   ClassSuggestion,
+			Code:    "module.materialized",
+			Message: fmt.Sprintf("module %q is materialized into this snapshot rather than exported as a module document", module),
+		})
+	}
 	if opts.Verify != nil {
 		report = append(report, verifyReportItems(opts.Verify(effective.Packages))...)
 	}

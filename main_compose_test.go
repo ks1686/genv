@@ -603,3 +603,86 @@ func TestFilesAdopt_refuses_module_owned_link(t *testing.T) {
 		}
 	})
 }
+
+// --- export (Task 6) ------------------------------------------------------
+
+func TestExportCmd_v10_materializes_modules(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	out := filepath.Join(dir, "out")
+
+	captureStdout(t, func() {
+		if code := run([]string{"export", "--file", specPath, "--target", "macos", "--out", out}); code != exitOK {
+			t.Fatalf("export exit = %d, want %d", code, exitOK)
+		}
+	})
+
+	snapshot, err := os.ReadFile(filepath.Join(out, "genv.json"))
+	if err != nil {
+		t.Fatalf("read snapshot: %v", err)
+	}
+	flat, errs, parseErr := schema.ParseAndValidate(snapshot)
+	if parseErr != nil || len(errs) > 0 {
+		t.Fatalf("snapshot invalid: %v %v", parseErr, errs)
+	}
+	ids := map[string]bool{}
+	for _, p := range flat.Targets["macos"].Packages {
+		ids[p.ID] = true
+	}
+	for _, want := range []string{"root-pkg", "jq", "ripgrep"} {
+		if !ids[want] {
+			t.Errorf("snapshot missing module package %q (got %v)", want, ids)
+		}
+	}
+	// The snapshot is flat: no module registry, nothing to resolve on import.
+	if len(flat.Modules) != 0 {
+		t.Errorf("snapshot should not carry a module registry: %v", flat.Modules)
+	}
+}
+
+func TestExportCmd_v10_records_module_attribution(t *testing.T) {
+	dir := twoModuleFixture(t)
+	specPath := filepath.Join(dir, "genv.json")
+	out := filepath.Join(dir, "out")
+
+	captureStdout(t, func() {
+		if code := run([]string{"export", "--file", specPath, "--target", "macos", "--out", out}); code != exitOK {
+			t.Fatalf("export exit = %d, want %d", code, exitOK)
+		}
+	})
+
+	data, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if !strings.Contains(string(data), "module.materialized") {
+		t.Errorf("report should attribute materialized modules:\n%s", data)
+	}
+	for _, name := range []string{"base", "tools"} {
+		if !strings.Contains(string(data), name) {
+			t.Errorf("report should name module %q:\n%s", name, data)
+		}
+	}
+}
+
+func TestExportCmd_v8_unchanged(t *testing.T) {
+	dir := composeFixture(t, `{
+	  "schemaVersion": "8",
+	  "defaults": { "packages": [{ "id": "git" }] },
+	  "targets": { "macos": { "packages": [{ "id": "jq" }] } }
+	}`, nil)
+	specPath := filepath.Join(dir, "genv.json")
+	out := filepath.Join(dir, "out")
+	captureStdout(t, func() {
+		if code := run([]string{"export", "--file", specPath, "--target", "macos", "--out", out}); code != exitOK {
+			t.Fatalf("export exit = %d", code)
+		}
+	})
+	report, err := os.ReadFile(filepath.Join(out, "report.json"))
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if strings.Contains(string(report), "module.materialized") {
+		t.Errorf("a module-less export must not claim module attribution:\n%s", report)
+	}
+}

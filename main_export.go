@@ -84,7 +84,20 @@ func exportCmd(args []string) int {
 			return verify.Packages(pkgs, nil, verify.Options{Available: available})
 		}
 	}
-	report, err := exportpkg.BuildWithOptions(f, *targetID, *outDir, opts)
+
+	// A v10 spec exports what the environment actually is for this target, so
+	// modules are composed first and the snapshot is flat. Exporting only the
+	// root declarations would silently drop everything a module contributes.
+	exportSpec := f
+	if len(f.Modules) > 0 && schema.IsPortableVersion(f.SchemaVersion) {
+		c, code := materializeComposition("export", *file, f, "", *targetID, composeSourceRoot(*file, ""))
+		if code != exitOK {
+			return code
+		}
+		exportSpec = flattenedExportSpec(c.Effective, *targetID)
+		opts.MaterializedFrom = c.SelectedModules
+	}
+	report, err := exportpkg.BuildWithOptions(exportSpec, *targetID, *outDir, opts)
 	if err != nil {
 		fprintf(os.Stderr, "genv export: %v\n", err)
 		if errors.Is(err, genvfile.ErrInvalidFile) {
@@ -92,6 +105,7 @@ func exportCmd(args []string) int {
 		}
 		return exitIO
 	}
+
 	fprintf(os.Stdout, "exported target %s to %s\n", *targetID, *outDir)
 	if *strict && report.HasErrors() {
 		fprintf(os.Stderr, "genv export: report contains error-class items\n")

@@ -233,3 +233,22 @@ func compositionDriftNotice(lf *genvfile.LockFile, c *compose.Composition) strin
 	}
 	return strings.Join(parts, "; ")
 }
+
+// flattenedExportSpec turns a composed environment into a single-target portable
+// spec for export.
+//
+// The snapshot is deliberately flat: it is a portable copy of one target's
+// environment, and a module document is only meaningful next to its registry
+// and the rest of its selection. Carrying modules would require re-rewriting
+// every path in every document and re-validating the result on the far side;
+// materializing is both simpler and strictly more portable. The report records
+// which modules were materialized so the provenance is not lost silently.
+func flattenedExportSpec(effective *schema.GenvFile, targetID string) *schema.GenvFile {
+	return &schema.GenvFile{
+		SchemaVersion: schema.Version8,
+		Repo:          effective.Repo,
+		Updates:       effective.Updates,
+		Adapters:      effective.Adapters,
+		Targets:       map[string]*schema.TargetBundle{targetID: compose.BundleFromEffective(effective)},
+	}
+}

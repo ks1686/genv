@@ -776,6 +776,51 @@ func canonicalJSON(v any) ([]byte, error) {
 	return json.Marshal(generic)
 }
 
+// BundleFromEffective lifts the top-level declarations of a composed
+// environment back into a single target bundle.
+//
+// Composition returns a flat GenvFile because that is what every consumer
+// expects. Export is the one consumer that needs the inverse: it writes a
+// single-target spec, and that spec's only bucket must hold the same
+// declarations. This lives beside the merger so the two never drift on which
+// fields belong to a bundle.
+func BundleFromEffective(effective *schema.GenvFile) *schema.TargetBundle {
+	if effective == nil {
+		return &schema.TargetBundle{}
+	}
+	env := make(map[string]*schema.EnvVar, len(effective.Env))
+	for name, entry := range effective.Env {
+		e := entry
+		env[name] = &e
+	}
+	shell := &schema.TargetShellConfig{}
+	if effective.Shell != nil {
+		shell.Aliases = make(map[string]*schema.ShellAlias, len(effective.Shell.Aliases))
+		for name, entry := range effective.Shell.Aliases {
+			a := entry
+			shell.Aliases[name] = &a
+		}
+		shell.Functions = make(map[string]*schema.ShellFunction, len(effective.Shell.Functions))
+		for name, entry := range effective.Shell.Functions {
+			fn := entry
+			shell.Functions[name] = &fn
+		}
+	}
+	services := make(map[string]*schema.Service, len(effective.Services))
+	for name, entry := range effective.Services {
+		svc := entry
+		services[name] = &svc
+	}
+	return &schema.TargetBundle{
+		Packages: effective.Packages,
+		Env:      env,
+		Shell:    shell,
+		Services: services,
+		Files:    effective.Files,
+		Hooks:    effective.Hooks,
+	}
+}
+
 // bundle renders the accumulated resources as a flat target bundle.
 func (a *accumulator) bundle() *schema.TargetBundle {
 	out := &schema.TargetBundle{}
