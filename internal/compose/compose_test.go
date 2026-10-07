@@ -590,6 +590,35 @@ func TestFingerprint_excludes_env_values(t *testing.T) {
 	}
 }
 
+// The fingerprint goes into the lock file and into output, so it must never
+// carry a value of any kind. Only the name and the sensitive flag are hashed.
+func TestFingerprint_excludes_non_sensitive_env_values_too(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "defaults": { "env": { "EDITOR": { "value": "nvim" } } },
+	  "targets": { "macos": {} }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+	first := mustResolve(t, root, f, "macos").Fingerprint
+
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "defaults": { "env": { "EDITOR": { "value": "emacs" } } },
+	  "targets": { "macos": {} }
+	}`)
+	f2, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+	second := mustResolve(t, root, f2, "macos").Fingerprint
+
+	if first != second {
+		t.Error("fingerprint must not change when only an env value changes")
+	}
+	// The value must not appear anywhere in the fingerprint string either.
+	if strings.Contains(first, "nvim") || strings.Contains(first, "emacs") {
+		t.Errorf("fingerprint leaks an env value: %s", first)
+	}
+}
+
 func TestFingerprint_changes_with_structure(t *testing.T) {
 	root := t.TempDir()
 	spec(t, root, `{"schemaVersion":"10","targets":{"macos":{"packages":[{"id":"git"}]}}}`)
