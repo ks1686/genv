@@ -178,7 +178,7 @@ func TestValidateComposition_reports_unused_broken_module(t *testing.T) {
 		t.Errorf("compositionFor should ignore an unselected broken module: %v", cErr)
 	}
 	// ...but validate must report it.
-	issues := validateComposition(specPath, f, "", "")
+	issues := validateComposition(specPath, f, "")
 	if len(issues) == 0 {
 		t.Fatal("validateComposition should report the broken registration")
 	}
@@ -194,12 +194,14 @@ func TestValidateComposition_noop_without_modules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spec: %v", err)
 	}
-	if issues := validateComposition(specPath, f, "", ""); len(issues) != 0 {
+	if issues := validateComposition(specPath, f, ""); len(issues) != 0 {
 		t.Errorf("validateComposition on a module-less spec = %v, want none", issues)
 	}
 }
 
 func TestValidateComposition_reports_cycle(t *testing.T) {
+	// The cycle is only selected by targets.macos. Validate must report it even
+	// when this process's host target is something else (Ubuntu CI, Windows).
 	dir := composeFixture(t, `{
 	  "schemaVersion": "10",
 	  "modules": { "a": "modules/a.json", "b": "modules/b.json" },
@@ -213,12 +215,35 @@ func TestValidateComposition_reports_cycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spec: %v", err)
 	}
-	issues := validateComposition(specPath, f, "", "")
+	issues := validateComposition(specPath, f, "")
 	if len(issues) == 0 {
 		t.Fatal("expected a cycle report")
 	}
 	if !strings.Contains(issues[0].Error(), "cycle") {
 		t.Errorf("issue should mention the cycle: %v", issues[0])
+	}
+
+	// A caller that names one target does not inherit failures from the others.
+	ubuntu := composeFixture(t, `{
+	  "schemaVersion": "10",
+	  "modules": { "a": "modules/a.json", "b": "modules/b.json" },
+	  "targets": {
+	    "macos": { "useModules": ["a"] },
+	    "ubuntu": {}
+	  }
+	}`, map[string]string{
+		"modules/a.json": `{"schemaVersion":"10","requiresModules":["b"],"defaults":{}}`,
+		"modules/b.json": `{"schemaVersion":"10","requiresModules":["a"],"defaults":{}}`,
+	})
+	ubuntuSpec := filepath.Join(ubuntu, "genv.json")
+	uf, err := genvfile.Read(ubuntuSpec)
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	for _, issue := range validateComposition(ubuntuSpec, uf, "ubuntu") {
+		if strings.Contains(issue.Error(), "cycle") {
+			t.Errorf("explicit ubuntu target reported the macos cycle: %v", issue)
+		}
 	}
 }
 

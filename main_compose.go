@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -178,7 +179,7 @@ func composeSourceRoot(file, sourceRoot string) string {
 //
 // Reconciliation deliberately loads only the selection closure, so this is the
 // only command that reports a broken module nobody selected.
-func validateComposition(file string, f *schema.GenvFile, hostFlag, targetFlag string) []error {
+func validateComposition(file string, f *schema.GenvFile, targetFlag string) []error {
 	var errs []error
 	if f == nil || !schema.IsPortableVersion(f.SchemaVersion) {
 		return nil
@@ -191,15 +192,32 @@ func validateComposition(file string, f *schema.GenvFile, hostFlag, targetFlag s
 		errs = append(errs, fmt.Errorf("module registry: %w", err))
 		return errs
 	}
-	// Compose when a target is actually resolvable. An unresolvable target is
-	// reported by the caller's normal target resolution, not here.
-	if _, err := compositionFor(file, f, hostForCommand(hostFlag), targetFlag, ""); err != nil {
-		if strings.HasPrefix(err.Error(), "no matching targets.") || strings.Contains(err.Error(), "resolve target") {
-			return errs
+	// Check every declared target, not only the machine's. A cycle that lives
+	// under targets.macos must fail validate on Ubuntu and Windows too; skipping
+	// it when this host has no matching bucket reported the spec as valid.
+	// An explicit target argument still narrows the check to that one bucket.
+	ids := compositionTargetIDs(f, targetFlag)
+	for _, id := range ids {
+		if _, err := compose.Resolve(file, "", f, id, nil); err != nil {
+			errs = append(errs, fmt.Errorf("targets.%s: %w", id, err))
 		}
-		errs = append(errs, fmt.Errorf("module composition: %w", err))
 	}
 	return errs
+}
+
+// compositionTargetIDs is the set of targets validate composes. An explicit
+// target flag wins. Otherwise every bucket in the spec is checked, in a stable
+// order, so the result does not depend on which OS is running the command.
+func compositionTargetIDs(f *schema.GenvFile, targetFlag string) []string {
+	if id := strings.TrimSpace(targetFlag); id != "" {
+		return []string{id}
+	}
+	ids := make([]string, 0, len(f.Targets))
+	for id := range f.Targets {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // stampCompositionLock records which modules produced the applied state. It is

@@ -4360,7 +4360,7 @@ func validateCmd(args []string) int {
 	// Module documents are the only spec content validate must check beyond the
 	// root file itself: reconciliation loads just the selection closure, so this
 	// is where a registered-but-unused module is still reported.
-	if issues := validateComposition(*file, spec, "", ""); len(issues) > 0 {
+	if issues := validateComposition(*file, spec, ""); len(issues) > 0 {
 		for _, issue := range issues {
 			fprintf(os.Stderr, "genv validate: %v\n", issue)
 		}
