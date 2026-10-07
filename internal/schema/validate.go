@@ -917,7 +917,138 @@ func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fiel
 		}
 		errs = ValidateServiceV10Fields(name, svc, errs, fmt.Sprintf("%s.%s", fieldPrefix, name), positions)
 	}
+	return append(errs, validateServiceRequiresGraph(f, services, fieldPrefix, positions)...)
+}
+
+// validateServiceRequiresGraph rejects a `requires` cycle, and a reference to a
+// service the spec never declares anywhere.
+//
+// A cycle is worth catching at validate time rather than at upgrade time: the
+// alternative is that `genv upgrade` silently fails to order anything and the
+// user has no idea which two services disagree.
+//
+// An edge that leaves the bundle (a service declared in another target) is
+// allowed, because composition merges buckets before the graph is used; only a
+// name absent from the whole spec is an error.
+func validateServiceRequiresGraph(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if len(services) == 0 {
+		return nil
+	}
+	declaredEverywhere := map[string]bool{}
+	if f.Defaults != nil {
+		for name := range f.Defaults.Services {
+			declaredEverywhere[name] = true
+		}
+	}
+	for _, bundle := range f.Targets {
+		if bundle == nil {
+			continue
+		}
+		for name := range bundle.Services {
+			declaredEverywhere[name] = true
+		}
+	}
+
+	var errs []ValidationError
+	edges := map[string][]string{}
+	for _, name := range sortedServicePtrNames(services) {
+		svc := services[name]
+		if svc == nil || len(svc.Requires) == 0 {
+			continue
+		}
+		for _, dep := range svc.Requires {
+			if dep == "" || dep == name {
+				continue // already reported by ValidateServiceV10Fields
+			}
+			if _, inBundle := services[dep]; inBundle {
+				edges[name] = append(edges[name], dep)
+				continue
+			}
+			if declaredEverywhere[dep] {
+				continue // declared in another bucket; composition merges them
+			}
+			field := fmt.Sprintf("%s.%s.requires[%s]", fieldPrefix, name, dep)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("service %q requires %q, which no declared service provides", name, dep),
+			})
+		}
+	}
+	return append(errs, validateServiceCycles(edges, fieldPrefix, positions)...)
+}
+
+// validateServiceCycles reports each cycle once, naming the full path so the
+// user can find the edge to delete.
+func validateServiceCycles(edges map[string][]string, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	reported := map[string]bool{}
+	state := map[string]int{} // 0 unvisited, 1 on stack, 2 done
+	var path []string
+
+	var visit func(name string)
+	visit = func(name string) {
+		state[name] = 1
+		path = append(path, name)
+		for _, dep := range edges[name] {
+			switch state[dep] {
+			case 0:
+				visit(dep)
+			case 1:
+				cycle := pathFrom(path, dep)
+				key := cycleKey(cycle)
+				if !reported[key] {
+					reported[key] = true
+					field := fmt.Sprintf("%s.%s.requires", fieldPrefix, dep)
+					errs = append(errs, ValidationError{
+						Position: positions[field],
+						Field:    field,
+						Message: fmt.Sprintf("service dependency cycle: %s -> %s",
+							strings.Join(cycle, " -> "), dep),
+					})
+				}
+			}
+		}
+		path = path[:len(path)-1]
+		state[name] = 2
+	}
+
+	names := make([]string, 0, len(edges))
+	for name := range edges {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if state[name] == 0 {
+			visit(name)
+		}
+	}
 	return errs
+}
+
+// pathFrom returns the cycle portion of the current path starting at name.
+func pathFrom(path []string, name string) []string {
+	for i, p := range path {
+		if p == name {
+			return append([]string{}, path[i:]...)
+		}
+	}
+	return append([]string{name}, path...)
+}
+
+// cycleKey canonicalizes a cycle so the same loop is reported once regardless
+// of which node the walk started from.
+func cycleKey(cycle []string) string {
+	if len(cycle) == 0 {
+		return ""
+	}
+	min := 0
+	for i, n := range cycle {
+		if n < cycle[min] {
+			min = i
+		}
+	}
+	return strings.Join(append(append([]string{}, cycle[min:]...), cycle[:min]...), ",")
 }
 
 func validateTargetServiceMap(services map[string]*Service, fieldPrefix string, allowTombstones bool) []ValidationError {

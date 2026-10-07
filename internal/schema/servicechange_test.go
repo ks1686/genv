@@ -169,3 +169,72 @@ func errErrorText(errs []ValidationError) string {
 	}
 	return b.String()
 }
+
+func TestValidateService_requires_cycle_is_refused(t *testing.T) {
+	doc := `{"schemaVersion":"10","targets":{"macos":{"services":{
+	  "a":{"start":["true"],"requires":["b"]},
+	  "b":{"start":["true"],"requires":["c"]},
+	  "c":{"start":["true"],"requires":["a"]}
+	}}}}`
+	errs := mustValidate(t, doc)
+	if len(errs) == 0 {
+		t.Fatal("a requires cycle must be refused at validate time")
+	}
+	joined := errErrorText(errs)
+	if !strings.Contains(joined, "cycle") {
+		t.Errorf("error should mention a cycle:\n%s", joined)
+	}
+	for _, want := range []string{"a", "b", "c"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("cycle message should name %q:\n%s", want, joined)
+		}
+	}
+}
+
+func TestValidateService_requires_cycle_reported_once(t *testing.T) {
+	doc := `{"schemaVersion":"10","targets":{"macos":{"services":{
+	  "a":{"start":["true"],"requires":["b"]},
+	  "b":{"start":["true"],"requires":["a"]}
+	}}}}`
+	errs := mustValidate(t, doc)
+	if len(errs) != 1 {
+		t.Fatalf("errors = %d, want the single cycle reported once:\n%s", len(errs), errErrorText(errs))
+	}
+}
+
+func TestValidateService_requires_unknown_reference_is_refused(t *testing.T) {
+	doc := `{"schemaVersion":"10","targets":{"macos":{"services":{
+	  "api":{"start":["true"],"requires":["ghost"]}
+	}}}}`
+	errs := mustValidate(t, doc)
+	if len(errs) == 0 {
+		t.Fatal("a requires entry naming no declared service must be refused")
+	}
+	joined := errErrorText(errs)
+	if !strings.Contains(joined, "ghost") || !strings.Contains(joined, "api") {
+		t.Errorf("error should name both services:\n%s", joined)
+	}
+}
+
+func TestValidateService_requires_across_buckets_is_allowed(t *testing.T) {
+	// `db` is declared in defaults, not in the macos bucket. Composition merges
+	// buckets before the graph is used, so this is resolvable, not an error.
+	doc := `{"schemaVersion":"10",
+	  "defaults":{"services":{"db":{"start":["true"]}}},
+	  "targets":{"macos":{"services":{"api":{"start":["true"],"requires":["db"]}}}}}`
+	if errs := mustValidate(t, doc); len(errs) > 0 {
+		t.Fatalf("cross-bucket requires rejected: %s", errErrorText(errs))
+	}
+}
+
+func TestValidateService_requires_dag_is_accepted(t *testing.T) {
+	doc := `{"schemaVersion":"10","targets":{"macos":{"services":{
+	  "db":{"start":["true"]},
+	  "cache":{"start":["true"]},
+	  "web":{"start":["true"],"requires":["db","cache"]},
+	  "worker":{"start":["true"],"requires":["web"]}
+	}}}}`
+	if errs := mustValidate(t, doc); len(errs) > 0 {
+		t.Fatalf("a valid DAG rejected: %s", errErrorText(errs))
+	}
+}

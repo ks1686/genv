@@ -303,6 +303,62 @@ EOF
 	run config --file "$V10_SPEC" --target arch --kind package --name overlay-pkg --json
 	assert_contains "overlay package is present" "$out" "\"found\": true"
 
+	# ── v10 service change declarations ───────────────────────────────────
+	# The fields validate, order deterministically, and are refused on v8.
+	cat >"$V10DIR/services.json" <<'EOF'
+{
+  "schemaVersion": "10",
+  "targets": {
+    "arch": {
+      "services": {
+        "db": { "start": ["true"], "stop": ["true"], "status": ["true"] },
+        "api": {
+          "start": ["true"], "stop": ["true"], "status": ["true"],
+          "requires": ["db"],
+          "watch": ["postgres"],
+          "restart_policy": "ifRunning",
+          "health_check": { "command": ["true"], "timeout": "5s", "interval": "100ms" }
+        }
+      }
+    }
+  }
+}
+EOF
+	run validate --file "$V10DIR/services.json"
+	assert_ok "validate v10 service fields" "$code" "$out$err"
+
+	# A cycle must be reported rather than silently ordered.
+	cat >"$V10DIR/cycle.json" <<'EOF'
+{
+  "schemaVersion": "10",
+  "targets": {
+    "arch": {
+      "services": {
+        "a": { "start": ["true"], "requires": ["b"] },
+        "b": { "start": ["true"], "requires": ["a"] }
+      }
+    }
+  }
+}
+EOF
+	run validate --file "$V10DIR/cycle.json"
+	assert_eq "service requires cycle exits 3" "$code" "3" "$err"
+
+	# v10-only fields on v8 must be refused, not ignored.
+	cat >"$V10DIR/v8-watch.json" <<'EOF'
+{
+  "schemaVersion": "8",
+  "targets": {
+    "arch": {
+      "services": { "api": { "start": ["true"], "watch": ["postgres"] } }
+    }
+  }
+}
+EOF
+	run validate --file "$V10DIR/v8-watch.json"
+	assert_eq "watch on v8 exits 3" "$code" "3" "$err"
+	assert_contains "v8 watch error names the field" "$err" "watch"
+
 	# v1-v9 migration must refuse v10 rather than silently rewriting it.
 	run migrate --file "$V10_SPEC"
 	assert_eq "migrate refuses v10" "$code" "4" "$err"
