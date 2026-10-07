@@ -396,6 +396,18 @@ type Service struct {
 	Systemd       *SystemdSpec       `json:"systemd,omitempty"`
 	ScheduledTask *ScheduledTaskSpec `json:"scheduled_task,omitempty"`
 	Host          HostPredicate      `json:"host,omitempty"`
+
+	// Requires names services this one starts after and stops before. It is an
+	// ordering constraint, not a change trigger.
+	Requires []string `json:"requires,omitempty"`
+	// Watch names packages, file destinations, or services whose change may
+	// require restarting this service.
+	Watch []string `json:"watch,omitempty"`
+	// RestartPolicy is "never" (default) or "ifRunning".
+	RestartPolicy string `json:"restart_policy,omitempty"`
+	// HealthCheck is an optional readiness probe run after an authorized
+	// start or restart. See HealthCheck for why it never runs in a plan.
+	HealthCheck *HealthCheck `json:"health_check,omitempty"`
 }
 
 // ScheduledTaskSpec declares a Windows Task Scheduler task. genv renders the

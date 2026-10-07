@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -823,8 +824,72 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 			})
 		}
 		errs = append(errs, validateServiceMap(f.Services, "services")...)
+		pointerServices := make(map[string]*Service, len(f.Services))
+		for name, svc := range f.Services {
+			svc := svc
+			pointerServices[name] = &svc
+		}
+		errs = append(errs, validateServiceChangeFields(f, pointerServices, "services", positions)...)
 	}
 	return errs
+}
+
+// validateServiceVersionGates refuses the v10-only service fields on older
+// schemas instead of ignoring them.
+//
+// Silently dropping `watch` or `health_check` would be the worst outcome: the
+// user would believe a service restarts when its package changes, and it would
+// not. `genv migrate` cannot invent that intent either, so the fields must be
+// removed or the schema raised.
+func validateServiceVersionGates(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if versionRank(f.SchemaVersion) >= versionRank(Version10) {
+		return nil
+	}
+	for _, name := range sortedServicePtrNames(services) {
+		svc := services[name]
+		if svc == nil {
+			continue
+		}
+		if !HasV10ServiceFields(svc) {
+			continue
+		}
+		for _, field := range serviceFieldsV10 {
+			field := field
+			present := false
+			switch field {
+			case "requires":
+				present = len(svc.Requires) > 0
+			case "watch":
+				present = len(svc.Watch) > 0
+			case "restart_policy":
+				present = svc.RestartPolicy != ""
+			case "health_check":
+				present = svc.HealthCheck != nil
+			}
+			if !present {
+				continue
+			}
+			full := fieldPrefix + "." + name + "." + field
+			errs = append(errs, ValidationError{
+				Position: positions[full],
+				Field:    full,
+				Message:  fmt.Sprintf("%q requires schemaVersion %q or newer (current: %q); genv cannot guess the intent, so it refuses rather than ignoring the field", field, Version10, f.SchemaVersion),
+			})
+		}
+	}
+	return errs
+}
+
+// sortedServicePtrNames keeps the gate's error order stable so a spec with two
+// offending services always reports them the same way.
+func sortedServicePtrNames(services map[string]*Service) []string {
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func validateServiceMap(services map[string]Service, fieldPrefix string) []ValidationError {
@@ -832,6 +897,25 @@ func validateServiceMap(services map[string]Service, fieldPrefix string) []Valid
 	for name, svc := range services {
 		errs = append(errs, validateServiceName(name, fieldPrefix)...)
 		errs = append(errs, validateService(name, svc, fieldPrefix)...)
+	}
+	return errs
+}
+
+// validateServiceChangeFields applies the v10-only service fields to a target
+// bucket: the version gate on v1-v9, and the field rules on v10.
+func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if len(services) == 0 {
+		return nil
+	}
+	var errs []ValidationError
+	if versionRank(f.SchemaVersion) < versionRank(Version10) {
+		return validateServiceVersionGates(f, services, fieldPrefix, positions)
+	}
+	for name, svc := range services {
+		if svc == nil {
+			continue
+		}
+		errs = ValidateServiceV10Fields(name, svc, errs, fmt.Sprintf("%s.%s", fieldPrefix, name), positions)
 	}
 	return errs
 }
@@ -1771,6 +1855,7 @@ func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string,
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
 	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)
 	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
+	errs = append(errs, validateServiceChangeFields(f, bundle.Services, fieldPrefix+".services", positions)...)
 	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", f.SchemaVersion, positions)...)
 	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)
 	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", f.SchemaVersion, positions)...)
