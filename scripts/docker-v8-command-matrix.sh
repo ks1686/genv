@@ -142,6 +142,172 @@ EOF
 	: >"$HOOK_LOG"
 }
 
+write_v10_spec() {
+	V10DIR="$WORK/v10"
+	mkdir -p "$V10DIR/modules"
+	V10_SPEC="$V10DIR/genv.json"
+	V10_LOCK="$V10DIR/genv.lock.json"
+
+	cat >"$V10DIR/modules/base.json" <<EOF
+{
+  "schemaVersion": "10",
+  "defaults": {
+    "packages": [{ "id": "tree", "prefer": "pacman" }],
+    "env": { "EDITOR": { "value": "nvim" } },
+    "files": { "dirs": [{ "target": "$V10DIR/state", "mode": "0755" }] }
+  }
+}
+EOF
+
+	# dev requires base, and both declare EDITOR identically so it coalesces.
+	#
+	# ripgrep lives in targets.arch, not defaults: a target overlay REPLACES the
+	# defaults array inside one contributor (v8 semantics), so a module with both
+	# silently drops its default packages. The shadowing case is asserted
+	# separately below rather than left as a trap in the fixture.
+	cat >"$V10DIR/modules/dev.json" <<EOF
+{
+  "schemaVersion": "10",
+  "requiresModules": ["base"],
+  "defaults": {
+    "env": { "EDITOR": { "value": "nvim" }, "RUST_BACKTRACE": { "value": "1" } }
+  },
+  "targets": {
+    "arch": {
+      "packages": [{ "id": "ripgrep", "prefer": "pacman" }, { "id": "fd", "prefer": "pacman" }]
+    }
+  }
+}
+EOF
+
+	# A module whose target overlay replaces its defaults packages.
+	cat >"$V10DIR/modules/shadow.json" <<'EOF'
+{
+  "schemaVersion": "10",
+  "defaults": { "packages": [{ "id": "shadowed-pkg", "prefer": "pacman" }] },
+  "targets": { "arch": { "packages": [{ "id": "overlay-pkg", "prefer": "pacman" }] } }
+}
+EOF
+
+	cat >"$V10_SPEC" <<EOF
+{
+  "schemaVersion": "10",
+  "modules": {
+    "base": "modules/base.json",
+    "dev": "modules/dev.json",
+    "shadow": "modules/shadow.json",
+    "idle": "modules/idle.json"
+  },
+  "targets": {
+    "arch": {
+      "useModules": ["dev", "shadow"],
+      "packages": [{ "id": "git", "prefer": "pacman" }],
+      "services": {
+        "agent": {
+          "start": ["true"],
+          "stop": ["true"],
+          "status": ["true"]
+        }
+      }
+    }
+  }
+}
+EOF
+
+	# Registered but never selected: validate must still load it.
+	cat >"$V10DIR/modules/idle.json" <<'EOF'
+{
+  "schemaVersion": "10",
+  "defaults": { "packages": [{ "id": "jq", "prefer": "pacman" }] }
+}
+EOF
+}
+
+run_v10_matrix() {
+	log "==> v10 module composition"
+	local out err code
+
+	run validate --file "$V10_SPEC"
+	assert_ok "validate v10" "$code" "$out$err"
+
+	run config --file "$V10_SPEC" --target arch
+	assert_ok "config v10" "$code" "$out$err"
+	assert_contains "config lists selected modules" "$out" "base, dev"
+	assert_contains "config prints a fingerprint" "$out" "fingerprint:"
+
+	run config --file "$V10_SPEC" --registry
+	assert_ok "config --registry" "$code" "$out$err"
+	assert_contains "registry marks idle module" "$out" "not selected by any target"
+
+	run explain package ripgrep --file "$V10_SPEC" --target arch
+	assert_ok "explain module-owned package" "$code" "$out$err"
+	assert_contains "explain names the module" "$out" "dev"
+
+	# EDITOR is declared identically by root-adjacent contributors: it must
+	# coalesce rather than conflict, so composition succeeds and apply plans it.
+	run apply --file "$V10_SPEC" --lock-file "$V10_LOCK" --target arch --dry-run
+	assert_ok "apply --dry-run v10" "$code" "$out$err"
+	assert_contains "apply plans base package" "$out$err" "tree"
+	assert_contains "apply plans dev package" "$out$err" "ripgrep"
+	assert_contains "apply plans root package" "$out$err" "git"
+
+	run status --file "$V10_SPEC" --lock-file "$V10_LOCK" --target arch
+	assert_ok "status v10" "$code" "$out$err"
+
+	run upgrade --file "$V10_SPEC" --lock-file "$V10_LOCK" --target arch --dry-run
+	assert_ok "upgrade --dry-run v10" "$code" "$out$err"
+
+	run export --file "$V10_SPEC" --target arch --out "$WORK/out/v10"
+	assert_ok "export v10" "$code" "$out$err"
+	[[ -f "$WORK/out/v10/genv.json" ]] && record PASS "export v10 wrote genv.json" || record FAIL "export v10 wrote genv.json"
+	assert_contains "export report attributes modules" "$(cat "$WORK/out/v10/report.json")" "module.materialized"
+
+	run pull --file "$V10_SPEC" --dry-run
+	if [[ "$code" -ne 0 ]]; then
+		record PASS "pull without repo fails cleanly on v10 (exit $code)"
+	else
+		record FAIL "pull without repo fails cleanly on v10" "unexpected success"
+	fi
+
+	# A module-owned resource must not be editable from the CLI.
+	run add ripgrep --file "$V10_SPEC" --target arch --prefer pacman --no-search --no-hooks
+	assert_eq "add of module-owned package is refused" "$code" "4" "$err"
+	assert_contains "add refusal names the module" "$err" "dev"
+
+	# A conflicting module must fail before anything is written.
+	local bad="$WORK/v10-bad.json"
+	mkdir -p "$WORK/v10-bad"
+	cp -a "$V10DIR/modules" "$WORK/v10-bad/modules"
+	cat >"$WORK/v10-bad/modules/conflict.json" <<EOF
+{
+  "schemaVersion": "10",
+  "defaults": { "env": { "EDITOR": { "value": "emacs" } } }
+}
+EOF
+	cat >"$WORK/v10-bad/genv.json" <<EOF
+{
+  "schemaVersion": "10",
+  "modules": { "base": "modules/base.json", "conflict": "modules/conflict.json" },
+  "targets": { "arch": { "useModules": ["base", "conflict"] } }
+}
+EOF
+	run apply --file "$WORK/v10-bad/genv.json" --lock-file "$WORK/v10-bad/genv.lock.json" --target arch --dry-run
+	assert_eq "conflicting modules exit 3" "$code" "3" "$err"
+	[[ ! -f "$WORK/v10-bad/genv.lock.json" ]] && record PASS "conflict writes no lock" || record FAIL "conflict writes no lock"
+
+	# A target overlay replaces the defaults array inside one contributor, so a
+	# shadowed package must not appear in the composed environment at all.
+	run config --file "$V10_SPEC" --target arch --kind package --name shadowed-pkg --json
+	assert_ok "explain shadowed package" "$code" "$out$err"
+	assert_contains "shadowed defaults package is absent" "$out" "\"found\": false"
+	run config --file "$V10_SPEC" --target arch --kind package --name overlay-pkg --json
+	assert_contains "overlay package is present" "$out" "\"found\": true"
+
+	# v1-v9 migration must refuse v10 rather than silently rewriting it.
+	run migrate --file "$V10_SPEC"
+	assert_eq "migrate refuses v10" "$code" "4" "$err"
+}
+
 run_matrix() {
 	local out err code
 	GENV="$WORK/bin/genv"
@@ -378,6 +544,8 @@ main() {
 	build_genv
 	write_v8_spec
 	run_matrix
+	write_v10_spec
+	run_v10_matrix
 	print_report
 }
 

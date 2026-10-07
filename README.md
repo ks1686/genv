@@ -127,7 +127,7 @@ Native `apt`, `dnf`, and `apk` adapters are registered system managers (`prefer:
 
 ---
 
-## Spec format (schema v8/v9)
+## Spec format (schema v8/v9/v10)
 
 Recommended shape for new configs:
 
@@ -200,6 +200,43 @@ Legacy **v1–v7** specs still load. Convert with `genv migrate`. Field-by-field
 
 ---
 
+### Modules (schema v10)
+
+A spec can be assembled from local module documents instead of being one large
+file. `genv.json` registers them; each target selects them:
+
+```json
+{
+  "schemaVersion": "10",
+  "modules": { "base": "modules/base.json", "dev": "modules/dev.json" },
+  "targets": { "macos": { "useModules": ["dev"] } }
+}
+```
+
+`useModules` is additive — selecting `dev` also pulls in `base` because dev
+requires it. Every command that reconciles (`apply`, `status`, `upgrade`,
+`updates`, `scan`) sees the composed result, so a module's packages install and
+report exactly like root ones.
+
+Rules worth knowing before you split a spec up:
+
+- **Modules are local and trusted.** They are files on disk inside the spec
+  directory; genv never fetches or verifies a signature.
+- **A target overlay replaces the defaults array inside one module.** Declaring
+  both `defaults.packages` and `targets.macos.packages` in the same module gives
+  you only the second, exactly as in v8. Keep a module's packages in one place.
+- **No overrides.** If the root and a module declare a resource identically it
+  is kept once and both are recorded as owners; if they differ, composition
+  fails and names both origins. Edit the module instead.
+- **Module-owned resources are read-only from the CLI.** `add`, `remove`,
+  `disown`, `adopt`, `env`, `shell`, `service`, and `files adopt` refuse and tell
+  you which module to edit.
+- **Ask before you guess:** `genv config --target macos` prints the composition,
+  `genv explain package jq --target macos` prints who declares it.
+- **`genv export` flattens** a composed spec into a single-target snapshot and
+  records the materialized modules in `report.json`.
+
+
 ## How apply and locks work
 
 1. Read the spec and the lock.
@@ -233,12 +270,14 @@ Managed links are compared by resolved path, so a relative link pointing at the 
 | `list` (`ls`) | Show lock-tracked packages |
 | `status` | Spec ↔ lock drift (`--files` includes content `drifted`, `--offline`, `--verify`, `--target`); a version-less lock entry the live inventory contradicts is `unknown` |
 | `apply` | Reconcile (`--dry-run`, `--yes`, `--json`, `--force`, `--backup`, `--strict`, `--quiet`, `--skip-packages`, `--timeout <d>`, `--no-hooks`, `--hook-timeout <d>`, `--target`, `--force-new-lock`, `--state-dir`, `--source-root <dir>`) |
-| `validate` | Validate spec + genv-managed agent executables |
+| `config` | Composed environment for a target: module selection, fingerprint, counts (`--registry` lists modules without composing; `--kind` + `--name` shows one resource's owners) |
+| `explain` | Where one resource comes from and whether a mutation command may change it (`genv explain package jq --target macos`) |
+| `validate` | Validate spec + every registered module + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
 | `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
 | `pull` | Fetch spec + file assets from `repo` |
-| `migrate` | v1–v7 → v8 targets |
+| `migrate` | v1–v7 → v8 targets (refuses v10) |
 | `export` | Single-target snapshot + report + assets (`--verify` proves live installs) |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |

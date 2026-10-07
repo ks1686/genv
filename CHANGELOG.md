@@ -4,6 +4,70 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **`schemaVersion "10"` — local modules.** A spec can now be assembled from
+  several JSON documents instead of one. `genv.json` registers modules by name in
+  a root `modules` map, and each target bundle selects them with `useModules`.
+  Composition unions the selections of the root and every selected module.
+
+  What this buys: a spec split by concern (base tooling, language runtime, one
+  service stack) that every command already understands. `apply`, `status`,
+  `upgrade`, `updates`, and `scan` all resolve the composed environment, so a
+  module's packages install, lock, and report exactly like root ones.
+
+  Notes on the design:
+
+  - **Modules are local and trusted.** Paths resolve inside the spec's
+    directory, symlinked path components are refused, and reads use `O_NOFOLLOW`.
+    Nothing is fetched or signature-checked: a module is a file you already have.
+  - **`useModules` is additive** and follows `requiresModules`. Selecting a module
+    selects what it requires; there is no way to opt out of a dependency.
+  - **The root is a contributor, not an override.** Identical declarations
+    coalesce and every contributor is recorded as an owner. Differing
+    declarations are an error that names both origins — there is no override
+    syntax, because a silent winner is the failure mode composition exists to
+    remove.
+  - **Contributor-local merging keeps v8 semantics** (target arrays replace
+    defaults arrays, maps merge, `null` tombstones delete within one document);
+    across documents, arrays union by resource identity.
+  - **Module-owned resources are read-only from the CLI.** `add`, `remove`,
+    `disown`, `adopt`, `env`, `shell`, `service`, and `files adopt` refuse with
+    the owning module named, before any subprocess runs or any file is written.
+  - **`genv validate` loads every registered module**, including one no target
+    selects, since a broken registration is worth reporting; reconciliation loads
+    only the selection closure.
+  - **The lock records the selection and a fingerprint** of the composed
+    environment. A changed selection prints a note; it never refuses the lock.
+  - **`genv migrate` refuses v10.** Nothing needs converting, and rewriting would
+    discard the registry.
+
+- **`genv config`** — what a target actually gets: selected modules, the
+  composition fingerprint, and per-kind resource counts. `--registry` lists
+  registered modules and which target selects them; `--kind`/`--name` shows the
+  owners of a single resource.
+
+- **`genv explain <kind> <name>`** — where one resource comes from, naming the
+  declaring document and block (`defaults` or `targets.<id>`), and whether a
+  mutation command may change it.
+
+- **`genv export` composes v10 specs.** A snapshot is a flat single-target spec,
+  so exporting a v10 root without composing would have silently dropped every
+  package a module contributes. `report.json` now records which modules were
+  materialized.
+
+### Changed
+
+- `genv status` on v8/v9 specs is byte-for-byte unchanged; composition only
+  engages for v10 or v8+ specs that declare modules.
+
+### Fixed
+
+- `genvfile`'s in-place package rewrite ignored the new module registry and
+  selection, so a package-only edit to a v10 spec would have reported success
+  while writing the file back unchanged.
+
+
 ## v4.6.0 - 2026-10-01
 
 Minor: a new schema block. Closes #212.

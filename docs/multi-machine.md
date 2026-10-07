@@ -9,6 +9,8 @@ Keep machine-local state (locks, secrets) out of git. Companion overview:
 Commit the portable source files:
 
 - `genv.json`
+- module documents referenced by `modules.*` (schema v10), with their relative
+  assets
 - relative assets referenced by `files.links[].source` or `files.templates[].source`
 - documentation for your target layout
 
@@ -18,8 +20,14 @@ Never commit:
 - exported bundles that contain machine-specific snapshots
 - secrets, tokens, private keys, or sensitive env values
 
+A module document is trusted local configuration, exactly like `genv.json`
+itself: it is never fetched or signature-checked, and genv refuses to read one
+whose path escapes the spec directory. Review modules like any other code you
+put in the repo.
+
 The lock file records what one machine applied, including target, OS, managers,
-and package names. Sharing it with another target can cause false "up to date"
+package names, and — on v10 — the module selection and a fingerprint of the
+composed environment. Sharing it with another target can cause false "up to date"
 results or unsafe uninstall plans, so treat it like local cache state.
 
 ## Model your machines with targets
@@ -73,6 +81,20 @@ Then inspect package-manager portability:
 genv map --target ubuntu --file genv.json
 genv export --target ubuntu --out ./dist/ubuntu
 ```
+
+If the spec composes modules (schema v10), inspect the composition first:
+
+```bash
+genv config --target ubuntu --file genv.json     # what this target really gets
+genv explain package ripgrep --target ubuntu     # who declares it, may I edit it?
+genv config --registry                           # registered modules and their users
+```
+
+`genv config --target ...` is the check that matters on a shared repo: it shows
+the composed package, service, and file counts, so a target that silently
+composes fewer modules than you expected is visible before you apply.
+`genv export` flattens the composition and records which modules were
+materialized in `report.json`.
 
 `genv map` is assist-only and never edits your spec. `genv export` writes a
 single-target schema v8 snapshot plus `report.json` and `report.md`; it omits
