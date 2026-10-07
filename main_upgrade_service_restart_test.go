@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -90,6 +92,46 @@ func registerBumpAdapter(t *testing.T, a adapter.Adapter) {
 	})
 }
 
+// watchedUpgradeSpec builds a v10 spec whose service watches one package.
+// Command arrays are JSON-encoded so a Windows temp path cannot break the spec,
+// and status goes through sh so the same argv works on the Windows runner.
+func watchedUpgradeSpec(t *testing.T, manager, serviceMarker string) string {
+	t.Helper()
+	marker := serviceMarker
+	if runtime.GOOS == "windows" {
+		marker = filepath.ToSlash(serviceMarker)
+	}
+	start, err := json.Marshal([]string{"sh", "-c", "printf start, >> " + marker})
+	if err != nil {
+		t.Fatalf("marshal start: %v", err)
+	}
+	stop, err := json.Marshal([]string{"sh", "-c", "printf stop, >> " + marker})
+	if err != nil {
+		t.Fatalf("marshal stop: %v", err)
+	}
+	status, err := json.Marshal([]string{"sh", "-c", "exit 0"})
+	if err != nil {
+		t.Fatalf("marshal status: %v", err)
+	}
+	return fmt.Sprintf(`{
+	  "schemaVersion": "10",
+	  "targets": {
+	    "arch": {
+	      "packages": [{ "id": "postgres", "prefer": %q }],
+	      "services": {
+	        "api": {
+	          "start": %s,
+	          "stop": %s,
+	          "status": %s,
+	          "watch": ["postgres"],
+	          "restart_policy": "ifRunning"
+	        }
+	      }
+	    }
+	  }
+	}`, manager, start, stop, status)
+}
+
 // TestUpgrade_restarts_watched_service_end_to_end is the test that matters most
 // in this feature: it runs the real `genv upgrade` and requires that the
 // service is actually restarted.
@@ -110,24 +152,8 @@ func TestUpgrade_restarts_watched_service_end_to_end(t *testing.T) {
 
 	// The service reports itself running via its status command, and records
 	// every lifecycle call so the test can prove a restart happened.
-	spec := `{
-	  "schemaVersion": "10",
-	  "targets": {
-	    "arch": {
-	      "packages": [{ "id": "postgres", "prefer": "bump-manager" }],
-	      "services": {
-	        "api": {
-	          "start": ["sh", "-c", "printf start, >> ` + serviceMarker + `"],
-	          "stop":  ["sh", "-c", "printf stop, >> ` + serviceMarker + `"],
-	          "status": ["true"],
-	          "watch": ["postgres"],
-	          "restart_policy": "ifRunning"
-	        }
-	      }
-	    }
-	  }
-	}`
-	writeTestFile(t, specPath, spec)
+	// Commands are marshaled so a Windows path's backslashes stay valid JSON.
+	writeTestFile(t, specPath, watchedUpgradeSpec(t, "bump-manager", serviceMarker))
 
 	// The lock claims an older version, so a successful upgrade moves it.
 	writeLockFile(t, lockPath, &genvfile.LockFile{
@@ -188,24 +214,7 @@ func TestUpgrade_no_op_upgrade_does_not_restart_service(t *testing.T) {
 	static := &staticVersionAdapter{version: "1.0.0", marker: filepath.Join(dir, "manager.log")}
 	registerBumpAdapter(t, static)
 
-	spec := `{
-	  "schemaVersion": "10",
-	  "targets": {
-	    "arch": {
-	      "packages": [{ "id": "postgres", "prefer": "static-manager" }],
-	      "services": {
-	        "api": {
-	          "start": ["sh", "-c", "printf start, >> ` + serviceMarker + `"],
-	          "stop":  ["sh", "-c", "printf stop, >> ` + serviceMarker + `"],
-	          "status": ["true"],
-	          "watch": ["postgres"],
-	          "restart_policy": "ifRunning"
-	        }
-	      }
-	    }
-	  }
-	}`
-	writeTestFile(t, specPath, spec)
+	writeTestFile(t, specPath, watchedUpgradeSpec(t, "static-manager", serviceMarker))
 	writeLockFile(t, lockPath, &genvfile.LockFile{
 		SchemaVersion: "8",
 		Target:        "arch",

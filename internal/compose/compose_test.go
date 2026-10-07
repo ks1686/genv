@@ -88,8 +88,11 @@ func TestSelect_detects_cycle(t *testing.T) {
 		t.Errorf("error = %v, want ErrCycle", err)
 	}
 	var cyc *CycleError
-	if errors.As(err, &cyc) && len(cyc.Path) < 2 {
-		t.Errorf("cycle path too short: %v", cyc.Path)
+	if !errors.As(err, &cyc) {
+		t.Fatalf("error = %v, want *CycleError", err)
+	}
+	if cyc.Error() != "module dependency cycle: a -> b -> a" {
+		t.Errorf("cycle error = %q, want a closed path without a repeated node", cyc.Error())
 	}
 }
 

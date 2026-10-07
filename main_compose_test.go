@@ -298,10 +298,12 @@ func TestCompositionDriftNotice_silent_when_unchanged(t *testing.T) {
 }
 
 func TestComposeSourceRoot(t *testing.T) {
-	if got := composeSourceRoot("/a/b/genv.json", ""); got != "/a/b" {
+	spec := filepath.Join("a", "b", "genv.json")
+	if got := composeSourceRoot(spec, ""); got != filepath.Join("a", "b") {
 		t.Errorf("composeSourceRoot = %q, want the spec directory", got)
 	}
-	if got := composeSourceRoot("/a/b/genv.json", "/elsewhere"); got != "/elsewhere" {
+	override := filepath.Join("elsewhere")
+	if got := composeSourceRoot(spec, override); got != override {
 		t.Errorf("composeSourceRoot = %q, want the explicit override", got)
 	}
 	if got := composeSourceRoot("", ""); got != "" {

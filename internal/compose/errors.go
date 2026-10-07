@@ -56,8 +56,12 @@ type CycleError struct {
 }
 
 func (e *CycleError) Error() string {
-	path := append(append([]string{}, e.Path...), e.Path[0])
-	return fmt.Sprintf("%s: %s", ErrCycle.Error(), strings.Join(path, " -> "))
+	// Select already closes the path (a -> b -> a). Appending the first node
+	// again rendered a -> b -> a -> a.
+	if e == nil || len(e.Path) == 0 {
+		return ErrCycle.Error()
+	}
+	return fmt.Sprintf("%s: %s", ErrCycle.Error(), strings.Join(e.Path, " -> "))
 }
 
 func (e *CycleError) Unwrap() error { return ErrCycle }
