@@ -20,6 +20,8 @@ func validateUnknownKeys(raw map[string]json.RawMessage, positions map[string]Po
 	errs = append(errs, walkObject(raw["updates"], "updates", updatesFields, positions)...)
 	errs = append(errs, walkAdapters(raw["adapters"], positions)...)
 	errs = append(errs, walkBundle(raw["defaults"], "defaults", positions)...)
+	// root "modules" maps a module name to a string path, so there are no
+	// nested objects to walk; validateModuleRegistry checks names and paths.
 	if targets, ok := asObject(raw["targets"]); ok {
 		for name, body := range targets {
 			errs = append(errs, walkBundle(body, "targets."+name, positions)...)
@@ -32,6 +34,7 @@ var (
 	rootFields = strSet(
 		"$schema", "schemaVersion", "packages", "env", "shell", "services",
 		"files", "hooks", "repo", "updates", "adapters", "defaults", "targets",
+		"modules",
 	)
 	adapterFields = strSet(
 		"list", "install", "remove", "upgrade", "version", "outdated",
@@ -61,7 +64,7 @@ var (
 	hookFields                = strSet("command", "file", "host", "name", "continueOnError")
 	repoFields                = strSet("url", "ref")
 	updatesFields             = strSet("enabled", "interval", "autoApply", "notify", "onlyManagers", "skipManagers", "only", "skip")
-	bundleFields              = strSet("packages", "env", "shell", "services", "files", "hooks")
+	bundleFields              = strSet("packages", "env", "shell", "services", "files", "hooks", "useModules")
 )
 
 func strSet(keys ...string) map[string]bool {

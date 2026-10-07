@@ -34,11 +34,23 @@ const Version8 = "8"
 // Version9 is the accepted value for genv.json v9 (adds managed external releases).
 const Version9 = "9"
 
+// Version10 is the accepted value for genv.json v10 (adds local module
+// composition: the root modules registry and per-bundle useModules selection).
+const Version10 = "10"
+
 // versionOrder lists known schemaVersion values from oldest to newest.
-var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8, Version9}
+var versionOrder = []string{Version, Version2, Version3, Version4, Version5, Version6, Version7, Version8, Version9, Version10}
 
 // IsPortableVersion reports whether v uses the defaults/targets data model.
-func IsPortableVersion(v string) bool { return v == Version8 || v == Version9 }
+func IsPortableVersion(v string) bool {
+	return v == Version8 || v == Version9 || v == Version10
+}
+
+// supportsManagedExternal reports whether v may carry a managed external
+// release recipe. v10 keeps the v9 recipe surface unchanged.
+func supportsManagedExternal(v string) bool {
+	return v == Version9 || v == Version10
+}
 
 // versionRank returns the ordinal of a schemaVersion string within versionOrder,
 // or -1 if the value is not a recognized version.
@@ -184,6 +196,7 @@ type GenvFile struct {
 	Repo          *Repo                    `json:"repo,omitempty"`
 	Updates       *UpdatesConfig           `json:"updates,omitempty"`
 	Adapters      map[string]AdapterDef    `json:"adapters,omitempty"`
+	Modules       map[string]string        `json:"modules,omitempty"`
 	Defaults      *TargetBundle            `json:"defaults,omitempty"`
 	Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 }
@@ -207,6 +220,7 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Repo          *Repo                    `json:"repo,omitempty"`
 		Updates       *UpdatesConfig           `json:"updates,omitempty"`
 		Adapters      map[string]AdapterDef    `json:"adapters,omitempty"`
+		Modules       map[string]string        `json:"modules,omitempty"`
 		Defaults      *TargetBundle            `json:"defaults,omitempty"`
 		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 	}
@@ -221,6 +235,7 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Repo:          f.Repo,
 		Updates:       f.Updates,
 		Adapters:      f.Adapters,
+		Modules:       f.Modules,
 		Defaults:      f.Defaults,
 		Targets:       f.Targets,
 	})
@@ -274,12 +289,17 @@ func ValidAdapterName(name string) bool {
 // Env and Services use pointer map values so target entries can unmarshal JSON
 // null as tombstones. Defaults must not contain tombstones.
 type TargetBundle struct {
-	Packages []Package           `json:"packages,omitempty"`
-	Env      map[string]*EnvVar  `json:"env,omitempty"`
-	Shell    *TargetShellConfig  `json:"shell,omitempty"`
-	Services map[string]*Service `json:"services,omitempty"`
-	Files    *FilesConfig        `json:"files,omitempty"`
-	Hooks    *HooksConfig        `json:"hooks,omitempty"`
+	// UseModules selects registered root modules (v10). Selection is additive
+	// and ordered: defaults contribute first, then the active target, with
+	// first-occurrence deduplication. Module dependencies are declared by the
+	// module document itself, not by useModules entries.
+	UseModules []string            `json:"useModules,omitempty"`
+	Packages   []Package           `json:"packages,omitempty"`
+	Env        map[string]*EnvVar  `json:"env,omitempty"`
+	Shell      *TargetShellConfig  `json:"shell,omitempty"`
+	Services   map[string]*Service `json:"services,omitempty"`
+	Files      *FilesConfig        `json:"files,omitempty"`
+	Hooks      *HooksConfig        `json:"hooks,omitempty"`
 }
 
 // UpdatesConfig declares settings for the background updates checker/daemon.

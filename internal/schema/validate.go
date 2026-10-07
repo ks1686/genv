@@ -320,8 +320,8 @@ func validatePackageList(f *GenvFile, packages []Package, fieldPrefix string, po
 
 func validateExternalRecipe(pkg Package, pkgPath, schemaVersion string, positions map[string]Position) []ValidationError {
 	field := pkgPath + ".external"
-	if schemaVersion != Version9 {
-		return []ValidationError{{Position: positions[field], Field: field, Message: "managed external recipe requires schemaVersion \"9\""}}
+	if !supportsManagedExternal(schemaVersion) {
+		return []ValidationError{{Position: positions[field], Field: field, Message: fmt.Sprintf("managed external recipe requires schemaVersion %q", Version9)}}
 	}
 	var errs []ValidationError
 	if pkg.Prefer != "external" {
@@ -1581,8 +1581,11 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 		})
 	}
 
+	errs = append(errs, validateModuleRegistry(f, positions)...)
+
 	if f.Defaults != nil {
 		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, positions)...)
+		errs = append(errs, validateUseModules(f, f.Defaults, "defaults", positions)...)
 	}
 	for target, bundle := range f.Targets {
 		targetPath := "targets." + target
@@ -1603,6 +1606,81 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 		}
 		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, positions)...)
 		errs = append(errs, validateKnownTombstones(bundle, f.Defaults, targetPath, positions)...)
+		errs = append(errs, validateUseModules(f, bundle, targetPath, positions)...)
+	}
+	return errs
+}
+
+// validateModuleRegistry checks the v10 root modules registry: the block itself
+// is v10-only, names and paths follow the module syntax rules, and every
+// selected module must be registered here. Registration is syntax-checked only
+// because reading module documents is the loader's (I/O) job.
+func validateModuleRegistry(f *GenvFile, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if len(f.Modules) == 0 {
+		return nil
+	}
+	if f.SchemaVersion != Version10 {
+		return []ValidationError{{
+			Position: positions["modules"],
+			Field:    "modules",
+			Message:  fmt.Sprintf("modules block requires schemaVersion %q (current: %q)", Version10, f.SchemaVersion),
+		}}
+	}
+	for name, rel := range f.Modules {
+		field := "modules." + name
+		if !ValidateModuleName(name) {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("invalid module name %q; expected kebab-case, at most 64 characters, and not a built-in manager", name),
+			})
+		}
+		if !ValidateModulePath(rel) {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("invalid module path %q; expected a repository-relative path without traversal, ~, or $VAR", rel),
+			})
+		}
+	}
+	return errs
+}
+
+// validateUseModules gates per-bundle module selection on v10 and rejects names
+// that the root registry does not define, so a typo fails before composition.
+func validateUseModules(f *GenvFile, bundle *TargetBundle, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if len(bundle.UseModules) == 0 {
+		return nil
+	}
+	var errs []ValidationError
+	if f.SchemaVersion != Version10 {
+		return []ValidationError{{
+			Position: positions[fieldPrefix+".useModules"],
+			Field:    fieldPrefix + ".useModules",
+			Message:  fmt.Sprintf("useModules requires schemaVersion %q (current: %q)", Version10, f.SchemaVersion),
+		}}
+	}
+	seen := map[string]bool{}
+	for i, name := range bundle.UseModules {
+		field := fmt.Sprintf("%s.useModules[%d]", fieldPrefix, i)
+		if _, ok := f.Modules[name]; !ok {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("unknown module %q; register it under the root modules block", name),
+			})
+			continue
+		}
+		if seen[name] {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("duplicate module selection %q", name),
+			})
+			continue
+		}
+		seen[name] = true
 	}
 	return errs
 }
@@ -1689,19 +1767,19 @@ func hasDefaultService(defaults *TargetBundle, name string) bool {
 func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	errs = append(errs, validatePackageList(f, bundle.Packages, fieldPrefix+".packages", positions)...)
-	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", positions)...)
+	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", f.SchemaVersion, positions)...)
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
 	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)
 	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
-	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", positions)...)
+	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", f.SchemaVersion, positions)...)
 	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)
-	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", positions)...)
+	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", f.SchemaVersion, positions)...)
 	errs = append(errs, validateHooksConfig(f, bundle.Hooks, fieldPrefix+".hooks", positions)...)
-	errs = append(errs, validateNoHookHosts(bundle.Hooks, fieldPrefix+".hooks", positions)...)
+	errs = append(errs, validateNoHookHosts(bundle.Hooks, fieldPrefix+".hooks", f.SchemaVersion, positions)...)
 	return errs
 }
 
-func validateNoPackageHosts(packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoPackageHosts(packages []Package, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	for i, pkg := range packages {
 		if len(pkg.Host) == 0 {
@@ -1711,13 +1789,13 @@ func validateNoPackageHosts(packages []Package, fieldPrefix string, positions ma
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoServiceHosts(services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoServiceHosts(services map[string]*Service, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	for name, svc := range services {
 		if svc == nil || len(svc.Host) == 0 {
@@ -1727,13 +1805,13 @@ func validateNoServiceHosts(services map[string]*Service, fieldPrefix string, po
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoFileHosts(files *FilesConfig, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	if files == nil {
 		return nil
 	}
@@ -1746,7 +1824,7 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	for i, tpl := range files.Templates {
@@ -1757,7 +1835,7 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	for i, dir := range files.Dirs {
@@ -1768,13 +1846,13 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoHookHosts(hooks *HooksConfig, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	if hooks == nil {
 		return nil
 	}
@@ -1798,7 +1876,7 @@ func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[s
 			errs = append(errs, ValidationError{
 				Position: positions[field],
 				Field:    field,
-				Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+				Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 			})
 		}
 	}
