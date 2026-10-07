@@ -4698,10 +4698,77 @@ func upgradeCmd(args []string) int {
 		fprintf(os.Stderr, "genv upgrade: %v\n", runResult.LockWriteError)
 		return exitIO
 	}
+
+	// Dependency-aware service restarts: only after the packages have actually
+	// changed, and only for services whose watched resource moved. This is the
+	// interactive path, so health checks are allowed to run here.
+	if len(runResult.Upgraded) > 0 {
+		evidence := upgradeEvidenceFromLock(lf, lockPath, runResult.Upgraded)
+		outcomes := runRestartPhase(ctx, restartPhaseRequest{
+			Services:   f.Services,
+			Evidence:   evidence,
+			LockPath:   lockPath,
+			SourceRoot: sourceRootForSpec(*file, f),
+			Deps:       defaultRestartDeps(sourceRootForSpec(*file, f), f.Services),
+		})
+		for _, o := range outcomes {
+			switch {
+			case o.Err != nil:
+				fprintf(os.Stderr, "genv upgrade: service %s: %v\n", o.Service, o.Err)
+				exitCode = exitLogic
+			case o.ReadinessError != nil:
+				fprintf(os.Stderr, "genv upgrade: %v\n", o.ReadinessError)
+				exitCode = exitLogic
+			case o.Action == service.ActionDefer:
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", o.Service, o.Reason)
+			case o.Action == service.ActionSkip:
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", o.Service, o.Reason)
+			default:
+				fprintf(os.Stdout, "service %s: %sd\n", o.Service, o.Action)
+			}
+		}
+	}
+
 	if exitCode == exitOK {
 		adviseUpdatesReregister(os.Stdout, runResult.Upgraded)
 	}
 	return exitCode
+}
+
+// upgradeEvidenceFromLock compares the versions the lock recorded before this
+// run with the ones it records now.
+//
+// This is the honest signal available after the fact: an upgrade that changed
+// nothing leaves identical versions, and a manager that never recorded a version
+// leaves empty ones, which is unknown rather than unchanged.
+func upgradeEvidenceFromLock(before *genvfile.LockFile, lockPath string, upgraded []genvfile.LockedPackage) map[string]service.Evidence {
+	beforeVersions := map[string]string{}
+	if before != nil {
+		for _, lp := range before.Packages {
+			beforeVersions[lp.ID] = lp.InstalledVersion
+		}
+	}
+	afterVersions := map[string]string{}
+	for _, lp := range upgraded {
+		afterVersions[lp.ID] = lp.InstalledVersion
+	}
+	// readVersions re-reads the written lock for entries the caller did not
+	// carry, so an upgrade whose new version is recorded only on disk still
+	// produces evidence rather than unknown.
+	readVersions := func() {
+		if lf, err := genvfile.ReadLock(lockPath); err == nil {
+			for _, lp := range lf.Packages {
+				afterVersions[lp.ID] = lp.InstalledVersion
+			}
+		}
+	}
+	readVersions()
+
+	evidence := make(map[string]service.Evidence, len(upgraded))
+	for _, lp := range upgraded {
+		evidence[lp.ID] = service.EvidenceFromVersions(beforeVersions[lp.ID], afterVersions[lp.ID])
+	}
+	return evidence
 }
 
 func upgradeConfirmPrompt(planBatches int, hasExtra bool) string {

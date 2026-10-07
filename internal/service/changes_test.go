@@ -317,3 +317,21 @@ func TestTriggerResource_strips_prefix(t *testing.T) {
 		}
 	}
 }
+
+func TestEvidenceFromVersions(t *testing.T) {
+	cases := []struct {
+		before, after string
+		want          Evidence
+	}{
+		{"16.2", "16.4", EvidenceChanged},
+		{"16.2", "16.2", EvidenceUnchanged},
+		{"", "16.4", EvidenceUnknown},
+		{"16.2", "", EvidenceUnknown},
+		{"", "", EvidenceUnknown},
+	}
+	for _, tc := range cases {
+		if got := EvidenceFromVersions(tc.before, tc.after); got != tc.want {
+			t.Errorf("EvidenceFromVersions(%q, %q) = %s, want %s", tc.before, tc.after, got, tc.want)
+		}
+	}
+}

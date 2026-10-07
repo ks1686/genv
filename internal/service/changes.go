@@ -47,6 +47,15 @@ func ChangedEvidence(before, after schema.Package, queryVersion func(string) (st
 	if err != nil {
 		return EvidenceUnknown
 	}
+	return EvidenceFromVersions(beforeVersion, afterVersion)
+}
+
+// EvidenceFromVersions classifies a pair of observed installed versions.
+//
+// It is the whole decision, separated from how the versions were obtained, so a
+// caller that already has both sides (from the lock before and after a run, for
+// instance) does not have to fake a query function.
+func EvidenceFromVersions(beforeVersion, afterVersion string) Evidence {
 	if beforeVersion == "" || afterVersion == "" {
 		// Many managers never report a version. That is not evidence of
 		// sameness; it is absence of evidence.

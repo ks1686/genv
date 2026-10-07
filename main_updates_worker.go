@@ -162,6 +162,24 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		}
 		return exitOK
 	}
+	// Anything an interrupted run left unconfirmed is reported before new work
+	// starts, and left in place: a human decides, not the timer.
+	reportUncertainPendingActions(lockPath)
+
+	// A package whose watching service cannot be restarted *and verified* without
+	// a human is not upgraded at all. Upgrading it and skipping the restart would
+	// leave a service running against a binary nobody has restarted, which is
+	// exactly the failure this feature exists to prevent.
+	if deferred := backgroundUpgradeDeferrals(f.Services, plan); len(deferred) > 0 {
+		for _, id := range deferred {
+			logger.Info("updates.apply.deferred",
+				slog.String("id", id),
+				slog.String("reason", "watched service needs an interactive restart or health check"),
+			)
+		}
+		plan = filterUpgradePlanExcluding(plan, deferred)
+	}
+
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
 	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics, ExternalMode: externalpkg.ExecutionUnattended, Unattended: true, SourceRoot: sourceRootForSpec(file, f)})
 	matchedErrors := make([]bool, len(runResult.Errors))
