@@ -33,11 +33,24 @@ import (
 // real lock file now that commands default the lock next to --file.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
-	if os.Getenv("XDG_CONFIG_HOME") == "" {
-		dir, err := os.MkdirTemp("", "genv-test-xdg-*")
-		if err == nil {
-			_ = os.Setenv("XDG_CONFIG_HOME", dir)
-		}
+	// Always redirect the config root to a temp dir, overriding whatever the
+	// developer has set.
+	//
+	// The previous version only did this when XDG_CONFIG_HOME was unset, which
+	// silently trusted the environment: on a machine where it is set (a very
+	// common setup), every command that resolves its default spec path wrote to
+	// the real ~/.config/genv. The unattended updates worker ran against the
+	// live config during an ordinary `go test ./...`, rewriting the real lock
+	// file. A test suite must not depend on the ambient environment being
+	// friendly, and must never touch the machine running it.
+	if err := os.Unsetenv("GENV_ROOT"); err != nil {
+		_, _ = os.Stderr.WriteString("genv test: unset GENV_ROOT: " + err.Error() + "\n")
+	}
+	dir, err := os.MkdirTemp("", "genv-test-xdg-*")
+	if err != nil {
+		_, _ = os.Stderr.WriteString("genv test: temp config dir: " + err.Error() + "\n")
+	} else {
+		_ = os.Setenv("XDG_CONFIG_HOME", dir)
 	}
 	// Shadow real package managers with fakes so CLI-level tests below never
 	// install/uninstall/upgrade anything on the machine actually running
