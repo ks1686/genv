@@ -105,23 +105,17 @@ readiness left to the human. Ship a real `genv service restart`.
 
 Design (decide before coding, state the choice in the commit body):
 
-- **Precedence**, mirroring `service add`'s existing vocabulary:
-  1. `brew_formula` → `brew services restart <formula>` (`service/brew.go:41`
-     `BrewServicesRestart` already exists).
-  2. `restart` raw command when declared → run it as-is (one action, not two).
-  3. `launchd` template → `launchctl bootout` + `bootstrap` + `kickstart`
-     (launchd has no restart verb; `supervisor.go` already does bootout/bootstrap
-     in `applyLaunchdTemplate`; reuse it rather than shelling out ad hoc).
-  4. `systemd` template → `systemctl --user restart <unit>`.
-  5. `scheduled_task` → not restartable by definition; refuse with a clear message.
-  6. Otherwise stop→start using `StopDeclared` then `StartDeclared`. If no `stop`
-     command is declared, refuse with a clear message rather than half-restarting.
-- **Dependency order:** if the named service has `requires`, restart those
-  dependencies first (in `plan.Plan` order) — the same ordering helper the
-  upgrade restart phase uses (`internal/service.PlanServiceRestarts` +
-  `main_service_restart.go:32` `defaultRestartDeps`). Do **not** implement
-  `--all`; keep the blast radius to one named service plus its declared
-  dependencies, and say so in the usage text.
+- **Precedence**, matching the backend ownership rules already used by
+  `service start`/`service stop`: `brew_formula` → `brew services restart`;
+  `scheduled_task` → refuse (a trigger is not a resident process); `launchd`
+  → boot out + bootstrap; `systemd` → `systemctl --user restart`; declared raw
+  `restart` argv → run once; otherwise raw `stop` then `start`. A raw service
+  without `restart` or `stop` is refused rather than half-restarted.
+- **Dependency policy (changed after implementation review):** restart *only*
+  the named service. Restarting a healthy database because an API is sick is a
+  surprising, potentially destructive blast radius. Check `requires` first;
+  when a dependency is down, name it and touch nothing. Do **not** implement
+  `--all` or implicitly restart dependencies.
 - **Readiness:** after the restart, if the service declares `health_check`, run
   `verify.Health` and report readiness failure separately from restart failure
   (same distinction `restartOutcome.ReadinessError` makes). A readiness failure
@@ -132,20 +126,23 @@ Design (decide before coding, state the choice in the commit body):
 - **Consistency:** `--json` output? The other `service` subcommands are text
   only; decide once and document. Tests must prove both paths.
 
-Files: `main.go` (dispatch + `serviceRestartCmd` + usage text),
-`internal/service/supervisor.go` (`RestartDeclared`),
-`main_service_test.go` (the case asserting `service restart` is a usage error at
-line 99 must become a real test), `main_help_test.go`, `README.md`, `SCHEMA.md`,
+Files: `main.go` (dispatch + usage text), `main_service_restart_cmd.go`,
+`internal/service/restart.go`, `internal/service/supervisor.go` (test seam for
+`launchctl print`), tests, `README.md`, `SCHEMA.md`, `man/genv.1`,
 `completions/`, `scripts/docker-v8-command-matrix.sh`, `CHANGELOG.md`.
 
-- [ ] Spec the precedence + dependency rules above in a short design note at the
-  top of the commit; TDD: failing CLI test first.
-- [ ] `RestartDeclared` in `internal/service` with unit tests per backend
-  (reuse the fake-binary pattern; never touch real launchd/systemd).
-- [ ] CLI subcommand, usage text, exit codes, `--json` decision.
-- [ ] Dependency-aware ordering + readiness verification.
-- [ ] Update help test, README, SCHEMA, completions, command matrix, CHANGELOG.
-- Done when: `genv service restart` covers brew, launchd, systemd, raw and
+- [x] Spec the precedence + dependency rules above in the `RestartDeclared` and
+  CLI doc comments; TDD CLI/backend tests were written before the implementation.
+- [x] `RestartDeclared` in `internal/service` with hermetic unit tests for brew,
+  launchd, systemd, raw and scheduled-task refusal; no real supervisor is run.
+- [x] CLI subcommand, usage/help, exit codes. It remains text-only to match
+  `service start` and `service stop`; this is documented in `SCHEMA.md`.
+- [x] Preflight dependency liveness check and separate health-check readiness
+  verdict; an unhealthy restarted service exits non-zero without being reported
+  as a failed restart.
+- [x] Update help test, README, SCHEMA, man page, completions, command matrix,
+  CHANGELOG; completion scripts now have a regression test.
+- [x] Done when: `genv service restart` covers brew, launchd, systemd, raw and
   dependency cases under `go test ./...`, and the docs match the behavior.
 
 ### Task 4 — stale docs and repo debris  (`docs: …`)

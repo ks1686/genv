@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/ks1686/genv/internal/files"
@@ -44,12 +43,7 @@ func defaultRestartDeps(sourceRoot string, specServices map[string]schema.Servic
 		start: func(ctx context.Context, name string, svc schema.Service) error {
 			return service.StartDeclared(ctx, name, svc, sourceRoot)
 		},
-		runProbe: func(ctx context.Context, command []string) error {
-			if len(command) == 0 {
-				return fmt.Errorf("health_check declares no command")
-			}
-			return exec.CommandContext(ctx, command[0], command[1:]...).Run()
-		},
+		runProbe: runHealthProbe,
 	}
 }
 

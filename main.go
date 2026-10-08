@@ -5587,6 +5587,8 @@ func serviceCmd(args []string) int {
 		return serviceStartCmd(args[1:])
 	case "stop":
 		return serviceStopCmd(args[1:])
+	case "restart":
+		return serviceRestartCmd(args[1:])
 	case "status":
 		return serviceStatusCmd(args[1:])
 	default:
@@ -5596,7 +5598,7 @@ func serviceCmd(args []string) int {
 }
 
 func printServiceUsage() {
-	fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|status> [flags]")
+	fPrintln(os.Stderr, "usage: genv service <add|remove|list|start|stop|restart|status> [flags]")
 	fPrintln(os.Stderr)
 	fPrintln(os.Stderr, "subcommands:")
 	fPrintln(os.Stderr, "  add <name> --start <cmd> [--stop <cmd>] [--restart <cmd>] [--status <cmd>]   Add or update a service (raw commands)")
@@ -5607,6 +5609,7 @@ func printServiceUsage() {
 	fPrintln(os.Stderr, "  list                                                                        Show all declared services")
 	fPrintln(os.Stderr, "  start <name>                                                               Start a service")
 	fPrintln(os.Stderr, "  stop <name>                                                                Stop a service")
+	fPrintln(os.Stderr, "  restart <name>                                                             Restart a service (brew/launchd/systemd/restart command)")
 	fPrintln(os.Stderr, "  status <name>                                                              Show service running status")
 }
 

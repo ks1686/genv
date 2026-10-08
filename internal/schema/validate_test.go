@@ -1634,8 +1634,8 @@ func TestParseAndValidate_UnknownField(t *testing.T) {
 			// field must be reported with the name the user wrote.
 			name:      "top-level typo",
 			json:      `{"schemaVersion":"1","packages":[],"enviroment":{"FOO":{"value":"x"}}}`, //nolint:misspell
-			wantField: "enviroment",                                                       //nolint:misspell
-			wantKey:   "enviroment",                                                       //nolint:misspell
+			wantField: "enviroment",                                                             //nolint:misspell
+			wantKey:   "enviroment",                                                             //nolint:misspell
 		},
 		{
 			name:      "package typo",

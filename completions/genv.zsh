@@ -446,6 +446,7 @@ _genv() {
 				'ls:Show all declared services'
 				'start:Start a service'
 				'stop:Stop a service'
+				'restart:Restart a service (brew/launchd/systemd/restart command)'
 				'status:Show service running status'
 			)
 			_arguments \

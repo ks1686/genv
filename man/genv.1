@@ -108,6 +108,26 @@ from
 .BR status ,
 from a dry run, or from any other planning path.
 
+.SS Imperative service restart
+.B genv service restart <name>
+restarts one already-applied declared service. It uses
+.B brew services restart
+for a brew formula, re-bootstrap for a launchd agent,
+.B systemctl --user restart
+for a systemd unit, a declared
+.B restart
+argv, or a stop-then-start fallback. A raw service without either a restart or
+stop command is refused; a scheduled task is a trigger rather than a resident
+service and is also refused.
+.PP
+For a schemaVersion 10 service,
+.B requires
+entries are checked before the named service is touched. genv reports a down
+dependency and does not restart it as a hidden side effect. A declared
+.B health_check
+runs after the restart; an unhealthy service is reported as restarted but not
+ready and the command exits non-zero.
+.PP
 .B genv upgrade
 restarts a watched service only when the change was proven: an upgrade that ran
 and left the installed version unchanged produces no restart, and a version that

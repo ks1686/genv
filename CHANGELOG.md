@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- **`genv service restart <name>`** — repair one declared service without
+  manually typing stop then start. It chooses the native backend (`brew services
+  restart`, launchd re-bootstrap, or `systemctl --user restart`), runs a
+  declared `restart` command once, or safely falls back to stop then start. It
+  refuses scheduled tasks and raw services without a stop/restart command.
+  Schema-v10 dependencies are checked but never restarted as a hidden side
+  effect; a declared health check produces a distinct "restarted but not ready"
+  failure.
+
 ## v4.7.0 - 2026-10-07
 
 Minor: a new schema version with two capabilities — composable environments and

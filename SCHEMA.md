@@ -160,6 +160,27 @@ Map of name → one backend:
 
 `launchd`, `systemd` and `scheduled_task` may coexist on one service (portable defaults). They are mutually exclusive with `start` and `brew_formula`.
 
+### Imperative restart
+
+`genv service restart <name> [--file genv.json] [--target target]` restarts one
+already-applied declared service. It is deliberately text-only, matching
+`service start` and `service stop` (use `apply --json` or `upgrade --json` for
+machine-readable lifecycle results).
+
+Backend precedence is: `brew_formula` → `brew services restart`; `launchd` →
+boot out then bootstrap the installed agent; `systemd` → `systemctl --user
+restart`; declared `restart` argv → run that command once; otherwise declared
+`stop` then `start` argv. A raw service with neither `restart` nor `stop` is
+refused rather than half-restarted. A `scheduled_task` is a trigger, not a
+resident process, and is refused for the same reason.
+
+For schema-v10 services, `requires` is checked before the restart. If a
+dependency is not running, genv names it and performs no action; it never
+restarts dependencies merely because the named service is being repaired. A
+declared `health_check` runs after a successful restart and is a separate
+failure mode: genv reports that the service restarted but is not ready, then
+exits non-zero.
+
 #### `scheduled_task`
 
 The declarative Windows backend. genv renders the task definition, registers it with `schtasks /Create /XML`, and deletes it again when the service leaves the spec.

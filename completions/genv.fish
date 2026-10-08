@@ -287,12 +287,13 @@ complete -c genv -n '__fish_genv_seen_sub files adopt' -l host -d 'Host name for
 complete -c genv -n '__fish_genv_seen_sub files adopt' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # service subcommands
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a add -d 'Add or update a service'
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a 'remove rm' -d 'Remove a service from the spec'
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a 'list ls' -d 'Show all declared services'
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a start -d 'Start a service'
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a stop -d 'Stop a service'
-complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop status' -f -a status -d 'Show service running status'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a add -d 'Add or update a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a 'remove rm' -d 'Remove a service from the spec'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a 'list ls' -d 'Show all declared services'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a start -d 'Start a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a stop -d 'Stop a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a restart -d 'Restart a service'
+complete -c genv -n '__fish_genv_at_subcommand service add remove rm list ls start stop restart status' -f -a status -d 'Show service running status'
 complete -c genv -n '__fish_genv_seen_sub service add' -l start -d 'Command to start the service' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l stop -d 'Command to stop the service' -x
 complete -c genv -n '__fish_genv_seen_sub service add' -l restart -d 'Command to restart the service' -x
@@ -301,7 +302,7 @@ complete -c genv -n '__fish_genv_seen_sub service add' -l brew-formula -d 'Homeb
 complete -c genv -n '__fish_genv_seen_sub service add' -l launchd-plist -d 'LaunchAgent plist template' -r
 complete -c genv -n '__fish_genv_seen_sub service add' -l systemd-unit -d 'systemd --user unit template' -r
 complete -c genv -n '__fish_genv_seen_sub service add; or __fish_genv_seen_sub service remove; or __fish_genv_seen_sub service rm' -l target -d 'Portable target id for current schemaVersion specs' -x
-complete -c genv -n '__fish_genv_seen_sub service list; or __fish_genv_seen_sub service ls; or __fish_genv_seen_sub service start; or __fish_genv_seen_sub service stop; or __fish_genv_seen_sub service status' -l target -d 'Portable target id for current schemaVersion specs' -x
+complete -c genv -n '__fish_genv_seen_sub service list; or __fish_genv_seen_sub service ls; or __fish_genv_seen_sub service start; or __fish_genv_seen_sub service stop; or __fish_genv_seen_sub service restart; or __fish_genv_seen_sub service status' -l target -d 'Portable target id for current schemaVersion specs' -x
 
 # profile
 complete -c genv -n '__fish_genv_at_subcommand profile list ls create switch' -f -a 'list ls' -d 'List available profiles and mark the active one'
