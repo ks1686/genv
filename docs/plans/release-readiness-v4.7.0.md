@@ -80,14 +80,14 @@ can edit.
 | Gate | Result |
 | ---- | ------ |
 | `go test ./...` | **all green** (first green run on this branch) |
-| `make ci` (vet, gofmt, race, cover-gate 81.6%, bench-gate 107ms/200ms) | pass |
+| `make ci` (vet, gofmt, race, cover-gate 82.1%, bench-gate 103ms/200ms) | pass |
 | `make lint` | 36 findings — **identical to clean `main`**, zero added |
 | `make integration-v8` (Arch Docker, amd64 emulation) | **107 PASS / 0 FAIL** |
 | `go test -tags integration ./e2e -run TestE2ECompose` | pass (9 subtests) |
 | `gitleaks` (worktree + `main..HEAD`) | no leaks |
 | `trivy fs` | 2 HIGH in `golang.org/x/mod` — **same on `main`**, not introduced |
 | `semgrep p/gosec` on new packages | 0 findings |
-| v1–v9 output vs `main` binary | **byte-identical** across status/apply/validate |
+| v1–v9 output vs `main` binary | **byte-identical** across status/validate/apply --dry-run/list/scan --dry-run |
 
 Review record: recorded by `review-record.sh` against the final commit (3 checks, all passed).
 
@@ -107,19 +107,62 @@ Also fixed: `validate` accepted a service `requires` cycle the documentation
 promised it would reject, and `TestBrewServicesList` ran the real `brew`, which
 made `make ci` red on a clean checkout and blocked the review gate.
 
-## Test-harness hazard found and fixed
+## Second review pass: findings on the branch
 
-`TestMain` redirected `XDG_CONFIG_HOME` to a temp dir only when it was unset. Where
-it is set (as on the author's machine), `go test ./...` resolved the real
-`~/.config/genv` and ran the unattended updates worker against it three times
-during verification. Impact: the live `genv.lock.json` was rewritten with
-`upgraded=0`. The live `genv.json` was never modified and no package changed.
-`TestMain` now always overrides the config root, and a regression test fails
-against the old conditional. A full `go test ./...` no longer touches the live
-lock or log.
+A review of the pushed branch raised ten items. Each was re-verified against the
+code rather than taken on trust; all ten were real, and two were worse than
+reported.
+
+**Composition**
+
+- `shell.source` was dropped entirely on the module path. Fixed.
+- Array fields used `len() > 0`, so an empty target array kept the defaults
+  instead of clearing them — the same spec meant two things with and without
+  modules. Fixed for packages, file links, templates, dirs and hook phases.
+- Hooks were appended within a document, so a target phase could not replace the
+  defaults phase. Fixed.
+- A module-free spec produced an empty provenance index, so `genv explain`
+  reported every v8/v9 resource as unowned. Fixed.
+- A `requires` edge was judged against a synthetic file holding only the bundle
+  being checked. **Worse than reported**: every reference outside that one bucket
+  failed, including a service declared in another bucket of the same module. A
+  module that ordered itself after the root database failed *every* command.
+  Cross-document references now resolve against the composed union.
+- A `watch` entry naming a file or another service was accepted and then
+  silently ignored forever. Now a validation error naming the entry.
+
+**Service restarts**
+
+- `genv upgrade --json` returned before the restart phase: it upgraded the
+  binary, left the service on the old code, and reported success. Fixed; restarts
+  are reported under a new `services` key.
+- The unattended worker deferred the packages needing a human and then never
+  restarted anything at all, silently. Fixed.
+- `health_check.timeout` bounded only the gap *between* probes, so `timeout:
+  200ms` could hold the command open indefinitely on a hung probe. Fixed.
+- The fingerprint skipped `requires`, `watch`, `restart_policy` and
+  `health_check`, so a change to restart behavior left the lock looking current.
+  Fixed.
+- A pending record that could not be written was swallowed, while a comment
+  claimed the outcome reported it. Fixed.
+
+**One more, found while checking compatibility**
+
+Validation output for an *invalid* spec was not deterministic: fifteen runs of
+one spec produced three different orderings, because validators walk Go maps.
+Pre-existing on `main`, not introduced here. Errors are now sorted once at the
+boundary of `ParseAndValidate`/`ParseAndValidateModule`. Valid v1/v5/v7/v8
+output is byte-for-byte unchanged; only the ordering of an invalid spec's errors
+changed, and it no longer moves.
 
 ## Known limits
 
+- **Watching a file or another service is not a trigger.** Evidence for a restart
+  comes from exactly one place: a tracked package whose installed version moved
+  during an upgrade. `genv apply` does not run the restart phase, and nothing
+  compares file contents, so a changed config file restarts nothing. A `watch`
+  entry of that kind is now refused rather than silently ignored. Closing this
+  needs per-file change tracking in the lock, which is a separate slice.
 - `make integration-v8` needs `--platform linux/amd64` on Apple Silicon;
   `archlinux:latest` has no arm64 manifest. The Makefile target is unchanged, so
   on arm64 hosts it must be run with the flag added (CI is amd64).
