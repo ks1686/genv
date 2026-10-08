@@ -147,27 +147,21 @@ Files: `main.go` (dispatch + usage text), `main_service_restart_cmd.go`,
 
 ### Task 4 — stale docs and repo debris  (`docs: …`)
 
-- [ ] `README.md:7` says "Current release … (v4.1.0+) — schema v7 … v8". Update to
-  the current line (v4.7.x, schema v10 modules + service changes); keep the link
-  to `releases/latest`. Re-check the stability table near `README.md:434`.
-- [ ] `docs/specs/2026-10-06-composable-verified-environments.md:3` says
-  "implementation not started" → mark M1+M2 shipped in v4.7.0, M3–M5 not started.
-- [ ] `docs/plans/2026-10-06-composable-verified-environments.md:4` says
-  "awaiting approval" → "Completed (v4.7.0); Task 9 deliberately skipped".
-- [ ] `docs/plans/release-readiness-v4.7.0.md:3` → "Published 2026-10-08 (v4.7.0)".
-- [ ] Consider moving completed plans/specs to `docs/archive/{plans,specs}/`
-  (the lifecycle convention from #181 lives in genv-config; only adopt it here if
-  the owner agrees — otherwise just fix the status lines).
-- [ ] `baseline.txt` (repo root): a stray benchmark capture from `9dfc0b4`,
-  referenced nowhere. Delete it.
-- [ ] `snap/snapcraft.yaml`: leftover from the removed Snap distribution channel
-  (plan `docs/superpowers/plans/2026-09-10-remove-snap-distribution.md`).
-  **Owner decision pending** — delete it if approved, and extend
-  `release_config_test.go` to assert it does not come back. Do NOT touch
-  `internal/adapter/snap.go` (the snap package-manager adapter stays).
-- [ ] Ignored `.cursor/plans/active-*.md` still list "publish v4.7.0" unchecked;
-  tick them or delete them (they are untracked; no commit needed).
-- Done when: no current doc claims a state that contradicts git tags/releases.
+- [x] Updated README's current-release line to v4.7.0/schema v10 and retained
+  the `releases/latest` link. Existing platform stability text was already current.
+- [x] Marked the composition spec M1+M2 shipped in v4.7.0; M3–M5 remain deferred.
+- [x] Marked the composition plan completed and recorded Task 9 as deliberately
+  skipped for regression-risk reasons.
+- [x] Marked v4.7.0 release-readiness as published 2026-10-08 and corrected the
+  CHANGELOG date.
+- [x] Kept completed plans in place but changed their status lines: this repo has
+  no `docs/archive/` convention yet, so moving them would add unrelated structure.
+- [x] Deleted the unreferenced tracked `baseline.txt` benchmark capture.
+- [x] Deleted discontinued `snap/snapcraft.yaml`; `release_config_test.go` now
+  fails if it returns. The Snap package-manager adapter was untouched.
+- [x] `.cursor/plans/` has no working-tree files (it is ignored), so there is no
+  stale local stamp to update in this worktree.
+- [x] Done when: no current doc claims a state that contradicts git tags/releases.
 
 ### Task 5 — input hardening  (`fix(schema): …`, `fix(genvfile): …`)
 

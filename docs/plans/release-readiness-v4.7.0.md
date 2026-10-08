@@ -1,7 +1,7 @@
 # Release readiness — v4.7.0
 
-**Status: ready to publish, awaiting explicit approval to push and tag.**
-Nothing has been pushed. The branch is local in `~/Documents/Worktrees/genv/compose-v10`.
+**Status: published as v4.7.0 on 2026-10-08.**
+This is the historical release-readiness record; the branch was merged, tagged and released.
 
 ## What ships
 

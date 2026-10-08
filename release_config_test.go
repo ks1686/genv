@@ -9,6 +9,14 @@ import (
 func TestReleaseConfigDoesNotPublishSnap(t *testing.T) {
 	t.Parallel()
 
+	if _, err := os.Stat("snap/snapcraft.yaml"); !os.IsNotExist(err) {
+		if err == nil {
+			t.Error("snap/snapcraft.yaml remains after the Snap distribution channel was discontinued")
+		} else {
+			t.Fatalf("stat snap/snapcraft.yaml: %v", err)
+		}
+	}
+
 	checks := []struct {
 		path      string
 		forbidden []string

@@ -1,8 +1,8 @@
 # Plan: composable, verified environments (M1 composition + M2 service changes)
 
 Design baseline: [docs/specs/2026-10-06-composable-verified-environments.md](../specs/2026-10-06-composable-verified-environments.md)
-Created: 2026-10-06 · Status: awaiting approval · Fast-path: no
-Scope here: M1 and M2 only. M3–M5 are follow-up milestones described in the design doc; they are **not** implemented in this plan.
+Created: 2026-10-06 · Status: **completed (v4.7.0)** · Fast-path: no
+Scope here was M1 and M2 only. M3–M5 remain separately scoped follow-up milestones. Task 9's shared apply execution engine was deliberately not implemented: it was high-regression-risk infrastructure that the shipped service-result model did not need.
 
 ## Goal and architecture
 

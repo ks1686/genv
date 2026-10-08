@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
   effect; a declared health check produces a distinct "restarted but not ready"
   failure.
 
-## v4.7.0 - 2026-10-07
+## v4.7.0 - 2026-10-08
 
 Minor: a new schema version with two capabilities — composable environments and
 verified service changes. Closes #218.
