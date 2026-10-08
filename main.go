@@ -4564,7 +4564,12 @@ func upgradeCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, *yes, hostName, *file, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON)
+		return upgradeJSON(*dryRun, *yes, hostName, *file, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON, upgradeRestartJSON{
+			Services:   f.Services,
+			Before:     lockInstalledVersions(lf),
+			LockPath:   lockPath,
+			SourceRoot: sourceRootForSpec(*file, f),
+		})
 	}
 
 	for _, s := range skipped {
@@ -4741,6 +4746,43 @@ func upgradeCmd(args []string) int {
 	return exitCode
 }
 
+// upgradeRestartJSON carries the restart phase's inputs through the JSON path.
+type upgradeRestartJSON struct {
+	Services   map[string]schema.Service
+	Before     map[string]string
+	LockPath   string
+	SourceRoot string
+}
+
+// upgradeRestartJSONEntries renders restart outcomes for the JSON envelope.
+//
+// The action is reported in past tense for the same reason the text path does:
+// the report describes what happened, and "restart" reads as an instruction that
+// quietly invites a re-run.
+func upgradeRestartJSONEntries(outcomes []restartOutcome) []output.UpgradeServiceRestart {
+	out := make([]output.UpgradeServiceRestart, 0, len(outcomes))
+	for _, o := range outcomes {
+		entry := output.UpgradeServiceRestart{
+			Service:        o.Service,
+			Action:         pastTenseRestartAction(o.Action),
+			PendingCleared: o.PendingCleared,
+		}
+		switch o.Action {
+		case service.ActionSkip, service.ActionDefer:
+			entry.Action = o.Action
+			entry.Reason = o.Reason
+		}
+		if o.Err != nil {
+			entry.Error = o.Err.Error()
+		}
+		if o.ReadinessError != nil {
+			entry.ReadinessError = o.ReadinessError.Error()
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
 // upgradeEvidenceFromLock compares the versions the lock recorded before this
 // run with the ones it records now.
 //
@@ -4884,7 +4926,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // stderr so stdout stays one JSON object, then reports executed batches,
 // refreshed versions, and failed hooks while preserving the human path's exit
 // codes.
-func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
+func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON, restart upgradeRestartJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -4980,6 +5022,8 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 		})
 	}
 
+	// Snapshot before RunUpgrade mutates the lock in place, or every version
+	// would compare equal to itself and no service would ever restart.
 	var runResult upgrade.UpgradeRunResult
 	if len(plan) > 0 {
 		// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
@@ -5046,6 +5090,34 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 		})
 	}
 
+	// The same dependency-aware restart phase the text path runs. Without it
+	// `genv upgrade --json` upgraded watched binaries and left every service
+	// running the old code, reporting success — the output flag changed machine
+	// state, which is the one thing an output flag must never do.
+	var restarts []output.UpgradeServiceRestart
+	if len(runResult.Upgraded) > 0 {
+		evidence := upgradeEvidenceFromLock(restart.Before, lockPath, runResult.Upgraded)
+		outcomes := runRestartPhase(ctx, restartPhaseRequest{
+			Services:        restart.Services,
+			Evidence:        evidence,
+			LockPath:        restart.LockPath,
+			SourceRoot:      restart.SourceRoot,
+			Deps:            defaultRestartDeps(restart.SourceRoot, restart.Services),
+			LockAlreadyHeld: true, // upgradeCmd holds this mutex for its whole run
+		})
+		restarts = upgradeRestartJSONEntries(outcomes)
+		for _, r := range restarts {
+			switch {
+			case r.Error != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.Error))
+			case r.ReadinessError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.ReadinessError))
+			case r.Action == string(service.ActionSkip), r.Action == string(service.ActionDefer):
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", r.Service, r.Reason)
+			}
+		}
+	}
+
 	if len(errs) == 0 {
 		adviseUpdatesReregister(os.Stderr, runResult.Upgraded)
 	}
@@ -5062,6 +5134,7 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 			Updated:     updated,
 			Skipped:     skippedEntries,
 			FailedHooks: postHooks,
+			Services:    restarts,
 			Filters:     filters,
 		},
 		Errors: errs,

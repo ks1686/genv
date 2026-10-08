@@ -227,5 +227,23 @@ type UpgradeResult struct {
 	Updated     []UpgradePackage    `json:"updated,omitempty"`
 	Skipped     []UpgradeSkipped    `json:"skipped,omitempty"`
 	FailedHooks []UpgradeHookResult `json:"failedHooks,omitempty"`
-	Filters     UpgradeFilters      `json:"filters"`
+	// Services reports what the dependency-aware restart phase decided for each
+	// service. Without it, `--json` would leave the same machine in a different
+	// state than the text path while reporting nothing about it.
+	Services []UpgradeServiceRestart `json:"services,omitempty"`
+	Filters  UpgradeFilters          `json:"filters"`
+}
+
+// UpgradeServiceRestart is one service's restart outcome.
+//
+// Action is what was done: "restarted", "started", "skipped", "deferred".
+// ReadinessError is set when the service started but never reported ready,
+// which is a different failure from the restart itself failing.
+type UpgradeServiceRestart struct {
+	Service        string `json:"service"`
+	Action         string `json:"action"`
+	Reason         string `json:"reason,omitempty"`
+	PendingCleared bool   `json:"pendingCleared,omitempty"`
+	ReadinessError string `json:"readinessError,omitempty"`
+	Error          string `json:"error,omitempty"`
 }

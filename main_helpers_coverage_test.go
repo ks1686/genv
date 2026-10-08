@@ -525,14 +525,14 @@ func TestUpgradeJSON_DryRunAndEmptyPlan(t *testing.T) {
 
 	var code int
 	out := captureStdout(t, func() {
-		code = upgradeJSON(true, false, "", "", "", 0, f, lf, plan, nil, nil, filters, extraUpgradeJSON{})
+		code = upgradeJSON(true, false, "", "", "", 0, f, lf, plan, nil, nil, filters, extraUpgradeJSON{}, upgradeRestartJSON{})
 	})
 	if code != exitOK || !strings.Contains(out, `"planned"`) {
 		t.Fatalf("dry-run upgradeJSON = %d %s", code, out)
 	}
 
 	out = captureStdout(t, func() {
-		code = upgradeJSON(false, false, "", "", "", 0, f, lf, nil, nil, nil, output.UpgradeFilters{HooksSkipped: true}, extraUpgradeJSON{})
+		code = upgradeJSON(false, false, "", "", "", 0, f, lf, nil, nil, nil, output.UpgradeFilters{HooksSkipped: true}, extraUpgradeJSON{}, upgradeRestartJSON{})
 	})
 	if code != exitOK {
 		t.Fatalf("empty plan upgradeJSON = %d %s", code, out)

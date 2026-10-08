@@ -234,3 +234,114 @@ func TestUpgrade_no_op_upgrade_does_not_restart_service(t *testing.T) {
 		t.Errorf("a no-op upgrade must not restart the service, calls = %q (output:\n%s)", data, out)
 	}
 }
+
+// An output flag must not change machine state. `genv upgrade --json` used to
+// return before the restart phase, so it upgraded the binary a service runs and
+// left the service on the old code while reporting success.
+func TestUpgrade_json_restarts_watched_service_end_to_end(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+
+	bump := &versionBumpAdapter{marker: filepath.Join(dir, "manager.log")}
+	registerBumpAdapter(t, bump)
+
+	writeTestFile(t, specPath, watchedUpgradeSpec(t, "bump-manager", serviceMarker))
+	writeLockFile(t, lockPath, &genvfile.LockFile{
+		SchemaVersion: "8",
+		Target:        "arch",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "postgres", Manager: "bump-manager", PkgName: "postgres", InstalledVersion: "1.0.0"},
+		},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks", "--all", "--json"})
+	})
+	if code != exitOK {
+		t.Fatalf("upgrade --json exit = %d, want %d\n%s", code, exitOK, out)
+	}
+
+	data, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("service was never restarted under --json; the output flag changed machine state\n%s", out)
+	}
+	var calls []string
+	for _, c := range strings.Split(string(data), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			calls = append(calls, c)
+		}
+	}
+	if strings.Join(calls, ",") != "stop,start" {
+		t.Errorf("service lifecycle calls = %v, want stop then start", calls)
+	}
+
+	// The envelope has to report it, not just do it.
+	var env struct {
+		Data struct {
+			Services []struct {
+				Service string `json:"service"`
+				Action  string `json:"action"`
+			} `json:"services"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("stdout is not one JSON object: %v\n%s", err, out)
+	}
+	if len(env.Data.Services) != 1 {
+		t.Fatalf("services = %+v, want one restart reported\n%s", env.Data.Services, out)
+	}
+	if env.Data.Services[0].Action != "restarted" {
+		t.Errorf("action = %q, want %q", env.Data.Services[0].Action, "restarted")
+	}
+
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.PendingActions) != 0 {
+		t.Errorf("pending actions = %+v, want cleared", lf.PendingActions)
+	}
+}
+
+// A JSON dry run plans and does not act, exactly like the text path.
+func TestUpgrade_json_dry_run_does_not_restart_service(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+
+	bump := &versionBumpAdapter{marker: filepath.Join(dir, "manager.log")}
+	registerBumpAdapter(t, bump)
+
+	writeTestFile(t, specPath, watchedUpgradeSpec(t, "bump-manager", serviceMarker))
+	writeLockFile(t, lockPath, &genvfile.LockFile{
+		SchemaVersion: "8",
+		Target:        "arch",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "postgres", Manager: "bump-manager", PkgName: "postgres", InstalledVersion: "1.0.0"},
+		},
+	})
+
+	var code int
+	out := captureStdout(t, func() {
+		code = run([]string{"upgrade", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--no-hooks", "--all", "--json", "--dry-run"})
+	})
+	if code != exitOK {
+		t.Fatalf("upgrade --json --dry-run exit = %d, want %d\n%s", code, exitOK, out)
+	}
+	if _, err := os.Stat(serviceMarker); err == nil {
+		t.Errorf("dry run touched the service; a plan that runs commands is not a plan\n%s", out)
+	}
+	if strings.Contains(out, `"action"`) {
+		t.Errorf("dry run reported a restart action:\n%s", out)
+	}
+}
