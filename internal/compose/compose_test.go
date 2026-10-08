@@ -1138,3 +1138,102 @@ func TestFingerprint_changes_with_shell_source(t *testing.T) {
 		t.Error("fingerprint unchanged after editing shell.source")
 	}
 }
+
+// --- cross-document requires ------------------------------------------------
+//
+// A requires edge may name a service declared by another document. That is only
+// checkable once every contributor is merged, so neither document may reject it
+// on its own.
+
+func TestResolve_module_service_may_require_a_root_service(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/app.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "services": { "api": { "start": ["api-server"], "requires": ["db"] } } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "app": "modules/app.json" },
+	  "defaults": { "services": { "db": { "start": ["db-server"] } } },
+	  "targets": { "macos": { "useModules": ["app"] } }
+	}`)
+	raw, err := os.ReadFile(filepath.Join(root, "genv.json"))
+	if err != nil {
+		t.Fatalf("read spec: %v", err)
+	}
+	f, _, _ := schema.ParseAndValidate(raw)
+
+	c := mustResolve(t, root, f, "macos")
+	if len(c.Effective.Services) != 2 {
+		t.Fatalf("services = %d, want both contributors' services", len(c.Effective.Services))
+	}
+}
+
+func TestResolve_module_service_may_require_a_service_in_another_bucket(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/app.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "services": { "api": { "start": ["api"], "requires": ["db"] } } },
+	  "targets": { "macos": { "services": { "db": { "start": ["db"] } } } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "app": "modules/app.json" },
+	  "targets": { "macos": { "useModules": ["app"] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if _, ok := c.Effective.Services["db"]; !ok {
+		t.Errorf("services = %v, want the module's target-bucket service", c.Effective.Services)
+	}
+}
+
+func TestResolve_rejects_a_requires_nothing_declares(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/app.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "services": { "api": { "start": ["api"], "requires": ["ghost"] } } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "app": "modules/app.json" },
+	  "targets": { "macos": { "useModules": ["app"] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	_, err := Resolve(root, root, f, "macos", nil)
+	if err == nil {
+		t.Fatal("Resolve: want an error for a requires nothing declares")
+	}
+	assertIsError(t, err, ErrServiceGraph)
+}
+
+func TestResolve_rejects_a_cycle_that_spans_two_modules(t *testing.T) {
+	// Neither module can see the cycle: each edge points at the other document.
+	// Only the composed union can.
+	root := t.TempDir()
+	writeModule(t, root, "modules/app.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "services": { "api": { "start": ["api"], "requires": ["db"] } } }
+	}`)
+	writeModule(t, root, "modules/db.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "services": { "db": { "start": ["db"], "requires": ["api"] } } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "app": "modules/app.json", "db": "modules/db.json" },
+	  "targets": { "macos": { "useModules": ["app", "db"] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	_, err := Resolve(root, root, f, "macos", nil)
+	if err == nil {
+		t.Fatal("Resolve: want an error for a cycle spanning two modules")
+	}
+	assertIsError(t, err, ErrServiceGraph)
+	if !strings.Contains(err.Error(), "api") || !strings.Contains(err.Error(), "db") {
+		t.Errorf("error = %v, want it to name both services", err)
+	}
+}

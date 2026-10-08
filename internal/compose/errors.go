@@ -30,6 +30,9 @@ var (
 	ErrInvalidModule = errors.New("invalid module document")
 	// ErrLimit reports an input that exceeds a documented safety limit.
 	ErrLimit = errors.New("input exceeds composition limit")
+	// ErrServiceGraph reports a composed requires edge that no declared service
+	// satisfies, or a cycle among services once every contributor is merged.
+	ErrServiceGraph = errors.New("service dependency graph is not resolvable")
 )
 
 // ConflictError describes one identity declared differently by two or more

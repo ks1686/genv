@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ks1686/genv/internal/plan"
 	"github.com/ks1686/genv/internal/schema"
 )
 
@@ -146,6 +147,17 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 	}
 
 	bundle := acc.bundle()
+
+	// A requires edge may cross documents: a module can order itself after a
+	// service the root spec declares, and two modules can require each other's
+	// services. Neither document can check that alone — only the union can, so
+	// this is the first point where an unknown reference or a cross-document
+	// cycle is knowable. plan.Build is the same check the restart coordinator
+	// uses, so validate and upgrade agree by construction.
+	if _, err := plan.Build(bundle.Services); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrServiceGraph, err)
+	}
+
 	selectedCopy := append([]string{}, selected...)
 	effective := &schema.GenvFile{
 		SchemaVersion: f.SchemaVersion,

@@ -829,7 +829,9 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 			svc := svc
 			pointerServices[name] = &svc
 		}
-		errs = append(errs, validateServiceChangeFields(f, pointerServices, "services", positions)...)
+		// The legacy flat services block is one document, so every reference
+		// must resolve inside it.
+		errs = append(errs, validateServiceChangeFields(f, pointerServices, "services", false, positions)...)
 	}
 	return errs
 }
@@ -903,7 +905,12 @@ func validateServiceMap(services map[string]Service, fieldPrefix string) []Valid
 
 // validateServiceChangeFields applies the v10-only service fields to a target
 // bucket: the version gate on v1-v9, and the field rules on v10.
-func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+// allowExternalRequires lets a requires edge name a service this document does
+// not declare. Only module documents set it: a module is one contributor among
+// several, so the service it depends on may well be declared by the root spec
+// or by another module. Deciding that is composition's job, not a single
+// document's.
+func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fieldPrefix string, allowExternalRequires bool, positions map[string]Position) []ValidationError {
 	if len(services) == 0 {
 		return nil
 	}
@@ -917,7 +924,7 @@ func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fiel
 		}
 		errs = ValidateServiceV10Fields(name, svc, errs, fmt.Sprintf("%s.%s", fieldPrefix, name), positions)
 	}
-	return append(errs, validateServiceRequiresGraph(f, services, fieldPrefix, positions)...)
+	return append(errs, validateServiceRequiresGraph(f, services, fieldPrefix, allowExternalRequires, positions)...)
 }
 
 // validateServiceRequiresGraph rejects a `requires` cycle, and a reference to a
@@ -930,7 +937,7 @@ func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fiel
 // An edge that leaves the bundle (a service declared in another target) is
 // allowed, because composition merges buckets before the graph is used; only a
 // name absent from the whole spec is an error.
-func validateServiceRequiresGraph(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateServiceRequiresGraph(f *GenvFile, services map[string]*Service, fieldPrefix string, allowExternalRequires bool, positions map[string]Position) []ValidationError {
 	if len(services) == 0 {
 		return nil
 	}
@@ -966,6 +973,11 @@ func validateServiceRequiresGraph(f *GenvFile, services map[string]*Service, fie
 			}
 			if declaredEverywhere[dep] {
 				continue // declared in another bucket; composition merges them
+			}
+			if allowExternalRequires {
+				// The provider lives in another document. Composition checks
+				// the union, where the answer is actually knowable.
+				continue
 			}
 			field := fmt.Sprintf("%s.%s.requires[%s]", fieldPrefix, name, dep)
 			errs = append(errs, ValidationError{
@@ -1799,7 +1811,7 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 	errs = append(errs, validateModuleRegistry(f, positions)...)
 
 	if f.Defaults != nil {
-		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, positions)...)
+		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, false, positions)...)
 		errs = append(errs, validateUseModules(f, f.Defaults, "defaults", positions)...)
 	}
 	for target, bundle := range f.Targets {
@@ -1819,7 +1831,7 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 			})
 			continue
 		}
-		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, positions)...)
+		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, false, positions)...)
 		errs = append(errs, validateKnownTombstones(bundle, f.Defaults, targetPath, positions)...)
 		errs = append(errs, validateUseModules(f, bundle, targetPath, positions)...)
 	}
@@ -1979,14 +1991,14 @@ func hasDefaultService(defaults *TargetBundle, name string) bool {
 	return defaults.Services[name] != nil
 }
 
-func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
+func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, allowExternalRequires bool, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	errs = append(errs, validatePackageList(f, bundle.Packages, fieldPrefix+".packages", positions)...)
 	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", f.SchemaVersion, positions)...)
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
 	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)
 	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
-	errs = append(errs, validateServiceChangeFields(f, bundle.Services, fieldPrefix+".services", positions)...)
+	errs = append(errs, validateServiceChangeFields(f, bundle.Services, fieldPrefix+".services", allowExternalRequires, positions)...)
 	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", f.SchemaVersion, positions)...)
 	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)
 	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", f.SchemaVersion, positions)...)

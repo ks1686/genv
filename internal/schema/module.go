@@ -123,7 +123,7 @@ func ParseAndValidateModule(data []byte) (*ModuleDoc, []ValidationError, error) 
 		})
 	}
 	if doc.Defaults != nil {
-		errs = append(errs, validateTargetBundle(&GenvFile{SchemaVersion: Version10}, doc.Defaults, "defaults", false, positions)...)
+		errs = append(errs, validateTargetBundle(moduleScope(doc), doc.Defaults, "defaults", false, true, positions)...)
 		errs = append(errs, rejectUseModules(doc.Defaults, "defaults", positions)...)
 	}
 	for target, bundle := range doc.Targets {
@@ -143,11 +143,24 @@ func ParseAndValidateModule(data []byte) (*ModuleDoc, []ValidationError, error) 
 			})
 			continue
 		}
-		errs = append(errs, validateTargetBundle(&GenvFile{SchemaVersion: Version10}, bundle, targetPath, true, positions)...)
+		errs = append(errs, validateTargetBundle(moduleScope(doc), bundle, targetPath, true, true, positions)...)
 		errs = append(errs, rejectUseModules(bundle, targetPath, positions)...)
 	}
 
 	return doc, errs, nil
+}
+
+// moduleScope is the document view validation uses while checking one module.
+//
+// Passing the module's own buckets (rather than an empty synthetic file) is what
+// lets a requires edge resolve against a service the module declares in another
+// bucket, and what makes the intra-document cycle check see those edges at all.
+func moduleScope(doc *ModuleDoc) *GenvFile {
+	return &GenvFile{
+		SchemaVersion: Version10,
+		Defaults:      doc.Defaults,
+		Targets:       doc.Targets,
+	}
 }
 
 // rejectUseModules keeps selection out of module documents: dependency edges
