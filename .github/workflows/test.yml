@@ -90,7 +90,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: make cover-gate
         env:
-          COVER_MIN: "80"
+          COVER_MIN: "82"
 
       - name: Cold-start bench gate
         if: matrix.os == 'ubuntu-latest'

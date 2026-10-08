@@ -195,16 +195,22 @@ items still open after reconciliation:
 
 Targets: total ≥ 85%, every non-test-helper package ≥ 75%. Then lock it in.
 
-- [ ] `internal/external` (69.3%) first: archive staging (tar gz/xz/zstd, zip,
+**Outcome:** total 80.7% → 83.2% (floor raised 80 → 82; Linux CI measures ~0.8 pt below macOS, so 82 keeps headroom); `adapter` 83.5 → 86.6,
+`external` 69.3 → 73.2, `selfpath` 72 → 84, `pull` 73 → 80+, `files` 77 → 78,
+`migrate` 78.8 → 80.8. The 85% / 75%-per-package stretch targets were not fully
+met (`external` stays below 75: sigstore/openpgp/minisign verify and `sudo`
+elevation need real keys or a real sudo). Recorded as a known limit.
+
+- [x] `internal/external` (69.3%) first: archive staging (tar gz/xz/zstd, zip,
   strip, path traversal rejection), download errors, verifier failure paths,
   `defaultRunElevated` via injected runner. Use `httptest` and in-memory archives;
   no network.
-- [ ] Root package: `reportApplyRestarts` (45.5%), `updatesCheckReadSpecError`
+- [x] Root package: `reportApplyRestarts` (45.5%), `updatesCheckReadSpecError`
   (55.6%), and other low funcs from `go tool cover -func`.
-- [ ] `internal/pull` (72.9%, `copyBundleDir` 0%), `internal/files` (77.0%,
+- [x] `internal/pull` (72.9%, `copyBundleDir` 0%), `internal/files` (77.0%,
   `ResolveSource`/`ExpandPath`/`removePath` 0%), `internal/migrate` (78.8%,
   `cloneGenvFile` 0%), `internal/selfpath` (72.1%).
-- [ ] Adapter 0% funcs: `apt`/`dnf` `Search*`/`ListNames*`/`ListInstalledVersions`,
+- [x] Adapter 0% funcs: `apt`/`dnf` `Search*`/`ListNames*`/`ListInstalledVersions`,
   `apk` versions, `pip_user`, `ghcup`, `opam`, `conda`, `composer`, `mas`
   completion, `command` adapter `NormalizeID`/`PlanClean`, `external` adapter,
   `fallback.DefaultFallbackEligible`. Use the existing fake-command/stub runner
@@ -215,7 +221,7 @@ Targets: total ≥ 85%, every non-test-helper package ≥ 75%. Then lock it in.
   `service.ScheduledJobTimeOut`/`schtasksServiceHint`, `complete.RepoPackages`.
   Platform-only funcs (`processElevated`, `sudoNoninteractiveOK`,
   `ProbeSchtasksServiceRunning`) may stay uncovered if untestable — note them.
-- [ ] Raise `COVER_MIN` in `Makefile` to (achieved total − 1, rounded down), and
+- [x] Raise `COVER_MIN` in `Makefile` to (achieved total − 1, rounded down), and
   add a per-package floor to `scripts/cover-gate.sh` only if cheap.
 - Rule: tests must assert behavior, not just execute lines.
 
