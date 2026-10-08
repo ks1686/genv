@@ -144,6 +144,12 @@ spec mean something different than it should.
 - A pending restart record that could not be written was swallowed, despite a
   comment claiming the outcome reported it. The restart still proceeds — refusing
   would leave the old binary running — but the gap is now reported.
+- Restarts ran one service at a time in dependency order, so restarting a
+  database took it down while the clients that depend on it were still running,
+  and `plan.StopOrder` — which exists for exactly this — was never used. Stops
+  now run in reverse dependency order and starts in dependency order, and a
+  service whose dependency did not come back is not started at all rather than
+  being reported as successfully started against something that is down.
 
 **Validation output**
 

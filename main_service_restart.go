@@ -94,10 +94,20 @@ type restartOutcome struct {
 
 // runRestartPhase decides and performs restarts for one run.
 //
-// The order is deliberate. Pending records are written *before* anything is
-// stopped, so an interruption anywhere in this function leaves a trace rather
-// than a silent half-restart. They are cleared only after the action succeeded
-// and readiness was confirmed — a cleared record means "this really happened".
+// The order is deliberate, in three parts.
+//
+//  1. Every in-flight record is written *before* anything is stopped, so an
+//     interruption anywhere below leaves evidence for all of them rather than a
+//     silent half-restart.
+//  2. Stops run in reverse dependency order. A service goes down before the
+//     services that depend on it, which is what plan.StopOrder is for; taking a
+//     database out from under a live client is the failure this prevents.
+//  3. Starts run in dependency order, and a service whose dependency did not
+//     come back is not started at all — otherwise a service with no health check
+//     would be reported as successfully started against something that is down.
+//
+// Records are cleared only after the action succeeded and readiness was
+// confirmed, so a cleared record means "this really happened".
 func runRestartPhase(ctx context.Context, req restartPhaseRequest) []restartOutcome {
 	servicePointers := make(map[string]*schema.Service, len(req.Services))
 	for name, svc := range req.Services {
@@ -122,52 +132,119 @@ func runRestartPhase(ctx context.Context, req restartPhaseRequest) []restartOutc
 		return nil
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	requires := make(map[string][]string, len(p.Nodes))
+	startOrder := make([]string, 0, len(p.Nodes))
+	for _, node := range p.Nodes {
+		requires[node.Name] = node.Requires
+		startOrder = append(startOrder, node.Name)
+	}
+
+	byName := make(map[string]*service.RestartDecision, len(decisions))
 	outcomes := make([]restartOutcome, 0, len(decisions))
-	for _, d := range decisions {
+	var actionable []string // in start order
+
+	for i := range decisions {
+		d := decisions[i]
 		out := restartOutcome{Service: d.Service, Action: d.Action, Reason: d.Reason}
 		if d.Action == service.ActionSkip || d.Action == service.ActionDefer {
 			outcomes = append(outcomes, out)
 			continue
 		}
-		svc, ok := req.Services[d.Service]
-		if !ok {
+		if _, ok := req.Services[d.Service]; !ok {
 			out.Err = fmt.Errorf("service %q disappeared from the composed spec", d.Service)
 			outcomes = append(outcomes, out)
 			continue
 		}
+		byName[d.Service] = &decisions[i]
+		actionable = append(actionable, d.Service)
+	}
+	if len(actionable) == 0 {
+		return outcomes
+	}
 
-		if err := recordPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service, d.Triggers, now); err != nil {
-			// Proceed, but say so: this restart left no trace to recover from.
-			out.PendingError = fmt.Errorf("recording the pending restart failed, so an interruption here would leave no evidence: %w", err)
-		}
+	now := time.Now().UTC().Format(time.RFC3339)
+	pendingErr := make(map[string]error, len(actionable))
+	for _, name := range actionable {
+		pendingErr[name] = recordPendingActions(req.LockPath, req.LockAlreadyHeld, name, byName[name].Triggers, now)
+	}
 
-		if d.Action == service.ActionRestart {
-			if err := req.Deps.stop(ctx, d.Service, svc); err != nil {
-				out.Err = fmt.Errorf("stopping %q: %w", d.Service, err)
-				outcomes = append(outcomes, out)
-				continue
-			}
-		}
-		if err := req.Deps.start(ctx, d.Service, svc); err != nil {
-			out.Action = service.ActionStart
-			out.Err = fmt.Errorf("starting %q: %w", d.Service, err)
-			outcomes = append(outcomes, out)
+	stopped := make(map[string]bool, len(actionable))
+	errs := make(map[string]error)
+	readiness := make(map[string]error)
+
+	for _, name := range p.StopOrder {
+		d := byName[name]
+		if d == nil || d.Action != service.ActionRestart {
 			continue
 		}
-		if svc.HealthCheck != nil {
-			if err := verify.Health(ctx, svc.HealthCheck, func(ctx context.Context) error {
-				return req.Deps.runProbe(ctx, svc.HealthCheck.Command)
+		if err := req.Deps.stop(ctx, name, req.Services[name]); err != nil {
+			errs[name] = fmt.Errorf("stopping %q: %w", name, err)
+		}
+		stopped[name] = true
+	}
+
+	for _, name := range startOrder {
+		d := byName[name]
+		if d == nil {
+			continue
+		}
+		if blocker := firstFailedDependency(name, requires, errs); blocker != "" {
+			errs[name] = fmt.Errorf("not started: %q did not come back: %v", blocker, errs[blocker])
+			continue
+		}
+		if err := req.Deps.start(ctx, name, req.Services[name]); err != nil {
+			errs[name] = fmt.Errorf("starting %q: %w", name, err)
+			continue
+		}
+		if hc := req.Services[name].HealthCheck; hc != nil {
+			if err := verify.Health(ctx, hc, func(ctx context.Context) error {
+				return req.Deps.runProbe(ctx, hc.Command)
 			}); err != nil {
-				out.ReadinessError = fmt.Errorf("%q started but %w", d.Service, err)
-				outcomes = append(outcomes, out)
-				continue
+				readiness[name] = fmt.Errorf("%q started but %w", name, err)
 			}
 		}
-		out.PendingCleared = clearPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service)
+	}
+
+	for i := range decisions {
+		d := decisions[i]
+		if byName[d.Service] != &decisions[i] {
+			continue // skip, defer, or already handled above
+		}
+		out := restartOutcome{Service: d.Service, Action: d.Action, Reason: d.Reason}
+		if pe := pendingErr[d.Service]; pe != nil {
+			out.PendingError = fmt.Errorf("recording the pending restart failed, so an interruption here would leave no evidence: %w", pe)
+		}
+		switch {
+		case errs[d.Service] != nil:
+			out.Err = errs[d.Service]
+			// The stop already happened, so the action attempted last was a
+			// start. Reporting "restart" here would claim otherwise.
+			if stopped[d.Service] {
+				out.Action = service.ActionStart
+			}
+		case readiness[d.Service] != nil:
+			out.ReadinessError = readiness[d.Service]
+		default:
+			out.PendingCleared = clearPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service)
+		}
 		outcomes = append(outcomes, out)
 	}
 	return outcomes
+}
+
+// firstFailedDependency returns the nearest service in name's dependency chain
+// that failed, so the report can name what actually went wrong rather than only
+// that something did.
+func firstFailedDependency(name string, requires map[string][]string, errs map[string]error) string {
+	for _, dep := range requires[name] {
+		if errs[dep] != nil {
+			return dep
+		}
+		if deeper := firstFailedDependency(dep, requires, errs); deeper != "" {
+			return deeper
+		}
+	}
+	return ""
 }
 
 // pastTenseRestartAction renders an action for the completion line. The report
@@ -192,12 +269,18 @@ func pastTenseRestartAction(action string) string {
 // run unattended. Their restarts are deferred to the next interactive run
 // rather than performed blind.
 func filterBackgroundServices(p plan.Plan) plan.Plan {
-	filtered := plan.Plan{StopOrder: p.StopOrder}
+	var filtered plan.Plan
 	for _, node := range p.Nodes {
 		if node.HealthCheck != nil && !node.HealthCheck.AllowBackground {
 			continue
 		}
 		filtered.Nodes = append(filtered.Nodes, node)
+	}
+	// StopOrder is the reverse of the nodes that *survive* the filter. Carrying
+	// the original would list services this plan no longer contains, and the
+	// stop phase iterates it directly.
+	for i := len(filtered.Nodes) - 1; i >= 0; i-- {
+		filtered.StopOrder = append(filtered.StopOrder, filtered.Nodes[i].Name)
 	}
 	return filtered
 }

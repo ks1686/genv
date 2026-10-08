@@ -471,10 +471,16 @@ and records the materialized modules in `report.json`.
 | Watched service stopped, policy `never` | skipped, and said so |
 | Restart or readiness failed | reported, exit non-zero, and the pending record is kept |
 | Pending record could not be written | restart proceeds, and the gap is reported — refusing would leave the old binary running |
+| Dependency did not come back | the dependent is **not started**, and the failure names it |
 
 The phase runs in `genv upgrade`, in `genv upgrade --json` (reported under
 `services`), and in the unattended `genv updates` worker. It does **not** run
 from `genv apply`, so a changed config file never restarts anything yet.
+
+Restarts are ordered: services stop in reverse dependency order (a service goes
+down before the ones that depend on it) and start in dependency order. A service
+whose dependency failed to come back is not started, so nothing is reported as
+successfully started against something that is down.
 
 The pending record is written **before** a service is stopped and cleared only
 after the action and its readiness check both succeed. An interrupted run

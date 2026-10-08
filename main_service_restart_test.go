@@ -18,6 +18,8 @@ import (
 
 // recordingDeps captures the lifecycle calls a restart phase makes, so the
 // tests assert on what genv did without restarting anything.
+var errDBDown = errors.New("dependency is down")
+
 type recordingDeps struct {
 	calls    []string
 	running  map[string]bool
@@ -260,12 +262,24 @@ func TestRestartPhase_respects_requires_order(t *testing.T) {
 	if len(deps.calls) != 4 {
 		t.Fatalf("calls = %v, want two restart pairs", deps.calls)
 	}
-	// Both are independent, so only the per-service stop-then-start order is
-	// guaranteed; what must not happen is start-before-stop for one service.
-	for i := 0; i < len(deps.calls); i += 2 {
-		if !strings.HasPrefix(deps.calls[i], "stop:") || !strings.HasPrefix(deps.calls[i+1], "start:") {
-			t.Errorf("call order = %v, want stop before start", deps.calls)
-			break
+	// Both are independent, so nothing orders them relative to each other. What
+	// must hold is that each service is stopped before it is started. Asserting
+	// that per service rather than as adjacent pairs is deliberate: the phase
+	// now stops everything before it starts anything, which is still correct
+	// for independent services and is what dependent ones need.
+	seen := map[string]int{}
+	for i, call := range deps.calls {
+		kind, name, _ := strings.Cut(call, ":")
+		if kind == "start" {
+			if stop, ok := seen[name]; !ok || stop > i {
+				t.Errorf("call order = %v, %s started without being stopped first", deps.calls, name)
+			}
+		}
+		seen[name] = i
+	}
+	for _, call := range deps.calls {
+		if !strings.HasPrefix(call, "stop:") && !strings.HasPrefix(call, "start:") {
+			t.Errorf("unexpected call %q in %v", call, deps.calls)
 		}
 	}
 }
@@ -544,5 +558,159 @@ func TestRestartPhase_reports_a_pending_record_it_could_not_write(t *testing.T) 
 	}
 	if outcomes[0].Action != service.ActionRestart {
 		t.Errorf("action = %q, want the restart to proceed anyway", outcomes[0].Action)
+	}
+}
+
+// A service must stop before the services that depend on it, and start after
+// them. The coordinator walked decisions in start order and did stop→start per
+// service, so restarting both `db` and `api` (where api requires db) took `db`
+// down while `api` was still running against it — and plan.StopOrder, which
+// exists for exactly this, was never used.
+func TestRestartPhase_stops_dependents_before_restarting_dependencies(t *testing.T) {
+	dir := t.TempDir()
+	deps := &recordingDeps{running: map[string]bool{"db": true, "api": true}}
+	svcs := map[string]schema.Service{
+		"db":  {Start: []string{"true"}, Watch: []string{"postgres"}},
+		"api": {Start: []string{"true"}, Watch: []string{"postgres"}, Requires: []string{"db"}},
+	}
+
+	outcomes := runRestartPhase(context.Background(), restartPhaseRequest{
+		Services: svcs,
+		Evidence: map[string]service.Evidence{"postgres": service.EvidenceChanged},
+		LockPath: filepath.Join(dir, "genv.lock.json"),
+		Deps:     deps.deps(),
+	})
+
+	if len(outcomes) != 2 {
+		t.Fatalf("outcomes = %+v, want one per service", outcomes)
+	}
+	want := "stop:api,stop:db,start:db,start:api"
+	if got := strings.Join(deps.calls, ","); got != want {
+		t.Errorf("call order = %s\nwant       = %s", got, want)
+	}
+}
+
+// Three levels deep, so the order cannot be right by accident.
+func TestRestartPhase_orders_a_three_level_chain(t *testing.T) {
+	dir := t.TempDir()
+	deps := &recordingDeps{running: map[string]bool{"db": true, "cache": true, "api": true}}
+	svcs := map[string]schema.Service{
+		"db":    {Start: []string{"true"}, Watch: []string{"postgres"}},
+		"cache": {Start: []string{"true"}, Watch: []string{"postgres"}, Requires: []string{"db"}},
+		"api":   {Start: []string{"true"}, Watch: []string{"postgres"}, Requires: []string{"cache"}},
+	}
+
+	runRestartPhase(context.Background(), restartPhaseRequest{
+		Services: svcs,
+		Evidence: map[string]service.Evidence{"postgres": service.EvidenceChanged},
+		LockPath: filepath.Join(dir, "genv.lock.json"),
+		Deps:     deps.deps(),
+	})
+
+	want := "stop:api,stop:cache,stop:db,start:db,start:cache,start:api"
+	if got := strings.Join(deps.calls, ","); got != want {
+		t.Errorf("call order = %s\nwant       = %s", got, want)
+	}
+}
+
+// A service being started (never restarted) still belongs in the start phase,
+// in dependency order — not interleaved into the stop phase.
+func TestRestartPhase_starts_stopped_services_after_dependencies(t *testing.T) {
+	dir := t.TempDir()
+	// db is running and restarting; api is stopped and has ifRunning.
+	deps := &recordingDeps{running: map[string]bool{"db": true, "api": false}}
+	apiSvc := schema.Service{Start: []string{"true"}, Watch: []string{"postgres"},
+		Requires: []string{"db"}, RestartPolicy: schema.RestartPolicyIfRunning}
+	svcs := map[string]schema.Service{
+		"db":  {Start: []string{"true"}, Watch: []string{"postgres"}},
+		"api": apiSvc,
+	}
+
+	runRestartPhase(context.Background(), restartPhaseRequest{
+		Services: svcs,
+		Evidence: map[string]service.Evidence{"postgres": service.EvidenceChanged},
+		LockPath: filepath.Join(dir, "genv.lock.json"),
+		Deps:     deps.deps(),
+	})
+
+	want := "stop:db,start:db,start:api"
+	if got := strings.Join(deps.calls, ","); got != want {
+		t.Errorf("call order = %s\nwant       = %s", got, want)
+	}
+}
+
+// If a dependency fails to come back, its dependents must not be started on
+// top of it: a service with no health check would otherwise be reported as
+// successfully started while its dependency was down.
+func TestRestartPhase_does_not_start_a_dependent_after_its_dependency_failed(t *testing.T) {
+	dir := t.TempDir()
+	deps := &recordingDeps{running: map[string]bool{"db": true, "api": true}}
+	deps.startErr = errDBDown
+	svcs := map[string]schema.Service{
+		"db":  {Start: []string{"true"}, Watch: []string{"postgres"}},
+		"api": {Start: []string{"true"}, Watch: []string{"postgres"}, Requires: []string{"db"}},
+	}
+
+	outcomes := runRestartPhase(context.Background(), restartPhaseRequest{
+		Services: svcs,
+		Evidence: map[string]service.Evidence{"postgres": service.EvidenceChanged},
+		LockPath: filepath.Join(dir, "genv.lock.json"),
+		Deps:     deps.deps(),
+	})
+
+	byService := map[string]restartOutcome{}
+	for _, o := range outcomes {
+		byService[o.Service] = o
+	}
+	if o := byService["db"]; o.Err == nil {
+		t.Errorf("db outcome = %+v, want the start failure reported", o)
+	}
+	o := byService["api"]
+	if o.Err == nil {
+		t.Errorf("api outcome = %+v, want it reported rather than silently started", o)
+	}
+	if !strings.Contains(o.Err.Error(), "db") {
+		t.Errorf("api error = %v, want it to name the dependency that failed", o.Err)
+	}
+	for _, c := range deps.calls {
+		if c == "start:api" {
+			t.Error("api was started on top of a failed dependency")
+		}
+	}
+	// Both records stay pending: neither service was confirmed healthy.
+	lf, err := genvfile.ReadLock(filepath.Join(dir, "genv.lock.json"))
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.PendingActions) != 2 {
+		t.Errorf("pending = %+v, want both records kept", lf.PendingActions)
+	}
+}
+
+// Filtering a service out of a background plan must also drop it from
+// StopOrder. The stop phase iterates StopOrder directly, so a stale entry names
+// a service the plan no longer contains.
+func TestFilterBackgroundServices_rebuilds_stop_order(t *testing.T) {
+	svcs := apiService("watch:postgres")
+	svc := svcs["api"]
+	// No allow_background: api is dropped, so it must not remain in StopOrder.
+	svc.HealthCheck = &schema.HealthCheck{Command: []string{"probe"}}
+	svcs["api"] = svc
+	svcs["db"] = schema.Service{Start: []string{"true"}, Watch: []string{"postgres"}}
+
+	p, err := plan.Build(map[string]*schema.Service{"api": &svc, "db": {Start: []string{"true"}}})
+	if err != nil {
+		t.Fatalf("plan.Build: %v", err)
+	}
+	if len(p.StopOrder) != 2 {
+		t.Fatalf("unfiltered StopOrder = %v, want both services", p.StopOrder)
+	}
+
+	filtered := filterBackgroundServices(p)
+	if len(filtered.Nodes) != 1 || filtered.Nodes[0].Name != "db" {
+		t.Fatalf("nodes = %+v, want only db", filtered.Nodes)
+	}
+	if strings.Join(filtered.StopOrder, ",") != "db" {
+		t.Errorf("StopOrder = %v, want only the services that survived the filter", filtered.StopOrder)
 	}
 }
