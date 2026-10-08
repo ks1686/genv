@@ -26,6 +26,19 @@ me=${me%.exe}
 me=${me%.sh}
 
 case "$me" in
+launchctl|systemctl)
+	# Succeed like the real supervisor so the apply path completes, but do
+	# nothing: bootstrap/bootout/start would register session state on the
+	# developer's machine that outlives the test run, and print must report
+	# "not loaded" so genv does not believe a job exists.
+	case "$1" in
+	print)
+		echo "Could not find service" >&2
+		exit 1
+		;;
+	esac
+	exit 0
+	;;
 sudo)
 	# pacman/apt/dnf/apk mutating commands are sudo-prefixed; just succeed.
 	exit 0
@@ -149,7 +162,12 @@ exit 0
 // is redirected away from the real system. It prepends the fake directory
 // to PATH so the fakes shadow the real binaries.
 func installFakeManagers() error {
-	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo"}
+	// launchctl is shadowed too. `launchctl bootstrap` registers a job in the
+	// developer's real launchd session, and it stays registered after the test
+	// binary exits even though the plist lives in the temp home. Shadowing it
+	// keeps a test from mutating session state that outlives the run; the plist
+	// files themselves are already contained by the redirected $HOME.
+	names := []string{"brew", "pacman", "paru", "yay", "apt", "apt-get", "dnf", "apk", "snap", "bun", "uv", "sudo", "launchctl", "systemctl"}
 	always := map[string]bool{}
 	if runtime.GOOS == "windows" {
 		// Shadow native Windows managers so CLI tests never call live winget.

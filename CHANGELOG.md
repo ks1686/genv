@@ -170,6 +170,14 @@ spec mean something different than it should.
   set, an ordinary `go test ./...` resolved the real `~/.config/genv` and ran the
   unattended worker against the live config. It is now always overridden, with a
   regression test that fails against the old behavior.
+- The harness still did not redirect `$HOME`, and `launchctl` was not shadowed.
+  A test applying a service therefore wrote `~/Library/LaunchAgents/genv.*.plist`
+  and registered a real launchd job in the developer's session, which survived
+  the run and then failed the next `genv validate` with a dangling
+  `ProgramArguments[0]` — a failure that reads like a product bug. Both are
+  contained now: `$HOME`/`%USERPROFILE%` are redirected, and `launchctl`/
+  `systemctl` are shadowed with fakes that succeed without touching session
+  state. Regression tests for both fail against the old behavior.
 
 
 ## v4.6.0 - 2026-10-01

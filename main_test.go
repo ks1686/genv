@@ -31,8 +31,15 @@ import (
 // match) for all unit tests so they run non-interactively. It also isolates
 // the genv config directory so tests do not read or write the developer's
 // real lock file now that commands default the lock next to --file.
+// harnessRealHome is the developer's home directory, captured before TestMain
+// redirects $HOME so a test can prove it is not the one being used.
+var harnessRealHome string
+
 func TestMain(m *testing.M) {
 	_ = os.Setenv("GENV_NO_INTERACTIVE", "1")
+	if h, err := os.UserHomeDir(); err == nil {
+		harnessRealHome = h
+	}
 	// Always redirect the config root to a temp dir, overriding whatever the
 	// developer has set.
 	//
@@ -51,6 +58,19 @@ func TestMain(m *testing.M) {
 		_, _ = os.Stderr.WriteString("genv test: temp config dir: " + err.Error() + "\n")
 	} else {
 		_ = os.Setenv("XDG_CONFIG_HOME", dir)
+		// The home directory too. Service reconciliation writes supervisor
+		// agents under it — ~/Library/LaunchAgents on macOS,
+		// ~/.config/systemd/user on Linux — and validates them by reading that
+		// same directory. A test applying a service was therefore loading a real
+		// launchd job on the developer's machine, and the leftover plist then
+		// failed the next `genv validate` with a dangling ProgramArguments[0].
+		//
+		// os.UserHomeDir reads $HOME (or %USERPROFILE% on Windows), so
+		// overriding both keeps every home-derived path inside the temp dir.
+		if home, err := os.MkdirTemp("", "genv-test-home-*"); err == nil {
+			_ = os.Setenv("HOME", home)
+			_ = os.Setenv("USERPROFILE", home)
+		}
 	}
 	// Shadow real package managers with fakes so CLI-level tests below never
 	// install/uninstall/upgrade anything on the machine actually running

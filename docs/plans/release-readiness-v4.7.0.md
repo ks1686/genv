@@ -155,6 +155,22 @@ boundary of `ParseAndValidate`/`ParseAndValidateModule`. Valid v1/v5/v7/v8
 output is byte-for-byte unchanged; only the ordering of an invalid spec's errors
 changed, and it no longer moves.
 
+`TestMain` now always overrides the config root, and a regression test fails
+against the old conditional. A full `go test ./...` no longer touches the live
+lock or log.
+
+A **second, larger instance of the same class** was found later, while adding the
+file-watch feature: `$HOME` was still the developer's, and `launchctl` was not
+shadowed. A test that applied a service wrote `~/Library/LaunchAgents/genv.*.plist`
+and bootstrapped a real launchd job into the user's session. The job survived the
+test run, and the next `genv validate` failed with a dangling
+`ProgramArguments[0]` — which reads like a product regression and was not one.
+`$HOME`/`%USERPROFILE%` are now redirected and `launchctl`/`systemctl` are
+shadowed with fakes that succeed without touching session state. The stray job
+was unloaded and the stray plist removed; the four real genv agents
+(peaproxy, rclone-sync, searxng, updates) were never touched. Both fixes have
+regression tests that fail against the old behavior.
+
 ## Known limits
 
 - **Watching another service is not a trigger.** `watch` covers tracked packages

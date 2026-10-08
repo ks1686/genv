@@ -61,3 +61,30 @@ func realDirPrefix(path string) string {
 	}
 	return abs + string(filepath.Separator)
 }
+
+// Service reconciliation writes supervisor agents under the home directory and
+// validates them by reading it back. A test that applied a service was
+// therefore loading a real launchd job on the developer's machine; the leftover
+// plist then failed the next `genv validate` with a dangling
+// ProgramArguments[0], which reads like a product bug and is not one.
+func TestHarness_redirects_home_away_from_the_developer(t *testing.T) {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE")
+	}
+	if home == "" {
+		t.Fatal("neither HOME nor USERPROFILE is set; TestMain should set both")
+	}
+	if os.Getenv("USERPROFILE") != home {
+		t.Errorf("USERPROFILE = %q, want the same temp home as HOME (%q)", os.Getenv("USERPROFILE"), home)
+	}
+	if harnessRealHome != "" && sameDir(home, harnessRealHome) {
+		t.Fatalf("$HOME is still the developer's home (%s); a test could install a supervisor agent", home)
+	}
+	// The directory genv writes macOS launch agents into must sit under the
+	// redirected home, so it lands in the temp dir rather than ~/Library.
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if !strings.HasPrefix(agents, home) {
+		t.Errorf("launch agent path %s escaped the test home %s", agents, home)
+	}
+}
