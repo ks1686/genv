@@ -4,7 +4,7 @@
 
 $script:GenvCommands = @(
 	'add', 'remove', 'rm', 'adopt', 'disown', 'list', 'ls', 'apply', 'edit',
-	'clean', 'scan', 'status', 'completion', 'validate', 'upgrade', 'updates',
+	'clean', 'scan', 'status', 'config', 'explain', 'completion', 'validate', 'upgrade', 'updates',
 	'migrate', 'export', 'map', 'pull', 'init', 'env', 'shell', 'service', 'files', 'profile', 'version', 'help'
 )
 

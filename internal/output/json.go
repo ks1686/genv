@@ -119,6 +119,10 @@ type ApplyResult struct {
 	FilesApplied    []string `json:"filesApplied,omitempty"`
 	FilesUpdated    []string `json:"filesUpdated,omitempty"`
 	FailedHooks     []string `json:"failedHooks,omitempty"`
+	// Services reports the dependency-aware restart phase, so `apply --json`
+	// acts the same as `apply` and says so. An output flag must never change
+	// what a command does.
+	Services []UpgradeServiceRestart `json:"services,omitempty"`
 }
 
 // EnvStatusEntry is a single env variable entry in an EnvStatusResult.
@@ -227,5 +231,26 @@ type UpgradeResult struct {
 	Updated     []UpgradePackage    `json:"updated,omitempty"`
 	Skipped     []UpgradeSkipped    `json:"skipped,omitempty"`
 	FailedHooks []UpgradeHookResult `json:"failedHooks,omitempty"`
-	Filters     UpgradeFilters      `json:"filters"`
+	// Services reports what the dependency-aware restart phase decided for each
+	// service. Without it, `--json` would leave the same machine in a different
+	// state than the text path while reporting nothing about it.
+	Services []UpgradeServiceRestart `json:"services,omitempty"`
+	Filters  UpgradeFilters          `json:"filters"`
+}
+
+// UpgradeServiceRestart is one service's restart outcome.
+//
+// Action is what was done: "restarted", "started", "skipped", "deferred".
+// ReadinessError is set when the service started but never reported ready,
+// which is a different failure from the restart itself failing.
+type UpgradeServiceRestart struct {
+	Service        string `json:"service"`
+	Action         string `json:"action"`
+	Reason         string `json:"reason,omitempty"`
+	PendingCleared bool   `json:"pendingCleared,omitempty"`
+	// PendingError is set when the in-flight record could not be written, so an
+	// interruption during the restart would leave nothing to recover from.
+	PendingError   string `json:"pendingError,omitempty"`
+	ReadinessError string `json:"readinessError,omitempty"`
+	Error          string `json:"error,omitempty"`
 }

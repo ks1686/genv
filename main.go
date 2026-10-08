@@ -21,6 +21,7 @@ import (
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/commands"
 	"github.com/ks1686/genv/internal/complete"
+	"github.com/ks1686/genv/internal/compose"
 	genvenv "github.com/ks1686/genv/internal/env"
 	externalpkg "github.com/ks1686/genv/internal/external"
 	"github.com/ks1686/genv/internal/files"
@@ -123,6 +124,10 @@ func run(args []string) int {
 		return listCmd(args[1:])
 	case "apply":
 		return applyCmd(args[1:])
+	case "config":
+		return configCmd(args[1:])
+	case "explain":
+		return explainCmd(args[1:])
 	case "edit":
 		return editCmd(args[1:])
 	case "clean":
@@ -259,20 +264,31 @@ func pickCandidate(id string, candidates []search.Candidate) *search.Candidate {
 	return &c
 }
 
-func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, int) {
+// resolveMutationTarget resolves the bundle a mutation writes to and returns
+// the composition for that target. The composition is what lets add/remove/
+// disown/env/shell/service/files refuse to touch a module-owned resource; it is
+// nil for v1-v9, where ownership cannot be shared with another document.
+func resolveMutationTarget(commandName, file string, f *schema.GenvFile, targetFlag string) (string, *compose.Composition, int) {
 	if !schema.IsPortableVersion(f.SchemaVersion) {
-		return "", exitOK
+		return "", nil, exitOK
 	}
 	targetID, err := target.Resolve(targetFlag)
 	if err != nil {
 		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return "", exitUsage
+		return "", nil, exitUsage
 	}
 	if _, err := commands.ActiveBundle(f, targetID); err != nil {
 		fprintf(os.Stderr, "genv %s: %v in %s\n", commandName, err, file)
-		return "", exitValidation
+		return "", nil, exitValidation
 	}
-	return targetID, exitOK
+	if len(f.Modules) == 0 {
+		return targetID, nil, exitOK
+	}
+	c, code := materializeComposition(commandName, file, f, "", targetFlag, composeSourceRoot(file, ""))
+	if code != exitOK {
+		return "", nil, code
+	}
+	return targetID, c, exitOK
 }
 
 // resolveEffectiveSpec flattens a schemaVersion 8 target (MergeTarget) or applies
@@ -301,6 +317,13 @@ func useSpecAdapters(f *schema.GenvFile) {
 	adapter.SetSpecAdapters(adapter.CommandsFromDefs(defs))
 }
 
+// hostFilter applies the legacy v1-v7 host predicate. It is a thin wrapper so
+// compositionFor can share one code path without importing host filtering rules
+// into the portable branch.
+func hostFilter(f *schema.GenvFile, hostName string) *schema.GenvFile {
+	return host.FilterForHost(f, hostName)
+}
+
 func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*schema.GenvFile, string, error) {
 	if f == nil {
 		return nil, "", fmt.Errorf("genv file is nil")
@@ -324,44 +347,28 @@ func resolveEffectiveSpec(f *schema.GenvFile, hostName, targetFlag string) (*sch
 }
 
 // materializeSpecForCommand resolves the effective flat spec for read paths
-// (status, upgrade, updates) using the same Resolve+MergeTarget path as apply.
+// (status, upgrade, updates) using the same composition path as apply.
+//
+// It delegates to compositionFor so a v10 spec composes modules and every
+// consumer sees one effective environment. The provenance is intentionally not
+// returned here: commands that need ownership (mutation guards, explain) call
+// materializeComposition directly.
 func materializeSpecForCommand(commandName, file string, f *schema.GenvFile, hostFlag, targetFlag string) (*schema.GenvFile, string, int) {
-	effective, targetID, err := resolveEffectiveSpec(f, hostForCommand(hostFlag), targetFlag)
-	if err == nil {
-		effective = schema.DropInapplicable(effective, runtime.GOOS)
-		return effective, targetID, exitOK
+	c, code := materializeComposition(commandName, file, f, hostFlag, targetFlag, "")
+	if code != exitOK {
+		return nil, "", code
 	}
-	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "resolve target") || strings.Contains(msg, "pass --target"):
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return nil, "", exitUsage
-	case strings.HasPrefix(msg, "no matching targets."):
-		fprintf(os.Stderr, "genv %s: %s in %s\n", commandName, msg, file)
-		return nil, "", exitValidation
-	default:
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		return nil, "", exitValidation
-	}
+	return c.Effective, c.Target, exitOK
 }
 
 // readMaterializedSpec loads genv.json and flattens the active v8 target (or
 // applies legacy host filtering) so callers can read top-level fields.
 func readMaterializedSpec(commandName, file, hostFlag, targetFlag string) (*schema.GenvFile, int) {
-	f, err := genvfile.Read(file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
-			fprintf(os.Stderr, "genv %s: %s not found\n", commandName, file)
-			return nil, exitIO
-		}
-		fprintf(os.Stderr, "genv %s: %v\n", commandName, err)
-		if errors.Is(err, genvfile.ErrInvalidFile) {
-			return nil, exitValidation
-		}
-		return nil, exitIO
+	c, code := readComposition(commandName, file, hostFlag, targetFlag, "")
+	if code != exitOK {
+		return nil, code
 	}
-	effective, _, code := materializeSpecForCommand(commandName, file, f, hostFlag, targetFlag)
-	return effective, code
+	return c.Effective, exitOK
 }
 
 // materializedHooks returns the effective hooks block for lifecycle commands.
@@ -393,9 +400,12 @@ func prepareAddSpec(file, id, version, prefer string, managers map[string]string
 		}
 		return nil, false, exitIO
 	}
-	targetID, exit := resolveMutationTarget("add", file, f, targetFlag)
+	targetID, comp, exit := resolveMutationTarget("add", file, f, targetFlag)
 	if exit != exitOK {
 		return nil, false, exit
+	}
+	if code := moduleOwnerGuard("add", comp, compose.KindPackage, id); code != exitOK {
+		return nil, false, code
 	}
 	if err := commands.Add(f, id, version, prefer, managers, targetID); err != nil {
 		fprintf(os.Stderr, "genv: %v\n", err)
@@ -550,7 +560,10 @@ func prepareRemoveSpec(file, id, targetFlag string) (*schema.GenvFile, string, i
 		}
 		return nil, "", exitIO
 	}
-	targetID, exit := resolveMutationTarget("remove", file, f, targetFlag)
+	targetID, comp, exit := resolveMutationTarget("remove", file, f, targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("remove", comp, compose.KindPackage, id)
+	}
 	if exit != exitOK {
 		return nil, "", exit
 	}
@@ -696,7 +709,10 @@ func addCmd(args []string) int {
 	}
 
 	// 4. Update lock file.
-	targetID, code := resolveMutationTarget("add", *file, prepared, *targetFlag)
+	targetID, comp, code := resolveMutationTarget("add", *file, prepared, *targetFlag)
+	if code == exitOK {
+		code = moduleOwnerGuard("add", comp, compose.KindPackage, id)
+	}
 	if code != exitOK {
 		return code
 	}
@@ -1105,11 +1121,16 @@ func adoptCmd(args []string) int {
 
 	targetID := ""
 	if prepared, err := genvfile.Read(*file); err == nil {
-		var code int
-		targetID, code = resolveMutationTarget("adopt", *file, prepared, *targetFlag)
+		// Refuse a module-owned package before the lock records it: adopt
+		// persists the package into the lock as well as the spec.
+		resolved, comp, code := resolveMutationTarget("adopt", *file, prepared, *targetFlag)
+		if code == exitOK {
+			code = moduleOwnerGuard("adopt", comp, compose.KindPackage, id)
+		}
 		if code != exitOK {
 			return code
 		}
+		targetID = resolved
 	}
 	if exit := appendLockEntry(lockPath, genvfile.LockedPackage{
 		ID:               action.Pkg.ID,
@@ -1231,7 +1252,10 @@ func disownCmd(args []string) int {
 		}
 		return exitIO
 	}
-	targetID, exit := resolveMutationTarget("remove", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("remove", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("remove", comp, compose.KindPackage, id)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -1520,9 +1544,16 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 		lf = &genvfile.LockFile{SchemaVersion: schema.Version}
 	}
 	isV8 := schema.IsPortableVersion(f.SchemaVersion)
-	effective, activeTarget, code := materializeSpecForCommand("apply", opts.File, f, opts.Host, opts.Target)
+	// Compose once here: the apply path is where package, env, shell, file, and
+	// service reconciliation all read from, so it must see the same effective
+	// environment (including v10 modules) that status and upgrade see.
+	comp, code := materializeComposition("apply", opts.File, f, opts.Host, opts.Target, applySourceRoot(opts, f))
 	if code != exitOK {
 		return code
+	}
+	effective, activeTarget := comp.Effective, comp.Target
+	if drift := compositionDriftNotice(lf, comp); drift != "" {
+		fprintf(os.Stderr, "genv apply: note: %s\n", drift)
 	}
 	if isV8 {
 		reset, code := applyLockGate("apply", lockPath, lf, activeTarget, available, true, opts.ForceNewLock, opts.DryRun, "--force-new-lock")
@@ -1533,6 +1564,9 @@ func runApplyWithSpecAndLock(ctx context.Context, opts applyOptions, f *schema.G
 	}
 	f = effective
 	opts.Target = activeTarget
+	// Record the composition that produced this apply so a later run can
+	// explain drift. Advisory only: it never makes the lock foreign.
+	stampCompositionLock(lf, comp)
 	var result resolver.ReconcileResult
 	if !opts.SkipPackages {
 		live, liveWarns := resolver.LoadLiveSetOnly(available, resolver.ManagersToList(f.Packages, lf.Packages, available))
@@ -1657,6 +1691,27 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		installed[i] = lp.ID
 	}
 
+	// The same restart phase the human path runs. Without it `apply --json`
+	// would rewrite a watched file and leave the service on the old contents,
+	// which is the same output-flag-changes-behavior defect this was fixed for
+	// in `upgrade --json`.
+	var restarts []output.UpgradeServiceRestart
+	if len(errs) == 0 {
+		restarts = restartJSONEntries(applyRestartPhase(ctx, opts, lockPath, f, filePlan))
+		for _, r := range restarts {
+			switch {
+			case r.Error != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.Error))
+			case r.ReadinessError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.ReadinessError))
+			case r.PendingError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.PendingError))
+			case r.Action == string(service.ActionSkip), r.Action == string(service.ActionDefer):
+				fprintf(os.Stderr, "genv apply: service %s: %s\n", r.Service, r.Reason)
+			}
+		}
+	}
+
 	return writeJSON(os.Stdout, output.Envelope{
 		Version: output.SchemaVersion,
 		Command: "apply",
@@ -1671,6 +1726,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 			FilesApplied: append([]string(nil), filePlan.Created...),
 			FilesUpdated: append([]string(nil), filePlan.Updated...),
 			FailedHooks:  failedHooks,
+			Services:     restarts,
 		},
 		Errors: errs,
 	})
@@ -1869,6 +1925,13 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitIO
 	}
 
+	// A service watching a file this apply changed is restarted once the lock
+	// reflects reality, so an interruption leaves an accurate record.
+	restartExit := exitOK
+	if success {
+		restartExit = reportApplyRestarts(applyRestartPhase(ctx, opts, lockPath, f, appliedFiles), "genv apply: ")
+	}
+
 	if !success {
 		for _, e := range execResult.Errors {
 			fprintf(os.Stderr, "genv apply: %v\n", e)
@@ -1885,7 +1948,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitLogic
 	}
 
-	return exitOK
+	return restartExit
 }
 
 func printReconcileWarnings(result resolver.ReconcileResult) {
@@ -2666,7 +2729,10 @@ func envSetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("env set", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("env set", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("env set", comp, compose.KindEnv, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2722,7 +2788,10 @@ func envUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("env unset", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("env unset", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("env unset", comp, compose.KindEnv, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2886,7 +2955,10 @@ func shellAliasSetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("shell alias set", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("shell alias set", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("shell alias set", comp, compose.KindAlias, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -2946,7 +3018,10 @@ func shellAliasUnsetCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("shell alias unset", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("shell alias unset", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("shell alias unset", comp, compose.KindAlias, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -3209,7 +3284,7 @@ func scanCmd(args []string) int {
 		}
 		return exitIO
 	}
-	targetID, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
+	targetID, _, exit := resolveMutationTarget("scan", *file, f, *targetFlag)
 	if exit != exitOK {
 		return exit
 	}
@@ -3244,12 +3319,13 @@ func scanCmd(args []string) int {
 	// otherwise be re-adopted as a duplicate bare-numeric entry.
 	trackedPackages := f.Packages
 	if schema.IsPortableVersion(f.SchemaVersion) {
-		active, err := schema.MergeTarget(f, targetID)
-		if err != nil {
-			fprintf(os.Stderr, "genv scan: %v in %s\n", err, *file)
-			return exitValidation
+		// Compose rather than plain MergeTarget so a v10 scan sees packages that
+		// arrive through modules and does not re-adopt them into the root spec.
+		comp, code := materializeComposition("scan", *file, f, "", *targetFlag, "")
+		if code != exitOK {
+			return code
 		}
-		trackedPackages = active.Packages
+		trackedPackages = comp.Effective.Packages
 	}
 	trackedInSpec := make(map[string]bool, len(trackedPackages))
 	for _, p := range trackedPackages {
@@ -4301,13 +4377,22 @@ func validateCmd(args []string) int {
 		return flagParseExit(err)
 	}
 
-	_, err := genvfile.Read(*file)
-	if err != nil {
-		if errors.Is(err, genvfile.ErrNotFound) {
+	spec, readErr := genvfile.Read(*file)
+	if readErr != nil {
+		if errors.Is(readErr, genvfile.ErrNotFound) {
 			fprintf(os.Stderr, "genv validate: %s not found — run 'genv init' to create one\n", *file)
 			return exitValidation
 		}
-		fprintf(os.Stderr, "genv validate: %v\n", err)
+		fprintf(os.Stderr, "genv validate: %v\n", readErr)
+		return exitValidation
+	}
+	// Module documents are the only spec content validate must check beyond the
+	// root file itself: reconciliation loads just the selection closure, so this
+	// is where a registered-but-unused module is still reported.
+	if issues := validateComposition(*file, spec, ""); len(issues) > 0 {
+		for _, issue := range issues {
+			fprintf(os.Stderr, "genv validate: %v\n", issue)
+		}
 		return exitValidation
 	}
 	fprintf(os.Stdout, "%s is valid.\n", *file)
@@ -4508,7 +4593,12 @@ func upgradeCmd(args []string) int {
 	}
 
 	if *jsonOut {
-		return upgradeJSON(*dryRun, *yes, hostName, *file, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON)
+		return upgradeJSON(*dryRun, *yes, hostName, *file, lockPath, hookTimeout, f, lf, plan, skipped, planResult.Refresh, filters, extraJSON, upgradeRestartJSON{
+			Services:   f.Services,
+			Before:     lockInstalledVersions(lf),
+			LockPath:   lockPath,
+			SourceRoot: sourceRootForSpec(*file, f),
+		})
 	}
 
 	for _, s := range skipped {
@@ -4583,6 +4673,11 @@ func upgradeCmd(args []string) int {
 		}
 	}
 
+	// Snapshot the installed versions *before* the upgrade runs: RunUpgrade
+	// updates the lock in place, so reading them afterwards would compare the
+	// new versions against themselves and conclude that nothing changed.
+	preUpgradeVersions := lockInstalledVersions(lf)
+
 	var runResult upgrade.UpgradeRunResult
 	if len(plan) > 0 {
 		mode := externalpkg.ExecutionInteractive
@@ -4642,10 +4737,125 @@ func upgradeCmd(args []string) int {
 		fprintf(os.Stderr, "genv upgrade: %v\n", runResult.LockWriteError)
 		return exitIO
 	}
+
+	// Dependency-aware service restarts: only after the packages have actually
+	// changed, and only for services whose watched resource moved. This is the
+	// interactive path, so health checks are allowed to run here.
+	if len(runResult.Upgraded) > 0 {
+		evidence := upgradeEvidenceFromLock(preUpgradeVersions, lockPath, runResult.Upgraded)
+		outcomes := runRestartPhase(ctx, restartPhaseRequest{
+			Services:        f.Services,
+			Evidence:        evidence,
+			LockPath:        lockPath,
+			SourceRoot:      sourceRootForSpec(*file, f),
+			Deps:            defaultRestartDeps(sourceRootForSpec(*file, f), f.Services),
+			LockAlreadyHeld: true, // upgradeCmd holds this mutex for its whole run
+		})
+		for _, o := range outcomes {
+			switch {
+			case o.PendingError != nil:
+				fprintf(os.Stderr, "genv upgrade: service %s: %v\n", o.Service, o.PendingError)
+			case o.Err != nil:
+				fprintf(os.Stderr, "genv upgrade: service %s: %v\n", o.Service, o.Err)
+				exitCode = exitLogic
+			case o.ReadinessError != nil:
+				fprintf(os.Stderr, "genv upgrade: %v\n", o.ReadinessError)
+				exitCode = exitLogic
+			case o.Action == service.ActionDefer:
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", o.Service, o.Reason)
+			case o.Action == service.ActionSkip:
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", o.Service, o.Reason)
+			default:
+				fprintf(os.Stdout, "service %s: %s\n", o.Service, pastTenseRestartAction(o.Action))
+			}
+		}
+	}
+
 	if exitCode == exitOK {
 		adviseUpdatesReregister(os.Stdout, runResult.Upgraded)
 	}
 	return exitCode
+}
+
+// upgradeRestartJSON carries the restart phase's inputs through the JSON path.
+type upgradeRestartJSON struct {
+	Services   map[string]schema.Service
+	Before     map[string]string
+	LockPath   string
+	SourceRoot string
+}
+
+// restartJSONEntries renders restart outcomes for a JSON envelope.
+//
+// The action is reported in past tense for the same reason the text path does:
+// the report describes what happened, and "restart" reads as an instruction that
+// quietly invites a re-run.
+func restartJSONEntries(outcomes []restartOutcome) []output.UpgradeServiceRestart {
+	out := make([]output.UpgradeServiceRestart, 0, len(outcomes))
+	for _, o := range outcomes {
+		entry := output.UpgradeServiceRestart{
+			Service:        o.Service,
+			Action:         pastTenseRestartAction(o.Action),
+			PendingCleared: o.PendingCleared,
+		}
+		switch o.Action {
+		case service.ActionSkip, service.ActionDefer:
+			entry.Action = o.Action
+			entry.Reason = o.Reason
+		}
+		if o.PendingError != nil {
+			entry.PendingError = o.PendingError.Error()
+		}
+		if o.Err != nil {
+			entry.Error = o.Err.Error()
+		}
+		if o.ReadinessError != nil {
+			entry.ReadinessError = o.ReadinessError.Error()
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// upgradeEvidenceFromLock compares the versions the lock recorded before this
+// run with the ones it records now.
+//
+// This is the honest signal available after the fact: an upgrade that changed
+// nothing leaves identical versions, and a manager that never recorded a version
+// leaves empty ones, which is unknown rather than unchanged.
+func lockInstalledVersions(lf *genvfile.LockFile) map[string]string {
+	out := map[string]string{}
+	if lf == nil {
+		return out
+	}
+	for _, lp := range lf.Packages {
+		out[lp.ID] = lp.InstalledVersion
+	}
+	return out
+}
+
+func upgradeEvidenceFromLock(beforeVersions map[string]string, lockPath string, upgraded []genvfile.LockedPackage) map[string]service.Evidence {
+	afterVersions := map[string]string{}
+	for _, lp := range upgraded {
+		afterVersions[lp.ID] = lp.InstalledVersion
+	}
+	// readVersions re-reads the written lock for entries the caller did not
+	// carry, so an upgrade whose new version is recorded only on disk still
+	// produces evidence rather than unknown.
+	readVersions := func() {
+		if lf, err := genvfile.ReadLock(lockPath); err == nil {
+			for _, lp := range lf.Packages {
+				afterVersions[lp.ID] = lp.InstalledVersion
+			}
+		}
+	}
+	readVersions()
+
+	evidence := make(map[string]service.Evidence, len(upgraded))
+	for _, lp := range upgraded {
+		evidence[lp.ID] = service.EvidenceFromVersions(beforeVersions[lp.ID], afterVersions[lp.ID])
+	}
+	return evidence
 }
 
 func upgradeConfirmPrompt(planBatches int, hasExtra bool) string {
@@ -4750,7 +4960,7 @@ func upgradeSkippedEntries(skipped []resolver.SkippedPackage) []output.UpgradeSk
 // stderr so stdout stays one JSON object, then reports executed batches,
 // refreshed versions, and failed hooks while preserving the human path's exit
 // codes.
-func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON) int {
+func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTimeout time.Duration, f *schema.GenvFile, lf *genvfile.LockFile, plan []resolver.UpgradeAction, skipped []resolver.SkippedPackage, refresh []resolver.RefreshAction, filters output.UpgradeFilters, extras extraUpgradeJSON, restart upgradeRestartJSON) int {
 	skippedEntries := upgradeSkippedEntries(skipped)
 
 	if dryRun {
@@ -4846,6 +5056,8 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 		})
 	}
 
+	// Snapshot before RunUpgrade mutates the lock in place, or every version
+	// would compare equal to itself and no service would ever restart.
 	var runResult upgrade.UpgradeRunResult
 	if len(plan) > 0 {
 		// Route subprocess stdout+stderr to stderr so stdout stays one JSON object.
@@ -4912,6 +5124,34 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 		})
 	}
 
+	// The same dependency-aware restart phase the text path runs. Without it
+	// `genv upgrade --json` upgraded watched binaries and left every service
+	// running the old code, reporting success — the output flag changed machine
+	// state, which is the one thing an output flag must never do.
+	var restarts []output.UpgradeServiceRestart
+	if len(runResult.Upgraded) > 0 {
+		evidence := upgradeEvidenceFromLock(restart.Before, lockPath, runResult.Upgraded)
+		outcomes := runRestartPhase(ctx, restartPhaseRequest{
+			Services:        restart.Services,
+			Evidence:        evidence,
+			LockPath:        restart.LockPath,
+			SourceRoot:      restart.SourceRoot,
+			Deps:            defaultRestartDeps(restart.SourceRoot, restart.Services),
+			LockAlreadyHeld: true, // upgradeCmd holds this mutex for its whole run
+		})
+		restarts = restartJSONEntries(outcomes)
+		for _, r := range restarts {
+			switch {
+			case r.Error != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.Error))
+			case r.ReadinessError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.ReadinessError))
+			case r.Action == string(service.ActionSkip), r.Action == string(service.ActionDefer):
+				fprintf(os.Stderr, "genv upgrade: service %s: %s\n", r.Service, r.Reason)
+			}
+		}
+	}
+
 	if len(errs) == 0 {
 		adviseUpdatesReregister(os.Stderr, runResult.Upgraded)
 	}
@@ -4928,6 +5168,7 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 			Updated:     updated,
 			Skipped:     skippedEntries,
 			FailedHooks: postHooks,
+			Services:    restarts,
 			Filters:     filters,
 		},
 		Errors: errs,
@@ -5102,6 +5343,18 @@ func initCmd(args []string) int {
 // from the flag arguments, so flags work in any position relative to the id.
 // Handles both "--flag value" and "--flag=value" forms.
 func extractPositional(args []string) (positional string, flagArgs []string) {
+	pos, flagArgs := splitPositionals(args, 1)
+	if len(pos) > 0 {
+		return pos[0], flagArgs
+	}
+	return "", flagArgs
+}
+
+// splitPositionals separates up to n leading non-flag arguments from the flag
+// arguments. Go's flag package stops parsing at the first non-flag argument, so
+// commands with positional arguments must extract them first or a trailing flag
+// is silently ignored and the command runs against its defaults.
+func splitPositionals(args []string, n int) (positionals []string, flagArgs []string) {
 	i := 0
 	for i < len(args) {
 		arg := args[i]
@@ -5112,8 +5365,8 @@ func extractPositional(args []string) (positional string, flagArgs []string) {
 				i++
 				flagArgs = append(flagArgs, args[i])
 			}
-		} else if positional == "" {
-			positional = arg
+		} else if len(positionals) < n {
+			positionals = append(positionals, arg)
 		}
 		i++
 	}
@@ -5167,6 +5420,8 @@ Commands:
   disown <id> Stop tracking a package in genv.json without uninstalling it
   list        List all packages installed by genv                   (alias: ls)
   apply       Reconcile system state with genv.json (install added, remove deleted)
+  config      Show the composed environment for a target and where each resource came from
+  explain     Explain where one resource comes from and whether a command may change it
   scan        Discover user-facing installs and bulk-adopt them (use --dry-run / --yes; --all for full trees)
   status      Show diff between genv.json, the lock file, and recorded versions
   clean       Clear the cache of all detected package managers
@@ -5425,7 +5680,10 @@ func serviceAddCmd(args []string) int {
 		}
 	}
 
-	targetID, exit := resolveMutationTarget("service add", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("service add", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("service add", comp, compose.KindService, name)
+	}
 	if exit != exitOK {
 		return exit
 	}
@@ -5494,7 +5752,10 @@ func serviceRemoveCmd(args []string) int {
 		return exitIO
 	}
 
-	targetID, exit := resolveMutationTarget("service remove", *file, f, *targetFlag)
+	targetID, comp, exit := resolveMutationTarget("service remove", *file, f, *targetFlag)
+	if exit == exitOK {
+		exit = moduleOwnerGuard("service remove", comp, compose.KindService, name)
+	}
 	if exit != exitOK {
 		return exit
 	}

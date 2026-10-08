@@ -20,6 +20,8 @@ func validateUnknownKeys(raw map[string]json.RawMessage, positions map[string]Po
 	errs = append(errs, walkObject(raw["updates"], "updates", updatesFields, positions)...)
 	errs = append(errs, walkAdapters(raw["adapters"], positions)...)
 	errs = append(errs, walkBundle(raw["defaults"], "defaults", positions)...)
+	// root "modules" maps a module name to a string path, so there are no
+	// nested objects to walk; validateModuleRegistry checks names and paths.
 	if targets, ok := asObject(raw["targets"]); ok {
 		for name, body := range targets {
 			errs = append(errs, walkBundle(body, "targets."+name, positions)...)
@@ -32,6 +34,7 @@ var (
 	rootFields = strSet(
 		"$schema", "schemaVersion", "packages", "env", "shell", "services",
 		"files", "hooks", "repo", "updates", "adapters", "defaults", "targets",
+		"modules",
 	)
 	adapterFields = strSet(
 		"list", "install", "remove", "upgrade", "version", "outdated",
@@ -49,7 +52,8 @@ var (
 	shellFields               = strSet("aliases", "functions", "source")
 	aliasFields               = strSet("value", "shell")
 	funcFields                = strSet("body", "shell")
-	serviceFields             = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "scheduled_task", "host")
+	serviceFields             = strSet("start", "stop", "restart", "status", "brew_formula", "launchd", "systemd", "scheduled_task", "host", "requires", "watch", "restart_policy", "health_check")
+	healthCheckFields         = strSet("command", "timeout", "interval", "allow_background")
 	launchdFields             = strSet("plist")
 	systemdFields             = strSet("unit")
 	scheduledTaskFields       = strSet("action", "args", "trigger", "at", "day_of_week", "principal", "description", "restart_on_failure", "retry_interval", "execution_time_limit")
@@ -61,7 +65,7 @@ var (
 	hookFields                = strSet("command", "file", "host", "name", "continueOnError")
 	repoFields                = strSet("url", "ref")
 	updatesFields             = strSet("enabled", "interval", "autoApply", "notify", "onlyManagers", "skipManagers", "only", "skip")
-	bundleFields              = strSet("packages", "env", "shell", "services", "files", "hooks")
+	bundleFields              = strSet("packages", "env", "shell", "services", "files", "hooks", "useModules")
 )
 
 func strSet(keys ...string) map[string]bool {
@@ -197,6 +201,7 @@ func walkServiceMap(raw json.RawMessage, path string, positions map[string]Posit
 			continue
 		}
 		errs = append(errs, rejectUnknown(svc, svcPath, serviceFields, positions)...)
+		errs = append(errs, walkObject(svc["health_check"], svcPath+".health_check", healthCheckFields, positions)...)
 		errs = append(errs, walkObject(svc["launchd"], svcPath+".launchd", launchdFields, positions)...)
 		errs = append(errs, walkObject(svc["systemd"], svcPath+".systemd", systemdFields, positions)...)
 		errs = append(errs, walkObject(svc["scheduled_task"], svcPath+".scheduled_task", scheduledTaskFields, positions)...)

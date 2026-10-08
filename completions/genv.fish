@@ -2,7 +2,7 @@
 
 function __fish_genv_no_subcommand
     for i in (commandline -opc)
-        if contains -- $i add remove rm adopt disown list ls apply edit clean scan status completion validate upgrade updates migrate export map pull init env shell service files profile version help
+        if contains -- $i add remove rm adopt disown list ls apply config explain edit clean scan status completion validate upgrade updates migrate export map pull init env shell service files profile version help
             return 1
         end
     end
@@ -114,6 +114,8 @@ complete -c genv -n __fish_genv_no_subcommand -f -a clean -d 'Clear the cache of
 complete -c genv -n __fish_genv_no_subcommand -f -a scan -d 'Discover user-facing installed packages and bulk-adopt them into genv.json'
 complete -c genv -n __fish_genv_no_subcommand -f -a status -d 'Show diff between genv.json, the lock file, and recorded versions'
 complete -c genv -n __fish_genv_no_subcommand -f -a completion -d 'Print shell completion script'
+complete -c genv -n __fish_genv_no_subcommand -f -a config -d 'Show the composed environment for a target'
+complete -c genv -n __fish_genv_no_subcommand -f -a explain -d 'Explain where one resource comes from'
 complete -c genv -n __fish_genv_no_subcommand -f -a validate -d 'Validate genv.json against the schema'
 complete -c genv -n __fish_genv_no_subcommand -f -a upgrade -d 'Upgrade tracked packages plus OS vendor updates'
 complete -c genv -n __fish_genv_no_subcommand -f -a updates -d 'Check available updates for genv-tracked packages'

@@ -109,15 +109,31 @@ type LockedFile struct {
 // The Files field is added in M11 (schemaVersion "5") and is absent in v1-v4 lock files.
 // ContentHash on Files entries is additive (omitempty); older locks omit it.
 type LockFile struct {
-	SchemaVersion string             `json:"schemaVersion"`
-	Target        string             `json:"target,omitempty"`
-	GOOS          string             `json:"goos,omitempty"`
-	ActiveProfile string             `json:"activeProfile,omitempty"`
-	Packages      []LockedPackage    `json:"packages"`
-	Env           []LockedEnvVar     `json:"env,omitempty"`
-	Shell         *LockedShellConfig `json:"shell,omitempty"`
-	Services      []LockedService    `json:"services,omitempty"`
-	Files         []LockedFile       `json:"files,omitempty"`
+	SchemaVersion string `json:"schemaVersion"`
+	Target        string `json:"target,omitempty"`
+	GOOS          string `json:"goos,omitempty"`
+	ActiveProfile string `json:"activeProfile,omitempty"`
+	// Modules is the v10 module selection that produced this lock, in
+	// composition order. Machine-local and advisory: it explains drift, and a
+	// changed selection never makes a lock foreign.
+	Modules []string `json:"modules,omitempty"`
+	// Fingerprint is the non-secret structural hash of the composed
+	// environment at apply time. Env values are excluded, so it is safe to log.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// PendingActions records dependency-aware changes that were started but not
+	// confirmed: genv writes one before changing a package a service watches,
+	// and removes it only after the restart and its readiness check succeeded.
+	//
+	// An entry found on the next run means genv was interrupted mid-change. It
+	// is reported, never replayed automatically: the honest answer to "did the
+	// service get restarted?" is "unknown", not "probably".
+	PendingActions []PendingAction `json:"pendingActions,omitempty"`
+
+	Packages []LockedPackage    `json:"packages"`
+	Env      []LockedEnvVar     `json:"env,omitempty"`
+	Shell    *LockedShellConfig `json:"shell,omitempty"`
+	Services []LockedService    `json:"services,omitempty"`
+	Files    []LockedFile       `json:"files,omitempty"`
 }
 
 // ReadLock reads the lock file at path. If the file does not exist (first run),
@@ -184,4 +200,49 @@ func WriteLock(path string, lf *LockFile) error {
 	}
 	syncDir(dir)
 	return nil
+}
+
+// PendingAction is one unconfirmed dependency-aware change.
+type PendingAction struct {
+	// Name is the service that was to be restarted.
+	Name string `json:"name"`
+	// Package is the watched resource whose change triggered the restart.
+	Package string `json:"package"`
+	// Reason explains, for a human, what was in flight.
+	Reason string `json:"reason,omitempty"`
+	// RecordedAt is when the action was started, RFC 3339.
+	RecordedAt string `json:"recordedAt,omitempty"`
+}
+
+// PendingFor returns the pending actions triggered by one package.
+func (l *LockFile) PendingFor(pkg string) []PendingAction {
+	if l == nil {
+		return nil
+	}
+	var out []PendingAction
+	for _, pa := range l.PendingActions {
+		if pa.Package == pkg {
+			out = append(out, pa)
+		}
+	}
+	return out
+}
+
+// ClearPendingActions removes every pending action for one service and reports
+// how many were removed.
+func (l *LockFile) ClearPendingActions(name string) int {
+	if l == nil {
+		return 0
+	}
+	kept := l.PendingActions[:0]
+	removed := 0
+	for _, pa := range l.PendingActions {
+		if pa.Name == name {
+			removed++
+			continue
+		}
+		kept = append(kept, pa)
+	}
+	l.PendingActions = kept
+	return removed
 }

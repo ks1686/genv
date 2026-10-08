@@ -51,6 +51,11 @@ func rewritePackagesInPlace(original []byte, f *schema.GenvFile) ([]byte, bool) 
 	return data, true
 }
 
+// sameNonPackageState decides whether the in-place package rewrite is safe.
+// Every non-package field must be compared: if one is missed, Write returns
+// success while silently dropping that field's change. Modules and UseModules
+// are part of that set since v10 composition state lives outside the package
+// arrays.
 func sameNonPackageState(a, b *schema.GenvFile) bool {
 	if a.SchemaVersion != b.SchemaVersion {
 		return false
@@ -61,7 +66,8 @@ func sameNonPackageState(a, b *schema.GenvFile) bool {
 		!reflect.DeepEqual(a.Files, b.Files) ||
 		!reflect.DeepEqual(a.Hooks, b.Hooks) ||
 		!reflect.DeepEqual(a.Repo, b.Repo) ||
-		!reflect.DeepEqual(a.Updates, b.Updates) {
+		!reflect.DeepEqual(a.Updates, b.Updates) ||
+		!reflect.DeepEqual(a.Modules, b.Modules) {
 		return false
 	}
 	if !bundleMetaEqual(a.Defaults, b.Defaults) {
@@ -83,7 +89,8 @@ func bundleMetaEqual(a, b *schema.TargetBundle) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return reflect.DeepEqual(a.Env, b.Env) &&
+	return reflect.DeepEqual(a.UseModules, b.UseModules) &&
+		reflect.DeepEqual(a.Env, b.Env) &&
 		reflect.DeepEqual(a.Shell, b.Shell) &&
 		reflect.DeepEqual(a.Services, b.Services) &&
 		reflect.DeepEqual(a.Files, b.Files) &&

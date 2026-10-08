@@ -25,8 +25,12 @@ func TestResolveEffectiveSpecMaterializesVersion9Target(t *testing.T) {
 
 func TestResolveMutationTargetUsesVersion9Target(t *testing.T) {
 	f := &schema.GenvFile{SchemaVersion: schema.Version9, Targets: map[string]*schema.TargetBundle{"linux": {}}}
-	targetID, code := resolveMutationTarget("add", "genv.json", f, "linux")
+	targetID, comp, code := resolveMutationTarget("add", "genv.json", f, "linux")
 	if code != exitOK || targetID != "linux" {
 		t.Fatalf("resolveMutationTarget() = (%q, %d), want (linux, %d)", targetID, code, exitOK)
+	}
+	// v9 has no modules, so there is no composition to guard mutations with.
+	if comp != nil {
+		t.Errorf("resolveMutationTarget() composition = %+v, want nil for v9", comp)
 	}
 }

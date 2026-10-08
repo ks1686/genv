@@ -2,7 +2,183 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v4.7.0 - 2026-10-07
+
+Minor: a new schema version with two capabilities — composable environments and
+verified service changes. Closes #218.
+
+### Added
+
+- **`schemaVersion "10"` — local modules.** A spec can now be assembled from
+  several JSON documents instead of one. `genv.json` registers modules by name in
+  a root `modules` map, and each target bundle selects them with `useModules`.
+  Composition unions the selections of the root and every selected module.
+
+  What this buys: a spec split by concern (base tooling, language runtime, one
+  service stack) that every command already understands. `apply`, `status`,
+  `upgrade`, `updates`, and `scan` all resolve the composed environment, so a
+  module's packages install, lock, and report exactly like root ones.
+
+  Notes on the design:
+
+  - **Modules are local and trusted.** Paths resolve inside the spec's
+    directory, symlinked path components are refused, and reads use `O_NOFOLLOW`.
+    Nothing is fetched or signature-checked: a module is a file you already have.
+  - **`useModules` is additive** and follows `requiresModules`. Selecting a module
+    selects what it requires; there is no way to opt out of a dependency.
+  - **The root is a contributor, not an override.** Identical declarations
+    coalesce and every contributor is recorded as an owner. Differing
+    declarations are an error that names both origins — there is no override
+    syntax, because a silent winner is the failure mode composition exists to
+    remove.
+  - **Contributor-local merging keeps v8 semantics** (target arrays replace
+    defaults arrays, maps merge, `null` tombstones delete within one document);
+    across documents, arrays union by resource identity.
+  - **Module-owned resources are read-only from the CLI.** `add`, `remove`,
+    `disown`, `adopt`, `env`, `shell`, `service`, and `files adopt` refuse with
+    the owning module named, before any subprocess runs or any file is written.
+  - **`genv validate` loads every registered module**, including one no target
+    selects, since a broken registration is worth reporting; reconciliation loads
+    only the selection closure.
+  - **The lock records the selection and a fingerprint** of the composed
+    environment. A changed selection prints a note; it never refuses the lock.
+  - **`genv migrate` refuses v10.** Nothing needs converting, and rewriting would
+    discard the registry.
+
+- **`genv config`** — what a target actually gets: selected modules, the
+  composition fingerprint, and per-kind resource counts. `--registry` lists
+  registered modules and which target selects them; `--kind`/`--name` shows the
+  owners of a single resource.
+
+- **`genv explain <kind> <name>`** — where one resource comes from, naming the
+  declaring document and block (`defaults` or `targets.<id>`), and whether a
+  mutation command may change it.
+
+- **`genv export` composes v10 specs.** A snapshot is a flat single-target spec,
+  so exporting a v10 root without composing would have silently dropped every
+  package a module contributes. `report.json` now records which modules were
+  materialized.
+
+- **Dependency-aware service changes (schemaVersion 10).** A service can declare
+  `requires` (ordering between services), `watch` (packages, files, or services
+  whose change may require a restart), `restart_policy` (`never` by default, or
+  `ifRunning`), and `health_check` (a readiness probe).
+
+  `genv upgrade` restarts a watched service only when the change was proven: an
+  upgrade that left the installed version unchanged restarts nothing, and a
+  version that could not be established produces a deferral rather than a guess.
+  Closes #218.
+
+  The honest parts, which are the point:
+
+  - **Unknown is a real outcome.** Many managers never report a version. genv
+    reports `unknown` and defers rather than assuming "nothing changed", which
+    is how a service ends up running against a binary nobody restarted.
+  - **Readiness failure is not restart failure.** They are reported separately,
+    because the service did start and the remedy is different.
+  - **A health check is never run from a plan.** Not from `status`, not from any
+    dry run: a probe runs a command, and a plan that runs commands is not a plan.
+  - **Interrupted runs leave evidence.** A pending record is written before a
+    service is stopped and cleared only after the action and readiness succeed,
+    so the next run reports an unconfirmed change instead of assuming it worked.
+  - **The unattended worker refuses to half-do it.** It defers upgrades whose
+    watched service cannot be restarted and verified without a human, before
+    touching any package, and takes the rest of the plan.
+  - The four fields are **refused on v1–v9** rather than ignored.
+
+### Changed
+
+- `genv status` on v8/v9 specs is byte-for-byte unchanged; composition only
+  engages for v10 or v8+ specs that declare modules.
+
+### Fixed
+
+- `genvfile`'s in-place package rewrite ignored the new module registry and
+  selection, so a package-only edit to a v10 spec would have reported success
+  while writing the file back unchanged.
+
+Also fixed, found reviewing the two features before release. Each one made the same
+spec mean something different than it should.
+
+**Composition**
+
+- `shell.source` was dropped entirely on the module path: only aliases and
+  functions were merged, and a contributor declaring nothing else contributed
+  nothing. Sourced files now accumulate across contributors while one document's
+  overlay still replaces its defaults.
+- Array fields used `len() > 0`, so an empty target array kept the defaults
+  instead of clearing them. Packages, file links, templates, dirs and hook phases
+  now replace on a non-nil array, empty included, matching the plain v8 merge.
+- Hooks were appended within a single document, so a target phase could never
+  replace the defaults phase.
+- A spec declaring no modules produced an empty provenance index, so
+  `genv explain` and `genv config` reported every v8/v9 resource as unowned.
+  Ownership is now attributed to the root document and the block that declares
+  it, with no new rejections — specs that were accepted stay accepted.
+- Module validation judged a `requires` edge against a synthetic file holding
+  only the bundle being checked, so any reference outside that bucket was
+  reported as unprovided — including a service declared in another bucket of the
+  same module, and one the root spec declares. A module that ordered itself after
+  the root database failed *every* command. Cross-document references are now
+  resolved against the composed union, which also catches a `requires` cycle
+  spanning two modules.
+- A `watch` entry naming a file or another service was accepted and then
+  silently ignored, so the service never restarted and nothing said why. `watch`
+  now covers **managed file destinations** as well as packages: `genv apply`
+  restarts a service when a file it watches is created or rewritten, on both the
+  human and JSON paths, and reports it under `services`. An entry that is neither
+  a tracked package nor a managed file is a validation error naming it.
+  Watching *another service* remains unimplemented and is still refused.
+
+**Service restarts**
+
+- `genv upgrade --json` returned before the restart phase. It upgraded the binary
+  a watched service runs, left the service on the old code, and reported success.
+  The JSON path runs the same phase and reports each service under a new
+  `services` key.
+- The unattended updates worker deferred the packages whose watching service
+  needed a human and then never restarted anything at all, silently. It now
+  follows the upgrade through to the services it can restart unattended.
+- A health check's `timeout` bounded only the gap *between* probes. A probe that
+  hung was never interrupted, so `timeout: 200ms` could hold the command open
+  indefinitely. Each probe now gets the remaining budget.
+- The fingerprint skipped `requires`, `watch`, `restart_policy` and
+  `health_check`, so a change to restart behavior left the recorded lock looking
+  current. It also skipped `shell.source`, which composition had been dropping.
+- A pending restart record that could not be written was swallowed, despite a
+  comment claiming the outcome reported it. The restart still proceeds — refusing
+  would leave the old binary running — but the gap is now reported.
+- Restarts ran one service at a time in dependency order, so restarting a
+  database took it down while the clients that depend on it were still running,
+  and `plan.StopOrder` — which exists for exactly this — was never used. Stops
+  now run in reverse dependency order and starts in dependency order, and a
+  service whose dependency did not come back is not started at all rather than
+  being reported as successfully started against something that is down.
+
+**Validation output**
+
+- Several validators walk Go maps, so the order validation errors appeared in
+  depended on map iteration order: the same invalid spec could report its
+  problems differently on every run. Fifteen runs of one invalid spec produced
+  three different outputs. Errors are now sorted once, by position then field,
+  so located errors still lead and the order no longer moves. Output for
+  **valid** v1/v5/v7/v8 specs is byte-for-byte unchanged.
+
+**Test harness**
+
+- `TestMain` redirected `XDG_CONFIG_HOME` only when it was unset. Where it is
+  set, an ordinary `go test ./...` resolved the real `~/.config/genv` and ran the
+  unattended worker against the live config. It is now always overridden, with a
+  regression test that fails against the old behavior.
+- The harness still did not redirect `$HOME`, and `launchctl` was not shadowed.
+  A test applying a service therefore wrote `~/Library/LaunchAgents/genv.*.plist`
+  and registered a real launchd job in the developer's session, which survived
+  the run and then failed the next `genv validate` with a dangling
+  `ProgramArguments[0]` — a failure that reads like a product bug. Both are
+  contained now: `$HOME`/`%USERPROFILE%` are redirected, and `launchctl`/
+  `systemctl` are shadowed with fakes that succeed without touching session
+  state. Regression tests for both fail against the old behavior.
+
 
 ## v4.6.0 - 2026-10-01
 

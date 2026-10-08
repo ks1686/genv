@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/ks1686/genv/internal/compose"
 	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/schema"
@@ -82,6 +83,12 @@ func filesAdoptCmd(args []string) int {
 	if err != nil {
 		fprintf(os.Stderr, "genv files adopt: %v\n", err)
 		return exitLogic
+	}
+	// Adoption rewrites the link's source, so a module-owned destination is
+	// refused before the live file is backed up or the lock is touched.
+	if code := moduleOwnerGuardFor("files adopt", *file, f, *hostFlag, *targetFlag,
+		sourceRootForSpec(*file, f), compose.KindFile, link.Target); code != exitOK {
+		return code
 	}
 	source, err := files.ResolveSource(sourceRootForSpec(*file, f), link.Source)
 	if err != nil {

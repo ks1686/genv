@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -97,7 +98,45 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateAdapters(f, raw, positions)...)
 	errs = append(errs, validatePortable(f, positions)...)
 
-	return f, errs, nil
+	return f, sortValidationErrors(errs), nil
+}
+
+// sortValidationErrors makes validation output deterministic.
+//
+// Several validators walk Go maps, so the order errors arrive in depends on map
+// iteration order: the same invalid spec could report its problems in a
+// different order on every run, which makes output impossible to diff and any
+// test asserting on it flaky. Sorting here fixes every source at once rather
+// than at each iteration site.
+//
+// Located errors stay ahead of unlocated ones, and within each group the order
+// is by position then field — which is the order the output already had most of
+// the time, so this stabilizes the output rather than redesigning it.
+func sortValidationErrors(errs []ValidationError) []ValidationError {
+	if len(errs) < 2 {
+		return errs
+	}
+	out := append([]ValidationError(nil), errs...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		aLocated, bLocated := a.Line > 0, b.Line > 0
+		if aLocated != bLocated {
+			return aLocated
+		}
+		if aLocated && bLocated {
+			if a.Line != b.Line {
+				return a.Line < b.Line
+			}
+			if a.Column != b.Column {
+				return a.Column < b.Column
+			}
+		}
+		if a.Field != b.Field {
+			return a.Field < b.Field
+		}
+		return a.Message < b.Message
+	})
+	return out
 }
 
 // ValidEnvName reports whether name is a valid POSIX shell environment variable
@@ -320,8 +359,8 @@ func validatePackageList(f *GenvFile, packages []Package, fieldPrefix string, po
 
 func validateExternalRecipe(pkg Package, pkgPath, schemaVersion string, positions map[string]Position) []ValidationError {
 	field := pkgPath + ".external"
-	if schemaVersion != Version9 {
-		return []ValidationError{{Position: positions[field], Field: field, Message: "managed external recipe requires schemaVersion \"9\""}}
+	if !supportsManagedExternal(schemaVersion) {
+		return []ValidationError{{Position: positions[field], Field: field, Message: fmt.Sprintf("managed external recipe requires schemaVersion %q", Version9)}}
 	}
 	var errs []ValidationError
 	if pkg.Prefer != "external" {
@@ -823,8 +862,74 @@ func validateServices(f *GenvFile, raw map[string]json.RawMessage, positions map
 			})
 		}
 		errs = append(errs, validateServiceMap(f.Services, "services")...)
+		pointerServices := make(map[string]*Service, len(f.Services))
+		for name, svc := range f.Services {
+			svc := svc
+			pointerServices[name] = &svc
+		}
+		// The legacy flat services block is one document, so every reference
+		// must resolve inside it.
+		errs = append(errs, validateServiceChangeFields(f, pointerServices, "services", false, positions)...)
 	}
 	return errs
+}
+
+// validateServiceVersionGates refuses the v10-only service fields on older
+// schemas instead of ignoring them.
+//
+// Silently dropping `watch` or `health_check` would be the worst outcome: the
+// user would believe a service restarts when its package changes, and it would
+// not. `genv migrate` cannot invent that intent either, so the fields must be
+// removed or the schema raised.
+func validateServiceVersionGates(f *GenvFile, services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if versionRank(f.SchemaVersion) >= versionRank(Version10) {
+		return nil
+	}
+	for _, name := range sortedServicePtrNames(services) {
+		svc := services[name]
+		if svc == nil {
+			continue
+		}
+		if !HasV10ServiceFields(svc) {
+			continue
+		}
+		for _, field := range serviceFieldsV10 {
+			field := field
+			present := false
+			switch field {
+			case "requires":
+				present = len(svc.Requires) > 0
+			case "watch":
+				present = len(svc.Watch) > 0
+			case "restart_policy":
+				present = svc.RestartPolicy != ""
+			case "health_check":
+				present = svc.HealthCheck != nil
+			}
+			if !present {
+				continue
+			}
+			full := fieldPrefix + "." + name + "." + field
+			errs = append(errs, ValidationError{
+				Position: positions[full],
+				Field:    full,
+				Message:  fmt.Sprintf("%q requires schemaVersion %q or newer (current: %q); genv cannot guess the intent, so it refuses rather than ignoring the field", field, Version10, f.SchemaVersion),
+			})
+		}
+	}
+	return errs
+}
+
+// sortedServicePtrNames keeps the gate's error order stable so a spec with two
+// offending services always reports them the same way.
+func sortedServicePtrNames(services map[string]*Service) []string {
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func validateServiceMap(services map[string]Service, fieldPrefix string) []ValidationError {
@@ -834,6 +939,166 @@ func validateServiceMap(services map[string]Service, fieldPrefix string) []Valid
 		errs = append(errs, validateService(name, svc, fieldPrefix)...)
 	}
 	return errs
+}
+
+// validateServiceChangeFields applies the v10-only service fields to a target
+// bucket: the version gate on v1-v9, and the field rules on v10.
+// allowExternalRequires lets a requires edge name a service this document does
+// not declare. Only module documents set it: a module is one contributor among
+// several, so the service it depends on may well be declared by the root spec
+// or by another module. Deciding that is composition's job, not a single
+// document's.
+func validateServiceChangeFields(f *GenvFile, services map[string]*Service, fieldPrefix string, allowExternalRequires bool, positions map[string]Position) []ValidationError {
+	if len(services) == 0 {
+		return nil
+	}
+	var errs []ValidationError
+	if versionRank(f.SchemaVersion) < versionRank(Version10) {
+		return validateServiceVersionGates(f, services, fieldPrefix, positions)
+	}
+	for name, svc := range services {
+		if svc == nil {
+			continue
+		}
+		errs = ValidateServiceV10Fields(name, svc, errs, fmt.Sprintf("%s.%s", fieldPrefix, name), positions)
+	}
+	return append(errs, validateServiceRequiresGraph(f, services, fieldPrefix, allowExternalRequires, positions)...)
+}
+
+// validateServiceRequiresGraph rejects a `requires` cycle, and a reference to a
+// service the spec never declares anywhere.
+//
+// A cycle is worth catching at validate time rather than at upgrade time: the
+// alternative is that `genv upgrade` silently fails to order anything and the
+// user has no idea which two services disagree.
+//
+// An edge that leaves the bundle (a service declared in another target) is
+// allowed, because composition merges buckets before the graph is used; only a
+// name absent from the whole spec is an error.
+func validateServiceRequiresGraph(f *GenvFile, services map[string]*Service, fieldPrefix string, allowExternalRequires bool, positions map[string]Position) []ValidationError {
+	if len(services) == 0 {
+		return nil
+	}
+	declaredEverywhere := map[string]bool{}
+	if f.Defaults != nil {
+		for name := range f.Defaults.Services {
+			declaredEverywhere[name] = true
+		}
+	}
+	for _, bundle := range f.Targets {
+		if bundle == nil {
+			continue
+		}
+		for name := range bundle.Services {
+			declaredEverywhere[name] = true
+		}
+	}
+
+	var errs []ValidationError
+	edges := map[string][]string{}
+	for _, name := range sortedServicePtrNames(services) {
+		svc := services[name]
+		if svc == nil || len(svc.Requires) == 0 {
+			continue
+		}
+		for _, dep := range svc.Requires {
+			if dep == "" || dep == name {
+				continue // already reported by ValidateServiceV10Fields
+			}
+			if _, inBundle := services[dep]; inBundle {
+				edges[name] = append(edges[name], dep)
+				continue
+			}
+			if declaredEverywhere[dep] {
+				continue // declared in another bucket; composition merges them
+			}
+			if allowExternalRequires {
+				// The provider lives in another document. Composition checks
+				// the union, where the answer is actually knowable.
+				continue
+			}
+			field := fmt.Sprintf("%s.%s.requires[%s]", fieldPrefix, name, dep)
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("service %q requires %q, which no declared service provides", name, dep),
+			})
+		}
+	}
+	return append(errs, validateServiceCycles(edges, fieldPrefix, positions)...)
+}
+
+// validateServiceCycles reports each cycle once, naming the full path so the
+// user can find the edge to delete.
+func validateServiceCycles(edges map[string][]string, fieldPrefix string, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	reported := map[string]bool{}
+	state := map[string]int{} // 0 unvisited, 1 on stack, 2 done
+	var path []string
+
+	var visit func(name string)
+	visit = func(name string) {
+		state[name] = 1
+		path = append(path, name)
+		for _, dep := range edges[name] {
+			switch state[dep] {
+			case 0:
+				visit(dep)
+			case 1:
+				cycle := pathFrom(path, dep)
+				key := cycleKey(cycle)
+				if !reported[key] {
+					reported[key] = true
+					field := fmt.Sprintf("%s.%s.requires", fieldPrefix, dep)
+					errs = append(errs, ValidationError{
+						Position: positions[field],
+						Field:    field,
+						Message: fmt.Sprintf("service dependency cycle: %s -> %s",
+							strings.Join(cycle, " -> "), dep),
+					})
+				}
+			}
+		}
+		path = path[:len(path)-1]
+		state[name] = 2
+	}
+
+	names := make([]string, 0, len(edges))
+	for name := range edges {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if state[name] == 0 {
+			visit(name)
+		}
+	}
+	return errs
+}
+
+// pathFrom returns the cycle portion of the current path starting at name.
+func pathFrom(path []string, name string) []string {
+	for i, p := range path {
+		if p == name {
+			return append([]string{}, path[i:]...)
+		}
+	}
+	return append([]string{name}, path...)
+}
+
+// cycleKey canonicalizes a cycle so the same loop is reported once regardless
+// of which node the walk started from.
+func cycleKey(cycle []string) string {
+	if len(cycle) == 0 {
+		return ""
+	}
+	min := 0
+	for i, n := range cycle {
+		if n < cycle[min] {
+			min = i
+		}
+	}
+	return strings.Join(append(append([]string{}, cycle[min:]...), cycle[:min]...), ",")
 }
 
 func validateTargetServiceMap(services map[string]*Service, fieldPrefix string, allowTombstones bool) []ValidationError {
@@ -1581,8 +1846,11 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 		})
 	}
 
+	errs = append(errs, validateModuleRegistry(f, positions)...)
+
 	if f.Defaults != nil {
-		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, positions)...)
+		errs = append(errs, validateTargetBundle(f, f.Defaults, "defaults", false, false, positions)...)
+		errs = append(errs, validateUseModules(f, f.Defaults, "defaults", positions)...)
 	}
 	for target, bundle := range f.Targets {
 		targetPath := "targets." + target
@@ -1601,8 +1869,83 @@ func validatePortable(f *GenvFile, positions map[string]Position) []ValidationEr
 			})
 			continue
 		}
-		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, positions)...)
+		errs = append(errs, validateTargetBundle(f, bundle, targetPath, true, false, positions)...)
 		errs = append(errs, validateKnownTombstones(bundle, f.Defaults, targetPath, positions)...)
+		errs = append(errs, validateUseModules(f, bundle, targetPath, positions)...)
+	}
+	return errs
+}
+
+// validateModuleRegistry checks the v10 root modules registry: the block itself
+// is v10-only, names and paths follow the module syntax rules, and every
+// selected module must be registered here. Registration is syntax-checked only
+// because reading module documents is the loader's (I/O) job.
+func validateModuleRegistry(f *GenvFile, positions map[string]Position) []ValidationError {
+	var errs []ValidationError
+	if len(f.Modules) == 0 {
+		return nil
+	}
+	if f.SchemaVersion != Version10 {
+		return []ValidationError{{
+			Position: positions["modules"],
+			Field:    "modules",
+			Message:  fmt.Sprintf("modules block requires schemaVersion %q (current: %q)", Version10, f.SchemaVersion),
+		}}
+	}
+	for name, rel := range f.Modules {
+		field := "modules." + name
+		if !ValidateModuleName(name) {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("invalid module name %q; expected kebab-case, at most 64 characters, and not a built-in manager", name),
+			})
+		}
+		if !ValidateModulePath(rel) {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("invalid module path %q; expected a repository-relative path without traversal, ~, or $VAR", rel),
+			})
+		}
+	}
+	return errs
+}
+
+// validateUseModules gates per-bundle module selection on v10 and rejects names
+// that the root registry does not define, so a typo fails before composition.
+func validateUseModules(f *GenvFile, bundle *TargetBundle, fieldPrefix string, positions map[string]Position) []ValidationError {
+	if len(bundle.UseModules) == 0 {
+		return nil
+	}
+	var errs []ValidationError
+	if f.SchemaVersion != Version10 {
+		return []ValidationError{{
+			Position: positions[fieldPrefix+".useModules"],
+			Field:    fieldPrefix + ".useModules",
+			Message:  fmt.Sprintf("useModules requires schemaVersion %q (current: %q)", Version10, f.SchemaVersion),
+		}}
+	}
+	seen := map[string]bool{}
+	for i, name := range bundle.UseModules {
+		field := fmt.Sprintf("%s.useModules[%d]", fieldPrefix, i)
+		if _, ok := f.Modules[name]; !ok {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("unknown module %q; register it under the root modules block", name),
+			})
+			continue
+		}
+		if seen[name] {
+			errs = append(errs, ValidationError{
+				Position: positions[field],
+				Field:    field,
+				Message:  fmt.Sprintf("duplicate module selection %q", name),
+			})
+			continue
+		}
+		seen[name] = true
 	}
 	return errs
 }
@@ -1686,22 +2029,23 @@ func hasDefaultService(defaults *TargetBundle, name string) bool {
 	return defaults.Services[name] != nil
 }
 
-func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, positions map[string]Position) []ValidationError {
+func validateTargetBundle(f *GenvFile, bundle *TargetBundle, fieldPrefix string, allowTombstones bool, allowExternalRequires bool, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	errs = append(errs, validatePackageList(f, bundle.Packages, fieldPrefix+".packages", positions)...)
-	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", positions)...)
+	errs = append(errs, validateNoPackageHosts(bundle.Packages, fieldPrefix+".packages", f.SchemaVersion, positions)...)
 	errs = append(errs, validateTargetEnvMap(bundle.Env, fieldPrefix+".env", allowTombstones)...)
 	errs = append(errs, validateTargetShellConfig(f, bundle.Shell, fieldPrefix+".shell", allowTombstones)...)
 	errs = append(errs, validateTargetServiceMap(bundle.Services, fieldPrefix+".services", allowTombstones)...)
-	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", positions)...)
+	errs = append(errs, validateServiceChangeFields(f, bundle.Services, fieldPrefix+".services", allowExternalRequires, positions)...)
+	errs = append(errs, validateNoServiceHosts(bundle.Services, fieldPrefix+".services", f.SchemaVersion, positions)...)
 	errs = append(errs, validateFilesConfig(bundle.Files, fieldPrefix+".files")...)
-	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", positions)...)
+	errs = append(errs, validateNoFileHosts(bundle.Files, fieldPrefix+".files", f.SchemaVersion, positions)...)
 	errs = append(errs, validateHooksConfig(f, bundle.Hooks, fieldPrefix+".hooks", positions)...)
-	errs = append(errs, validateNoHookHosts(bundle.Hooks, fieldPrefix+".hooks", positions)...)
+	errs = append(errs, validateNoHookHosts(bundle.Hooks, fieldPrefix+".hooks", f.SchemaVersion, positions)...)
 	return errs
 }
 
-func validateNoPackageHosts(packages []Package, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoPackageHosts(packages []Package, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	for i, pkg := range packages {
 		if len(pkg.Host) == 0 {
@@ -1711,13 +2055,13 @@ func validateNoPackageHosts(packages []Package, fieldPrefix string, positions ma
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoServiceHosts(services map[string]*Service, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoServiceHosts(services map[string]*Service, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	var errs []ValidationError
 	for name, svc := range services {
 		if svc == nil || len(svc.Host) == 0 {
@@ -1727,13 +2071,13 @@ func validateNoServiceHosts(services map[string]*Service, fieldPrefix string, po
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoFileHosts(files *FilesConfig, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	if files == nil {
 		return nil
 	}
@@ -1746,7 +2090,7 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	for i, tpl := range files.Templates {
@@ -1757,7 +2101,7 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	for i, dir := range files.Dirs {
@@ -1768,13 +2112,13 @@ func validateNoFileHosts(files *FilesConfig, fieldPrefix string, positions map[s
 		errs = append(errs, ValidationError{
 			Position: positions[field],
 			Field:    field,
-			Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+			Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 		})
 	}
 	return errs
 }
 
-func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[string]Position) []ValidationError {
+func validateNoHookHosts(hooks *HooksConfig, fieldPrefix, schemaVersion string, positions map[string]Position) []ValidationError {
 	if hooks == nil {
 		return nil
 	}
@@ -1798,7 +2142,7 @@ func validateNoHookHosts(hooks *HooksConfig, fieldPrefix string, positions map[s
 			errs = append(errs, ValidationError{
 				Position: positions[field],
 				Field:    field,
-				Message:  "host predicates are not allowed in schemaVersion \"8\"; use target buckets",
+				Message:  fmt.Sprintf("host predicates are not allowed in schemaVersion %q; use target buckets", schemaVersion),
 			})
 		}
 	}

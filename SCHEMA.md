@@ -1,6 +1,6 @@
 # genv.json schema
 
-Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/validate.go`. JSON Schema mirrors: `schema/v8/genv.json` and `schema/v9/genv.json` (Go validator remains source of truth).
+Canonical structs: `internal/schema/schema.go` and `internal/schema/module.go`. Validation: `internal/schema/validate.go`. JSON Schema mirrors: `schema/v8/genv.json`, `schema/v9/genv.json`, and `schema/v10/genv.json` (Go validator remains source of truth).
 
 ## Supported versions
 
@@ -15,10 +15,11 @@ Canonical structs: `internal/schema/schema.go`. Validation: `internal/schema/val
 | v7 | `"7"` | `"shell": "powershell"` targeting |
 | v8 | `"8"` | portable `defaults` + `targets.*`; optional top-level `adapters` |
 | v9 | `"9"` | managed external release recipes |
+| v10 | `"10"` | local modules: root `modules` registry + per-bundle `useModules` |
 
 Older versions still load. Prefer **v8** unless a managed external recipe requires
-v9. Both versions use portable `defaults` and `targets.*` buckets. Convert legacy
-specs with `genv migrate`.
+v9 or composable modules require v10. All three use portable `defaults` and
+`targets.*` buckets. Convert legacy specs with `genv migrate`.
 
 ## Common rules
 
@@ -26,7 +27,7 @@ specs with `genv migrate`.
 - Empty optional objects/arrays are omitted when marshaling (`omitempty`).
 - Paths support `~` and `$VAR` / `${VAR}` expansion.
 - **v1–v7:** optional per-record `host` is a string or string array (`"macos"` or `["arch","macos"]`). Empty means “all hosts”. Legacy literal `"wsl2"` is obsolete for classification (see [WSL guide](docs/wsl2-install.md)); migrate to `ubuntu` / `wsl-arch` targets.
-- **v8-v9:** `host` is illegal. Use `targets.<id>` buckets.
+- **v8-v10:** `host` is illegal. Use `targets.<id>` buckets.
 
 ## v8 — portable targets (recommended)
 
@@ -325,6 +326,174 @@ Two properties matter. It is **guarded**, because the fragments are rendered out
 genv recognises its own block by marker and **replaces** it rather than appending, so a template carrying another host's path is corrected in place instead of accumulating a second block. Rc injection only happens when the state directory is the default config directory; a custom `--state-dir` leaves your rc files alone.
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`. A package that is in both the spec and the lock but whose lock entry records no installed version is reported as `unknown` **only when a live inventory positively contradicts the lock** — the manager was inventoried and does not list the package. The entry's presence is not evidence of an install (that is the state a failed install leaves behind), but a missing version alone proves nothing either: many managers never report a version, and a real install through one of them produces the same version-less entry. So a manager that could not be inventoried, or that does list the package, leaves the entry as `ok`, and `genv status --offline` is always quiet. Apply re-queues exactly the entries `unknown` reports. The version column keeps its own independent meaning — `*` for no spec constraint and no recorded version, `?` for a constraint with no recorded version.
+
+
+## v10 — local modules
+
+A module is a second JSON document that declares part of the environment.
+`genv.json` registers modules by name and each target bundle selects them with
+`useModules`; composition unions the selections of every contributor.
+
+```json
+{
+  "schemaVersion": "10",
+  "modules": {
+    "base": "modules/base.json",
+    "dev":  "modules/dev.json"
+  },
+  "targets": {
+    "macos": {
+      "useModules": ["dev"],
+      "packages": [{ "id": "ghostty" }]
+    }
+  }
+}
+```
+
+```json
+// modules/base.json
+{
+  "schemaVersion": "10",
+  "defaults": {
+    "packages": [{ "id": "jq" }],
+    "env": { "EDITOR": { "value": "nvim" } }
+  }
+}
+
+// modules/dev.json
+{
+  "schemaVersion": "10",
+  "requiresModules": ["base"],
+  "defaults": { "packages": [{ "id": "ripgrep" }] }
+}
+```
+
+### Rules
+
+- **Modules are local and trusted.** Paths resolve inside the spec's directory;
+  a module that escapes it is refused. Module documents are not fetched and not
+  signed — they are files you already have on disk.
+- **`useModules` is additive.** Selecting `"dev"` also selects `"base"` because
+  dev requires it. There is no way to un-select a dependency.
+- **Modules compose per target.** Each module contributes its `defaults` and, when
+  the active target exists, its `targets.<id>` overlay.
+- **The root is a contributor, not an override.** A resource the root and a module
+  declare *identically* is kept once, and every contributor is recorded as an
+  owner. A resource they declare *differently* is an error naming both origins.
+- **No override syntax.** To change what a module declares, edit the module or
+  write a different module. A root entry cannot silently win.
+- **Contributor-local merge rules are v8 rules.** Within one document, a target
+  array replaces the defaults array and maps merge, exactly as in v8. Across
+  documents, arrays union by identity.
+
+  That replacement rule has a sharp edge worth stating plainly: a module that
+  declares `defaults.packages` *and* `targets.macos.packages` does **not** get
+  both. The target array wins and the default packages disappear from the
+  composition — silently, because this is the behaviour every v8 spec already
+  has. Put a module's packages in one place, or repeat them in the overlay.
+  `genv explain package <id> --target macos` will tell you where a surviving
+  declaration actually lives.
+- **Module-owned resources are read-only from the CLI.** `add`, `remove`,
+  `disown`, `adopt`, `env`, `shell`, `service`, and `files adopt` refuse with the
+  owning module named, before running any subprocess or writing anything.
+- **`genv validate` loads every registered module**, including ones no target
+  selects, because a broken registration is a mistake worth reporting. Other
+  commands load only the selection closure.
+- **`genv migrate` refuses v10.** Converting is not needed and would lose the
+  registry.
+
+### Inspecting a composition
+
+`genv config --target macos` prints what the target actually gets; `genv explain
+package jq --target macos` prints who declares it and whether a command may
+change it. `genv export` flattens the composition into a single-target snapshot
+and records the materialized modules in `report.json`.
+
+## v10 — service dependencies and change triggers
+
+```json
+{
+  "schemaVersion": "10",
+  "targets": {
+    "macos": {
+      "services": {
+        "api": {
+          "start": ["api-server"],
+          "requires": ["db"],
+          "watch": ["postgres"],
+          "restart_policy": "ifRunning",
+          "health_check": {
+            "command": ["curl", "-fsS", "localhost:8080/health"],
+            "timeout": "30s",
+            "interval": "1s",
+            "allow_background": false
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+- `requires` — services this one starts **after** and stops **before**. It is an
+  ordering constraint, not a change trigger. A cycle is a validation-time error
+  naming the services involved, as is a `requires` entry no declared service
+  provides.
+- `watch` — the resources whose change should restart this service: **tracked
+  packages**, whose installed version moved during an upgrade, and **managed
+  file destinations**, which `genv apply` creates or rewrites. An entry that is
+  neither is a validation error naming the service and the entry, because nothing
+  could ever report it as changed and the service would silently never restart.
+  Entries may carry the explicit `watch:` prefix, which is how a package and a
+  file of the same name are told apart.
+
+  A file entry matches the `target` of a `files.links`, `files.templates`, or
+  `files.dirs` entry, written either literally or with `~`/`$VAR` expanded.
+  Watching *another service* is still not a trigger: restarting because a peer
+  changed is a different question from restarting because a resource changed,
+  and answering it safely needs more than a package or file digest.
+- `restart_policy` — `never` (default) leaves a stopped service stopped;
+  `ifRunning` starts one, because the change is what it was waiting for.
+- `health_check` — a readiness probe run **only after** an authorized start or
+  restart. It never runs from `status`, `apply --dry-run`, `upgrade --dry-run`,
+  or any planning path: a plan that runs commands is not a plan. `timeout`
+  defaults to 30s and `interval` to 1s; both must be positive. `allow_background`
+  must be `true` before the unattended updates worker may use the check.
+- All four fields are **refused on v1–v9** rather than ignored. A silently dropped
+  `watch` means a service that quietly never restarts.
+
+### What upgrade does about it
+
+| Situation | Outcome |
+| --------- | ------- |
+| Upgraded, installed version moved | service restarted (or started, under `ifRunning`), then health checked |
+| `apply` created or rewrote a watched file | same: restarted, then health checked |
+| Upgraded, installed version did not move | no restart — the upgrade was a no-op |
+| Version could not be established before or after | **deferred**: nothing is restarted and nothing is claimed |
+| Watched service stopped, policy `never` | skipped, and said so |
+| Restart or readiness failed | reported, exit non-zero, and the pending record is kept |
+| Pending record could not be written | restart proceeds, and the gap is reported — refusing would leave the old binary running |
+| Dependency did not come back | the dependent is **not started**, and the failure names it |
+
+The phase runs in `genv upgrade`, in `genv upgrade --json`, in `genv apply`, in
+`genv apply --json`, and in the unattended `genv updates` worker. Every JSON
+envelope reports the outcome under a `services` key — an output flag never
+changes what the command does.
+
+On `apply` the phase runs only when the apply itself succeeded. Restarting on top
+of a half-applied environment would trade one broken state for another.
+
+Restarts are ordered: services stop in reverse dependency order (a service goes
+down before the ones that depend on it) and start in dependency order. A service
+whose dependency failed to come back is not started, so nothing is reported as
+successfully started against something that is down.
+
+The pending record is written **before** a service is stopped and cleared only
+after the action and its readiness check both succeed. An interrupted run
+therefore leaves evidence: the next run reports the unconfirmed change instead of
+assuming it worked. The unattended worker defers upgrades whose watched service
+cannot be restarted *and verified* without a human, before touching any package,
+and restarts the ones it can once the upgrade lands.
 
 ## Profiles
 
