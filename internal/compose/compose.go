@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/plan"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/service"
@@ -86,7 +87,7 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 		// only ever fires for a v10 spec that has not adopted modules yet. The
 		// rule is the same either way: an output flag, or the absence of
 		// modules, must not change what counts as a valid spec.
-		if err := checkWatchTargets(flatServices(effective.Services), effective.Packages); err != nil {
+		if err := checkWatchTargets(flatServices(effective.Services), effective.Packages, effective.Files); err != nil {
 			return nil, err
 		}
 		return &Composition{
@@ -156,7 +157,7 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 
 	bundle := acc.bundle()
 
-	if err := checkWatchTargets(bundle.Services, bundle.Packages); err != nil {
+	if err := checkWatchTargets(bundle.Services, bundle.Packages, bundle.Files); err != nil {
 		return nil, err
 	}
 
@@ -195,18 +196,6 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 	}, nil
 }
 
-// checkWatchTargets rejects a watch entry that no run can ever produce evidence
-// for.
-//
-// Evidence comes from one place: a tracked package whose installed version
-// moved during an upgrade. A watch entry naming a file or another service is
-// accepted by the schema, but nothing ever reports it as changed, so the
-// service would simply be ignored — forever, silently. The docs elsewhere call
-// that out as the failure mode this feature exists to prevent, so it is an
-// error here rather than a silent no-op.
-//
-// An entry naming a package that another contributor declares is fine: this
-// check runs on the union, after every module is merged.
 // flatServices adapts the flat spec's service map to the pointer form the
 // module path uses, so one check serves both.
 func flatServices(in map[string]schema.Service) map[string]*schema.Service {
@@ -218,7 +207,18 @@ func flatServices(in map[string]schema.Service) map[string]*schema.Service {
 	return out
 }
 
-func checkWatchTargets(services map[string]*schema.Service, packages []schema.Package) error {
+// checkWatchTargets rejects a watch entry that nothing could ever act on.
+//
+// Evidence reaches the coordinator from exactly two places: a tracked package
+// whose installed version moved during an upgrade, and a managed file that
+// `genv apply` changed. An entry naming neither parses, validates, and is then
+// silently ignored forever — the service never restarts and nothing says why.
+// That is the failure mode this feature exists to prevent, so it is an error
+// here rather than a silent no-op.
+//
+// Both checks run on the union of contributors, so a module may watch a package
+// or a file the root declares.
+func checkWatchTargets(services map[string]*schema.Service, packages []schema.Package, filesCfg *schema.FilesConfig) error {
 	if len(services) == 0 {
 		return nil
 	}
@@ -226,6 +226,10 @@ func checkWatchTargets(services map[string]*schema.Service, packages []schema.Pa
 	for _, pkg := range packages {
 		declared[pkg.ID] = true
 	}
+	for target := range declaredFileTargets(filesCfg) {
+		declared[target] = true
+	}
+	targets := declaredFileTargets(filesCfg)
 	names := make([]string, 0, len(services))
 	for name := range services {
 		names = append(names, name)
@@ -236,14 +240,61 @@ func checkWatchTargets(services map[string]*schema.Service, packages []schema.Pa
 			continue
 		}
 		for _, watch := range schema.WatchTargets(services[name].Watch) {
-			if declared[service.TriggerResource(watch)] {
+			resource := service.TriggerResource(watch)
+			if declared[resource] {
 				continue
 			}
-			return fmt.Errorf("%w: service %q watches %q, which is not a package this spec declares, so no upgrade could ever report it as changed",
+			// A watch entry may be written with the ~ or $VAR form while the
+			// file block spells it out, so compare expanded forms too.
+			if targets[resource] || targets[expandTarget(resource)] {
+				continue
+			}
+			return fmt.Errorf("%w: service %q watches %q, which is neither a package this spec declares nor a file it manages, so nothing could ever report it as changed",
 				ErrServiceGraph, name, watch)
 		}
 	}
 	return nil
+}
+
+// declaredFileTargets returns every destination the files block claims, in the
+// form a watch entry is likely to use: the declared text, its cleaned path, and
+// its fully expanded path.
+// expandTarget resolves a declared destination to the absolute path the
+// applier will write. It is pure path arithmetic — no filesystem access — so it
+// is safe on a validation path.
+func expandTarget(target string) string {
+	expanded, err := files.ExpandTarget(target)
+	if err != nil {
+		return ""
+	}
+	return expanded
+}
+
+func declaredFileTargets(cfg *schema.FilesConfig) map[string]bool {
+	out := map[string]bool{}
+	if cfg == nil {
+		return out
+	}
+	add := func(target string) {
+		if target == "" {
+			return
+		}
+		out[target] = true
+		out[CleanPath(target)] = true
+		if expanded := expandTarget(target); expanded != "" {
+			out[expanded] = true
+		}
+	}
+	for _, l := range cfg.Links {
+		add(l.Target)
+	}
+	for _, tmpl := range cfg.Templates {
+		add(tmpl.Target)
+	}
+	for _, d := range cfg.Dirs {
+		add(d.Target)
+	}
+	return out
 }
 
 // unsafeAssetError reports the first module asset path that left the spec root,

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -712,5 +714,233 @@ func TestFilterBackgroundServices_rebuilds_stop_order(t *testing.T) {
 	}
 	if strings.Join(filtered.StopOrder, ",") != "db" {
 		t.Errorf("StopOrder = %v, want only the services that survived the filter", filtered.StopOrder)
+	}
+}
+
+// A service that watches a managed file must restart when `genv apply` changes
+// that file. Before this, evidence came only from package versions, so a changed
+// config file restarted nothing and `watch` could not name one at all.
+func TestApply_restarts_service_whose_watched_file_changed(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+	dest := filepath.Join(dir, "api.conf")
+
+	if err := os.WriteFile(filepath.Join(dir, "api.conf.tmpl"), []byte("listen 8080\n"), 0o600); err != nil {
+		t.Fatalf("write template source: %v", err)
+	}
+
+	start, err := json.Marshal([]string{"sh", "-c", "printf start, >> " + filepath.ToSlash(serviceMarker)})
+	if err != nil {
+		t.Fatalf("marshal start: %v", err)
+	}
+	stop, err := json.Marshal([]string{"sh", "-c", "printf stop, >> " + filepath.ToSlash(serviceMarker)})
+	if err != nil {
+		t.Fatalf("marshal stop: %v", err)
+	}
+	status, err := json.Marshal([]string{"sh", "-c", "exit 0"})
+	if err != nil {
+		t.Fatalf("marshal status: %v", err)
+	}
+
+	writeTestFile(t, specPath, fmt.Sprintf(`{
+	  "schemaVersion": "10",
+	  "targets": { "arch": {
+	    "files": { "templates": [{ "source": "api.conf.tmpl", "target": %q }] },
+	    "services": { "api": {
+	      "start": %s, "stop": %s, "status": %s,
+	      "watch": [%q], "restart_policy": "ifRunning"
+	    } }
+	  } }
+	}`, filepath.ToSlash(dest), start, stop, status, filepath.ToSlash(dest)))
+
+	out := captureStdout(t, func() {
+		code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks"})
+		if code != exitOK {
+			t.Fatalf("apply exit = %d, want %d", code, exitOK)
+		}
+	})
+
+	data, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("apply wrote the watched file and never restarted the service\n%s", out)
+	}
+	var calls []string
+	for _, c := range strings.Split(string(data), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			calls = append(calls, c)
+		}
+	}
+	// apply reconciles services before it writes files, so the service is first
+	// started and then restarted once its config exists on disk. What matters
+	// is the trailing restart: that is the action that puts the service on the
+	// new file.
+	if len(calls) < 2 || strings.Join(calls[len(calls)-2:], ",") != "stop,start" {
+		t.Errorf("service lifecycle calls = %v, want the run to end in stop,start\n%s", calls, out)
+	}
+	if !strings.Contains(out, "restarted") {
+		t.Errorf("apply should report the restart it performed:\n%s", out)
+	}
+}
+
+// A dry run plans and does not act: a plan that restarts a service is not a plan.
+func TestApply_dry_run_does_not_restart_on_a_file_change(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+	dest := filepath.Join(dir, "api.conf")
+
+	if err := os.WriteFile(filepath.Join(dir, "api.conf.tmpl"), []byte("listen 8080\n"), 0o600); err != nil {
+		t.Fatalf("write template source: %v", err)
+	}
+	start, _ := json.Marshal([]string{"sh", "-c", "printf start, >> " + filepath.ToSlash(serviceMarker)})
+	stop, _ := json.Marshal([]string{"sh", "-c", "printf stop, >> " + filepath.ToSlash(serviceMarker)})
+	status, _ := json.Marshal([]string{"sh", "-c", "exit 0"})
+
+	writeTestFile(t, specPath, fmt.Sprintf(`{
+	  "schemaVersion": "10",
+	  "targets": { "arch": {
+	    "files": { "templates": [{ "source": "api.conf.tmpl", "target": %q }] },
+	    "services": { "api": {
+	      "start": %s, "stop": %s, "status": %s,
+	      "watch": [%q], "restart_policy": "ifRunning"
+	    } }
+	  } }
+	}`, filepath.ToSlash(dest), start, stop, status, filepath.ToSlash(dest)))
+
+	out := captureStdout(t, func() {
+		code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks", "--dry-run"})
+		if code != exitOK {
+			t.Fatalf("apply --dry-run exit = %d, want %d", code, exitOK)
+		}
+	})
+	if _, err := os.Stat(serviceMarker); err == nil {
+		t.Errorf("dry run restarted a service\n%s", out)
+	}
+}
+
+// A second apply that changes nothing must not restart anything.
+func TestApply_does_not_restart_when_the_watched_file_is_unchanged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+	dest := filepath.Join(dir, "api.conf")
+
+	if err := os.WriteFile(filepath.Join(dir, "api.conf.tmpl"), []byte("listen 8080\n"), 0o600); err != nil {
+		t.Fatalf("write template source: %v", err)
+	}
+	start, _ := json.Marshal([]string{"sh", "-c", "printf start, >> " + filepath.ToSlash(serviceMarker)})
+	stop, _ := json.Marshal([]string{"sh", "-c", "printf stop, >> " + filepath.ToSlash(serviceMarker)})
+	status, _ := json.Marshal([]string{"sh", "-c", "exit 0"})
+
+	writeTestFile(t, specPath, fmt.Sprintf(`{
+	  "schemaVersion": "10",
+	  "targets": { "arch": {
+	    "files": { "templates": [{ "source": "api.conf.tmpl", "target": %q }] },
+	    "services": { "api": {
+	      "start": %s, "stop": %s, "status": %s,
+	      "watch": [%q], "restart_policy": "ifRunning"
+	    } }
+	  } }
+	}`, filepath.ToSlash(dest), start, stop, status, filepath.ToSlash(dest)))
+
+	// First apply creates the file; the marker proves the restart happened.
+	captureStdout(t, func() {
+		if code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks"}); code != exitOK {
+			t.Fatalf("first apply exit = %d", code)
+		}
+	})
+	before, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("first apply did not restart: %v", err)
+	}
+
+	captureStdout(t, func() {
+		if code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks"}); code != exitOK {
+			t.Fatalf("second apply exit = %d", code)
+		}
+	})
+	after, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("a no-op apply restarted the service anyway: %q -> %q", before, after)
+	}
+}
+
+// An output flag must not change machine state. `apply --json` runs the same
+// restart phase as the human path and reports it.
+func TestApplyJSON_restarts_service_whose_watched_file_changed(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+	dest := filepath.Join(dir, "api.conf")
+
+	if err := os.WriteFile(filepath.Join(dir, "api.conf.tmpl"), []byte("listen 8080\n"), 0o600); err != nil {
+		t.Fatalf("write template source: %v", err)
+	}
+	start, _ := json.Marshal([]string{"sh", "-c", "printf start, >> " + filepath.ToSlash(serviceMarker)})
+	stop, _ := json.Marshal([]string{"sh", "-c", "printf stop, >> " + filepath.ToSlash(serviceMarker)})
+	status, _ := json.Marshal([]string{"sh", "-c", "exit 0"})
+
+	writeTestFile(t, specPath, fmt.Sprintf(`{
+	  "schemaVersion": "10",
+	  "targets": { "arch": {
+	    "files": { "templates": [{ "source": "api.conf.tmpl", "target": %q }] },
+	    "services": { "api": {
+	      "start": %s, "stop": %s, "status": %s,
+	      "watch": [%q], "restart_policy": "ifRunning"
+	    } }
+	  } }
+	}`, filepath.ToSlash(dest), start, stop, status, filepath.ToSlash(dest)))
+
+	out := captureStdout(t, func() {
+		code := run([]string{"apply", "--file", specPath, "--lock-file", lockPath,
+			"--target", "arch", "--yes", "--no-hooks", "--json"})
+		if code != exitOK {
+			t.Fatalf("apply --json exit = %d, want %d", code, exitOK)
+		}
+	})
+
+	data, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatalf("apply --json wrote the watched file and never restarted the service\n%s", out)
+	}
+	var calls []string
+	for _, c := range strings.Split(string(data), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			calls = append(calls, c)
+		}
+	}
+	if len(calls) < 2 || strings.Join(calls[len(calls)-2:], ",") != "stop,start" {
+		t.Errorf("service lifecycle calls = %v, want the run to end in stop,start\n%s", calls, out)
+	}
+
+	var env struct {
+		Data struct {
+			Services []struct {
+				Service string `json:"service"`
+				Action  string `json:"action"`
+			} `json:"services"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("stdout is not one JSON object: %v\n%s", err, out)
+	}
+	if len(env.Data.Services) != 1 || env.Data.Services[0].Action != "restarted" {
+		t.Errorf("services = %+v, want one reported restart\n%s", env.Data.Services, out)
 	}
 }

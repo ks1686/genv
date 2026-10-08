@@ -371,18 +371,18 @@ A service can say what it depends on and what it watches (schema v10):
 "api": {
   "start": ["api-server"],
   "requires": ["db"],
-  "watch": ["postgres"],
+  "watch": ["postgres", "~/.config/api/api.conf"],
   "restart_policy": "ifRunning",
   "health_check": { "command": ["curl", "-fsS", "localhost:8080/health"] }
 }
 ```
 
-`genv upgrade` then restarts `api` **only when postgres actually changed**,
-starts it first if it was stopped (under `ifRunning`), and waits for the health
-check before calling the run done. `watch` entries name packages; one that is not
-a declared package is refused rather than accepted and silently ignored. Watching
-a file or another service is not a trigger yet — `genv apply` does not run the
-restart phase.
+`genv upgrade` then restarts `api` **only when postgres actually changed**, and
+`genv apply` restarts it **only when that config file was created or rewritten**.
+It starts it first if it was stopped (under `ifRunning`), and waits for the health
+check before calling the run done. A `watch` entry that is neither a tracked
+package nor a managed file is refused rather than accepted and silently ignored.
+Watching *another service* is not a trigger yet.
 
 The part worth knowing is what it does *not* claim:
 

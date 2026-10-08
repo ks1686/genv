@@ -119,6 +119,10 @@ type ApplyResult struct {
 	FilesApplied    []string `json:"filesApplied,omitempty"`
 	FilesUpdated    []string `json:"filesUpdated,omitempty"`
 	FailedHooks     []string `json:"failedHooks,omitempty"`
+	// Services reports the dependency-aware restart phase, so `apply --json`
+	// acts the same as `apply` and says so. An output flag must never change
+	// what a command does.
+	Services []UpgradeServiceRestart `json:"services,omitempty"`
 }
 
 // EnvStatusEntry is a single env variable entry in an EnvStatusResult.

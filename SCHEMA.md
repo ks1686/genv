@@ -439,18 +439,19 @@ and records the materialized modules in `report.json`.
   ordering constraint, not a change trigger. A cycle is a validation-time error
   naming the services involved, as is a `requires` entry no declared service
   provides.
-- `watch` — the packages whose version change should restart this service. Each
-  entry must name a package the composed spec declares; one that does not is a
-  validation error, because nothing could ever report it as changed and the
-  service would silently never restart. Entries may carry the explicit
-  `watch:` prefix, which is how a package and a service of the same name are
-  told apart.
+- `watch` — the resources whose change should restart this service: **tracked
+  packages**, whose installed version moved during an upgrade, and **managed
+  file destinations**, which `genv apply` creates or rewrites. An entry that is
+  neither is a validation error naming the service and the entry, because nothing
+  could ever report it as changed and the service would silently never restart.
+  Entries may carry the explicit `watch:` prefix, which is how a package and a
+  file of the same name are told apart.
 
-  Today the evidence comes from exactly one place — a tracked package whose
-  installed version moved during an upgrade. `watch`ing a file destination or
-  another service parses and validates, but is **not** a trigger yet: `genv
-  apply` does not run the restart phase, and nothing compares file contents.
-  Until that exists, such an entry is refused rather than accepted and ignored.
+  A file entry matches the `target` of a `files.links`, `files.templates`, or
+  `files.dirs` entry, written either literally or with `~`/`$VAR` expanded.
+  Watching *another service* is still not a trigger: restarting because a peer
+  changed is a different question from restarting because a resource changed,
+  and answering it safely needs more than a package or file digest.
 - `restart_policy` — `never` (default) leaves a stopped service stopped;
   `ifRunning` starts one, because the change is what it was waiting for.
 - `health_check` — a readiness probe run **only after** an authorized start or
@@ -466,6 +467,7 @@ and records the materialized modules in `report.json`.
 | Situation | Outcome |
 | --------- | ------- |
 | Upgraded, installed version moved | service restarted (or started, under `ifRunning`), then health checked |
+| `apply` created or rewrote a watched file | same: restarted, then health checked |
 | Upgraded, installed version did not move | no restart — the upgrade was a no-op |
 | Version could not be established before or after | **deferred**: nothing is restarted and nothing is claimed |
 | Watched service stopped, policy `never` | skipped, and said so |
@@ -473,9 +475,13 @@ and records the materialized modules in `report.json`.
 | Pending record could not be written | restart proceeds, and the gap is reported — refusing would leave the old binary running |
 | Dependency did not come back | the dependent is **not started**, and the failure names it |
 
-The phase runs in `genv upgrade`, in `genv upgrade --json` (reported under
-`services`), and in the unattended `genv updates` worker. It does **not** run
-from `genv apply`, so a changed config file never restarts anything yet.
+The phase runs in `genv upgrade`, in `genv upgrade --json`, in `genv apply`, in
+`genv apply --json`, and in the unattended `genv updates` worker. Every JSON
+envelope reports the outcome under a `services` key — an output flag never
+changes what the command does.
+
+On `apply` the phase runs only when the apply itself succeeded. Restarting on top
+of a half-applied environment would trade one broken state for another.
 
 Restarts are ordered: services stop in reverse dependency order (a service goes
 down before the ones that depend on it) and start in dependency order. A service

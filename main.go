@@ -1691,6 +1691,27 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		installed[i] = lp.ID
 	}
 
+	// The same restart phase the human path runs. Without it `apply --json`
+	// would rewrite a watched file and leave the service on the old contents,
+	// which is the same output-flag-changes-behavior defect this was fixed for
+	// in `upgrade --json`.
+	var restarts []output.UpgradeServiceRestart
+	if len(errs) == 0 {
+		restarts = restartJSONEntries(applyRestartPhase(ctx, opts, lockPath, f, filePlan))
+		for _, r := range restarts {
+			switch {
+			case r.Error != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.Error))
+			case r.ReadinessError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.ReadinessError))
+			case r.PendingError != "":
+				errs = append(errs, fmt.Sprintf("service %s: %s", r.Service, r.PendingError))
+			case r.Action == string(service.ActionSkip), r.Action == string(service.ActionDefer):
+				fprintf(os.Stderr, "genv apply: service %s: %s\n", r.Service, r.Reason)
+			}
+		}
+	}
+
 	return writeJSON(os.Stdout, output.Envelope{
 		Version: output.SchemaVersion,
 		Command: "apply",
@@ -1705,6 +1726,7 @@ func runApplyJSON(ctx context.Context, opts applyOptions, lockPath string, f *sc
 			FilesApplied: append([]string(nil), filePlan.Created...),
 			FilesUpdated: append([]string(nil), filePlan.Updated...),
 			FailedHooks:  failedHooks,
+			Services:     restarts,
 		},
 		Errors: errs,
 	})
@@ -1903,6 +1925,13 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitIO
 	}
 
+	// A service watching a file this apply changed is restarted once the lock
+	// reflects reality, so an interruption leaves an accurate record.
+	restartExit := exitOK
+	if success {
+		restartExit = reportApplyRestarts(applyRestartPhase(ctx, opts, lockPath, f, appliedFiles), "genv apply: ")
+	}
+
 	if !success {
 		for _, e := range execResult.Errors {
 			fprintf(os.Stderr, "genv apply: %v\n", e)
@@ -1919,7 +1948,7 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 		return exitLogic
 	}
 
-	return exitOK
+	return restartExit
 }
 
 func printReconcileWarnings(result resolver.ReconcileResult) {
@@ -4756,12 +4785,12 @@ type upgradeRestartJSON struct {
 	SourceRoot string
 }
 
-// upgradeRestartJSONEntries renders restart outcomes for the JSON envelope.
+// restartJSONEntries renders restart outcomes for a JSON envelope.
 //
 // The action is reported in past tense for the same reason the text path does:
 // the report describes what happened, and "restart" reads as an instruction that
 // quietly invites a re-run.
-func upgradeRestartJSONEntries(outcomes []restartOutcome) []output.UpgradeServiceRestart {
+func restartJSONEntries(outcomes []restartOutcome) []output.UpgradeServiceRestart {
 	out := make([]output.UpgradeServiceRestart, 0, len(outcomes))
 	for _, o := range outcomes {
 		entry := output.UpgradeServiceRestart{
@@ -5110,7 +5139,7 @@ func upgradeJSON(dryRun, yes bool, hostName, specFile, lockPath string, hookTime
 			Deps:            defaultRestartDeps(restart.SourceRoot, restart.Services),
 			LockAlreadyHeld: true, // upgradeCmd holds this mutex for its whole run
 		})
-		restarts = upgradeRestartJSONEntries(outcomes)
+		restarts = restartJSONEntries(outcomes)
 		for _, r := range restarts {
 			switch {
 			case r.Error != "":

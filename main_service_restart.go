@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/ks1686/genv/internal/files"
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/plan"
 	"github.com/ks1686/genv/internal/schema"
@@ -466,4 +467,101 @@ func filterUpgradePlanExcluding(upPlan upgrade.UpgradePlan, drop []string) upgra
 		filtered.Actions = append(filtered.Actions, action)
 	}
 	return filtered
+}
+
+// fileWatchEvidence reports what this apply did to each watched file destination.
+//
+// Keys are the watch entries exactly as the spec spells them, because that is
+// what PlanServiceRestarts looks up. Destinations come back from the applier
+// fully expanded, so each entry is expanded before being compared — a spec may
+// write "~/.config/api.conf" while the applier reports the absolute path.
+//
+// A destination nobody watches produces no entry at all: evidence is only
+// interesting where something acts on it.
+func fileWatchEvidence(services map[string]schema.Service, res *files.ApplyResult) map[string]service.Evidence {
+	if len(services) == 0 || res == nil {
+		return nil
+	}
+	changed := make(map[string]bool, len(res.Created)+len(res.Updated))
+	for _, p := range append(append([]string{}, res.Created...), res.Updated...) {
+		changed[p] = true
+	}
+	uncertain := make(map[string]bool, len(res.Mismatched))
+	for _, p := range res.Mismatched {
+		uncertain[p] = true
+	}
+
+	out := map[string]service.Evidence{}
+	for _, svc := range services {
+		if svc.Watch == nil {
+			continue
+		}
+		for _, watch := range schema.WatchTargets(svc.Watch) {
+			entry := service.TriggerResource(watch)
+			expanded := entry
+			if e, err := files.ExpandTarget(entry); err == nil {
+				expanded = e
+			}
+			switch {
+			case changed[expanded]:
+				out[entry] = service.EvidenceChanged
+			case uncertain[expanded]:
+				// The file is in a state genv could not reconcile, so whether
+				// the service should restart cannot be established either.
+				out[entry] = service.EvidenceUnknown
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// applyRestartPhase runs the restart coordinator after `genv apply` changed a
+// managed file that a service watches.
+//
+// It is skipped on a dry run (a plan that restarts a service is not a plan) and
+// when the apply itself failed, because restarting on top of a half-applied
+// environment trades one broken state for another. applyCmd holds the lock
+// mutex for its whole run, which is why LockAlreadyHeld is set.
+func applyRestartPhase(ctx context.Context, opts applyOptions, lockPath string, f *schema.GenvFile, appliedFiles *files.ApplyResult) []restartOutcome {
+	if opts.DryRun || appliedFiles == nil || len(f.Services) == 0 {
+		return nil
+	}
+	evidence := fileWatchEvidence(f.Services, appliedFiles)
+	if len(evidence) == 0 {
+		return nil
+	}
+	sourceRoot := applySourceRoot(opts, f)
+	return runRestartPhase(ctx, restartPhaseRequest{
+		Services:        f.Services,
+		Evidence:        evidence,
+		LockPath:        lockPath,
+		SourceRoot:      sourceRoot,
+		Deps:            defaultRestartDeps(sourceRoot, f.Services),
+		LockAlreadyHeld: true, // applyCmd holds this mutex for its whole run
+	})
+}
+
+// reportApplyRestarts prints the phase's outcomes on the human path.
+func reportApplyRestarts(outcomes []restartOutcome, prefix string) int {
+	exitCode := exitOK
+	for _, o := range outcomes {
+		switch {
+		case o.PendingError != nil:
+			fprintf(os.Stderr, "%sservice %s: %v\n", prefix, o.Service, o.PendingError)
+		case o.Err != nil:
+			fprintf(os.Stderr, "%sservice %s: %v\n", prefix, o.Service, o.Err)
+			exitCode = exitLogic
+		case o.ReadinessError != nil:
+			fprintf(os.Stderr, "%sservice %s: %v\n", prefix, o.Service, o.ReadinessError)
+			exitCode = exitLogic
+		case o.Action == service.ActionSkip, o.Action == service.ActionDefer:
+			fprintf(os.Stderr, "%sservice %s: %s\n", prefix, o.Service, o.Reason)
+		default:
+			fprintf(os.Stdout, "%sservice %s: %s\n", prefix, o.Service, pastTenseRestartAction(o.Action))
+		}
+	}
+	return exitCode
 }

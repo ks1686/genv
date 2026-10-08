@@ -122,9 +122,13 @@ spec mean something different than it should.
   the root database failed *every* command. Cross-document references are now
   resolved against the composed union, which also catches a `requires` cycle
   spanning two modules.
-- A `watch` entry naming a file or another service was accepted and then silently
-  ignored, so the service never restarted and nothing said why. It is now a
-  validation error naming the entry.
+- A `watch` entry naming a file or another service was accepted and then
+  silently ignored, so the service never restarted and nothing said why. `watch`
+  now covers **managed file destinations** as well as packages: `genv apply`
+  restarts a service when a file it watches is created or rewritten, on both the
+  human and JSON paths, and reports it under `services`. An entry that is neither
+  a tracked package nor a managed file is a validation error naming it.
+  Watching *another service* remains unimplemented and is still refused.
 
 **Service restarts**
 

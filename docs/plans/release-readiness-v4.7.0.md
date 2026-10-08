@@ -157,12 +157,12 @@ changed, and it no longer moves.
 
 ## Known limits
 
-- **Watching a file or another service is not a trigger.** Evidence for a restart
-  comes from exactly one place: a tracked package whose installed version moved
-  during an upgrade. `genv apply` does not run the restart phase, and nothing
-  compares file contents, so a changed config file restarts nothing. A `watch`
-  entry of that kind is now refused rather than silently ignored. Closing this
-  needs per-file change tracking in the lock, which is a separate slice.
+- **Watching another service is not a trigger.** `watch` covers tracked packages
+  (upgrade moves the installed version) and managed file destinations (apply
+  creates or rewrites the file), both driving the restart phase on the human and
+  JSON paths. Watching a *peer service* is still refused at validate time:
+  restarting because another service changed is a different question, and the
+  evidence for it does not exist.
 - `make integration-v8` needs `--platform linux/amd64` on Apple Silicon;
   `archlinux:latest` has no arm64 manifest. The Makefile target is unchanged, so
   on arm64 hosts it must be run with the flag added (CI is amd64).
