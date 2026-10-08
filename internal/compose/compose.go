@@ -82,7 +82,7 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 		}
 		return &Composition{
 			Effective:   effective,
-			Provenance:  newProvenance(),
+			Provenance:  moduleFreeProvenance(f, effective, targetID),
 			Target:      targetID,
 			Fingerprint: Fingerprint(effective, nil),
 		}, nil
@@ -181,6 +181,72 @@ func (a *accumulator) unsafeAssetError() error {
 	return fmt.Errorf("%w: %s declares asset %q, which resolves outside the spec root", ErrPathEscape, v.origin, v.value)
 }
 
+// moduleFreeProvenance indexes ownership for a spec that declares no modules.
+//
+// Without this, `genv explain` and `genv config` read an empty index on every
+// v8/v9 spec and report every resource as unowned, which reads as "genv does not
+// know where this came from" rather than "the root document owns it".
+//
+// It attributes the merged result to the root document and picks the declaring
+// block with the same rule the module path uses, so the two paths answer
+// `genv explain` identically. It deliberately performs no conflict checking: a
+// spec that never composes is accepted exactly as schema.MergeTarget accepts
+// it, and adding a new rejection here would change v8/v9 behavior.
+func moduleFreeProvenance(f, effective *schema.GenvFile, targetID string) *Provenance {
+	c := contributor{
+		module:   "",
+		document: RootDocument,
+		target:   targetID,
+		defaults: f.Defaults,
+		overlay:  f.Targets[targetID],
+	}
+	prov := newProvenance()
+	add := func(id Identity, suffix string) {
+		prov.add(id, c.origin(c.fieldFor(id)+suffix))
+	}
+
+	for _, pkg := range effective.Packages {
+		if pkg.ID == "" {
+			continue
+		}
+		add(packageIdentity(pkg.ID), ".packages["+pkg.ID+"]")
+	}
+	for _, name := range sortedKeys(effective.Env) {
+		add(envIdentity(name), ".env."+name)
+	}
+	if effective.Shell != nil {
+		for _, name := range sortedKeys(effective.Shell.Aliases) {
+			add(aliasIdentity(name), ".shell.aliases."+name)
+		}
+		for _, name := range sortedKeys(effective.Shell.Functions) {
+			add(funcIdentity(name), ".shell.functions."+name)
+		}
+	}
+	for _, name := range sortedKeys(effective.Services) {
+		add(serviceIdentity(name), ".services."+name)
+	}
+	if effective.Files != nil {
+		for _, link := range effective.Files.Links {
+			add(fileIdentity(link.Target), ".files.links["+link.Target+"]")
+		}
+		for _, tmpl := range effective.Files.Templates {
+			add(fileIdentity(tmpl.Target), ".files.templates["+tmpl.Target+"]")
+		}
+		for _, dir := range effective.Files.Dirs {
+			add(dirIdentity(CleanPath(dir.Target)), ".files.dirs["+dir.Target+"]")
+		}
+	}
+	if effective.Hooks != nil {
+		fallback := c.moduleField()
+		for _, phase := range hookPhaseNames {
+			for i := range phaseSlice(effective.Hooks, phase) {
+				prov.add(hookIdentity(c.document, phase, i), c.origin(fallback+".hooks."+phase))
+			}
+		}
+	}
+	return prov
+}
+
 // hasModules reports whether a spec uses composition at all. A v10 spec without
 // modules or selections takes the same fast path as v8/v9.
 func hasModules(f *schema.GenvFile) bool {
@@ -249,10 +315,15 @@ func mergeBundle(defaults, overlay *schema.TargetBundle) *schema.TargetBundle {
 		defaults = &schema.TargetBundle{}
 	}
 
-	if len(defaults.Packages) > 0 {
+	if defaults.Packages != nil {
 		out.Packages = append([]schema.Package(nil), defaults.Packages...)
 	}
-	if len(overlay.Packages) > 0 {
+	// Array semantics are replace, not append, and an empty array is still a
+	// replacement: schema.MergeTarget treats a non-nil target array as
+	// authoritative. Using len() > 0 here would make an empty target array mean
+	// "keep whatever defaults said", so the same spec would behave differently
+	// depending on whether it uses modules.
+	if overlay.Packages != nil {
 		out.Packages = append([]schema.Package(nil), overlay.Packages...)
 	}
 
@@ -270,13 +341,14 @@ func mergeBundle(defaults, overlay *schema.TargetBundle) *schema.TargetBundle {
 		files.Dirs = append(files.Dirs, defaults.Files.Dirs...)
 	}
 	if overlay.Files != nil {
-		if len(overlay.Files.Links) > 0 {
+		// Same replace-not-append rule as packages, empty array included.
+		if overlay.Files.Links != nil {
 			files.Links = append([]schema.FileLink(nil), overlay.Files.Links...)
 		}
-		if len(overlay.Files.Templates) > 0 {
+		if overlay.Files.Templates != nil {
 			files.Templates = append([]schema.FileTemplate(nil), overlay.Files.Templates...)
 		}
-		if len(overlay.Files.Dirs) > 0 {
+		if overlay.Files.Dirs != nil {
 			files.Dirs = append([]schema.FileDir(nil), overlay.Files.Dirs...)
 		}
 	}
@@ -313,6 +385,7 @@ func mergeShellBundles(defaults, overlay *schema.TargetShellConfig) *schema.Targ
 	if defaults != nil {
 		out.Aliases = copyAliasMap(defaults.Aliases)
 		out.Functions = copyFunctionMap(defaults.Functions)
+		out.Source = append([]string(nil), defaults.Source...)
 	}
 	if overlay != nil {
 		for k, v := range overlay.Aliases {
@@ -335,8 +408,13 @@ func mergeShellBundles(defaults, overlay *schema.TargetShellConfig) *schema.Targ
 			}
 			out.Functions[k] = v
 		}
+		// source is an array, so an overlay replaces it wholesale — including
+		// replacing it with an empty array.
+		if overlay.Source != nil {
+			out.Source = append([]string(nil), overlay.Source...)
+		}
 	}
-	if len(out.Aliases) == 0 && len(out.Functions) == 0 {
+	if len(out.Aliases) == 0 && len(out.Functions) == 0 && len(out.Source) == 0 {
 		return nil
 	}
 	return out
@@ -372,7 +450,14 @@ func mergeHookBundles(defaults, overlay *schema.HooksConfig) *schema.HooksConfig
 	}
 	out := &schema.HooksConfig{}
 	for _, phase := range hookPhaseNames {
-		setPhase(out, phase, append(append([]schema.Hook(nil), phaseSlice(defaults, phase)...), phaseSlice(overlay, phase)...))
+		// Within one document a phase is replaced by the overlay, empty phase
+		// included, matching schema.mergeHooks. Accumating *across* contributors
+		// is the accumulator's job, not this merge's.
+		if overlay != nil && phaseSlice(overlay, phase) != nil {
+			setPhase(out, phase, append([]schema.Hook(nil), phaseSlice(overlay, phase)...))
+			continue
+		}
+		setPhase(out, phase, append([]schema.Hook(nil), phaseSlice(defaults, phase)...))
 	}
 	if hooksEmpty(out) {
 		return nil
@@ -463,12 +548,17 @@ type accumulator struct {
 	aliasOrder []string
 	funcs      map[string]schema.ShellFunction
 	funcOrder  []string
-	links      map[string]schema.FileLink
-	templates  map[string]schema.FileTemplate
-	dirs       map[string]schema.FileDir
-	fileOrder  []string
-	dirOrder   []string
-	hooks      *schema.HooksConfig
+	// sources is the accumulated shell.source list. Sourced files accumulate
+	// across contributors — a module's rc fragment must not erase the root's —
+	// while a single document's own overlay still replaces its defaults.
+	sources   []string
+	sourceSet map[string]bool
+	links     map[string]schema.FileLink
+	templates map[string]schema.FileTemplate
+	dirs      map[string]schema.FileDir
+	fileOrder []string
+	dirOrder  []string
+	hooks     *schema.HooksConfig
 	// unsafeAsset collects module-relative asset paths that escape the spec
 	// root, reported after the union so the error names the owning document.
 	unsafeAsset []assetViolation
@@ -485,6 +575,7 @@ func newAccumulator() *accumulator {
 		env:          map[string]schema.EnvVar{},
 		aliases:      map[string]schema.ShellAlias{},
 		funcs:        map[string]schema.ShellFunction{},
+		sourceSet:    map[string]bool{},
 		links:        map[string]schema.FileLink{},
 		templates:    map[string]schema.FileTemplate{},
 		dirs:         map[string]schema.FileDir{},
@@ -656,6 +747,13 @@ func (a *accumulator) add(c contributor) error {
 	}
 
 	if b.Shell != nil {
+		for _, src := range b.Shell.Source {
+			if src == "" || a.sourceSet[src] {
+				continue
+			}
+			a.sourceSet[src] = true
+			a.sources = append(a.sources, src)
+		}
 		for _, name := range sortedKeys(b.Shell.Aliases) {
 			entry := b.Shell.Aliases[name]
 			if entry == nil {
@@ -932,8 +1030,11 @@ func (a *accumulator) bundle() *schema.TargetBundle {
 			out.Env[name] = &entry
 		}
 	}
-	if len(a.aliases) > 0 || len(a.funcs) > 0 {
+	if len(a.aliases) > 0 || len(a.funcs) > 0 || len(a.sources) > 0 {
 		out.Shell = &schema.TargetShellConfig{}
+		if len(a.sources) > 0 {
+			out.Shell.Source = append([]string(nil), a.sources...)
+		}
 		if len(a.aliases) > 0 {
 			out.Shell.Aliases = make(map[string]*schema.ShellAlias, len(a.aliases))
 			for _, name := range a.aliasOrder {
@@ -990,7 +1091,10 @@ func targetShellToFlat(in *schema.TargetShellConfig) *schema.ShellConfig {
 			}
 		}
 	}
-	if len(out.Aliases) == 0 && len(out.Functions) == 0 {
+	if len(in.Source) > 0 {
+		out.Source = append([]string(nil), in.Source...)
+	}
+	if len(out.Aliases) == 0 && len(out.Functions) == 0 && len(out.Source) == 0 {
 		return nil
 	}
 	return out

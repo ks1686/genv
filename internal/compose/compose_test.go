@@ -817,3 +817,272 @@ func parseSpec(t *testing.T, path string) *schema.GenvFile {
 	}
 	return f
 }
+
+// --- regressions from review -------------------------------------------------
+//
+// Each test below pins behavior that the v8 merge already had, or that the v10
+// feature documents. A module-free spec must not compose differently from the
+// same spec read as v8.
+
+func TestResolve_module_free_spec_reports_root_ownership(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": { "packages": [{ "id": "git" }] },
+	  "targets": { "macos": {
+	    "packages": [{ "id": "jq" }],
+	    "services": { "searxng": { "start": ["searxng"] } }
+	  } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	for _, tc := range []struct {
+		id    Identity
+		field string
+	}{
+		{Identity{Kind: KindPackage, Key: "jq"}, "targets.macos.packages[jq]"},
+		{Identity{Kind: KindService, Key: "searxng"}, "targets.macos.services.searxng"},
+	} {
+		owners := c.Provenance.Owners(tc.id)
+		if len(owners) == 0 {
+			t.Errorf("%s has no owner; genv explain would report it as unknown", tc.id)
+			continue
+		}
+		if owners[0].Document != RootDocument || owners[0].Module != "" {
+			t.Errorf("%s owner = %+v, want the root document", tc.id, owners[0])
+		}
+		if owners[0].Field != tc.field {
+			t.Errorf("%s field = %q, want %q", tc.id, owners[0].Field, tc.field)
+		}
+	}
+}
+
+func TestResolve_module_free_defaults_are_attributed_to_defaults(t *testing.T) {
+	// Ownership names the block that declares the resource, so `genv explain`
+	// sends the user to the file they have to edit.
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": {
+	    "env": { "EDITOR": { "value": "nvim" } },
+	    "services": { "cache": { "start": ["redis-server"] } }
+	  },
+	  "targets": { "macos": { "packages": [{ "id": "jq" }] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	for _, tc := range []struct {
+		id    Identity
+		field string
+	}{
+		{Identity{Kind: KindEnv, Key: "EDITOR"}, "defaults.env.EDITOR"},
+		{Identity{Kind: KindService, Key: "cache"}, "defaults.services.cache"},
+		{Identity{Kind: KindPackage, Key: "jq"}, "targets.macos.packages[jq]"},
+	} {
+		owners := c.Provenance.Owners(tc.id)
+		if len(owners) != 1 {
+			t.Errorf("%s owners = %+v, want exactly one", tc.id, owners)
+			continue
+		}
+		if owners[0].Field != tc.field {
+			t.Errorf("%s field = %q, want %q", tc.id, owners[0].Field, tc.field)
+		}
+	}
+}
+
+func TestResolve_keeps_shell_source_from_every_contributor(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/base.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "shell": { "source": ["modules/base.sh"] } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "base": "modules/base.json" },
+	  "defaults": { "shell": { "source": ["root.sh"] } },
+	  "targets": { "macos": { "useModules": ["base"] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	got := c.Effective.Shell.Source
+	if len(got) != 2 {
+		t.Fatalf("shell.source = %v, want both contributors' source files (root.sh, modules/base.sh)", got)
+	}
+}
+
+func TestResolve_shell_source_survives_without_aliases_or_functions(t *testing.T) {
+	// A contributor that declares only shell.source still has to reach the
+	// effective spec: returning nil would silently drop every sourced file.
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": { "shell": { "source": ["lib/helpers.sh"] } },
+	  "targets": { "macos": {} }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if c.Effective.Shell == nil || len(c.Effective.Shell.Source) != 1 {
+		t.Fatalf("effective shell = %+v, want the sourced file", c.Effective.Shell)
+	}
+}
+
+func TestResolve_empty_target_package_array_clears_defaults(t *testing.T) {
+	// v8 semantics: a non-nil array in a target replaces defaults, even when it
+	// is empty. Composition must agree, or the same spec means two things.
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": { "packages": [{ "id": "git" }, { "id": "jq" }] },
+	  "targets": { "macos": { "packages": [] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if got := packageIDs(t, c); len(got) != 0 {
+		t.Errorf("packages = %v, want empty: an empty target array replaces defaults", got)
+	}
+}
+
+func TestResolve_empty_target_file_array_clears_defaults(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": { "files": { "links": [{ "source": "a", "target": "b" }] } },
+	  "targets": { "macos": { "files": { "links": [] } } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if c.Effective.Files != nil && len(c.Effective.Files.Links) != 0 {
+		t.Errorf("files.links = %+v, want empty: an empty target array replaces defaults", c.Effective.Files.Links)
+	}
+}
+
+func TestResolve_empty_target_hook_phase_clears_defaults(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "8",
+	  "defaults": { "hooks": { "postApply": [{ "name": "hello", "command": "echo hi" }] } },
+	  "targets": { "macos": { "hooks": { "postApply": [] } } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if n := len(phaseSlice(c.Effective.Hooks, "postApply")); n != 0 {
+		t.Errorf("postApply hooks = %d, want 0: an empty target phase replaces defaults", n)
+	}
+}
+
+// The cases below run through the module path (schemaVersion 10 with a module
+// selected), which is where composition has its own defaults->overlay merge
+// step. That step has to agree with schema.MergeTarget, or the same spec means
+// one thing when it uses modules and another when it does not.
+
+func TestResolve_module_path_empty_target_package_array_clears_root_defaults(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "packages": [{ "id": "curl" }] }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "defaults": { "packages": [{ "id": "git" }, { "id": "jq" }] },
+	  "targets": { "macos": { "useModules": ["tool"], "packages": [] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	for _, id := range packageIDs(t, c) {
+		if id == "git" || id == "jq" {
+			t.Errorf("packages = %v, want the root's empty target array to clear its own defaults; only the module's curl should remain", packageIDs(t, c))
+			break
+		}
+	}
+}
+
+func TestResolve_module_path_empty_target_hook_phase_clears_root_defaults(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{"schemaVersion":"10","defaults":{}}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "defaults": { "hooks": { "postApply": [{ "name": "hello", "command": "echo hi" }] } },
+	  "targets": { "macos": { "useModules": ["tool"], "hooks": { "postApply": [] } } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if n := len(phaseSlice(c.Effective.Hooks, "postApply")); n != 0 {
+		t.Errorf("postApply hooks = %d, want 0", n)
+	}
+}
+
+func TestResolve_module_path_hooks_from_two_contributors_both_run(t *testing.T) {
+	// Replacing is within one document. Across contributors hooks accumulate,
+	// otherwise a module's post-apply hook could silently vanish.
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "hooks": { "postApply": [{ "name": "mod", "command": "echo mod" }] } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "defaults": { "hooks": { "postApply": [{ "name": "root", "command": "echo root" }] } },
+	  "targets": { "macos": { "useModules": ["tool"] } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if n := len(phaseSlice(c.Effective.Hooks, "postApply")); n != 2 {
+		names := []string{}
+		for _, h := range phaseSlice(c.Effective.Hooks, "postApply") {
+			names = append(names, h.Name)
+		}
+		t.Errorf("postApply hooks = %v, want both contributors' hooks", names)
+	}
+}
+
+func TestResolve_module_path_empty_target_file_array_clears_root_defaults(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{"schemaVersion":"10","defaults":{}}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "defaults": { "files": { "links": [{ "source": "a", "target": "b" }] } },
+	  "targets": { "macos": { "useModules": ["tool"], "files": { "links": [] } } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if c.Effective.Files != nil && len(c.Effective.Files.Links) != 0 {
+		t.Errorf("files.links = %+v, want empty", c.Effective.Files.Links)
+	}
+}
+
+func TestResolve_module_path_shell_source_replaces_root_array(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "shell": { "source": ["modules/tool.sh"] } }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "defaults": { "shell": { "source": ["root.sh"] } },
+	  "targets": { "macos": { "useModules": ["tool"], "shell": { "source": [] } } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	for _, s := range c.Effective.Shell.Source {
+		if s == "root.sh" {
+			t.Fatalf("shell.source = %v, want the empty target array to clear the root's source", c.Effective.Shell.Source)
+		}
+	}
+}
