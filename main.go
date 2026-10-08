@@ -4724,6 +4724,8 @@ func upgradeCmd(args []string) int {
 		})
 		for _, o := range outcomes {
 			switch {
+			case o.PendingError != nil:
+				fprintf(os.Stderr, "genv upgrade: service %s: %v\n", o.Service, o.PendingError)
 			case o.Err != nil:
 				fprintf(os.Stderr, "genv upgrade: service %s: %v\n", o.Service, o.Err)
 				exitCode = exitLogic
@@ -4771,6 +4773,9 @@ func upgradeRestartJSONEntries(outcomes []restartOutcome) []output.UpgradeServic
 		case service.ActionSkip, service.ActionDefer:
 			entry.Action = o.Action
 			entry.Reason = o.Reason
+		}
+		if o.PendingError != nil {
+			entry.PendingError = o.PendingError.Error()
 		}
 		if o.Err != nil {
 			entry.Error = o.Err.Error()

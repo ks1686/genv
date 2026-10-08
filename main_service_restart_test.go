@@ -512,3 +512,37 @@ func TestFilterUpgradePlanExcluding_without_deferrals_is_identity(t *testing.T) 
 		t.Errorf("plan = %+v, want unchanged", got.Actions)
 	}
 }
+
+// A restart whose in-flight record could not be written leaves nothing to
+// recover from if it is interrupted. The comment claimed the outcome said so;
+// it did not. It does now.
+// unwritableLockPath returns a lock path that cannot be written: a regular file
+// sits where the lock's parent directory would have to be.
+func unwritableLockPath(t *testing.T) string {
+	t.Helper()
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+	return filepath.Join(blocker, "genv.lock.json")
+}
+
+func TestRestartPhase_reports_a_pending_record_it_could_not_write(t *testing.T) {
+	svcs := apiService("watch:postgres")
+	outcomes := runRestartPhase(context.Background(), restartPhaseRequest{
+		Services:   svcs,
+		Evidence:   map[string]service.Evidence{"postgres": service.EvidenceChanged},
+		LockPath:   unwritableLockPath(t),
+		Deps:       (&recordingDeps{running: map[string]bool{"api": true}}).deps(),
+		Background: true,
+	})
+	if len(outcomes) != 1 {
+		t.Fatalf("outcomes = %+v, want one", outcomes)
+	}
+	if outcomes[0].PendingError == nil {
+		t.Fatalf("outcome = %+v, want the failed pending record reported", outcomes[0])
+	}
+	if outcomes[0].Action != service.ActionRestart {
+		t.Errorf("action = %q, want the restart to proceed anyway", outcomes[0].Action)
+	}
+}

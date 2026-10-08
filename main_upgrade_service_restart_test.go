@@ -95,6 +95,16 @@ func registerBumpAdapter(t *testing.T, a adapter.Adapter) {
 // watchedUpgradeSpec builds a v10 spec whose service watches one package.
 // Command arrays are JSON-encoded so a Windows temp path cannot break the spec,
 // and status goes through sh so the same argv works on the Windows runner.
+// autoApplyUpgradeSpec is watchedUpgradeSpec plus the updates block that makes
+// the unattended worker act without a prompt.
+func autoApplyUpgradeSpec(t *testing.T, manager, serviceMarker string) string {
+	t.Helper()
+	return strings.Replace(watchedUpgradeSpec(t, manager, serviceMarker),
+		`"schemaVersion": "10",`,
+		`"schemaVersion": "10",
+	  "updates": { "enabled": true, "interval": "1h", "autoApply": true, "notify": false },`, 1)
+}
+
 func watchedUpgradeSpec(t *testing.T, manager, serviceMarker string) string {
 	t.Helper()
 	marker := serviceMarker
@@ -343,5 +353,60 @@ func TestUpgrade_json_dry_run_does_not_restart_service(t *testing.T) {
 	}
 	if strings.Contains(out, `"action"`) {
 		t.Errorf("dry run reported a restart action:\n%s", out)
+	}
+}
+
+// The unattended worker deferred the packages whose watching service needed a
+// human, then never restarted anything at all. A service with `watch` and no
+// health check — or one whose check sets allow_background — had its binary
+// replaced under it by the timer and was never restarted. Nothing reported it.
+func TestUpdatesWorker_restarts_watched_service_after_upgrade(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	specPath := filepath.Join(dir, "genv.json")
+	lockPath := filepath.Join(dir, "genv.lock.json")
+	serviceMarker := filepath.Join(dir, "service.log")
+
+	bump := &versionBumpAdapter{marker: filepath.Join(dir, "manager.log")}
+	registerBumpAdapter(t, bump)
+
+	// No health check: this service is fully background-capable, so the worker
+	// must be allowed to restart it. The updates block makes the run unattended
+	// and self-applying, which is the only way the worker reaches an upgrade.
+	writeTestFile(t, specPath, autoApplyUpgradeSpec(t, "bump-manager", serviceMarker))
+	writeLockFile(t, lockPath, &genvfile.LockFile{
+		SchemaVersion: "8",
+		Target:        "arch",
+		GOOS:          runtime.GOOS,
+		Packages: []genvfile.LockedPackage{
+			{ID: "postgres", Manager: "bump-manager", PkgName: "postgres", InstalledVersion: "1.0.0"},
+		},
+	})
+
+	code := run([]string{"updates", "__run-once", "--file", specPath, "--lock-file", lockPath, "--target", "arch"})
+	if code != exitOK {
+		t.Fatalf("updates run-once exit = %d, want %d", code, exitOK)
+	}
+
+	data, err := os.ReadFile(serviceMarker)
+	if err != nil {
+		t.Fatal("the unattended worker upgraded the watched binary and never restarted the service")
+	}
+	var calls []string
+	for _, c := range strings.Split(string(data), ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			calls = append(calls, c)
+		}
+	}
+	if strings.Join(calls, ",") != "stop,start" {
+		t.Errorf("service lifecycle calls = %v, want stop then start", calls)
+	}
+
+	lf, err := genvfile.ReadLock(lockPath)
+	if err != nil {
+		t.Fatalf("read lock: %v", err)
+	}
+	if len(lf.PendingActions) != 0 {
+		t.Errorf("pending actions = %+v, want cleared after a confirmed restart", lf.PendingActions)
 	}
 }

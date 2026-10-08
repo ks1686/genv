@@ -87,6 +87,9 @@ type restartOutcome struct {
 	// PendingCleared is true when the pending record was removed, meaning the
 	// change is confirmed.
 	PendingCleared bool
+	// PendingError is non-nil when the in-flight record could not be written.
+	// The restart still proceeds, but nothing would survive an interruption.
+	PendingError error
 }
 
 // runRestartPhase decides and performs restarts for one run.
@@ -134,7 +137,10 @@ func runRestartPhase(ctx context.Context, req restartPhaseRequest) []restartOutc
 			continue
 		}
 
-		recordPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service, d.Triggers, now)
+		if err := recordPendingActions(req.LockPath, req.LockAlreadyHeld, d.Service, d.Triggers, now); err != nil {
+			// Proceed, but say so: this restart left no trace to recover from.
+			out.PendingError = fmt.Errorf("recording the pending restart failed, so an interruption here would leave no evidence: %w", err)
+		}
 
 		if d.Action == service.ActionRestart {
 			if err := req.Deps.stop(ctx, d.Service, svc); err != nil {
@@ -202,31 +208,36 @@ func filterBackgroundServices(p plan.Plan) plan.Plan {
 // alreadyHeld must be true when the caller already holds the mutex: flock on the
 // sidecar is exclusive and not re-entrant, so re-acquiring it inside a command
 // that holds it blocks the command on its own lock forever.
-func mutateLock(lockPath string, alreadyHeld bool, fn func(*genvfile.LockFile) bool) {
+func mutateLock(lockPath string, alreadyHeld bool, fn func(*genvfile.LockFile) bool) error {
 	if lockPath == "" {
-		return
+		return nil
 	}
 	if !alreadyHeld {
 		unlock, err := genvfile.LockMutation(lockPath)
 		if err != nil {
-			return
+			return err
 		}
 		defer unlock()
 	}
 	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
-		return
+		return err
 	}
 	if fn(lf) {
-		_ = genvfile.WriteLock(lockPath, lf)
+		return genvfile.WriteLock(lockPath, lf)
 	}
+	return nil
 }
 
 // recordPendingActions writes the in-flight record before the service is
-// touched. Failure to record is not fatal: the restart still proceeds, but the
-// outcome says the run left no trace, which is itself worth reporting.
-func recordPendingActions(lockPath string, alreadyHeld bool, serviceName string, triggers []string, recordedAt string) {
-	mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
+// touched, and reports whether it landed.
+//
+// A failure here is not fatal: refusing to restart because the lock could not
+// be written would leave the service running the old binary, which is the worse
+// outcome. But it is not silent either — the record is the only thing that
+// survives an interruption, so the caller reports the gap.
+func recordPendingActions(lockPath string, alreadyHeld bool, serviceName string, triggers []string, recordedAt string) error {
+	return mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
 		for _, trigger := range triggers {
 			lf.PendingActions = append(lf.PendingActions, genvfile.PendingAction{
 				Name:       serviceName,
@@ -243,7 +254,7 @@ func recordPendingActions(lockPath string, alreadyHeld bool, serviceName string,
 // succeeded, and reports whether anything was removed.
 func clearPendingActions(lockPath string, alreadyHeld bool, serviceName string) bool {
 	cleared := false
-	mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
+	_ = mutateLock(lockPath, alreadyHeld, func(lf *genvfile.LockFile) bool {
 		if lf.ClearPendingActions(serviceName) == 0 {
 			return false
 		}

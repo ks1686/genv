@@ -244,6 +244,9 @@ type UpgradeServiceRestart struct {
 	Action         string `json:"action"`
 	Reason         string `json:"reason,omitempty"`
 	PendingCleared bool   `json:"pendingCleared,omitempty"`
+	// PendingError is set when the in-flight record could not be written, so an
+	// interruption during the restart would leave nothing to recover from.
+	PendingError   string `json:"pendingError,omitempty"`
 	ReadinessError string `json:"readinessError,omitempty"`
 	Error          string `json:"error,omitempty"`
 }

@@ -180,6 +180,11 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 		plan = filterUpgradePlanExcluding(plan, deferred)
 	}
 
+	// Snapshot the installed versions before RunUpgrade mutates the lock in
+	// place. Reading them afterwards would compare each version against itself
+	// and conclude nothing changed, so nothing would ever be restarted.
+	preUpgradeVersions := lockInstalledVersions(lf)
+
 	diagnostics := newUpdatesDiagnosticWriter(updatesDiagnosticLimit)
 	runResult := updatesRunUpgrade(ctx, upgrade.UpgradeRunOptions{Plan: plan, Lock: lf, LockPath: lockPath, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: diagnostics, ExternalMode: externalpkg.ExecutionUnattended, Unattended: true, SourceRoot: sourceRootForSpec(file, f)})
 	matchedErrors := make([]bool, len(runResult.Errors))
@@ -207,6 +212,42 @@ func updatesRunOnceBody(ctx context.Context, logger *slog.Logger, f *schema.Genv
 	for _, skipped := range runResult.Skipped {
 		logger.Info("updates.apply.skipped", slog.String("id", skipped.ID), slog.String("manager", skipped.Manager), slog.String("reason", skipped.Reason))
 	}
+	// Follow an unattended upgrade through to the services that watch what it
+	// changed. Without this the timer replaced binaries under running services
+	// and never restarted them, which is the exact failure this feature exists
+	// to prevent — and it was silent, because nothing claimed otherwise.
+	//
+	// Background mode drops any service whose readiness cannot be judged without
+	// a human; those packages were already deferred above, so the two decisions
+	// agree. A failure here is logged and left in the lock rather than retried:
+	// replaying a restart unattended would be acting on a guess.
+	if len(runResult.Upgraded) > 0 && len(runResult.Errors) == 0 {
+		sourceRoot := sourceRootForSpec(file, f)
+		outcomes := runRestartPhase(ctx, restartPhaseRequest{
+			Services:        f.Services,
+			Evidence:        upgradeEvidenceFromLock(preUpgradeVersions, lockPath, runResult.Upgraded),
+			LockPath:        lockPath,
+			SourceRoot:      sourceRoot,
+			Background:      true,
+			Deps:            defaultRestartDeps(sourceRoot, f.Services),
+			LockAlreadyHeld: true, // this run holds the lock mutex from LockMutation
+		})
+		for _, o := range outcomes {
+			switch {
+			case o.PendingError != nil:
+				logger.Warn("updates.apply.pending", slog.String("service", o.Service), slog.Any("err", o.PendingError))
+			case o.Err != nil:
+				logger.Warn("updates.apply.restart", slog.String("service", o.Service), slog.Any("err", o.Err))
+			case o.ReadinessError != nil:
+				logger.Warn("updates.apply.readiness", slog.String("service", o.Service), slog.Any("err", o.ReadinessError))
+			case o.Action == service.ActionSkip, o.Action == service.ActionDefer:
+				logger.Info("updates.apply.deferred", slog.String("service", o.Service), slog.String("reason", o.Reason))
+			default:
+				logger.Info("updates.apply.restarted", slog.String("service", o.Service), slog.String("action", pastTenseRestartAction(o.Action)))
+			}
+		}
+	}
+
 	logger.Info("updates.apply.completed", slog.Int("upgraded", len(runResult.Upgraded)), slog.Int("skipped", len(runResult.Skipped)), slog.Int("errors", len(runResult.Errors)), slog.Bool("auto_apply", true))
 	notifyUpdates(ctx, cfg.Notify, "genv updates", fmt.Sprintf("auto-apply completed: %d upgraded, %d error(s)", len(runResult.Upgraded), len(runResult.Errors)), logger)
 	if runResult.LockWriteError != nil {
