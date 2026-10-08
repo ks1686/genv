@@ -57,8 +57,8 @@
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "version": {"type": "string"},
-        "prefer": {"type": "string"},
-        "managers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "prefer": {"description": "Package manager that installs this package: a built-in manager, or an adapter declared in the top-level \"adapters\" block.", "anyOf": [{ "enum": ["apk", "apt", "asdf", "brew", "bun", "cargo", "choco", "composer", "conda", "deno", "dnf", "dotnet-tool", "external", "gem", "ghcup", "go", "helm", "juliaup", "krew", "linuxbrew", "mamba", "mas", "mise", "npm", "opam", "pacman", "paru", "pip-user", "pipx", "pixi", "pnpm", "poetry", "rustup", "scoop", "sdkman", "snap", "stack", "uv", "volta", "vscode", "winget", "yarn", "yay"] }, { "pattern": "^[a-z][a-z0-9-]*$", "description": "Custom adapter name declared in the top-level \"adapters\" block (schema v8 and later)." }]},
+        "managers": {"type": "object", "description": "Manager-specific package identifiers (for packages with different names across managers).", "propertyNames": {"anyOf": [{ "enum": ["apk", "apt", "asdf", "brew", "bun", "cargo", "choco", "composer", "conda", "deno", "dnf", "dotnet-tool", "external", "gem", "ghcup", "go", "helm", "juliaup", "krew", "linuxbrew", "mamba", "mas", "mise", "npm", "opam", "pacman", "paru", "pip-user", "pipx", "pixi", "pnpm", "poetry", "rustup", "scoop", "sdkman", "snap", "stack", "uv", "volta", "vscode", "winget", "yarn", "yay"] }, { "pattern": "^[a-z][a-z0-9-]*$", "description": "Custom adapter name declared in the top-level \"adapters\" block (schema v8 and later)." }]}, "additionalProperties": {"type": "string"}},
         "external": {"$ref": "#/$defs/externalRecipe"}
       }
     },

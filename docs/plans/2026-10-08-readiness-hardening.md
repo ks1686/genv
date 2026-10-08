@@ -85,15 +85,15 @@ names in `internal/schema/schema.go` `KnownManagers` (no `prefer`/`managers`
 enum); `schema/v1` still lists `flatpak`, which is not a known manager. No test
 ties these files to the code.
 
-- [ ] Write a failing test (e.g. `internal/schema/jsonschema_files_test.go`) that
+- [x] Write a failing test (`internal/schema/jsonschema_files_test.go`, package `schema_test`) that
   loads each `schema/v*/genv.json`, extracts the manager enum(s), and compares
   them to `KnownManagers` (v1: the managers valid for v1 — check `validate.go`
   for per-version restrictions rather than assuming all 49).
-- [ ] Fix the schema files so the test passes. Decide per version whether
+- [x] Fix the schema files so the test passes (v1 closed enum; v8+ `anyOf` enum + adapter-name pattern). Decide per version whether
   `prefer`/`managers` should be an enum or a free string (custom `adapters` in
   v8+ make `prefer` open — then document it as `string` and test that instead).
-- [ ] Remove `flatpak` from v1 (or explain in a schema `description` why it is kept).
-- [ ] Ensure every file is valid JSON and has the right `schemaVersion` const.
+- [x] Remove `flatpak` from v1 (genv has never shipped a flatpak adapter).
+- [x] Every file validated with `check-jsonschema` (draft-07): a v8 spec with `prefer: paru`, a v8 spec with a custom adapter, a v1 spec and a v10 spec all pass; `prefer: flatpak` in v1 is rejected.
 - Done when: test passes and would fail if a manager is added to `KnownManagers`
   without updating the schemas.
 
