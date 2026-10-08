@@ -229,6 +229,8 @@ Relative template paths resolve against the spec directory (or `repo.url` when s
 - v2: `env` map of `{ value, sensitive? }`
 - v1: `packages[]` with `id`, optional `version`, `prefer`, `managers`
 
+`version` is an exact version, `*`, or a trailing prefix wildcard such as `1.2.*` (no other `*` placement). It must be at most 128 bytes, must not start with `-`, and must not contain whitespace or control characters. `genv.json` and `genv.lock.json` are each limited to 4 MiB; larger files are refused before parsing.
+
 Shell function bodies are wrapped unquoted in a generated function
 (`name() { … }` / `function <name> { … }`), so a body must be plain text:
 braces, `;`, `|`, `&`, backticks, `$`, `<`, `>`, `(`, `)` and newlines are

@@ -140,7 +140,7 @@ type LockFile struct {
 // it returns an empty LockFile with no error — the caller treats that as a
 // clean slate and will install everything in genv.json.
 func ReadLock(path string) (*LockFile, error) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &LockFile{SchemaVersion: schema.Version}, nil

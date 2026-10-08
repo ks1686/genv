@@ -329,6 +329,14 @@ func validatePackageList(f *GenvFile, packages []Package, fieldPrefix string, po
 			seen[pkg.ID] = i
 		}
 
+		if !ValidVersionConstraint(pkg.Version) {
+			errs = append(errs, ValidationError{
+				Position: positions[pkgPath+".version"],
+				Field:    pkgPath + ".version",
+				Message:  fmt.Sprintf("invalid version constraint %q: use an exact version, %q, or a prefix wildcard such as %q (maximum %d bytes)", pkg.Version, "*", "1.2.*", MaxVersionConstraintBytes),
+			})
+		}
+
 		if pkg.Prefer != "" && !KnownManager(f, pkg.Prefer) {
 			errs = append(errs, ValidationError{
 				Position: positions[pkgPath+".prefer"],

@@ -15,6 +15,24 @@ All notable changes to this project will be documented in this file.
   effect; a declared health check produces a distinct "restarted but not ready"
   failure.
 
+### Security
+
+- **Package `version` constraints are validated.** Only an exact version, `*`, or
+  a trailing `.*` wildcard is accepted; values over 128 bytes, beginning with
+  `-`, or containing whitespace/control characters are rejected before they can
+  reach a package manager. This can reject previously accepted malformed specs.
+- **`genv.json` and `genv.lock.json` reads are capped at 4 MiB**, closing the
+  last unbounded manifest read from the original security audit.
+- A source-level regression test now fails if production code writes the lock
+  without holding the mutation lock (#97 residual).
+
+### Fixed
+
+- The published JSON Schemas now list the managers genv actually validates;
+  schema v1 no longer advertises unsupported `flatpak`, and v8-v10 enumerate
+  built-ins while still allowing custom adapters.
+- `make lint` is clean and now gates CI.
+
 ## v4.7.0 - 2026-10-08
 
 Minor: a new schema version with two capabilities — composable environments and

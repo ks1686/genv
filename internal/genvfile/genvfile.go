@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +93,31 @@ func WithinDir(dir, path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
+// MaxFileBytes bounds an on-disk spec or lock file before JSON parsing. Module
+// documents have tighter, composition-specific limits; these two files need a
+// larger cap because a single portable spec can contain all target bundles.
+const MaxFileBytes int64 = 4 << 20 // 4 MiB
+
+// ErrTooLarge is returned when a spec or lock exceeds MaxFileBytes.
+var ErrTooLarge = errors.New("genv file exceeds size limit")
+
+func readFileLimited(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(file, MaxFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	if int64(len(data)) > MaxFileBytes {
+		return nil, fmt.Errorf("%w: %s is %d bytes (limit %d)", ErrTooLarge, path, len(data), MaxFileBytes)
+	}
+	return data, nil
+}
+
 // ErrNotFound is returned by Read when the file does not exist.
 var ErrNotFound = errors.New("genv.json not found")
 
@@ -104,7 +130,7 @@ var ErrInvalidFile = errors.New("invalid genv.json")
 // Returns ErrNotFound if the file is absent.
 // Returns a descriptive error (with line info) for parse or validation failures.
 func Read(path string) (*schema.GenvFile, error) {
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound

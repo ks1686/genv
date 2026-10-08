@@ -169,7 +169,7 @@ From the deleted `SECURITY_AUDIT.md` (restore with
 `git log --diff-filter=D --name-only -- SECURITY_AUDIT.md` then `git show <sha>^:SECURITY_AUDIT.md`),
 items still open after reconciliation:
 
-- [ ] **Version constraint format/length (audit #11).** `internal/version/version.go`
+- [x] **Version constraint format/length (audit #11).** `internal/version/version.go`
   `Satisfies` supports only `""`, `"*"`, exact, and `prefix.*`. Add validation in
   `internal/schema/validate.go` (wherever package `version` is checked) that
   rejects: length > 128, control/whitespace characters, leading `-`, and a `*`
@@ -177,11 +177,11 @@ items still open after reconciliation:
   confirm existing fixtures/e2e specs still validate. Document in `SCHEMA.md`.
   Mention in CHANGELOG as a validation tightening (could reject previously
   accepted junk — that is intended).
-- [ ] **Size cap on `genv.json` and the lock (audit #13).** Modules are capped at
+- [x] **Size cap on `genv.json` and the lock (audit #13).** Modules are capped at
   1 MiB (`internal/compose/load.go`), but `genvfile.Read` (`genvfile.go:106`) and
   `ReadLock` (`lockfile.go:142`) use unbounded `os.ReadFile`. Add a shared cap
   (suggest 4 MiB, error naming the path and limit). Failing tests first.
-- [ ] **Lock-mutex regression guard (#97 residual).** Manual check at audit time:
+- [x] **Lock-mutex regression guard (#97 residual).** Manual check at audit time:
   every lock-writing command (apply, upgrade, remove, add, adopt, disown, scan,
   files, service restart, updates worker) acquires `genvfile.LockMutation`. Add a
   test that fails if a `genvfile.WriteLock` call site in `main*.go` is not
