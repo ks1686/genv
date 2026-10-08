@@ -1915,3 +1915,60 @@ func TestParseAndValidate_AdapterInvalidListMatch(t *testing.T) {
 		t.Fatalf("expected invalid listMatch, got: %v", errs)
 	}
 }
+
+// Validation walks maps, so an unsorted error list came out in a different
+// order run to run. The same invalid spec must always report the same way.
+func TestParseAndValidate_error_order_is_deterministic(t *testing.T) {
+	// Several services and env vars, each with a problem, so any map-order leak
+	// has room to show.
+	data := []byte(`{
+	  "schemaVersion": "8",
+	  "defaults": {
+	    "env": { "ZZZ": { "value": "1" }, "AAA": { "value": "1" }, "MMM": { "value": "1" } },
+	    "services": {
+	      "zsvc": { "start": ["x"], "brew_formula": "a" },
+	      "asvc": { "start": ["x"], "brew_formula": "b" },
+	      "msvc": { "start": ["x"], "brew_formula": "c" }
+	    }
+	  }
+	}`)
+	want := []string(nil)
+	for i := 0; i < 40; i++ {
+		_, errs, err := ParseAndValidate(data)
+		if err != nil {
+			t.Fatalf("ParseAndValidate: %v", err)
+		}
+		if len(errs) == 0 {
+			t.Fatal("want validation errors")
+		}
+		got := make([]string, len(errs))
+		for j, e := range errs {
+			got[j] = e.Field
+		}
+		if want == nil {
+			want = got
+			continue
+		}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Fatalf("error order changed between runs:\n%v\n%v", want, got)
+		}
+	}
+	// Located errors still lead, which is what the output did before.
+	_, final, _ := ParseAndValidate(data)
+	located, unlocated := 0, 0
+	for _, e := range final {
+		if e.Position.Line > 0 {
+			located++
+		} else {
+			unlocated++
+		}
+	}
+	if located == 0 {
+		t.Skip("this fixture produces no located errors; ordering rule is untested here")
+	}
+	for i := len(final) - unlocated; i < len(final); i++ {
+		if final[i].Position.Line > 0 {
+			t.Errorf("unlocated error %q sorted after a located one", final[i].Field)
+		}
+	}
+}

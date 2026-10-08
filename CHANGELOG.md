@@ -97,6 +97,70 @@ verified service changes. Closes #218.
   selection, so a package-only edit to a v10 spec would have reported success
   while writing the file back unchanged.
 
+Also fixed, found reviewing the two features before release. Each one made the same
+spec mean something different than it should.
+
+**Composition**
+
+- `shell.source` was dropped entirely on the module path: only aliases and
+  functions were merged, and a contributor declaring nothing else contributed
+  nothing. Sourced files now accumulate across contributors while one document's
+  overlay still replaces its defaults.
+- Array fields used `len() > 0`, so an empty target array kept the defaults
+  instead of clearing them. Packages, file links, templates, dirs and hook phases
+  now replace on a non-nil array, empty included, matching the plain v8 merge.
+- Hooks were appended within a single document, so a target phase could never
+  replace the defaults phase.
+- A spec declaring no modules produced an empty provenance index, so
+  `genv explain` and `genv config` reported every v8/v9 resource as unowned.
+  Ownership is now attributed to the root document and the block that declares
+  it, with no new rejections — specs that were accepted stay accepted.
+- Module validation judged a `requires` edge against a synthetic file holding
+  only the bundle being checked, so any reference outside that bucket was
+  reported as unprovided — including a service declared in another bucket of the
+  same module, and one the root spec declares. A module that ordered itself after
+  the root database failed *every* command. Cross-document references are now
+  resolved against the composed union, which also catches a `requires` cycle
+  spanning two modules.
+- A `watch` entry naming a file or another service was accepted and then silently
+  ignored, so the service never restarted and nothing said why. It is now a
+  validation error naming the entry.
+
+**Service restarts**
+
+- `genv upgrade --json` returned before the restart phase. It upgraded the binary
+  a watched service runs, left the service on the old code, and reported success.
+  The JSON path runs the same phase and reports each service under a new
+  `services` key.
+- The unattended updates worker deferred the packages whose watching service
+  needed a human and then never restarted anything at all, silently. It now
+  follows the upgrade through to the services it can restart unattended.
+- A health check's `timeout` bounded only the gap *between* probes. A probe that
+  hung was never interrupted, so `timeout: 200ms` could hold the command open
+  indefinitely. Each probe now gets the remaining budget.
+- The fingerprint skipped `requires`, `watch`, `restart_policy` and
+  `health_check`, so a change to restart behavior left the recorded lock looking
+  current. It also skipped `shell.source`, which composition had been dropping.
+- A pending restart record that could not be written was swallowed, despite a
+  comment claiming the outcome reported it. The restart still proceeds — refusing
+  would leave the old binary running — but the gap is now reported.
+
+**Validation output**
+
+- Several validators walk Go maps, so the order validation errors appeared in
+  depended on map iteration order: the same invalid spec could report its
+  problems differently on every run. Fifteen runs of one invalid spec produced
+  three different outputs. Errors are now sorted once, by position then field,
+  so located errors still lead and the order no longer moves. Output for
+  **valid** v1/v5/v7/v8 specs is byte-for-byte unchanged.
+
+**Test harness**
+
+- `TestMain` redirected `XDG_CONFIG_HOME` only when it was unset. Where it is
+  set, an ordinary `go test ./...` resolved the real `~/.config/genv` and ran the
+  unattended worker against the live config. It is now always overridden, with a
+  regression test that fails against the old behavior.
+
 
 ## v4.6.0 - 2026-10-01
 

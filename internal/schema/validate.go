@@ -98,7 +98,45 @@ func ParseAndValidate(data []byte) (*GenvFile, []ValidationError, error) {
 	errs = append(errs, validateAdapters(f, raw, positions)...)
 	errs = append(errs, validatePortable(f, positions)...)
 
-	return f, errs, nil
+	return f, sortValidationErrors(errs), nil
+}
+
+// sortValidationErrors makes validation output deterministic.
+//
+// Several validators walk Go maps, so the order errors arrive in depends on map
+// iteration order: the same invalid spec could report its problems in a
+// different order on every run, which makes output impossible to diff and any
+// test asserting on it flaky. Sorting here fixes every source at once rather
+// than at each iteration site.
+//
+// Located errors stay ahead of unlocated ones, and within each group the order
+// is by position then field — which is the order the output already had most of
+// the time, so this stabilizes the output rather than redesigning it.
+func sortValidationErrors(errs []ValidationError) []ValidationError {
+	if len(errs) < 2 {
+		return errs
+	}
+	out := append([]ValidationError(nil), errs...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		aLocated, bLocated := a.Position.Line > 0, b.Position.Line > 0
+		if aLocated != bLocated {
+			return aLocated
+		}
+		if aLocated && bLocated {
+			if a.Position.Line != b.Position.Line {
+				return a.Position.Line < b.Position.Line
+			}
+			if a.Position.Column != b.Position.Column {
+				return a.Position.Column < b.Position.Column
+			}
+		}
+		if a.Field != b.Field {
+			return a.Field < b.Field
+		}
+		return a.Message < b.Message
+	})
+	return out
 }
 
 // ValidEnvName reports whether name is a valid POSIX shell environment variable

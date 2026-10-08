@@ -147,7 +147,7 @@ func ParseAndValidateModule(data []byte) (*ModuleDoc, []ValidationError, error) 
 		errs = append(errs, rejectUseModules(bundle, targetPath, positions)...)
 	}
 
-	return doc, errs, nil
+	return doc, sortValidationErrors(errs), nil
 }
 
 // moduleScope is the document view validation uses while checking one module.
