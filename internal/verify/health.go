@@ -18,6 +18,11 @@ import (
 // done. The returned error distinguishes "never became ready" (the service is
 // probably still starting, or wedged) from a cancelled or expired caller
 // context, because those call for different responses.
+//
+// Each probe is bounded by the time left in the check's own budget. Passing the
+// caller's context through unchanged would apply the deadline only *between*
+// attempts, so one probe that never exited would hold the command open past the
+// timeout the user configured.
 func Health(ctx context.Context, hc *schema.HealthCheck, probe func(context.Context) error) error {
 	if hc == nil {
 		return nil
@@ -33,12 +38,18 @@ func Health(ctx context.Context, hc *schema.HealthCheck, probe func(context.Cont
 	var lastErr error
 	attempted := false
 	for {
-		attempted = true
-		if err := probe(ctx); err == nil {
-			return nil
-		} else {
-			lastErr = err
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
 		}
+		attempted = true
+		probeCtx, cancelProbe := context.WithTimeout(ctx, remaining)
+		err := probe(probeCtx)
+		cancelProbe()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
 
 		if !time.Now().Add(interval).Before(deadline) {
 			break

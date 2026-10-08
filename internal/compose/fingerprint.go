@@ -57,6 +57,9 @@ func Fingerprint(effective *schema.GenvFile, selected []string) string {
 			v := effective.Shell.Functions[name]
 			writef(h, "function\x00%s\x00%s\x00%s\x00", name, v.Body, v.Shell)
 		}
+		for _, src := range effective.Shell.Source {
+			writef(h, "shell-source\x00%s\x00", src)
+		}
 	}
 	for _, name := range sortedKeys(effective.Services) {
 		svc := effective.Services[name]
@@ -68,6 +71,19 @@ func Fingerprint(effective *schema.GenvFile, selected []string) string {
 		}
 		if svc.Systemd != nil {
 			writef(h, "systemd\x00%s\x00", svc.Systemd.Unit)
+		}
+		// The v10 service fields decide whether and how a change is acted on, so
+		// editing one has to move the fingerprint: a lock that recorded the old
+		// ordering or probe is stale in exactly the way the fingerprint exists to
+		// detect. Health check argv participates too, but no probe *output* ever
+		// does — this value is written to a machine-local lock and printed.
+		writef(h, "requires\x00%s\x00", strings.Join(sortedCopy(svc.Requires), "\x01"))
+		writef(h, "watch\x00%s\x00", strings.Join(sortedCopy(svc.Watch), "\x01"))
+		writef(h, "restart-policy\x00%s\x00", svc.RestartPolicy)
+		if svc.HealthCheck != nil {
+			hc := svc.HealthCheck
+			writef(h, "health\x00%s\x00%s\x00%s\x00%t\x00",
+				strings.Join(hc.Command, "\x01"), hc.Timeout, hc.Interval, hc.AllowBackground)
 		}
 	}
 	if effective.Files != nil {
@@ -109,5 +125,17 @@ func externalFingerprint(pkg schema.Package) string {
 func sortedByField[T any](items []T, key func(T) string) []T {
 	out := append([]T(nil), items...)
 	sort.SliceStable(out, func(i, j int) bool { return key(out[i]) < key(out[j]) })
+	return out
+}
+
+// sortedCopy sorts a copy so declaration order does not change the hash: two
+// specs that declare the same requires list in a different order describe the
+// same environment.
+func sortedCopy(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := append([]string(nil), in...)
+	sort.Strings(out)
 	return out
 }

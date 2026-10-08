@@ -144,3 +144,84 @@ func TestHealth_defaults_apply_when_unset(t *testing.T) {
 		t.Errorf("interval = %v", hc.HealthInterval())
 	}
 }
+
+// A hung probe must not outlive the documented timeout. The loop used to apply
+// the deadline only *between* attempts, so the probe was handed a context with
+// no deadline of its own and a command stuck on a socket held genv open for as
+// long as the socket took.
+func TestHealth_bounds_a_single_hung_probe(t *testing.T) {
+	hc := &schema.HealthCheck{
+		Command:  []string{"true"},
+		Timeout:  "200ms",
+		Interval: "10ms",
+	}
+	var sawDeadline bool
+	start := time.Now()
+	err := Health(context.Background(), hc, func(ctx context.Context) error {
+		_, sawDeadline = ctx.Deadline()
+		// Models exec.CommandContext: a hung child is killed when ctx expires.
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	elapsed := time.Since(start)
+
+	if !sawDeadline {
+		t.Error("probe was called with no deadline; a hung command would never be interrupted")
+	}
+	if err == nil {
+		t.Fatal("Health: want an error, a hung probe is not readiness")
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("Health returned after %s, want it bounded by the %s check timeout", elapsed, hc.Timeout)
+	}
+	if !strings.Contains(err.Error(), "did not become ready") {
+		t.Errorf("Health error = %v, want the readiness-timeout message", err)
+	}
+}
+
+func TestHealth_deadline_covers_only_the_remaining_budget(t *testing.T) {
+	// Each probe gets the time left in the check, so N attempts cannot add up to
+	// N times the timeout.
+	hc := &schema.HealthCheck{Command: []string{"true"}, Timeout: "300ms", Interval: "10ms"}
+	var budgets []time.Duration
+	start := time.Now()
+	err := Health(context.Background(), hc, func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("probe got no deadline")
+		}
+		budgets = append(budgets, time.Until(deadline))
+		return errors.New("not ready") // fail fast, so the retries fit in the budget
+	})
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Health took %s for a %s timeout", elapsed, hc.Timeout)
+	}
+	if len(budgets) < 2 {
+		t.Fatalf("probe ran %d times, want repeated attempts", len(budgets))
+	}
+	if budgets[len(budgets)-1] >= budgets[0] {
+		t.Errorf("per-probe budgets = %v, want each later attempt to get a smaller budget", budgets)
+	}
+}
+
+func TestHealth_cancelled_caller_still_wins_over_a_hung_probe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	err := Health(ctx, &schema.HealthCheck{
+		Command:  []string{"true"},
+		Timeout:  "30s",
+		Interval: "10ms",
+	}, func(probeCtx context.Context) error {
+		<-probeCtx.Done()
+		return probeCtx.Err()
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Health error = %v, want context.Canceled", err)
+	}
+}

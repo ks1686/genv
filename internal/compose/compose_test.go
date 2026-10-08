@@ -1086,3 +1086,55 @@ func TestResolve_module_path_shell_source_replaces_root_array(t *testing.T) {
 		}
 	}
 }
+
+// The fingerprint exists to detect a structural change that makes the recorded
+// lock stale. A service field the fingerprint ignores is a change genv cannot
+// see, which is the same failure as not hashing it at all.
+func TestFingerprint_changes_with_every_v10_service_field(t *testing.T) {
+	base := func() *schema.GenvFile {
+		return &schema.GenvFile{
+			SchemaVersion: schema.Version10,
+			Services: map[string]schema.Service{
+				"api": {Start: []string{"api-server"}},
+			},
+		}
+	}
+	baseline := Fingerprint(base(), nil)
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*schema.Service)
+	}{
+		{"requires", func(s *schema.Service) { s.Requires = []string{"db"} }},
+		{"watch", func(s *schema.Service) { s.Watch = []string{"api-server"} }},
+		{"restart_policy", func(s *schema.Service) { s.RestartPolicy = schema.RestartPolicyIfRunning }},
+		{"health_check", func(s *schema.Service) {
+			s.HealthCheck = &schema.HealthCheck{Command: []string{"curl", "-fsS", "http://localhost/health"}}
+		}},
+		{"health_check_allow_background", func(s *schema.Service) {
+			s.HealthCheck = &schema.HealthCheck{Command: []string{"true"}, AllowBackground: true}
+		}},
+		{"health_check_timeout", func(s *schema.Service) {
+			s.HealthCheck = &schema.HealthCheck{Command: []string{"true"}, Timeout: "5s"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := base()
+			svc := f.Services["api"]
+			tc.mutate(&svc)
+			f.Services["api"] = svc
+			if got := Fingerprint(f, nil); got == baseline {
+				t.Errorf("fingerprint unchanged after editing %s; a stale lock would not be noticed", tc.name)
+			}
+		})
+	}
+}
+
+func TestFingerprint_changes_with_shell_source(t *testing.T) {
+	base := func(sources []string) *schema.GenvFile {
+		return &schema.GenvFile{SchemaVersion: schema.Version10, Shell: &schema.ShellConfig{Source: sources}}
+	}
+	if Fingerprint(base([]string{"a.sh"}), nil) == Fingerprint(base([]string{"b.sh"}), nil) {
+		t.Error("fingerprint unchanged after editing shell.source")
+	}
+}
