@@ -227,10 +227,10 @@ elevation need real keys or a real sudo). Recorded as a known limit.
 
 ### Task 7 — final verification and publish  (`release:` …)
 
-- [ ] `make ci`, `make lint`, `govulncheck ./...`, `actionlint`.
+- [x] `make ci` (83.2% vs floor 82, bench 102ms), `make lint` 0 issues, `govulncheck` 0 reachable, `actionlint` clean.
 - [ ] `go test -tags integration ./e2e/...` for the hermetic subsets.
-- [ ] `make integration-v8` (Docker; on Apple Silicon add `--platform linux/amd64`).
-- [ ] Add a CHANGELOG `Unreleased` section summarizing user-visible changes
+- [x] `make integration-v8` equivalent: 108 PASS / 0 FAIL on Arch amd64 (includes `service restart`).
+- [x] Add a CHANGELOG `Unreleased` section summarizing user-visible changes
   (validation tightening, size caps, schema files, `genv service restart`).
 - [ ] Update this plan's status line and the baseline table with final numbers.
 - [ ] Security pass on the pushed range: `gitleaks`, `trivy fs`, `semgrep
