@@ -1957,7 +1957,7 @@ func TestParseAndValidate_error_order_is_deterministic(t *testing.T) {
 	_, final, _ := ParseAndValidate(data)
 	located, unlocated := 0, 0
 	for _, e := range final {
-		if e.Position.Line > 0 {
+		if e.Line > 0 {
 			located++
 		} else {
 			unlocated++
@@ -1967,7 +1967,7 @@ func TestParseAndValidate_error_order_is_deterministic(t *testing.T) {
 		t.Skip("this fixture produces no located errors; ordering rule is untested here")
 	}
 	for i := len(final) - unlocated; i < len(final); i++ {
-		if final[i].Position.Line > 0 {
+		if final[i].Line > 0 {
 			t.Errorf("unlocated error %q sorted after a located one", final[i].Field)
 		}
 	}

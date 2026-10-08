@@ -119,16 +119,16 @@ func sortValidationErrors(errs []ValidationError) []ValidationError {
 	out := append([]ValidationError(nil), errs...)
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		aLocated, bLocated := a.Position.Line > 0, b.Position.Line > 0
+		aLocated, bLocated := a.Line > 0, b.Line > 0
 		if aLocated != bLocated {
 			return aLocated
 		}
 		if aLocated && bLocated {
-			if a.Position.Line != b.Position.Line {
-				return a.Position.Line < b.Position.Line
+			if a.Line != b.Line {
+				return a.Line < b.Line
 			}
-			if a.Position.Column != b.Position.Column {
-				return a.Position.Column < b.Position.Column
+			if a.Column != b.Column {
+				return a.Column < b.Column
 			}
 		}
 		if a.Field != b.Field {
