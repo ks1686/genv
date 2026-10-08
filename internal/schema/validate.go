@@ -35,6 +35,10 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Field, e.Message)
 }
 
+// externalEnvNameRe matches POSIX-portable environment variable names; it is
+// package-level because validation runs it once per declared key.
+var externalEnvNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 func unmarshalGenvFile(data []byte) (*GenvFile, map[string]json.RawMessage, []ValidationError, error) {
 	var f GenvFile
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -452,13 +456,14 @@ func validateExternalPlatform(platform ExternalPlatform, field, sourceType strin
 			errs = append(errs, externalValidation(field+".libc", fmt.Sprintf("unknown libc %q", value), positions))
 		}
 	}
-	if sourceType == "githubRelease" {
+	switch sourceType {
+	case "githubRelease":
 		if platform.AssetRegex == "" || platform.ArtifactURL != "" {
 			errs = append(errs, externalValidation(field, "GitHub platform requires assetRegex and forbids artifactURL", positions))
 		} else {
 			errs = append(errs, validateRegex(platform.AssetRegex, field+".assetRegex", positions)...)
 		}
-	} else if sourceType == "httpRelease" {
+	case "httpRelease":
 		if platform.ArtifactURL == "" || platform.AssetRegex != "" {
 			errs = append(errs, externalValidation(field, "HTTP platform requires artifactURL and forbids assetRegex", positions))
 		} else {
@@ -509,7 +514,7 @@ func validateExternalInstall(install ExternalInstall, field string, positions ma
 			errs = append(errs, validateExternalTemplate(value, fmt.Sprintf("%s.args[%d]", field, i), positions)...)
 		}
 		for key, value := range install.Env {
-			if matched, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, key); !matched {
+			if !externalEnvNameRe.MatchString(key) {
 				errs = append(errs, externalValidation(field+".env", fmt.Sprintf("invalid environment variable name %q", key), positions))
 			}
 			errs = append(errs, validateExternalTemplate(value, field+".env."+key, positions)...)
@@ -601,10 +606,19 @@ func validateRegex(expr, field string, positions map[string]Position) []Validati
 
 func validateExternalURL(value, field string, allowInsecure bool, positions map[string]Position) []ValidationError {
 	u, err := url.Parse(value)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && !(allowInsecure && u.Scheme == "http")) {
+	if err != nil || u.Host == "" || !externalSchemeAllowed(u.Scheme, allowInsecure) {
 		return []ValidationError{externalValidation(field, "must be an absolute HTTPS URL", positions)}
 	}
 	return nil
+}
+
+// externalSchemeAllowed mirrors the fetch-time transport policy in
+// internal/external: HTTPS always, plain HTTP only when the recipe opts in.
+func externalSchemeAllowed(scheme string, allowInsecure bool) bool {
+	if scheme == "https" {
+		return true
+	}
+	return allowInsecure && scheme == "http"
 }
 
 func externalValidation(field, message string, positions map[string]Position) ValidationError {
@@ -1276,10 +1290,14 @@ func isWindowsAbsolutePath(p string) bool {
 	}
 	// Drive letter, then a separator.
 	c := p[0]
-	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+	if !isASCIILetter(c) {
 		return false
 	}
 	return p[1] == ':' && len(p) > 2 && (p[2] == '\\' || p[2] == '/')
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 func validateScheduledTaskTime(name, fieldPrefix string, t ScheduledTaskSpec) []ValidationError {

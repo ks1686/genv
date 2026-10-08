@@ -1,0 +1,27 @@
+# golangci-lint configuration for genv.
+#
+# Without this file golangci-lint uses its built-in default linter set, which
+# changes between major versions and is therefore invisible in code review. The
+# set below is explicit so `make lint` and CI run the same checks.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # The standard set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    # genv shells out to package managers and fetches release metadata over
+    # HTTP; an unread response body is a real leak, not a style issue.
+    - bodyclose
+    - misspell
+    - unconvert
+
+issues:
+  # Test doubles intentionally ignore errors from throwaway writers and readers
+  # (`_, _ = w.Write(...)`). The assertions that matter are elsewhere.
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - bodyclose

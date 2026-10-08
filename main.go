@@ -2306,10 +2306,14 @@ func localRepoPath(rawURL string) (string, bool) {
 // regardless of the host GOOS, so a Linux box evaluating a Windows repo.url
 // still classifies it as absolute.
 func isWindowsAbsPathString(s string) bool {
-	if len(s) < 3 || !((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) {
+	if len(s) < 3 || !isASCIILetter(s[0]) {
 		return false
 	}
 	return s[1] == ':' && (s[2] == '\\' || s[2] == '/')
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // applySourceRoot is the files.links/templates and service template root for apply.
@@ -3305,8 +3309,11 @@ func scanCmd(args []string) int {
 	}
 
 	lockPath := lockPathForSpec(*file, *lockFile)
-	lf, err := genvfile.ReadLock(lockPath)
-	if err != nil {
+	// Fail fast on an unreadable lock rather than after the whole host
+	// inventory has been collected. The lock is read again under the
+	// mutation mutex before anything is written; this first read only
+	// decides whether to refuse to continue at all.
+	if _, err := genvfile.ReadLock(lockPath); err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO
 	}
@@ -3422,7 +3429,7 @@ func scanCmd(args []string) int {
 		return exitIO
 	}
 	defer unlock()
-	lf, err = genvfile.ReadLock(lockPath)
+	lf, err := genvfile.ReadLock(lockPath)
 	if err != nil {
 		fprintf(os.Stderr, "genv: reading lock: %v\n", err)
 		return exitIO

@@ -70,7 +70,7 @@ func ReadDump(manager string) ([]string, bool) {
 	if err != nil {
 		return nil, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var names []string
 	scanner := bufio.NewScanner(f)
@@ -106,15 +106,15 @@ func WriteDump(manager string, names []string) error {
 		return fmt.Errorf("create temporary dump: %w", err)
 	}
 	tempPath := temp.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 
 	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return fmt.Errorf("chmod temporary dump: %w", err)
 	}
 	content := strings.Join(names, "\n") + "\n"
 	if _, err := temp.WriteString(content); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return fmt.Errorf("write temporary dump: %w", err)
 	}
 	if err := temp.Close(); err != nil {

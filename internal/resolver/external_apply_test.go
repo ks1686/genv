@@ -24,7 +24,7 @@ func TestExecuteApplyInstallsManagedExternalRecipe(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
 			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprint(w, "1.2.3")
+			_, _ = fmt.Fprint(w, "1.2.3")
 			return
 		}
 		_, _ = w.Write(payload)

@@ -50,7 +50,7 @@ Package coverage below 80% (`go test -cover ./...`): `internal/testutil` 38.9,
 
 ### Task 1 — `make lint` to zero  (`chore(lint): …`)
 
-- [ ] Fix all 36 findings. Known list at audit time:
+- [x] Fix all 36 findings (plus 4 revealed after the first pass: 36 → 7 → 0). Known list at audit time:
   - errcheck, production: `internal/adapter/gem.go:227-228`,
     `internal/adapter/registry.go:65`, `internal/adapter/vscode_gallery.go:230`,
     `internal/complete/cache.go:73,109,112,117`, `internal/export/export.go:605`,
@@ -73,7 +73,7 @@ Package coverage below 80% (`go test -cover ./...`): `internal/testutil` 38.9,
     error path), test-only S1021/SA9003 in `main_apply_files_test.go:267`,
     `main_spec_adapter_test.go:109,151`, `main_helpers_coverage_test.go:338`
     (SA9003 empty branch — the assertion is missing; make it a real `t.Error`).
-- [ ] Add `make lint` to `make ci` **only if** golangci-lint is installed in CI
+- [x] Add a pinned `Lint` job to `.github/workflows/ci.yml` (golangci-lint-action@v8, v2.14.0) plus an explicit `.golangci.yml`
   (`.github/workflows/test.yml`); otherwise add a lint job there. Ask the owner
   before changing CI if unsure.
 - Done when: `make lint` exits 0, `make ci` passes.

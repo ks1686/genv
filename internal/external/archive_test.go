@@ -68,6 +68,55 @@ func TestInstallArchiveRejectsTraversalEvenWhenNotSelected(t *testing.T) {
 	}
 }
 
+// Legacy tar writers emit a NUL typeflag ('\x00', tar.TypeRegA) for regular
+// files and, for directories, a NUL plus a trailing slash. archive/tar
+// normalizes both on read, which is what lets the unsafe-type check ignore
+// TypeRegA; this test fails if that normalization ever changes.
+func TestInstallArchiveAcceptsLegacyNulTypeflag(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "legacy.tar")
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	content := []byte("binary")
+	for _, header := range []*tar.Header{
+		{Name: "tool-1.0/", Mode: 0o755, Typeflag: 0},
+		{Name: "tool-1.0/tool", Mode: 0o755, Size: int64(len(content)), Typeflag: 0},
+	} {
+		if err := tw.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+		if header.Size > 0 {
+			if _, err := tw.Write(content); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	destination := filepath.Join(t.TempDir(), "tool")
+	_, restore, finish, err := installArchive(archivePath, "legacy.tar", schema.ExternalInstall{
+		Type: "archive", StripComponents: 1,
+		Files: []schema.ExternalInstallFile{{From: "tool", To: destination}},
+	}, installPolicy{})
+	if err != nil {
+		t.Fatalf("installArchive() rejected a legacy NUL-typeflag archive: %v", err)
+	}
+	defer restore()
+	if err := finish(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(destination); err != nil || string(data) != "binary" {
+		t.Fatalf("content=%q error=%v", data, err)
+	}
+}
+
 func writeZipFixture(t *testing.T, path string, files map[string]string) {
 	t.Helper()
 	f, err := os.Create(path)

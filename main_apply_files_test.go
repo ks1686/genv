@@ -264,8 +264,7 @@ func TestApply_SkipPackagesStillAppliesFiles(t *testing.T) {
 	}
 
 	var code int
-	var stdout string
-	stdout = captureStdout(t, func() {
+	stdout := captureStdout(t, func() {
 		code = run([]string{"apply", "--file", spec, "--lock-file", lock, "--yes", "--no-hooks", "--skip-packages"})
 	})
 	if code != exitOK {

@@ -69,7 +69,7 @@ func (c Client) maxMetadataBytes() int64 {
 
 func (c Client) get(ctx context.Context, endpoint string, allowInsecure bool, headers http.Header) ([]byte, string, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && !(allowInsecure && u.Scheme == "http")) {
+	if err != nil || u.Host == "" || !schemeAllowed(u, allowInsecure) {
 		return nil, "", fmt.Errorf("external metadata URL must use HTTPS")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -85,7 +85,7 @@ func (c Client) get(ctx context.Context, endpoint string, allowInsecure bool, he
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch external metadata from %s: %w", u.Host, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("fetch external metadata from %s: HTTP %d", u.Host, resp.StatusCode)
 	}
