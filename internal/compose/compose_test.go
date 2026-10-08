@@ -1237,3 +1237,49 @@ func TestResolve_rejects_a_cycle_that_spans_two_modules(t *testing.T) {
 		t.Errorf("error = %v, want it to name both services", err)
 	}
 }
+
+// A watch entry that no run can produce evidence for used to be accepted and
+// then silently ignored: the service never restarted and nothing said why.
+func TestResolve_rejects_a_watch_entry_that_is_not_a_declared_package(t *testing.T) {
+	root := t.TempDir()
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": {},
+	  "targets": { "macos": {
+	    "packages": [{ "id": "postgres" }],
+	    "services": { "api": { "start": ["api"], "watch": ["api.conf"] } }
+	  } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	_, err := Resolve(root, root, f, "macos", nil)
+	if err == nil {
+		t.Fatal("Resolve: want an error for a watch entry nothing can report on")
+	}
+	assertIsError(t, err, ErrServiceGraph)
+	if !strings.Contains(err.Error(), "api.conf") || !strings.Contains(err.Error(), "api") {
+		t.Errorf("error = %v, want it to name the service and the entry", err)
+	}
+}
+
+func TestResolve_accepts_a_watch_entry_declared_by_another_contributor(t *testing.T) {
+	root := t.TempDir()
+	writeModule(t, root, "modules/tool.json", `{
+	  "schemaVersion": "10",
+	  "defaults": { "packages": [{ "id": "postgres" }] }
+	}`)
+	spec(t, root, `{
+	  "schemaVersion": "10",
+	  "modules": { "tool": "modules/tool.json" },
+	  "targets": { "macos": {
+	    "useModules": ["tool"],
+	    "services": { "api": { "start": ["api"], "watch": ["postgres"] } }
+	  } }
+	}`)
+	f, _, _ := schema.ParseAndValidate([]byte(mustRead(t, filepath.Join(root, "genv.json"))))
+
+	c := mustResolve(t, root, f, "macos")
+	if len(c.Effective.Services) != 1 {
+		t.Errorf("services = %v, want the root's api", c.Effective.Services)
+	}
+}

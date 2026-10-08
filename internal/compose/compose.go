@@ -11,6 +11,7 @@ import (
 
 	"github.com/ks1686/genv/internal/plan"
 	"github.com/ks1686/genv/internal/schema"
+	"github.com/ks1686/genv/internal/service"
 )
 
 // RootDocument is the document name used for origins that come from the root
@@ -81,6 +82,13 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 		if err != nil {
 			return nil, err
 		}
+		// v8/v9 cannot declare watch at all — validation refuses it — so this
+		// only ever fires for a v10 spec that has not adopted modules yet. The
+		// rule is the same either way: an output flag, or the absence of
+		// modules, must not change what counts as a valid spec.
+		if err := checkWatchTargets(flatServices(effective.Services), effective.Packages); err != nil {
+			return nil, err
+		}
 		return &Composition{
 			Effective:   effective,
 			Provenance:  moduleFreeProvenance(f, effective, targetID),
@@ -148,6 +156,10 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 
 	bundle := acc.bundle()
 
+	if err := checkWatchTargets(bundle.Services, bundle.Packages); err != nil {
+		return nil, err
+	}
+
 	// A requires edge may cross documents: a module can order itself after a
 	// service the root spec declares, and two modules can require each other's
 	// services. Neither document can check that alone — only the union can, so
@@ -181,6 +193,57 @@ func Resolve(rootSpecPath, sourceRoot string, f *schema.GenvFile, targetID strin
 		Target:          targetID,
 		Fingerprint:     Fingerprint(effective, selectedCopy),
 	}, nil
+}
+
+// checkWatchTargets rejects a watch entry that no run can ever produce evidence
+// for.
+//
+// Evidence comes from one place: a tracked package whose installed version
+// moved during an upgrade. A watch entry naming a file or another service is
+// accepted by the schema, but nothing ever reports it as changed, so the
+// service would simply be ignored — forever, silently. The docs elsewhere call
+// that out as the failure mode this feature exists to prevent, so it is an
+// error here rather than a silent no-op.
+//
+// An entry naming a package that another contributor declares is fine: this
+// check runs on the union, after every module is merged.
+// flatServices adapts the flat spec's service map to the pointer form the
+// module path uses, so one check serves both.
+func flatServices(in map[string]schema.Service) map[string]*schema.Service {
+	out := make(map[string]*schema.Service, len(in))
+	for name, svc := range in {
+		svc := svc
+		out[name] = &svc
+	}
+	return out
+}
+
+func checkWatchTargets(services map[string]*schema.Service, packages []schema.Package) error {
+	if len(services) == 0 {
+		return nil
+	}
+	declared := make(map[string]bool, len(packages))
+	for _, pkg := range packages {
+		declared[pkg.ID] = true
+	}
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if services[name] == nil {
+			continue
+		}
+		for _, watch := range schema.WatchTargets(services[name].Watch) {
+			if declared[service.TriggerResource(watch)] {
+				continue
+			}
+			return fmt.Errorf("%w: service %q watches %q, which is not a package this spec declares, so no upgrade could ever report it as changed",
+				ErrServiceGraph, name, watch)
+		}
+	}
+	return nil
 }
 
 // unsafeAssetError reports the first module asset path that left the spec root,

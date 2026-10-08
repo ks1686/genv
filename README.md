@@ -371,15 +371,18 @@ A service can say what it depends on and what it watches (schema v10):
 "api": {
   "start": ["api-server"],
   "requires": ["db"],
-  "watch": ["postgres", "api.conf"],
+  "watch": ["postgres"],
   "restart_policy": "ifRunning",
   "health_check": { "command": ["curl", "-fsS", "localhost:8080/health"] }
 }
 ```
 
-`genv upgrade` then restarts `api` **only when postgres or api.conf actually
-changed**, starts it first if it was stopped (under `ifRunning`), and waits for
-the health check before calling the run done.
+`genv upgrade` then restarts `api` **only when postgres actually changed**,
+starts it first if it was stopped (under `ifRunning`), and waits for the health
+check before calling the run done. `watch` entries name packages; one that is not
+a declared package is refused rather than accepted and silently ignored. Watching
+a file or another service is not a trigger yet — `genv apply` does not run the
+restart phase.
 
 The part worth knowing is what it does *not* claim:
 
@@ -394,7 +397,10 @@ The part worth knowing is what it does *not* claim:
 If genv is interrupted mid-restart, it says so on the next run instead of
 assuming the service came back. The unattended `updates` worker will not upgrade
 a package whose watched service it cannot restart *and* verify without a human —
-it defers that package and takes the rest.
+it defers that package and takes the rest — and it restarts the services it can
+once the upgrade lands. The same phase runs under `genv upgrade --json`, which
+reports each service under a `services` key: an output flag never changes what
+the command does.
 
 ### Updates checker
 

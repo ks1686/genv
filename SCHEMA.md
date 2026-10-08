@@ -420,7 +420,7 @@ and records the materialized modules in `report.json`.
         "api": {
           "start": ["api-server"],
           "requires": ["db"],
-          "watch": ["postgres", "api.conf"],
+          "watch": ["postgres"],
           "restart_policy": "ifRunning",
           "health_check": {
             "command": ["curl", "-fsS", "localhost:8080/health"],
@@ -439,9 +439,18 @@ and records the materialized modules in `report.json`.
   ordering constraint, not a change trigger. A cycle is a validation-time error
   naming the services involved, as is a `requires` entry no declared service
   provides.
-- `watch` — packages, linked file destinations, or services whose change may
-  require a restart. Entries may carry the explicit `watch:` prefix, which is
-  how a package and a service of the same name are told apart.
+- `watch` — the packages whose version change should restart this service. Each
+  entry must name a package the composed spec declares; one that does not is a
+  validation error, because nothing could ever report it as changed and the
+  service would silently never restart. Entries may carry the explicit
+  `watch:` prefix, which is how a package and a service of the same name are
+  told apart.
+
+  Today the evidence comes from exactly one place — a tracked package whose
+  installed version moved during an upgrade. `watch`ing a file destination or
+  another service parses and validates, but is **not** a trigger yet: `genv
+  apply` does not run the restart phase, and nothing compares file contents.
+  Until that exists, such an entry is refused rather than accepted and ignored.
 - `restart_policy` — `never` (default) leaves a stopped service stopped;
   `ifRunning` starts one, because the change is what it was waiting for.
 - `health_check` — a readiness probe run **only after** an authorized start or
@@ -461,12 +470,18 @@ and records the materialized modules in `report.json`.
 | Version could not be established before or after | **deferred**: nothing is restarted and nothing is claimed |
 | Watched service stopped, policy `never` | skipped, and said so |
 | Restart or readiness failed | reported, exit non-zero, and the pending record is kept |
+| Pending record could not be written | restart proceeds, and the gap is reported — refusing would leave the old binary running |
+
+The phase runs in `genv upgrade`, in `genv upgrade --json` (reported under
+`services`), and in the unattended `genv updates` worker. It does **not** run
+from `genv apply`, so a changed config file never restarts anything yet.
 
 The pending record is written **before** a service is stopped and cleared only
 after the action and its readiness check both succeed. An interrupted run
 therefore leaves evidence: the next run reports the unconfirmed change instead of
 assuming it worked. The unattended worker defers upgrades whose watched service
-cannot be restarted *and verified* without a human, before touching any package.
+cannot be restarted *and verified* without a human, before touching any package,
+and restarts the ones it can once the upgrade lands.
 
 ## Profiles
 
