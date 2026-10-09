@@ -167,8 +167,11 @@ func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 					break
 				}
 			}
-			// apply holds the lock in runApply before dispatching to these
-			// JSON/text helpers. Record that verified caller-held invariant.
+			// These helpers execute a write under a caller-held lock instead of
+			// acquiring another flock (which would deadlock). runApply acquires
+			// before dispatching to runApplyJSON/runApplyText; mutateLock holds
+			// it unless alreadyHeld is true, which its restart-phase callers
+			// inherit from the enclosing locked apply/worker operation.
 			if fn.Name.Name == "writeLockAfterApply" || fn.Name.Name == "runApplyJSON" || fn.Name.Name == "runApplyText" || fn.Name.Name == "mutateLock" {
 				info.locks = true
 				info.topLevelLock = true
