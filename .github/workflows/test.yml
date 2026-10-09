@@ -100,11 +100,13 @@ jobs:
           # for BenchmarkDetect). Keep a regression gate with headroom for noise.
           BENCH_MAX_MS: "400"
 
-      - name: govulncheck
-        # setup-go sets GOTOOLCHAIN=local for the go.mod toolchain. Current
-        # govulncheck (v1.6+) requires Go 1.25 to *build*; allow this step
-        # only to download that toolchain. The rest of CI stays on go.mod.
+      - name: Set up patched Go for vulnerability scan
         if: matrix.os == 'ubuntu-latest'
-        env:
-          GOTOOLCHAIN: auto
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.9"
+          cache: false
+
+      - name: govulncheck
+        if: matrix.os == 'ubuntu-latest'
         run: go run golang.org/x/vuln/cmd/govulncheck@latest "./..."
