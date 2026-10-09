@@ -20,7 +20,11 @@ func TestResolveSourceAndExpandPath(t *testing.T) {
 	if _, err := ResolveSource("", "relative"); err == nil {
 		t.Fatal("relative source without root accepted")
 	}
-	if got, err := ExpandPath("~/x/$GENV_PATH_TEST"); err != nil || got != filepath.Join(root, "x", "value") {
+	wantHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ExpandPath("~/x/$GENV_PATH_TEST"); err != nil || got != filepath.Join(wantHome, "x", "value") {
 		t.Fatalf("expand=%q,%v", got, err)
 	}
 }

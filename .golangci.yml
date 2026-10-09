@@ -17,11 +17,10 @@ linters:
     - bodyclose
     - misspell
     - unconvert
-
-issues:
-  # Test doubles intentionally ignore errors from throwaway writers and readers
-  # (`_, _ = w.Write(...)`). The assertions that matter are elsewhere.
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - bodyclose
+  exclusions:
+    rules:
+      # Test doubles intentionally ignore errors from throwaway writers and
+      # readers (`_, _ = w.Write(...)`). The assertions that matter are elsewhere.
+      - path: _test\.go
+        linters:
+          - bodyclose
