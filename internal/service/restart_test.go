@@ -188,6 +188,9 @@ func TestRestartDeclaredLaunchdBootsOutThenBootstraps(t *testing.T) {
 }
 
 func TestRestartDeclaredRawCommandRunsOnce(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("raw command fixture uses touch")
+	}
 	// A declared restart command is a single action, not stop-then-start.
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "restarted")
@@ -213,6 +216,9 @@ func TestRestartDeclaredRawCommandRunsOnce(t *testing.T) {
 }
 
 func TestRestartDeclaredRawFallsBackToStopThenStart(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("raw command fixture uses a POSIX shell")
+	}
 	dir := t.TempDir()
 	order := filepath.Join(dir, "order")
 	svc := schema.Service{
@@ -232,6 +238,9 @@ func TestRestartDeclaredRawFallsBackToStopThenStart(t *testing.T) {
 }
 
 func TestRestartDeclaredRefusesWithoutStopCommand(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("raw command fixture uses POSIX true")
+	}
 	svc := schema.Service{Start: []string{"true"}}
 	err := RestartDeclared(context.Background(), "worker", svc, "")
 	if err == nil {
@@ -251,6 +260,9 @@ func TestRestartDeclaredRefusesScheduledTask(t *testing.T) {
 }
 
 func TestRestartDeclaredReportsMissingRawCommandFailure(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("raw command fixture uses POSIX utilities")
+	}
 	svc := schema.Service{Stop: []string{"false"}, Start: []string{"true"}}
 	err := RestartDeclared(context.Background(), "worker", svc, "")
 	if err == nil || !strings.Contains(err.Error(), "stop") {

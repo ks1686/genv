@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,7 +30,15 @@ func restartArgs(path string, name string, extra ...string) []string {
 	return append([]string{"service", "restart", name, "--file", path, "--target", "macos"}, extra...)
 }
 
+func skipIfWindowsShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("test fixture requires a POSIX shell")
+	}
+}
+
 func TestServiceRestartRunsStopThenStart(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -54,6 +63,7 @@ func TestServiceRestartRunsStopThenStart(t *testing.T) {
 }
 
 func TestServiceRestartUsesDeclaredRestartCommand(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -77,6 +87,7 @@ func TestServiceRestartUsesDeclaredRestartCommand(t *testing.T) {
 }
 
 func TestServiceRestartFailureExitsLogic(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -97,6 +108,7 @@ func TestServiceRestartFailureExitsLogic(t *testing.T) {
 }
 
 func TestServiceRestartUnknownService(t *testing.T) {
+	skipIfWindowsShell(t)
 	path := writeRestartSpec(t, `"worker":{"start":["true"],"stop":["true"]}`)
 
 	errOut := captureStderr(t, func() {
@@ -110,6 +122,7 @@ func TestServiceRestartUnknownService(t *testing.T) {
 }
 
 func TestServiceRestartRefusesWithoutStopCommand(t *testing.T) {
+	skipIfWindowsShell(t)
 	path := writeRestartSpec(t, `"startonly":{"start":["true"]}`)
 
 	errOut := captureStderr(t, func() {
@@ -143,6 +156,7 @@ func TestServiceRestartRefusesScheduledTask(t *testing.T) {
 // A service whose dependency is down is reported, and the dependency is not
 // restarted behind the operator's back.
 func TestServiceRestartRefusesWhenDependencyIsDown(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -169,6 +183,7 @@ func TestServiceRestartRefusesWhenDependencyIsDown(t *testing.T) {
 
 // The same dependency, reported as running, must not block the restart.
 func TestServiceRestartProceedsWhenDependencyIsUp(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -191,6 +206,7 @@ func TestServiceRestartProceedsWhenDependencyIsUp(t *testing.T) {
 // Readiness is a separate verdict: a restart that succeeds on an unhealthy
 // service is still a failure of the command.
 func TestServiceRestartReportsReadinessSeparately(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -215,6 +231,7 @@ func TestServiceRestartReportsReadinessSeparately(t *testing.T) {
 }
 
 func TestServiceRestartHealthyReadinessSucceeds(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
@@ -234,6 +251,7 @@ func TestServiceRestartHealthyReadinessSucceeds(t *testing.T) {
 // The restart must work against a materialized (v10) spec with modules, since
 // that is how a composed service is reached.
 func TestServiceRestartOnComposedSpec(t *testing.T) {
+	skipIfWindowsShell(t)
 	dir := t.TempDir()
 	testutil.SetHome(t, dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))

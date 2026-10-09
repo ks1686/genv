@@ -545,6 +545,7 @@ func reportApplyRestarts(outcomes []restartOutcome, prefix string) int {
 		switch {
 		case o.PendingError != nil:
 			fprintf(os.Stderr, "%sservice %s: %v\n", prefix, o.Service, o.PendingError)
+			exitCode = exitLogic
 		case o.Err != nil:
 			fprintf(os.Stderr, "%sservice %s: %v\n", prefix, o.Service, o.Err)
 			exitCode = exitLogic

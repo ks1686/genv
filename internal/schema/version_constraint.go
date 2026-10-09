@@ -1,6 +1,9 @@
 package schema
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // MaxVersionConstraintBytes bounds a package version constraint before it is
 // passed to adapters. genv supports only an exact version, "*", or a prefix
@@ -19,7 +22,7 @@ func ValidVersionConstraint(constraint string) bool {
 		return false
 	}
 	for _, r := range constraint {
-		if r <= 0x1f || r == 0x7f || r == ' ' || r == '\t' {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
 			return false
 		}
 	}

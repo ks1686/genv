@@ -3,6 +3,7 @@ package files
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -25,6 +26,9 @@ func TestResolveSourceAndExpandPath(t *testing.T) {
 }
 
 func TestRemovePathAndPermissionHelpers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not portable on Windows")
+	}
 	got := removePath([]string{"a", "b", "a"}, "a")
 	if len(got) != 1 || got[0] != "b" {
 		t.Fatalf("remove=%v", got)

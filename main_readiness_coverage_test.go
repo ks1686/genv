@@ -11,6 +11,14 @@ import (
 )
 
 func TestReportApplyRestartsCoversHumanOutcomes(t *testing.T) {
+	// Pending-record failure alone must fail the human-readable command too.
+	var pendingCode int
+	pendingErr := captureStderr(t, func() {
+		pendingCode = reportApplyRestarts([]restartOutcome{{Service: "pending", PendingError: errors.New("receipt failed")}}, "apply: ")
+	})
+	if pendingCode != exitLogic || !strings.Contains(pendingErr, "receipt failed") {
+		t.Fatalf("pending-only outcome code=%d stderr=%q", pendingCode, pendingErr)
+	}
 	outcomes := []restartOutcome{
 		{Service: "pending", PendingError: errors.New("receipt failed")},
 		{Service: "failed", Err: errors.New("stop failed")},

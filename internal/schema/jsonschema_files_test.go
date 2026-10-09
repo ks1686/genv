@@ -152,7 +152,9 @@ func TestPublishedSchemasListEveryManager(t *testing.T) {
 			if names == nil {
 				names = enumAt(t, firstAnyOf(managers["propertyNames"]))
 			}
-			if len(names) != 0 && !slices.Equal(names, want) {
+			if len(names) == 0 {
+				t.Errorf("schema v%s: managers has no closed built-in manager enum", version)
+			} else if !slices.Equal(names, want) {
 				t.Errorf("schema v%s: managers keys = %v\nwant %v\n(differs: %s)",
 					version, names, want, describeManagerDiff(names, want))
 			}
