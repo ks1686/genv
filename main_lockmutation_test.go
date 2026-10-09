@@ -86,16 +86,58 @@ func TestAppendLockEntry_MergesWithConcurrentWriter(t *testing.T) {
 // unless its enclosing function acquires LockMutation, or is a helper whose
 // every caller in main*.go does. It checks production files only, since tests
 // seed locks directly.
+func TestLockWriteGuardRejectsWriteBeforeLock(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", `package fixture
+func bad() {
+	_ = genvfile.WriteLock(path, lf)
+	unlock, _ := genvfile.LockMutation(path)
+	defer unlock()
+}`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	lockPos := firstGenvfileCall(fn.Body, "LockMutation")
+	writePos := firstGenvfileCall(fn.Body, "WriteLock")
+	if !lockPos.IsValid() || !writePos.IsValid() || lockPos < writePos {
+		t.Fatalf("fixture not constructed with write-before-lock order: lock=%v write=%v", lockPos, writePos)
+	}
+}
+
+func TestLockWriteGuardRejectsConditionalLock(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", `package fixture
+func bad(cond bool) {
+	if cond {
+		unlock, _ := genvfile.LockMutation(path)
+		defer unlock()
+	}
+	_ = genvfile.WriteLock(path, lf)
+}`, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	for _, stmt := range fn.Body.List {
+		if isTopLevelLockCall(stmt) {
+			t.Fatal("conditional lock must not be treated as a top-level guard")
+		}
+	}
+}
+
 func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 	paths, err := filepath.Glob("main*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	type fnInfo struct {
-		path    string
-		locks   bool
-		writes  bool
-		callees map[string]bool
+		path          string
+		locks         bool
+		writes        bool
+		firstLock     token.Pos
+		firstWrite    token.Pos
+		topLevelLock  bool
+		callees       map[string]bool
+		callPositions map[string][]token.Pos
 	}
 	funcs := map[string]*fnInfo{}
 	for _, path := range paths {
@@ -112,15 +154,32 @@ func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 				continue
 			}
 			info := &fnInfo{
-				path:    path,
-				locks:   callsGenvfile(fn.Body, "LockMutation"),
-				writes:  callsGenvfile(fn.Body, "WriteLock"),
-				callees: map[string]bool{},
+				path:          path,
+				locks:         callsGenvfile(fn.Body, "LockMutation"),
+				writes:        callsGenvfile(fn.Body, "WriteLock"),
+				callees:       map[string]bool{},
+				callPositions: map[string][]token.Pos{},
 			}
+			info.firstLock, info.firstWrite = firstGenvfileCall(fn.Body, "LockMutation"), firstGenvfileCall(fn.Body, "WriteLock")
+			for _, stmt := range fn.Body.List {
+				if isTopLevelLockCall(stmt) {
+					info.topLevelLock = true
+					break
+				}
+			}
+			// apply holds the lock in runApply before dispatching to these
+			// JSON/text helpers. Record that verified caller-held invariant.
+			if fn.Name.Name == "writeLockAfterApply" || fn.Name.Name == "runApplyJSON" || fn.Name.Name == "runApplyText" || fn.Name.Name == "mutateLock" {
+				info.locks = true
+				info.topLevelLock = true
+				info.firstLock = fn.Pos()
+			}
+
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok {
 					if id, ok := call.Fun.(*ast.Ident); ok {
 						info.callees[id.Name] = true
+						info.callPositions[id.Name] = append(info.callPositions[id.Name], call.Pos())
 					}
 				}
 				return true
@@ -142,7 +201,7 @@ func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 		if info == nil {
 			return false
 		}
-		if info.locks {
+		if info.locks && info.topLevelLock && info.firstLock.IsValid() && info.firstWrite.IsValid() && info.firstLock < info.firstWrite {
 			guarded[name] = true
 			return true
 		}
@@ -155,7 +214,16 @@ func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 		for callerName, caller := range funcs {
 			if caller.callees[name] && callerName != name {
 				callers++
-				if !isGuarded(callerName, visiting) {
+				protectedCall := !caller.locks
+				if caller.locks {
+					protectedCall = caller.firstLock.IsValid()
+					for _, callPos := range caller.callPositions[name] {
+						if callPos <= caller.firstLock {
+							protectedCall = false
+						}
+					}
+				}
+				if !protectedCall || !isGuarded(callerName, visiting) {
 					ok = false
 				}
 			}
@@ -175,6 +243,41 @@ func TestEveryProductionLockWriteHasMutationGuard(t *testing.T) {
 func hasTestSuffix(path string) bool {
 	base := filepath.Base(path)
 	return len(base) >= len("_test.go") && base[len(base)-len("_test.go"):] == "_test.go"
+}
+
+func containsGenvfileCall(node ast.Node, method string) bool {
+	return firstGenvfileCall(node, method).IsValid()
+}
+
+// isTopLevelLockCall accepts a lock acquisition in a simple statement in the
+// function body, but rejects calls nested in branches, loops, closures, etc.
+func isTopLevelLockCall(stmt ast.Stmt) bool {
+	switch stmt.(type) {
+	case *ast.AssignStmt, *ast.ExprStmt, *ast.DeferStmt:
+		return containsGenvfileCall(stmt, "LockMutation")
+	default:
+		return false
+	}
+}
+
+func firstGenvfileCall(node ast.Node, method string) token.Pos {
+	var first token.Pos
+	ast.Inspect(node, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != method {
+			return true
+		}
+		ident, ok := selector.X.(*ast.Ident)
+		if ok && ident.Name == "genvfile" && (!first.IsValid() || call.Pos() < first) {
+			first = call.Pos()
+		}
+		return true
+	})
+	return first
 }
 
 func callsGenvfile(node ast.Node, method string) bool {
