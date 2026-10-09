@@ -52,7 +52,7 @@ func TestE2EExternalReleaseLifecycle(t *testing.T) {
 	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/latest" {
-			fmt.Fprint(w, "1.0.0")
+			_, _ = fmt.Fprint(w, "1.0.0")
 			return
 		}
 		_, _ = w.Write(payload)

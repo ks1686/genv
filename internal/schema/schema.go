@@ -209,6 +209,10 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 	if !IsPortableVersion(f.SchemaVersion) {
 		return json.Marshal(alias(f))
 	}
+	// v8File mirrors GenvFile field-for-field; the only difference is
+	// omitempty on Packages. The conversion (rather than a hand-copied
+	// literal) means a new GenvFile field fails to compile here until
+	// someone decides whether a portable spec should carry it.
 	type v8File struct {
 		SchemaVersion string                   `json:"schemaVersion"`
 		Packages      []Package                `json:"packages,omitempty"`
@@ -224,21 +228,7 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Defaults      *TargetBundle            `json:"defaults,omitempty"`
 		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 	}
-	return json.Marshal(v8File{
-		SchemaVersion: f.SchemaVersion,
-		Packages:      f.Packages,
-		Env:           f.Env,
-		Shell:         f.Shell,
-		Services:      f.Services,
-		Files:         f.Files,
-		Hooks:         f.Hooks,
-		Repo:          f.Repo,
-		Updates:       f.Updates,
-		Adapters:      f.Adapters,
-		Modules:       f.Modules,
-		Defaults:      f.Defaults,
-		Targets:       f.Targets,
-	})
+	return json.Marshal(v8File(f))
 }
 
 // AdapterDef is a spec-level command adapter for plugin ecosystems that genv

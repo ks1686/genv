@@ -106,8 +106,7 @@ func TestSpecAdapter_ApplyStatusScanAndUpdates(t *testing.T) {
 		}
 	}
 
-	var statusOut string
-	statusOut = captureStdout(t, func() {
+	statusOut := captureStdout(t, func() {
 		code = run([]string{"status", "--file", specPath, "--lock-file", lockPath, "--target", "linux"})
 	})
 	if code != exitOK {
@@ -148,8 +147,7 @@ func TestSpecAdapter_ApplyStatusScanAndUpdates(t *testing.T) {
 		t.Fatalf("scan should persist prefer:plug for extra@src: %+v", f.Targets["linux"].Packages)
 	}
 
-	var updatesOut string
-	updatesOut = captureStdout(t, func() {
+	updatesOut := captureStdout(t, func() {
 		code = run([]string{"updates", "check", "--file", specPath, "--lock-file", lockPath, "--target", "linux"})
 	})
 	if code != exitOK {

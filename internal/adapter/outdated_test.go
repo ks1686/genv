@@ -450,9 +450,9 @@ func TestFetchNpmLatest_DecodesVersionAndEncodesScopedName(t *testing.T) {
 		gotPath = r.URL.EscapedPath()
 		switch r.URL.Path {
 		case "/@scope/pkg/latest":
-			w.Write([]byte(`{"version": "2.1.0"}`))
+			_, _ = w.Write([]byte(`{"version": "2.1.0"}`))
 		case "/typescript/latest":
-			w.Write([]byte(`{"version": "5.4.2"}`))
+			_, _ = w.Write([]byte(`{"version": "5.4.2"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -488,7 +488,7 @@ func TestFetchPypiLatest_DecodesVersionAndEscapesName(t *testing.T) {
 		gotPath = r.URL.EscapedPath()
 		switch r.URL.Path {
 		case "/pypi/ruff/json":
-			w.Write([]byte(`{"info":{"version":"0.7.0"}}`))
+			_, _ = w.Write([]byte(`{"info":{"version":"0.7.0"}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -520,7 +520,7 @@ func TestFetchCratesLatest_DecodesVersionAndSetsUserAgent(t *testing.T) {
 		gotUA = r.Header.Get("User-Agent")
 		switch r.URL.Path {
 		case "/api/v1/crates/ripgrep":
-			w.Write([]byte(`{"crate":{"max_version":"14.1.0"}}`))
+			_, _ = w.Write([]byte(`{"crate":{"max_version":"14.1.0"}}`))
 		default:
 			http.NotFound(w, r)
 		}

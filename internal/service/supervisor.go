@@ -25,6 +25,12 @@ var (
 	systemctlRun = func(ctx context.Context, args ...string) error {
 		return exec.CommandContext(ctx, "systemctl", args...).Run()
 	}
+	// launchctlOutput is a seam so tests can answer `launchctl print` without
+	// the real binary: a test that shells out to launchctl reads the developer's
+	// session and bootstraps live jobs.
+	launchctlOutput = func(ctx context.Context, args ...string) ([]byte, error) {
+		return scheduledCommandOutput(ctx, "launchctl", args...)
+	}
 )
 
 var launchdLabelRE = regexp.MustCompile(`(?is)<key>\s*Label\s*</key>\s*<string>([^<]*)</string>`)
@@ -46,7 +52,7 @@ func bootoutLaunchd(ctx context.Context, label string) error {
 }
 
 func printLaunchd(ctx context.Context, label string) ([]byte, error) {
-	return scheduledCommandOutput(ctx, "launchctl", "print", launchdPrintTarget(label))
+	return launchctlOutput(ctx, "print", launchdPrintTarget(label))
 }
 
 func launchdJobLoaded(ctx context.Context, label string) bool {

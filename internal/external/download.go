@@ -14,6 +14,16 @@ import (
 
 const defaultMaxArtifactBytes int64 = 512 << 20
 
+// schemeAllowed reports whether a parsed endpoint may be fetched under the
+// transport policy: HTTPS always, plain HTTP only when the recipe opts in
+// explicitly. Anything else (file://, gopher://, a relative URL) is refused.
+func schemeAllowed(u *url.URL, allowInsecure bool) bool {
+	if u.Scheme == "https" {
+		return true
+	}
+	return allowInsecure && u.Scheme == "http"
+}
+
 // DownloadedArtifact is a privately staged and hashed payload.
 type DownloadedArtifact struct {
 	Path   string
@@ -24,7 +34,7 @@ type DownloadedArtifact struct {
 // Download fetches one payload into dir while enforcing transport and size policy.
 func (c Client) Download(ctx context.Context, endpoint string, allowInsecure bool, dir string, maxBytes int64) (DownloadedArtifact, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && !(allowInsecure && u.Scheme == "http")) {
+	if err != nil || u.Host == "" || !schemeAllowed(u, allowInsecure) {
 		return DownloadedArtifact{}, fmt.Errorf("external artifact URL must use HTTPS")
 	}
 	if maxBytes <= 0 {
@@ -38,7 +48,7 @@ func (c Client) Download(ctx context.Context, endpoint string, allowInsecure boo
 	if err != nil {
 		return DownloadedArtifact{}, fmt.Errorf("download external artifact from %s: %w", u.Host, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return DownloadedArtifact{}, fmt.Errorf("download external artifact from %s: HTTP %d", u.Host, resp.StatusCode)
 	}

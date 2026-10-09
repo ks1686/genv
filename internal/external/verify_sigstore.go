@@ -35,10 +35,10 @@ func VerifySigstore(payloadPath, bundlePath, identity, issuer string) error {
 	if err != nil {
 		return fmt.Errorf("open Sigstore artifact: %w", err)
 	}
-	defer payload.Close()
+	defer func() { _ = payload.Close() }()
 	_, err = verifier.Verify(b, verify.NewPolicy(verify.WithArtifact(payload), verify.WithCertificateIdentity(certificateIdentity)))
 	if err != nil {
-		return fmt.Errorf("Sigstore verification failed: %w", err)
+		return fmt.Errorf("sigstore verification failed: %w", err)
 	}
 	return nil
 }

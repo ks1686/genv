@@ -242,13 +242,13 @@ func TestXDGHelpersAndCompleteInternal(t *testing.T) {
 	if code != exitOK || !strings.Contains(out, "git") || !strings.Contains(out, "curl") {
 		t.Errorf("packages complete = %d %q", code, out)
 	}
-	out = captureStdout(t, func() {
+	_ = captureStdout(t, func() {
 		code = completeInternalCmd([]string{"packages", "--file", filepath.Join(dir, "missing.json")})
 	})
 	if code != exitOK {
 		t.Errorf("missing spec during complete = %d", code)
 	}
-	out = captureStdout(t, func() {
+	_ = captureStdout(t, func() {
 		code = completeInternalCmd([]string{"managers"})
 	})
 	if code != exitOK {
@@ -335,10 +335,14 @@ func TestApplyEnvVarsAndShellCfg(t *testing.T) {
 	if lf.Shell == nil {
 		t.Fatal("expected lock shell updated")
 	}
-	if !strings.Contains(captureStdout(t, func() {
+	// The fish note is independent of verbose, so a second, quiet call must
+	// still emit it. (It used to be asserted with an always-true
+	// strings.Contains(out, "") check that could never fail.)
+	noteOut := captureStdout(t, func() {
 		_, _, _ = applyShellCfg(f, lf, false, "")
-	}), "") {
-		// fish note only prints when hasFishEntries; force by keeping fish alias
+	})
+	if !strings.Contains(noteOut, "fish-specific shell entries are not auto-applied") {
+		t.Fatalf("fish note missing with verbose=false: %q", noteOut)
 	}
 	// Ensure fish note path is exercised with verbose false still writing note.
 	out := captureStdout(t, func() {

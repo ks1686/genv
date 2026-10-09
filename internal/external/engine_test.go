@@ -26,7 +26,7 @@ func TestEngineInstallsVerifiedDirectArtifactAndReturnsReceipt(t *testing.T) {
 		switch r.URL.Path {
 		case "/latest.json":
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"version":"1.2.3"}`)
+			_, _ = fmt.Fprint(w, `{"version":"1.2.3"}`)
 		case "/tool-1.2.3":
 			_, _ = w.Write(payload)
 		default:
@@ -76,10 +76,10 @@ func TestEngineLeavesExistingDestinationAfterFailedDetection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
 			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprint(w, "1.0.0")
+			_, _ = fmt.Fprint(w, "1.0.0")
 			return
 		}
-		fmt.Fprint(w, "not executable content")
+		_, _ = fmt.Fprint(w, "not executable content")
 	}))
 	t.Cleanup(server.Close)
 	digestBytes := sha256.Sum256([]byte("not executable content"))
@@ -125,7 +125,7 @@ func TestEngineRunsVerifiedScriptAndStoresUninstallReceipt(t *testing.T) {
 	digestBytes := sha256.Sum256(payload)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			fmt.Fprint(w, "1.2.3")
+			_, _ = fmt.Fprint(w, "1.2.3")
 			return
 		}
 		_, _ = w.Write(payload)
@@ -155,9 +155,9 @@ func TestEngineVerifiesChecksumFileMaterial(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/latest":
-			fmt.Fprint(w, "1.2.3")
+			_, _ = fmt.Fprint(w, "1.2.3")
 		case "/checksums.txt":
-			fmt.Fprint(w, checksums)
+			_, _ = fmt.Fprint(w, checksums)
 		case "/tool":
 			_, _ = w.Write(payload)
 		default:
@@ -188,7 +188,7 @@ func TestEngineLatestVersionUsesMetadataOnly(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		fmt.Fprint(w, "9.9.9")
+		_, _ = fmt.Fprint(w, "9.9.9")
 	}))
 	t.Cleanup(server.Close)
 	pkg := schema.Package{ID: "tool", External: &schema.ExternalRecipe{
@@ -207,7 +207,7 @@ func TestEnginePlanResolvesMetadataWithoutDownloadingArtifact(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if r.URL.Path == "/latest" {
-			fmt.Fprint(w, "1.2.3")
+			_, _ = fmt.Fprint(w, "1.2.3")
 			return
 		}
 		t.Errorf("unexpected download of %s", r.URL.Path)
@@ -234,10 +234,10 @@ func TestEnginePlanResolvesMetadataWithoutDownloadingArtifact(t *testing.T) {
 func TestEngineRejectsUnverifiedInstallWithAssumeYes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			fmt.Fprint(w, "1.0.0")
+			_, _ = fmt.Fprint(w, "1.0.0")
 			return
 		}
-		fmt.Fprint(w, "payload")
+		_, _ = fmt.Fprint(w, "payload")
 	}))
 	t.Cleanup(server.Close)
 	pkg := schema.Package{ID: "tool", External: &schema.ExternalRecipe{

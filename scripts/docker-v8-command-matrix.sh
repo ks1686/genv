@@ -521,6 +521,8 @@ run_matrix() {
 	assert_ok "service start" "$code" "$out$err"
 	run service status --file "$SPEC" --target arch pulse
 	assert_ok "service status" "$code" "$out$err"
+	run service restart --file "$SPEC" --target arch pulse
+	assert_ok "service restart" "$code" "$out$err"
 	run service stop --file "$SPEC" --target arch pulse
 	assert_ok "service stop" "$code" "$out$err"
 	run service ls --file "$SPEC" --target arch

@@ -88,7 +88,7 @@ func (e Engine) Install(ctx context.Context, pkg schema.Package) (Installed, err
 	if err != nil {
 		return Installed{}, fmt.Errorf("create external staging directory: %w", err)
 	}
-	defer os.RemoveAll(stagingDir)
+	defer func() { _ = os.RemoveAll(stagingDir) }()
 	artifact, err := e.Client.Download(ctx, asset.URL, recipe.AllowInsecureHTTP, stagingDir, 0)
 	if err != nil {
 		return Installed{}, err

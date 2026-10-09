@@ -1,6 +1,6 @@
 # Composable, verified environments
 
-Status: design baseline for implementation planning; implementation not started.
+Status: **M1 (local composition) and M2 (verified service changes) shipped in v4.7.0.** M3–M5 remain separately scoped follow-up milestones; this document records their boundaries, not an approval to implement them.
 Date: 2026-10-06
 
 ## Goal and boundaries

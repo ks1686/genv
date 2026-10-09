@@ -44,6 +44,7 @@ var registeredHelpCommands = [][]string{
 	{"service", "list"},
 	{"service", "start"},
 	{"service", "stop"},
+	{"service", "restart"},
 	{"service", "status"},
 	{"files"},
 	{"files", "adopt"},

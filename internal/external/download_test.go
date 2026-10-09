@@ -13,7 +13,7 @@ import (
 
 func TestDownloadStagesPrivateArtifactAndHashesIt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "payload")
+		_, _ = fmt.Fprint(w, "payload")
 	}))
 	t.Cleanup(server.Close)
 	dir := t.TempDir()
@@ -39,7 +39,7 @@ func TestDownloadStagesPrivateArtifactAndHashesIt(t *testing.T) {
 
 func TestDownloadRejectsOversizedArtifact(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "too large")
+		_, _ = fmt.Fprint(w, "too large")
 	}))
 	t.Cleanup(server.Close)
 	_, err := (Client{HTTPClient: server.Client()}).Download(context.Background(), server.URL, true, t.TempDir(), 3)

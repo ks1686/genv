@@ -96,11 +96,12 @@ func TestServiceCLIUsageErrors(t *testing.T) {
 		args []string
 	}{
 		{"missing subcommand", []string{"service"}},
-		{"unknown subcommand", []string{"service", "restart"}},
+		{"unknown subcommand", []string{"service", "bounce"}},
 		{"add missing name", []string{"service", "add", "--file", path, "--start", "true"}},
 		{"add missing start", []string{"service", "add", "missing-start", "--file", path}},
 		{"remove missing name", []string{"service", "remove", "--file", path}},
 		{"start missing name", []string{"service", "start", "--file", path}},
+		{"restart missing name", []string{"service", "restart", "--file", path}},
 		{"stop missing name", []string{"service", "stop", "--file", path}},
 		{"status missing name", []string{"service", "status", "--file", path}},
 	}

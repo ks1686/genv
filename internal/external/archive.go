@@ -126,7 +126,7 @@ func stageZip(archivePath, staging string, strip int, wanted map[string]schema.E
 	if err != nil {
 		return nil, err
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 	var out []stagedArchiveFile
 	seen := make(map[string]bool)
 	for _, entry := range zr.File {
@@ -164,7 +164,7 @@ func stageTar(archivePath, staging string, strip int, wanted map[string]schema.E
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var reader io.Reader = f
 	switch compression {
 	case "gzip":
@@ -172,7 +172,7 @@ func stageTar(archivePath, staging string, strip int, wanted map[string]schema.E
 		if err != nil {
 			return nil, err
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		reader = gz
 	case "xz":
 		xzReader, err := xz.NewReader(f)
@@ -203,7 +203,10 @@ func stageTar(archivePath, staging string, strip int, wanted map[string]schema.E
 		if err != nil {
 			return nil, err
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA && header.Typeflag != tar.TypeDir {
+		// archive/tar normalizes the legacy TypeRegA ('\x00') typeflag to
+		// TypeReg or TypeDir before returning a header, so only the modern
+		// flags can still arrive here.
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeDir {
 			return nil, fmt.Errorf("archive entry %q has unsafe type", header.Name)
 		}
 		spec, selected := wanted[name]
@@ -282,7 +285,7 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

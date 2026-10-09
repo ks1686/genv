@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.1.0+) — schema **v7** PowerShell parity, schema **v8** portable multi-target configs.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.7.0) — schema **v10** local module composition and verified dependency-aware service changes. Schema **v8** portable multi-target configs and schema **v9** external releases remain supported.
 
 ```bash
 genv add git                          # track + install
@@ -361,7 +361,7 @@ On macOS and Linux, `genv apply` renders the template (`__HOME__` and the other 
 
 On Windows, `scheduled_task` renders the Task Scheduler definition itself — no template file — and registers it with `schtasks`. `action` must be an absolute path (Task Scheduler does not search `PATH`); `trigger` is `logon` (default), `boot`, `daily` or `weekly`, with `at` (`HH:MM`) required for the last two. The default `user` principal registers without elevation.
 
-`genv service status syncthing` reads supervisor state. Removing the service from the spec unloads it and deletes the unit file or unregisters the task. Declaring a backend for a platform you are not on is skipped, not an error, so one spec can target several. See [SCHEMA.md](SCHEMA.md#v4--services).
+`genv service status syncthing` reads supervisor state. `genv service restart syncthing` is the safe imperative counterpart: it uses `brew services restart`, launchd re-bootstrap, `systemctl --user restart`, a declared `restart` argv, or a stop-then-start fallback as appropriate. A scheduled Task is a trigger rather than a resident process, so restart refuses it. For a service with schema-v10 `requires`, restart refuses before touching anything when a dependency is down; it never restarts dependencies as an unexpected side effect. A declared `health_check` is run after the restart and makes the command fail if the service is not ready. Removing the service from the spec unloads it and deletes the unit file or unregisters the task. Declaring a backend for a platform you are not on is skipped, not an error, so one spec can target several. See [SCHEMA.md](SCHEMA.md#v4--services).
 
 ### Dependency-aware service changes (schema v10)
 

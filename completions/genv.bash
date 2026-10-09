@@ -268,7 +268,7 @@ _genv() {
 		local svc_sub=""
 		for ((i = 1; i < ${#COMP_WORDS[@]}; i++)); do
 			case "${COMP_WORDS[i]}" in
-			add | remove | rm | list | ls | start | stop | status)
+			add | remove | rm | list | ls | start | stop | restart | status)
 				svc_sub="${COMP_WORDS[i]}"
 				break
 				;;
@@ -278,7 +278,7 @@ _genv() {
 			if [[ "${cur}" == -* ]]; then
 				opts="--file"
 			else
-				mapfile -t COMPREPLY < <(compgen -W "add remove rm list ls start stop status" -- "${cur}")
+				mapfile -t COMPREPLY < <(compgen -W "add remove rm list ls start stop restart status" -- "${cur}")
 				return 0
 			fi
 		else
@@ -286,7 +286,7 @@ _genv() {
 			add) opts="--file --start --stop --restart --status --brew-formula --launchd-plist --systemd-unit --target" ;;
 			remove | rm) opts="--file --target" ;;
 			list | ls) opts="--file --target" ;;
-			start | stop | status) opts="--file --target" ;;
+			start | stop | restart | status) opts="--file --target" ;;
 			*) opts="--file" ;;
 			esac
 		fi

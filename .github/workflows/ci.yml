@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
@@ -11,3 +14,26 @@ jobs:
   # than a hand-copied subset.
   test:
     uses: ./.github/workflows/test.yml
+
+  # Linters that need no platform matrix. `make lint` is the same command the
+  # Makefile runs locally, so a finding here is reproducible on a laptop; the
+  # config in .golangci.yml pins the linter set, and the action version is
+  # pinned to the same major/minor used during development.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --timeout=5m

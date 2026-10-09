@@ -15,7 +15,7 @@ func TestResolveGitHubReleaseSelectsStableAndNormalizesTag(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `[
+		_, _ = fmt.Fprint(w, `[
           {"id":43,"tag_name":"v2.0.0-beta.1","prerelease":true,"draft":false,"assets":[]},
           {"id":42,"tag_name":"v1.2.3","prerelease":false,"draft":false,"assets":[{"name":"tool.tar.gz","browser_download_url":"https://example.test/tool.tar.gz","digest":"sha256:abc"}]}
         ]`)
@@ -40,7 +40,7 @@ func TestResolveGitHubReleaseSelectsStableAndNormalizesTag(t *testing.T) {
 func TestResolveHTTPReleaseFromJSONPointer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"release":{"version":"3.4.5"},"sha256":"abc"}`)
+		_, _ = fmt.Fprint(w, `{"release":{"version":"3.4.5"},"sha256":"abc"}`)
 	}))
 	t.Cleanup(server.Close)
 
@@ -69,7 +69,7 @@ func TestResolveHTTPReleaseRejectsHTMLAndOversizedResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", tc.contentType)
-				fmt.Fprint(w, tc.body)
+				_, _ = fmt.Fprint(w, tc.body)
 			}))
 			defer server.Close()
 			_, err := (Client{HTTPClient: server.Client(), MaxMetadataBytes: tc.max}).Resolve(context.Background(), schema.ExternalSource{

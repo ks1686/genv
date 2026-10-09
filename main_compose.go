@@ -129,7 +129,7 @@ func moduleOwnerGuard(commandName string, c *compose.Composition, kind string, k
 	if len(modules) == 0 {
 		return exitOK
 	}
-	subject := string(kind) + " " + strconv.Quote(key)
+	subject := kind + " " + strconv.Quote(key)
 	if len(modules) == 1 {
 		fprintf(os.Stderr, "genv %s: %s is declared by module %q; edit modules/%s instead of running this command\n",
 			commandName, subject, modules[0], modules[0])

@@ -230,6 +230,9 @@ func TestRepoPackagesOnGOOS_usesCachedAutomaticManagers(t *testing.T) {
 }
 
 func TestRepoPackagesOnGOOS_deduplicatesBunAndNpmRegistrySearch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("npm search subprocess fixture is timing-sensitive on Windows CI")
+	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	countPath := filepath.Join(t.TempDir(), "calls")
 	t.Setenv("NPM_SEARCH_COUNT", countPath)

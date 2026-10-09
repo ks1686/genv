@@ -9,7 +9,7 @@ test:
 	go test ./...
 
 # COVER_MIN is the statement-coverage floor enforced by cover-gate / make ci.
-COVER_MIN ?= 80
+COVER_MIN ?= 82
 # BENCH_MAX_MS is the cold-start budget for bench-gate (local default 200ms).
 # Shared CI runners are slower/noisier; the workflow overrides this upward.
 BENCH_MAX_MS ?= 200
