@@ -198,8 +198,11 @@ Targets: total ≥ 85%, every non-test-helper package ≥ 75%. Then lock it in.
 **Outcome:** total 80.7% → 83.2% (floor raised 80 → 82; Linux CI measures ~0.8 pt below macOS, so 82 keeps headroom); `adapter` 83.5 → 86.6,
 `external` 69.3 → 73.2, `selfpath` 72 → 84, `pull` 73 → 80+, `files` 77 → 78,
 `migrate` 78.8 → 80.8. The 85% / 75%-per-package stretch targets were not fully
-met (`external` stays below 75: sigstore/openpgp/minisign verify and `sudo`
-elevation need real keys or a real sudo). Recorded as a known limit.
+met (`external` stays below 75: sigstore/minisign verification and `sudo`
+elevation need live credentials or a real sudo). OpenPGP verification uses
+ProtonMail's maintained `go-crypto` fork; the govulncheck x/crypto advisory
+(GO-2026-5932) is limited to the unused x/crypto/openpgp package. Recorded as
+a known, unreachable module advisory.
 
 - [x] `internal/external` (69.3%) first: archive staging (tar gz/xz/zstd, zip,
   strip, path traversal rejection), download errors, verifier failure paths,
