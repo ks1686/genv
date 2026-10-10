@@ -2,7 +2,7 @@
 
 This document is the **historical** delivery checklist for milestones through v3.0.0, plus release notes for later tags. For current product docs, start at [README.md](README.md) and [CHANGELOG.md](CHANGELOG.md).
 
-**Shipped:** [v4.0.0](https://github.com/ks1686/genv/releases/tag/v4.0.0) — schema v7 PowerShell parity and schema v8 portable multi-target configs (`defaults` / `targets`, migrate/export/map, foreign-lock gate). New major work should land as issues/proposals before becoming committed milestones.
+**Current release:** [v4.7.2](https://github.com/ks1686/genv/releases/tag/v4.7.2). The checklist below is historical through the v3 milestones. v4.0.0 shipped schema v8 portable targets; v4.7.0 shipped schema v10 local modules and verified service changes; v4.7.1 added `genv service restart`; v4.7.2 fixed `genv clean` on a busy uv cache and an empty pip cache. New major work should land as issues/proposals before becoming committed milestones.
 
 ## Status Legend
 
