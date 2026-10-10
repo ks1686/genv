@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.7.0) — schema **v10** local module composition and verified dependency-aware service changes. Schema **v8** portable multi-target configs and schema **v9** external releases remain supported.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.7.1) — schema **v10** local module composition, verified dependency-aware service changes, and `genv service restart`. Schema **v8** portable multi-target configs and schema **v9** external releases remain supported.
 
 ```bash
 genv add git                          # track + install
