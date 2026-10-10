@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.7.1 - 2026-10-09
+
+Patch: service restart, stricter spec validation, and a clean lint gate.
+
 ### Added
 
 - **`genv service restart <name>`** — repair one declared service without

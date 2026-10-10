@@ -1,6 +1,6 @@
 # Plan: post-v4.7.0 readiness hardening
 
-Created: 2026-10-08 · Status: **in progress** (owner: "follow the full plan until
+Created: 2026-10-08 · Status: **complete — published as v4.7.1 on 2026-10-09** (owner: "follow the full plan until
 it's complete as a release on GitHub") · Fast-path: no
 Baseline: `main` @ `9184917` (v4.7.0 tagged and released 2026-10-08).
 Worktree: `~/Documents/Worktrees/genv/readiness-hardening`.
@@ -45,6 +45,17 @@ Package coverage below 80% (`go test -cover ./...`): `internal/testutil` 38.9,
 `internal/external` 69.3, `internal/selfpath` 72.1, `internal/pull` 72.9,
 `internal/files` 77.0, `internal/migrate` 78.8. Root package 80.7.
 74 functions at 0% (list: `go tool cover -func=coverage.out | awk '$NF=="0.0%"'`).
+
+## Final (v4.7.1, merge `dc18277`)
+
+| Gate | Result |
+| ---- | ------ |
+| `make ci` / release preflight | pass — floor 82; recorded local total 83.2% before the last review fixes; cold-start under 200ms |
+| `make lint` | pass — 0 findings, and CI gates it |
+| `govulncheck ./...` | 0 reachable; unused `GO-2026-5932` remains in `x/crypto/openpgp` |
+| Hermetic e2e (`TestE2ECompose`, `TestFiles_`) | pass on the release commit |
+| `TestE2EBrew/clean` | fail, exit 4 — same failure on v4.7.0 `9184917` |
+| GitHub Release + Homebrew cask + AUR | published `v4.7.1` |
 
 ## Tasks
 
@@ -231,21 +242,37 @@ a known, unreachable module advisory.
 ### Task 7 — final verification and publish  (`release:` …)
 
 - [x] `make ci` (83.2% vs floor 82, bench 102ms), `make lint` 0 issues, `govulncheck` 0 reachable, `actionlint` clean.
-- [ ] `go test -tags integration ./e2e/...` for the hermetic subsets.
+- [x] `go test -tags integration -run 'TestE2ECompose|TestFiles_' ./e2e/` passed on `dc18277` (2026-10-10, 5.6s). Full `./e2e/...` still hits the pre-existing `TestE2EBrew/clean` failure (exit 4), reproduced on unchanged v4.7.0 `main` at `9184917`.
 - [x] `make integration-v8` equivalent: 108 PASS / 0 FAIL on Arch amd64 (includes `service restart`).
 - [x] Add a CHANGELOG `Unreleased` section summarizing user-visible changes
   (validation tightening, size caps, schema files, `genv service restart`).
-- [ ] Update this plan's status line and the baseline table with final numbers.
-- [ ] Security pass on the pushed range: `gitleaks`, `trivy fs`, `semgrep
-  p/gosec`, `govulncheck ./...`, `actionlint`. Triage everything new; note
-  anything that also exists on `main` as pre-existing, but fix it if it is cheap.
-- [ ] Triage **every** review comment on the PR (Copilot or human): verify each
+- [x] Update this plan's status line and the baseline table with final numbers.
+- [x] Security pass on the release commit: `gitleaks` found no leaks; `semgrep
+  p/gosec` and `actionlint` were clean; `govulncheck ./...` reported 0 reachable
+  vulnerabilities. `trivy fs` reports only `GO-2026-5932` in unused
+  `golang.org/x/crypto/openpgp` (genv uses ProtonMail's `go-crypto` fork). Same
+  advisory was already triaged before the tag.
+- [x] Triage **every** review comment on the PR (Copilot or human): verify each
   against the code rather than trusting it, fix the real ones, reply with the
-  evidence, and re-push. Re-run the review gate before every push.
-- [ ] Follow CI to green, merge, tag (patch bump, e.g. `v4.7.1`), and let the
+  evidence, and re-push. Re-run the review gate before every push. Valid
+  findings were fixed before merge (manager enum, Unicode whitespace, Windows
+  POSIX skips, pending-record `exitLogic`, lock-write dominance). Leftover
+  Copilot threads on PR #220 are non-blocking comments; Windows CI on head
+  `01bdf9e` passed.
+- [x] Follow CI to green, merge, tag (patch bump, e.g. `v4.7.1`), and let the
   release workflow publish. Homebrew + GitHub Release = release success; if AUR
-  fails, repair AUR only, do not re-run the whole Release workflow.
-- [ ] Report the result with the final numbers.
+  fails, repair AUR only, do not re-run the whole Release workflow. PR #220
+  merged as `dc18277`. Tag `v4.7.1` published via run
+  [37969968850](https://github.com/ks1686/genv/actions/runs/37969968850):
+  preflight, GoReleaser, and AUR all succeeded. Homebrew cask
+  `ks1686/homebrew-tap` is `4.7.1`.
+- [x] Report the result with the final numbers. See the result note below.
+
+**Result:** [v4.7.1](https://github.com/ks1686/genv/releases/tag/v4.7.1).
+Coverage floor stays 82 (recorded local total 83.2% before the final review
+fixes; release preflight cover-gate passed on Ubuntu). `make lint` was 0
+issues. Cold-start stayed under the 200ms budget. `TestE2EBrew/clean` remains
+a pre-existing Homebrew integration failure, not a regression from this slice.
 
 ## Owner decisions (record answers here)
 
