@@ -48,6 +48,10 @@ publishes the AUR packages.
 | `v4.5.0` | Hook changed/skipped/error contract; status/export `--verify`; export manager-not-supported FPs; help no longer hardcodes schemaVersion 8; unmatched skip/only config-drift WARN |
 | `v4.5.1` | Template backup:true without --force (#190); uv git URL tool-name matching (#191) |
 | `v4.5.2` | Correctness and hardening pass over #195–#211: private spec writes, shell-wrapper and export/pull escape fixes, `apply --json` consent gate, lock-mutation coverage, bounded subprocess waits, WUA result-code separation, systemd `%` escaping, unique service unit names |
+| `v4.6.0` | Schema block for Windows `services.*.scheduled_task` |
+| `v4.7.0` | Schema v10 local modules and verified service changes |
+| `v4.7.1` | `genv service restart`, stricter version and spec-size validation, lint gate |
+| `v4.7.2` | `genv clean` skips a busy uv cache and an empty pip cache |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
