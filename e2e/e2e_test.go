@@ -790,9 +790,9 @@ func runE2ESuite(t *testing.T, cfg suiteConfig) {
 	})
 
 	t.Run("clean", func(t *testing.T) {
-		_, _, code := r.rawExec("", "clean")
+		stdout, stderr, code := r.rawExec("", "clean")
 		if code != 0 {
-			t.Errorf("genv clean: exit %d, want 0", code)
+			t.Errorf("genv clean: exit %d, want 0\nstdout: %s\nstderr: %s", code, stdout, stderr)
 		}
 	})
 }

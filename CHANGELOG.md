@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `genv clean` no longer waits uv's default 300s and then fails when another uv
+  process holds the cache lock. The wait is capped at one second unless
+  `UV_LOCK_TIMEOUT` is already set, and a busy cache is skipped with a warning.
+  The same cap applies when apply or remove runs `uv cache clean`.
+- `pip cache purge` exiting 1 with "No matching packages" (an empty cache) is
+  reported as already empty instead of failing `genv clean`.
+
 ## v4.7.1 - 2026-10-09
 
 Patch: service restart, stricter spec validation, and a clean lint gate.

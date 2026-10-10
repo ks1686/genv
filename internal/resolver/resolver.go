@@ -3,6 +3,7 @@
 package resolver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -242,7 +243,9 @@ func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	cmd.WaitDelay = subprocessWaitDelay
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	var stderrCopy bytes.Buffer
+	cmd.Stderr = io.MultiWriter(stderr, &stderrCopy)
+	adapter.ConfigureCacheClean(cmd, args)
 	if runtime.GOOS == "windows" {
 		if _, err := exec.LookPath("git"); err != nil {
 			if dir := adapter.ScoopGitCmdDir(); dir != "" {
@@ -252,6 +255,12 @@ func runSubcmd(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	}
 	err := cmd.Run()
 	slog.Debug("done", "cmd", args[0], "duration", time.Since(start), "err", err)
+	if err != nil {
+		if msg, ok := adapter.CacheCleanWarning(args, stderrCopy.String()); ok {
+			fprintf(stderr, "genv: %s: %s\n", args[0], msg)
+			return nil
+		}
+	}
 	// ErrWaitDelay means the command already exited but a backgrounded
 	// grandchild still held the inherited pipe. The command's own exit status
 	// is the real result.
