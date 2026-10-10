@@ -81,11 +81,26 @@ assert_not_contains() {
 	fi
 }
 
+# fastly.mirror.pkgbuild.com occasionally drops a transaction with
+# "too many errors". One retry is enough; the next attempt hits a live mirror.
+pacman_retry() {
+	local attempt
+	for attempt in 1 2 3; do
+		if "$@"; then
+			return 0
+		fi
+		echo "==> $* failed (attempt ${attempt}/3); retrying" >&2
+		sleep $((attempt * 5))
+	done
+	echo "==> $* failed after 3 attempts" >&2
+	return 1
+}
+
 setup_go_and_tools() {
 	log "==> bootstrap Arch packages + Go"
 	sed -i 's/^CheckSpace/#CheckSpace/; s/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf || true
-	pacman -Syu --noconfirm >/tmp/pacman-syu.log
-	pacman -S --noconfirm base-devel git curl jq tree vim >/tmp/pacman-pkgs.log
+	pacman_retry pacman -Syu --noconfirm >/tmp/pacman-syu.log
+	pacman_retry pacman -S --noconfirm base-devel git curl jq tree vim >/tmp/pacman-pkgs.log
 
 	local goversion
 	goversion="$(grep '^go ' "$ROOT/go.mod" | awk '{print $2}')"
