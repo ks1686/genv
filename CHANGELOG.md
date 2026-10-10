@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.7.2 - 2026-10-10
+
+Patch: `genv clean` no longer fails when the uv cache is busy or the pip cache is already empty.
+
 ### Fixed
 
 - `genv clean` no longer waits uv's default 300s and then fails when another uv

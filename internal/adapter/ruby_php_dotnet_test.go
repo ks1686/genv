@@ -84,9 +84,17 @@ func TestGem_ListForScan_SkipsDefaultAndBundled(t *testing.T) {
   echo 'json (default: 2.3.0, 2.6.1)'
   echo 'nokogiri (1.16.0)'
 fi`)
+	// Default-gem membership comes from the running Ruby, not the "default:"
+	// marker. Stub it so this Mac's RubyGems 4 (which no longer lists json)
+	// cannot change the result.
+	origDefaults := gemDefaultGems
+	gemDefaultGems = func() map[string]bool { return map[string]bool{"json": true} }
 	orig := gemManageable
 	gemManageable = func() bool { return true }
-	t.Cleanup(func() { gemManageable = orig })
+	t.Cleanup(func() {
+		gemManageable = orig
+		gemDefaultGems = origDefaults
+	})
 
 	got, err := Gem{}.ListForScan()
 	if err != nil {

@@ -57,6 +57,11 @@ Package coverage below 80% (`go test -cover ./...`): `internal/testutil` 38.9,
 | `TestE2EBrew/clean` | fail, exit 4 — same failure on v4.7.0 `9184917` |
 | GitHub Release + Homebrew cask + AUR | published `v4.7.1` |
 
+Follow-up, shipped in v4.7.2 (`9a0cec9`): that clean failure was uv waiting 300s
+on a held cache lock, then pip exiting 1 on an already-empty cache. `genv clean`
+now skips a busy uv cache and treats an empty pip cache as success.
+`TestE2EBrew/clean` passed locally in 7.7s on the fix.
+
 ## Tasks
 
 ### Task 1 — `make lint` to zero  (`chore(lint): …`)
@@ -242,7 +247,7 @@ a known, unreachable module advisory.
 ### Task 7 — final verification and publish  (`release:` …)
 
 - [x] `make ci` (83.2% vs floor 82, bench 102ms), `make lint` 0 issues, `govulncheck` 0 reachable, `actionlint` clean.
-- [x] `go test -tags integration -run 'TestE2ECompose|TestFiles_' ./e2e/` passed on `dc18277` (2026-10-10, 5.6s). Full `./e2e/...` still hits the pre-existing `TestE2EBrew/clean` failure (exit 4), reproduced on unchanged v4.7.0 `main` at `9184917`.
+- [x] `go test -tags integration -run 'TestE2ECompose|TestFiles_' ./e2e/` passed on `dc18277` (2026-10-10, 5.6s). At the v4.7.1 tag, full `./e2e/...` still hit `TestE2EBrew/clean` (exit 4), the same failure as unchanged v4.7.0 `9184917`. That failure was fixed in v4.7.2.
 - [x] `make integration-v8` equivalent: 108 PASS / 0 FAIL on Arch amd64 (includes `service restart`).
 - [x] Add a CHANGELOG `Unreleased` section summarizing user-visible changes
   (validation tightening, size caps, schema files, `genv service restart`).

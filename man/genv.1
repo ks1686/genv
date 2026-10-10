@@ -81,7 +81,11 @@ Manage env vars, aliases, user services, and file adopt.
 Print or install bash, zsh, fish, or powershell completion.
 .TP
 .B clean [\\-\\-dry\\-run]
-Clear detected package-manager caches.
+Clear detected package-manager caches. A busy uv cache is skipped after a
+one-second wait unless
+.B UV_LOCK_TIMEOUT
+is already set. An empty pip cache is reported as already empty and does not
+fail the command. A real uv or pip error still fails it.
 .TP
 .B version
 Show genv build version information.
@@ -96,12 +100,15 @@ A service may declare
 and
 .BR health_check .
 .B requires
-is an ordering constraint between services. B watch
+is an ordering constraint between services.
+.B watch
 names packages, file destinations, or services whose change may require a
 restart; they are different relationships and are never conflated.
 .B restart_policy
-is B never
-(the default) or B ifRunning.
+is
+.B never
+(the default) or
+.B ifRunning .
 .B health_check
 is a readiness probe run after an authorized start or restart. It never runs
 from
