@@ -71,9 +71,21 @@ jobs:
 
               sed -i "s/^CheckSpace/#CheckSpace/; s/^#DisableSandbox/DisableSandbox/" /etc/pacman.conf
 
+              pacman_retry() {
+                local attempt
+                for attempt in 1 2 3; do
+                  if "$@"; then
+                    return 0
+                  fi
+                  echo "==> $* failed (attempt ${attempt}/3); retrying" >&2
+                  sleep $((attempt * 5))
+                done
+                return 1
+              }
+
               echo "==> Updating system and installing build dependencies"
-              pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel git curl sudo
+              pacman_retry pacman -Syu --noconfirm
+              pacman_retry pacman -S --noconfirm base-devel git curl sudo
 
               echo "==> Installing Go from go.dev"
               GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
@@ -130,9 +142,21 @@ jobs:
 
               sed -i "s/^CheckSpace/#CheckSpace/; s/^#DisableSandbox/DisableSandbox/" /etc/pacman.conf
 
+              pacman_retry() {
+                local attempt
+                for attempt in 1 2 3; do
+                  if "$@"; then
+                    return 0
+                  fi
+                  echo "==> $* failed (attempt ${attempt}/3); retrying" >&2
+                  sleep $((attempt * 5))
+                done
+                return 1
+              }
+
               echo "==> Updating system and installing build dependencies"
-              pacman -Syu --noconfirm
-              pacman -S --noconfirm base-devel git curl sudo
+              pacman_retry pacman -Syu --noconfirm
+              pacman_retry pacman -S --noconfirm base-devel git curl sudo
 
               echo "==> Installing Go from go.dev"
               GOVERSION=$(grep "^go " /host-workspace/go.mod | awk "{print \$2}")
