@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
@@ -47,8 +48,16 @@ func runForegroundCommand(argv []string) error {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	var stderr bytes.Buffer
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	adapter.ConfigureCacheClean(cmd, argv)
+	err := cmd.Run()
+	if err != nil {
+		if msg, ok := adapter.CacheCleanWarning(argv, stderr.String()); ok {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+	}
+	return err
 }
 
 //go:embed completions/genv.bash
@@ -3979,8 +3988,14 @@ func cleanCmd(args []string) int {
 			c := exec.Command(cleanCmd[0], cleanCmd[1:]...)
 			c.Stdin = os.Stdin
 			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
+			var stderr bytes.Buffer
+			c.Stderr = io.MultiWriter(os.Stderr, &stderr)
+			adapter.ConfigureCacheClean(c, cleanCmd)
 			if err := c.Run(); err != nil {
+				if msg, ok := adapter.CacheCleanWarning(cleanCmd, stderr.String()); ok {
+					fprintf(os.Stderr, "genv clean: %s: %s\n", mgr.Name(), msg)
+					continue
+				}
 				fprintf(os.Stderr, "genv clean: %s: %v\n", mgr.Name(), err)
 				exitCode = exitLogic
 			}
