@@ -283,7 +283,7 @@ Managed links are compared by resolved path, so a relative link pointing at the 
 | `init` / `edit` | Wizard / `$EDITOR` |
 | `env` / `shell` / `service` / `files` | Env vars, aliases, user services (`launchd` / `systemd` templates, Windows `scheduled_task`), `files adopt` |
 | `completion` | `bash` / `zsh` / `fish` / `powershell` |
-| `clean` | Clear detected manager caches |
+| `clean` | Clear detected manager caches. A busy uv cache is skipped (one-second wait unless `UV_LOCK_TIMEOUT` is set). An empty pip cache is not a failure |
 | `version` / `help` | Build info / usage |
 
 ### Shell completions
