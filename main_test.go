@@ -20,6 +20,7 @@ import (
 
 	"github.com/ks1686/genv/internal/adapter"
 	"github.com/ks1686/genv/internal/genvfile"
+	"github.com/ks1686/genv/internal/host"
 	"github.com/ks1686/genv/internal/resolver"
 	"github.com/ks1686/genv/internal/schema"
 	"github.com/ks1686/genv/internal/service"
@@ -84,6 +85,15 @@ func TestMain(m *testing.M) {
 	// apt-get upgrade, fwupdmgr, or Windows Update COM. Do not shadow pwsh
 	// itself — lifecycle hooks on Windows need the real engine.
 	upgradeLookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	// Pin a supported target when the host cannot be classified (for example
+	// Debian or Fedora). Without this, CLI tests that resolve a target fail on
+	// any host that is not macOS, Windows, Arch, or Ubuntu-like. Tests that
+	// exercise classification set GENV_TARGET themselves.
+	if os.Getenv("GENV_TARGET") == "" {
+		if _, err := host.Classify(); err != nil {
+			_ = os.Setenv("GENV_TARGET", "ubuntu")
+		}
+	}
 	os.Exit(m.Run())
 }
 

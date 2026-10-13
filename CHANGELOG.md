@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - Writing `genv.json` through a symlink (for example a spec kept in a
   dotfiles checkout) now updates the link target instead of replacing the
   symlink with a regular file.
+- The root test suite pins `GENV_TARGET=ubuntu` when the host cannot be
+  classified, so `go test ./...` passes on Debian, Fedora, and other
+  unclassified Linux hosts instead of failing CLI tests that resolve a target.
 
 ## v4.7.3 - 2026-10-13
 
