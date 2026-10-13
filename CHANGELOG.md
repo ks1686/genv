@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
   `workflow_dispatch` inputs through environment variables instead of
   interpolating them into shell scripts.
 
+### Changed
+
+- The Homebrew cask description is shorter and platform-neutral so the
+  generated cask passes `brew style`.
+
 ## v4.7.2 - 2026-10-10
 
 Patch: `genv clean` no longer fails when the uv cache is busy or the pip cache is already empty.
