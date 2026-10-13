@@ -3807,6 +3807,21 @@ func TestBuildEditorCmd(t *testing.T) {
 		{"/bin/sh -c 'rm -rf /'", "test.json", true, "", nil},
 	}
 
+	// Qualified paths resolve through PATH, so the "/usr/bin/vim" and
+	// "/usr/bin/nano" rows depend on those editors being installed. Put stub
+	// editors first on PATH so the table does not depend on the host.
+	stubDir := t.TempDir()
+	for _, name := range []string{"vim", "nano"} {
+		stub := filepath.Join(stubDir, name)
+		if runtime.GOOS == "windows" {
+			stub += ".exe"
+		}
+		if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write stub editor: %v", err)
+		}
+	}
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	for _, tc := range tests {
 		t.Run(tc.editor, func(t *testing.T) {
 			cmd, err := buildEditorCmd(tc.editor, tc.file)
