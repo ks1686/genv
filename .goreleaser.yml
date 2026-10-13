@@ -88,6 +88,12 @@ homebrew_casks:
     description: "Track, sync, and reproduce your software environment across machines"
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
+    # The archives already bundle completions/ (see archives.files); link
+    # them into Homebrew's completion directories.
+    completions:
+      bash: completions/genv.bash
+      zsh: completions/genv.zsh
+      fish: completions/genv.fish
     # PreferStable makes a Caskroom reload unnecessary: modern
     # `genv updates start` registers a PATH-stable brew prefix bin path,
     # so launchd does not pin a versioned Caskroom binary. GoReleaser's
