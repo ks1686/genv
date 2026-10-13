@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.7.3 - 2026-10-13
+
+Patch: Go 1.26.9 standard library security fixes, a hardened release workflow, and Homebrew shell completions.
+
 ### Security
 
 - The release workflow pins every action to a full commit SHA, drops the
