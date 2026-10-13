@@ -4,7 +4,7 @@ Track, sync, and reproduce your software environment across **macOS**, **Windows
 
 `genv` is a thin layer over the package managers you already use. Desired state lives in one git-friendly `genv.json`. Applied state lives in a machine-local lock file. Run `genv apply` and the machine matches the spec.
 
-**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.7.2) — schema **v10** local module composition, verified dependency-aware service changes, and `genv service restart`. `genv clean` skips a busy uv cache and an empty pip cache. Schema **v8** portable multi-target configs and schema **v9** external releases remain supported.
+**Current release:** [latest](https://github.com/ks1686/genv/releases/latest) (v4.7.3): schema **v10** local module composition, verified dependency-aware service changes, and `genv service restart`. v4.7.3 builds with Go 1.26.9 for standard library security fixes, and the Homebrew cask now installs shell completions. Schema **v8** portable multi-target configs and schema **v9** external releases remain supported.
 
 ```bash
 genv add git                          # track + install
@@ -31,7 +31,7 @@ genv map --target arch                # assist-only manager suggestions
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
 ```bash
-curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.7.2_linux_amd64.tar.gz
+curl -Lo genv.tar.gz https://github.com/ks1686/genv/releases/latest/download/genv_4.7.3_linux_amd64.tar.gz
 tar -xzf genv.tar.gz
 sudo mv genv /usr/local/bin/
 genv version
@@ -50,7 +50,7 @@ The bucket is self-hosted (not Scoop extras). `scoop install genv` needs a root
 **Windows (PowerShell zip):**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.7.2_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.7.3_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .
 # put genv.exe on PATH, then:
 genv version

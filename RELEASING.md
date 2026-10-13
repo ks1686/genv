@@ -52,6 +52,7 @@ publishes the AUR packages.
 | `v4.7.0` | Schema v10 local modules and verified service changes |
 | `v4.7.1` | `genv service restart`, stricter version and spec-size validation, lint gate |
 | `v4.7.2` | `genv clean` skips a busy uv cache and an empty pip cache |
+| `v4.7.3` | Go 1.26.9 stdlib security fixes; SHA-pinned, least-privilege release workflow; Homebrew cask installs bash/zsh/fish completions |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
