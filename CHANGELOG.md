@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
   permissions, stops persisting checkout credentials, and passes
   `workflow_dispatch` inputs through environment variables instead of
   interpolating them into shell scripts.
+- Build with Go 1.26.9, which fixes nine standard library vulnerabilities
+  (net/http, net/textproto, crypto/tls) that govulncheck reports as reachable
+  from genv: GO-2026-6603, -6605, -6607, -6608, -6610, -6611, -6612, -6613, -6617.
 
 ### Changed
 
