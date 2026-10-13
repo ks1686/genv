@@ -84,7 +84,8 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/ks1686/genv"
-    description: "Track, sync, and reproduce your software environment across Linux, macOS, Windows, and WSL2."
+    # brew style: under 80 chars, no trailing period, no platform names.
+    description: "Track, sync, and reproduce your software environment across machines"
     license: MIT
     skip_upload: auto  # skips pre-releases automatically
     # PreferStable makes a Caskroom reload unnecessary: modern
