@@ -1,6 +1,6 @@
 module github.com/ks1686/genv
 
-go 1.26.8
+go 1.26.9
 
 require (
 	aead.dev/minisign v0.3.0
