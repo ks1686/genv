@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Writing `genv.json` through a symlink (for example a spec kept in a
+  dotfiles checkout) now updates the link target instead of replacing the
+  symlink with a regular file.
+
 ## v4.7.3 - 2026-10-13
 
 Patch: Go 1.26.9 standard library security fixes, a hardened release workflow, and Homebrew shell completions.

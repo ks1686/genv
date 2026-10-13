@@ -202,6 +202,15 @@ func writeMarshaled(path string, f *schema.GenvFile) error {
 }
 
 func writeValidated(path string, data []byte) error {
+	// Write through a symlinked spec (for example one managed by a dotfiles
+	// checkout) instead of replacing the link with a regular file.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("resolving %s: %w", path, err)
+		}
+		path = resolved
+	}
 	_, valErrs, parseErr := schema.ParseAndValidate(data)
 	if parseErr != nil {
 		return fmt.Errorf("%w: %s: %w", ErrInvalidFile, path, parseErr)
