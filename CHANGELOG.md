@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Security
+
+- The release workflow pins every action to a full commit SHA, drops the
+  workflow-wide `contents: write` / `id-token: write` grant in favor of per-job
+  permissions, stops persisting checkout credentials, and passes
+  `workflow_dispatch` inputs through environment variables instead of
+  interpolating them into shell scripts.
+
 ## v4.7.2 - 2026-10-10
 
 Patch: `genv clean` no longer fails when the uv cache is busy or the pip cache is already empty.

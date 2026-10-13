@@ -18,9 +18,8 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-  id-token: write
+# No workflow-wide token scope; each job asks for exactly what it uses.
+permissions: {}
 
 jobs:
   # A tag push must not publish binaries that fail their own test suite.
@@ -29,19 +28,29 @@ jobs:
   # workflow CI uses, so release readiness is a fact rather than an assumption.
   preflight:
     uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
 
   release:
     name: Build and publish release
     needs: preflight
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release and upload assets
+      id-token: write # keyless cosign signing of checksums.txt
 
     steps:
       - name: Resolve checkout ref
         id: ref
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          GH_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.mode }}" = "aur-only" ]; then
-            version="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_MODE" = "aur-only" ]; then
+            version="$INPUT_VERSION"
             version="${version#v}"
             if [ -z "$version" ]; then
               echo "aur-only requires the version input" >&2
@@ -50,27 +59,32 @@ jobs:
             # Checkout the workflow branch (latest publish scripts), not the
             # release tag — AUR scripts only need the version string + GitHub
             # release assets, not the tagged tree.
-            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "ref=$GH_REF" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "ref=$GH_REF" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: ${{ steps.ref.outputs.ref }}
 
       - name: Resolve mode and version
         id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
             mode="full"
             version="${GITHUB_REF_NAME#v}"
           else
-            mode="${{ github.event.inputs.mode }}"
-            version="${{ github.event.inputs.version }}"
+            mode="$INPUT_MODE"
+            version="$INPUT_VERSION"
             version="${version#v}"
             if [ -z "$version" ]; then
               version="$(git describe --tags --abbrev=0)"
@@ -87,14 +101,14 @@ jobs:
 
       - name: Set up Go
         if: steps.meta.outputs.mode == 'full'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Install cosign
         if: steps.meta.outputs.mode == 'full'
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
       - name: Run unit test suite
         if: steps.meta.outputs.mode == 'full'
@@ -102,7 +116,7 @@ jobs:
 
       - name: Run GoReleaser
         if: steps.meta.outputs.mode == 'full'
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -128,15 +142,20 @@ jobs:
     needs: release
     if: always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'aur-only'))
     runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
       - name: Resolve version
         id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
             version="${GITHUB_REF_NAME#v}"
           else
-            version="${{ github.event.inputs.version }}"
+            version="$INPUT_VERSION"
             version="${version#v}"
           fi
           if [ -z "$version" ]; then
@@ -152,8 +171,9 @@ jobs:
 
       - name: Checkout
         if: steps.meta.outputs.skip == 'false'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1
           ref: ${{ github.ref }}
 
@@ -161,10 +181,12 @@ jobs:
         if: steps.meta.outputs.skip == 'false'
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
-        run: bash .github/scripts/publish-aur.sh "${{ steps.meta.outputs.version }}"
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: bash .github/scripts/publish-aur.sh "$VERSION"
 
       - name: Publish to AUR (genv, builds from source)
         if: steps.meta.outputs.skip == 'false'
         env:
           AUR_KEY: ${{ secrets.AUR_KEY }}
-        run: bash .github/scripts/publish-aur-src.sh "${{ steps.meta.outputs.version }}"
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: bash .github/scripts/publish-aur-src.sh "$VERSION"
