@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v4.7.4 - 2026-10-13
+
+Patch: `genv.json` writes keep a symlinked spec linked, plus test and CI hardening.
+
 ### Fixed
 
 - Writing `genv.json` through a symlink (for example a spec kept in a
