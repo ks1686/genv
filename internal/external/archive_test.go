@@ -3,9 +3,11 @@ package external
 import (
 	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -65,6 +67,87 @@ func TestInstallArchiveRejectsTraversalEvenWhenNotSelected(t *testing.T) {
 	}, installPolicy{})
 	if err == nil {
 		t.Fatal("installArchive() accepted traversal entry")
+	}
+}
+
+// #239: Cursor Origin's stable tarball ships `origin` as a regular file and
+// `co` as a hard link to it. A recipe that installs only `origin` must skip
+// the link. The link is never extracted, and a recipe that names it still fails.
+func TestInstallArchiveSkipsUnselectedTarHardLink(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "co.tar.gz")
+	writeTarGzHardLinkFixture(t, archivePath)
+	destination := filepath.Join(t.TempDir(), "origin")
+	receipts, restore, finish, err := installArchive(archivePath, "co.tar.gz", schema.ExternalInstall{
+		Type:  "archive",
+		Files: []schema.ExternalInstallFile{{From: "origin", To: destination, Mode: "0755"}},
+	}, installPolicy{})
+	if err != nil {
+		t.Fatalf("installArchive() error: %v", err)
+	}
+	defer restore()
+	if err := finish(); err != nil {
+		t.Fatalf("finish() error: %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != "binary" || len(receipts) != 1 {
+		t.Fatalf("content=%q receipts=%+v error=%v", got, receipts, err)
+	}
+	info, err := os.Lstat(destination)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("installed file mode = %v, error = %v", info, err)
+	}
+}
+
+func TestInstallArchiveRejectsSelectedTarHardLink(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "co.tar.gz")
+	writeTarGzHardLinkFixture(t, archivePath)
+	destination := filepath.Join(t.TempDir(), "co")
+	_, _, _, err := installArchive(archivePath, "co.tar.gz", schema.ExternalInstall{
+		Type:  "archive",
+		Files: []schema.ExternalInstallFile{{From: "co", To: destination}},
+	}, installPolicy{})
+	if err == nil || !strings.Contains(err.Error(), `archive entry "co" has unsafe type`) {
+		t.Fatalf("installArchive() error = %v", err)
+	}
+	if _, statErr := os.Lstat(destination); !os.IsNotExist(statErr) {
+		t.Fatalf("hard link was materialized at %s (stat %v)", destination, statErr)
+	}
+}
+
+func TestInstallArchiveSkipsUnselectedZipSymlink(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "tool.zip")
+	writeZipSymlinkFixture(t, archivePath)
+	destination := filepath.Join(t.TempDir(), "origin")
+	receipts, restore, finish, err := installArchive(archivePath, "tool.zip", schema.ExternalInstall{
+		Type:  "archive",
+		Files: []schema.ExternalInstallFile{{From: "origin", To: destination}},
+	}, installPolicy{})
+	if err != nil {
+		t.Fatalf("installArchive() error: %v", err)
+	}
+	defer restore()
+	if err := finish(); err != nil {
+		t.Fatalf("finish() error: %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != "binary" || len(receipts) != 1 {
+		t.Fatalf("content=%q receipts=%+v error=%v", got, receipts, err)
+	}
+}
+
+func TestInstallArchiveRejectsSelectedZipSymlink(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "tool.zip")
+	writeZipSymlinkFixture(t, archivePath)
+	destination := filepath.Join(t.TempDir(), "co")
+	_, _, _, err := installArchive(archivePath, "tool.zip", schema.ExternalInstall{
+		Type:  "archive",
+		Files: []schema.ExternalInstallFile{{From: "co", To: destination}},
+	}, installPolicy{})
+	if err == nil || !strings.Contains(err.Error(), `archive entry "co" is not a regular file`) {
+		t.Fatalf("installArchive() error = %v", err)
+	}
+	if _, statErr := os.Lstat(destination); !os.IsNotExist(statErr) {
+		t.Fatalf("symlink was materialized at %s (stat %v)", destination, statErr)
 	}
 }
 
@@ -169,6 +252,75 @@ func writeCompressedTarFixture(t *testing.T, path, suffix string) {
 		t.Fatal(err)
 	}
 	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeTarGzHardLinkFixture writes origin as a regular file and co as a hard
+// link to it. The link comes first so a skip cannot depend on entry order.
+func writeTarGzHardLinkFixture(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "co",
+		Typeflag: tar.TypeLink,
+		Linkname: "origin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("binary")
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "origin", Mode: 0o755, Size: int64(len(content)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeZipSymlinkFixture writes origin as a regular file and co as a symlink.
+func writeZipSymlinkFixture(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, err := zw.Create("origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("binary")); err != nil {
+		t.Fatal(err)
+	}
+	hdr := &zip.FileHeader{Name: "co"}
+	hdr.SetMode(os.ModeSymlink | 0o777)
+	link, err := zw.CreateHeader(hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := link.Write([]byte("origin")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.Close(); err != nil {

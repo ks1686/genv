@@ -134,11 +134,17 @@ func stageZip(archivePath, staging string, strip int, wanted map[string]schema.E
 		if err != nil {
 			return nil, err
 		}
-		if entry.Mode()&os.ModeSymlink != 0 || !entry.Mode().IsRegular() && !entry.FileInfo().IsDir() {
+		// Skip members the recipe does not install before the type check.
+		// An unused symlink is never extracted; rejecting it fails archives
+		// that ship one beside the binary (#239).
+		spec, selected := wanted[name]
+		if !selected {
+			continue
+		}
+		if entry.Mode()&os.ModeSymlink != 0 || (!entry.Mode().IsRegular() && !entry.FileInfo().IsDir()) {
 			return nil, fmt.Errorf("archive entry %q is not a regular file or directory", entry.Name)
 		}
-		spec, selected := wanted[name]
-		if !selected || entry.FileInfo().IsDir() {
+		if entry.FileInfo().IsDir() {
 			continue
 		}
 		if seen[name] {
@@ -203,14 +209,20 @@ func stageTar(archivePath, staging string, strip int, wanted map[string]schema.E
 		if err != nil {
 			return nil, err
 		}
+		// Skip members the recipe does not install before the type check.
+		// An unused hard link is never extracted; rejecting it fails archives
+		// that ship one beside the binary (#239).
+		spec, selected := wanted[name]
+		if !selected {
+			continue
+		}
 		// archive/tar normalizes the legacy TypeRegA ('\x00') typeflag to
 		// TypeReg or TypeDir before returning a header, so only the modern
 		// flags can still arrive here.
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeDir {
 			return nil, fmt.Errorf("archive entry %q has unsafe type", header.Name)
 		}
-		spec, selected := wanted[name]
-		if !selected || header.Typeflag == tar.TypeDir {
+		if header.Typeflag == tar.TypeDir {
 			continue
 		}
 		if seen[name] {
