@@ -15,7 +15,7 @@ scoop install genv
 To install the GitHub release zip instead:
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.7.4_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.7.6_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .\genv
 New-Item -ItemType Directory -Force $HOME\bin
 Copy-Item .\genv\genv.exe $HOME\bin\genv.exe

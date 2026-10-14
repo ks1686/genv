@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v4.7.6 - 2026-10-14
+
+Patch: an external archive install accepts a tarball that ships an unused hard link beside the binary.
+
+### Fixed
+
+- External archive installs no longer fail when the archive contains a hard link or symlink the recipe does not install. Path checks still apply to every member. A declared hard link or symlink is still refused and is not written out.
+
 ## v4.7.5 - 2026-10-14
 
 ### Fixed
