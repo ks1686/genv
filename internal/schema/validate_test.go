@@ -1833,6 +1833,14 @@ func TestParseAndValidate_AdaptersRequireV8(t *testing.T) {
 	if !hasValidationField(errs, "adapters") {
 		t.Fatalf("expected adapters to require v8, got: %v", errs)
 	}
+	var messages []string
+	for _, e := range errs {
+		messages = append(messages, e.Message)
+	}
+	joined := strings.Join(messages, "\n")
+	if !strings.Contains(joined, "or newer") {
+		t.Fatalf("adapters error should accept schemaVersion 10 as well as 8 and 9:\n%s", joined)
+	}
 }
 
 func TestParseAndValidate_AdapterRejectsBuiltinName(t *testing.T) {

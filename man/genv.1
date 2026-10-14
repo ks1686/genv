@@ -54,7 +54,7 @@ Upgrade outdated tracked packages. --all upgrades every unconstrained package.
 Managed updates checker.
 .TP
 .B migrate [flags]
-Convert v1–v7 host-scoped specs to schema v8 targets.
+Convert v1–v7 host-scoped specs to schema v8 targets. Refuses v9 and v10.
 .TP
 .B export [flags]
 Write a single-target snapshot plus report.
@@ -63,7 +63,7 @@ Write a single-target snapshot plus report.
 Print assist-only manager mapping suggestions.
 .TP
 .B profile <list|create|switch>
-Named overlays. Refused on schemaVersion 8 specs.
+Named overlays. Refused on portable specs (schemaVersion 8 or newer).
 .TP
 .B pull
 Fetch genv.json and relative files assets from repo.url.

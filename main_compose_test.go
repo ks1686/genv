@@ -318,8 +318,8 @@ func TestStatusCmd_v10_reports_module_packages(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		code := statusCmd([]string{"--file", specPath, "--lock-file", lockPath, "--target", "macos", "--offline", "--json"})
-		if code == exitOK {
-			t.Fatalf("status should exit %d when packages are not applied yet", exitLogic)
+		if code != exitOK {
+			t.Fatalf("status = %d, want %d when module packages are only missing", code, exitOK)
 		}
 	})
 	if !strings.Contains(out, "jq") || !strings.Contains(out, "ripgrep") {

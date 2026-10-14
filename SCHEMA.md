@@ -338,15 +338,17 @@ Removal refuses modified owned files and never guesses files created by scripts.
 
 `genv apply` consults a live inventory (`ListInstalled` per available manager) and adopts already-installed packages into the lock instead of reinstalling. `genv upgrade` remains the only upgrade path. Apply `--timeout` defaults to 10m. `--skip-packages` applies env/shell/files/services without inventorying or planning packages. `--source-root <dir>` resolves `files.links` / `files.templates` and service `launchd.plist` / `systemd.unit` sources against that directory instead of the spec file directory (lock, env, and shell paths stay where `--file` / `--lock-file` / `--state-dir` put them).
 
-Apply injects one source line per rc file (`.zshrc` / `.bashrc`, and the PowerShell profile on Windows) inside a `# genv env` block:
+Apply injects source lines into `.zshrc` / `.bashrc`, and into the PowerShell profile on Windows. POSIX `env.sh` and `shell.sh` share one `# genv env` block, one guarded line each:
 
 ```sh
+# genv env
 if [ -r "$HOME/.config/genv/env.sh" ]; then . "$HOME/.config/genv/env.sh"; fi
+if [ -r "$HOME/.config/genv/shell.sh" ]; then . "$HOME/.config/genv/shell.sh"; fi
 ```
 
 Two properties matter. It is **guarded**, because the fragments are rendered output rather than tracked files and are legitimately absent before the first apply — an unguarded source printed `No such file or directory` on every shell start. The guard is an `if`, not `[ -r x ] && . x`, because the `&&` form leaves a false exit status when the fragment is missing. And it is **`$HOME`-relative** (`$env:USERPROFILE` on Windows), so a single committed rc template is correct on every host. A fragment outside the home directory — a custom `--state-dir` — keeps its absolute path but is still guarded.
 
-genv recognises its own block by marker and **replaces** it rather than appending, so a template carrying another host's path is corrected in place instead of accumulating a second block. Rc injection only happens when the state directory is the default config directory; a custom `--state-dir` leaves your rc files alone.
+genv recognises its own block by marker and **replaces** the whole run of managed source lines rather than appending, so a template carrying another host's path is corrected in place and a later apply does not add a second copy of `env.sh` or `shell.sh`. Rc injection only happens when the state directory is the default config directory; a custom `--state-dir` leaves your rc files alone.
 
 `genv status` probes live managers by default (`--offline` is lock-only). Unlocked but installed packages are `present`. A package that is in both the spec and the lock but whose lock entry records no installed version is reported as `unknown` **only when a live inventory positively contradicts the lock** — the manager was inventoried and does not list the package. The entry's presence is not evidence of an install (that is the state a failed install leaves behind), but a missing version alone proves nothing either: many managers never report a version, and a real install through one of them produces the same version-less entry. So a manager that could not be inventoried, or that does list the package, leaves the entry as `ok`, and `genv status --offline` is always quiet. Apply re-queues exactly the entries `unknown` reports. The version column keeps its own independent meaning — `*` for no spec constraint and no recorded version, `?` for a constraint with no recorded version.
 

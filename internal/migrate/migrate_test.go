@@ -8,6 +8,17 @@ import (
 	"github.com/ks1686/genv/internal/schema"
 )
 
+func TestToV8RefusesV9AndV10(t *testing.T) {
+	for _, ver := range []string{schema.Version9, schema.Version10} {
+		t.Run(ver, func(t *testing.T) {
+			_, _, err := ToV8(&schema.GenvFile{SchemaVersion: ver})
+			if err == nil {
+				t.Fatalf("schemaVersion %s was migrated; v9 and v10 are already portable", ver)
+			}
+		})
+	}
+}
+
 func TestToV8BucketsHostScopedSpec(t *testing.T) {
 	input := parseSpec(t, `{
 	  "schemaVersion": "7",

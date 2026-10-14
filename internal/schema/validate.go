@@ -1759,7 +1759,7 @@ func validateAdapters(f *GenvFile, raw map[string]json.RawMessage, positions map
 		errs = append(errs, ValidationError{
 			Position: positions["adapters"],
 			Field:    "adapters",
-			Message:  fmt.Sprintf("adapters block requires schemaVersion %q or %q (current: %q)", Version8, Version9, f.SchemaVersion),
+			Message:  fmt.Sprintf("adapters block requires schemaVersion %s or newer (current: %q)", Version8, f.SchemaVersion),
 		})
 	}
 	if len(f.Adapters) == 0 {

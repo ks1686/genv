@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ks1686/genv/internal/profile"
@@ -140,6 +141,26 @@ func TestCreate_V8Refused(t *testing.T) {
 	}
 	if _, err := profile.LoadMerged(specPath, "work"); !errors.Is(err, profile.ErrV8ProfilesUnsupported) {
 		t.Fatalf("LoadMerged v8 = %v, want ErrV8ProfilesUnsupported", err)
+	}
+}
+
+func TestCreate_PortableV9AndV10Refused(t *testing.T) {
+	for _, ver := range []string{schema.Version9, schema.Version10} {
+		t.Run(ver, func(t *testing.T) {
+			dir := t.TempDir()
+			specPath := filepath.Join(dir, "genv.json")
+			body := `{"schemaVersion":"` + ver + `","targets":{"macos":{}}}`
+			if err := os.WriteFile(specPath, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := profile.Create(specPath, "work")
+			if !errors.Is(err, profile.ErrV8ProfilesUnsupported) {
+				t.Fatalf("Create v%s = %v, want ErrV8ProfilesUnsupported", ver, err)
+			}
+			if !strings.Contains(err.Error(), "or newer") {
+				t.Fatalf("error names only schemaVersion 8, so a v%s spec looks misdiagnosed: %v", ver, err)
+			}
+		})
 	}
 }
 

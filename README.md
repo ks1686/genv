@@ -26,7 +26,7 @@ genv map --target arch                # assist-only manager suggestions
 | Arch / Manjaro | `paru -S genv` or `yay -S genv` (or `genv-bin`) |
 | Other Linux | GitHub release tarball (see below) |
 | Windows | Scoop (self-hosted bucket) or GitHub release zip (see below) |
-| Any (from source) | `go install github.com/ks1686/genv@latest` (Go 1.24+) |
+| Any (from source) | `go install github.com/ks1686/genv@latest` (Go 1.26.9+) |
 
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 
@@ -275,9 +275,9 @@ Managed links are compared by resolved path, so a relative link pointing at the 
 | `validate` | Validate spec + every registered module + genv-managed agent executables |
 | `upgrade` | Upgrade tracked packages plus OS vendor updates (`--all`, `--only` / leftover IDs, `--skip`, `--only-manager`, `--skip-manager`, `--target`; `--json` wet-run requires `--yes`) |
 | `updates` | Background checker (`check` / `start` / `stop` / `status`; `--target`, `--only`, `--skip`, `--only-manager`, `--skip-manager` on check/start) |
-| `profile` | Named overlays (`list` / `create` / `switch`; refused on schema v8) |
+| `profile` | Named overlays (`list` / `create` / `switch`; refused on portable specs, schema v8 and newer) |
 | `pull` | Fetch spec + file assets from `repo` |
-| `migrate` | v1–v7 → v8 targets (refuses v10) |
+| `migrate` | v1–v7 → v8 targets (refuses v9 and v10; they are already portable) |
 | `export` | Single-target snapshot + report + assets (`--verify` proves live installs) |
 | `map` | Assist-only manager mapping suggestions |
 | `init` / `edit` | Wizard / `$EDITOR` |
@@ -299,7 +299,7 @@ Tab completion on `add` / `adopt` suggests package names from available managers
 
 ### Common flags
 
-- `--file <path>` — spec path (default under `~/.config/genv/`)
+- `--file <path>` — spec path for commands that read `genv.json` (default under `~/.config/genv/`). `updates status` and `updates stop` inspect the scheduler and do not take `--file`.
 - `--lock-file <path>` — lock path (default `genv.lock.json` next to `--file`)
 - `--state-dir <dir>` — directory for lock and env/shell fragments (default: directory of `--file`)
 - `--target <id>` — v8 target for apply / status / upgrade / updates / mutate / export / map / scan

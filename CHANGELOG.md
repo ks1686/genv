@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `genv apply` no longer appends another `env.sh` / `shell.sh` source line on every run when both fragments share the `# genv env` block. A block that already accumulated duplicates collapses on the next apply.
+- `genv status` exits 0 when env, shell, or services are only missing (not yet applied), matching packages. Modified and extra entries still exit 4, in text and JSON.
+- Creating a named profile on schema v9 or v10 reports that portable specs (schemaVersion 8 or newer) refuse profiles. The old text named only schemaVersion 8.
+- An `adapters` block on a legacy spec is rejected with "schemaVersion 8 or newer", which includes v10.
+- Linux, Windows, and WSL install docs name the v4.7.4 release assets. The Windows and WSL `/releases/latest/download/` links were still `genv_4.1.0_...`, which 404 against the current release. The from-source install line matches `go.mod` (Go 1.26.9).
+
 ## v4.7.4 - 2026-10-13
 
 Patch: `genv.json` writes keep a symlinked spec linked, plus test and CI hardening.
