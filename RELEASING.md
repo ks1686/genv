@@ -54,6 +54,8 @@ publishes the AUR packages.
 | `v4.7.2` | `genv clean` skips a busy uv cache and an empty pip cache |
 | `v4.7.3` | Go 1.26.9 stdlib security fixes; SHA-pinned, least-privilege release workflow; Homebrew cask installs bash/zsh/fish completions |
 | `v4.7.4` | Spec writes preserve a symlinked `genv.json`; hermetic tests on unclassified Linux hosts; current upload-artifact |
+| `v4.7.5` | Apply no longer duplicates rc source lines; status treats missing env, shell, and services as not yet applied |
+| `v4.7.6` | External archive install skips an unused hard link or symlink |
 
 Use pre-release suffixes (`-beta.N`, `-rc.N`) for any release that is not fully
 validated. GoReleaser's `skip_upload: auto` setting skips the Homebrew and Scoop
