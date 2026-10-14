@@ -1882,6 +1882,36 @@ func TestStatusCmd_MissingEntry(t *testing.T) {
 	}
 }
 
+func TestStatusCmd_MissingEnvAndShellAreNotDrift(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "genv.json")
+	spec := `{
+	  "schemaVersion":"8",
+	  "targets":{"ubuntu":{
+	    "env":{"EDITOR":{"value":"nvim"}},
+	    "shell":{"aliases":{"ll":{"value":"ls -lah"}}}
+	  }}
+	}`
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"status", "--file", path, "--target", "ubuntu", "--offline"},
+		{"status", "--file", path, "--target", "ubuntu", "--offline", "--json"},
+	} {
+		var code int
+		out := captureStdout(t, func() {
+			code = run(args)
+		})
+		if code != exitOK {
+			t.Fatalf("%v: missing env/shell exited %d, want %d (missing is not drift)\n%s", args, code, exitOK, out)
+		}
+		if !strings.Contains(out, "missing") {
+			t.Fatalf("%v: output should name the unapplied entries:\n%s", args, out)
+		}
+	}
+}
+
 func TestStatusCmd_ExtraEntry(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

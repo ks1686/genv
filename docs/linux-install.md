@@ -7,7 +7,7 @@ Linux distributions should use the archive attached to the latest GitHub
 Release:
 
 ```bash
-version=4.3.0
+version=4.7.4
 curl -fLO "https://github.com/ks1686/genv/releases/download/v${version}/genv_${version}_linux_amd64.tar.gz"
 curl -fLO "https://github.com/ks1686/genv/releases/download/v${version}/checksums.txt"
 sha256sum --ignore-missing -c checksums.txt

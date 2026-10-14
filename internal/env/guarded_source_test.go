@@ -93,6 +93,83 @@ func TestInjectSourceLine_ReplacesStaleBlockFromSharedTemplate(t *testing.T) {
 	}
 }
 
+// #226: env.sh and shell.sh share the "# genv env" marker. ApplyEnv and
+// ApplyShell each inject one line. A second apply used to leave the other
+// fragment's line outside the replaced window, so the block grew forever.
+func TestInjectSourceLine_TwoFragmentsDoNotAccumulate(t *testing.T) {
+	home := setTestHomeDir(t)
+	rc := filepath.Join(home, ".zshrc")
+	shellFrag := filepath.Join(home, ".config", "genv", "shell.sh")
+	envFrag := filepath.Join(home, ".config", "genv", "env.sh")
+
+	injectBoth := func() {
+		t.Helper()
+		if err := InjectSourceLine(rc, shellFrag); err != nil {
+			t.Fatalf("InjectSourceLine shell: %v", err)
+		}
+		if err := InjectSourceLine(rc, envFrag); err != nil {
+			t.Fatalf("InjectSourceLine env: %v", err)
+		}
+	}
+	injectBoth()
+	first := readFileString(t, rc)
+	injectBoth()
+	second := readFileString(t, rc)
+	if first != second {
+		t.Fatalf("second apply rewrote the rc file\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	if n := strings.Count(second, "# genv env"); n != 1 {
+		t.Fatalf("marker count = %d, want 1:\n%s", n, second)
+	}
+	if n := strings.Count(second, "if [ -r "); n != 2 {
+		t.Fatalf("guarded source lines = %d, want 2:\n%s", n, second)
+	}
+	envLine := sourceLine(envFrag)
+	shellLine := sourceLine(shellFrag)
+	envAt := strings.Index(second, envLine)
+	shellAt := strings.Index(second, shellLine)
+	if envAt < 0 || shellAt < envAt {
+		t.Fatalf("want env.sh line then shell.sh line:\n%s", second)
+	}
+}
+
+// A block that already accumulated duplicate pairs must collapse the next
+// time either fragment is injected, without eating the user's own source line.
+func TestInjectSourceLine_CollapsesAccumulatedFragmentLines(t *testing.T) {
+	home := setTestHomeDir(t)
+	rc := filepath.Join(home, ".zshrc")
+	envFrag := filepath.Join(home, ".config", "genv", "env.sh")
+	shellFrag := filepath.Join(home, ".config", "genv", "shell.sh")
+	envLine := sourceLine(envFrag)
+	shellLine := sourceLine(shellFrag)
+	user := `if [ -r "$HOME/other.sh" ]; then . "$HOME/other.sh"; fi`
+	var b strings.Builder
+	b.WriteString("export KEEP=1\n")
+	b.WriteString(envBlockMarker + "\n")
+	for range 4 {
+		b.WriteString(envLine + "\n")
+		b.WriteString(shellLine + "\n")
+	}
+	b.WriteString(user + "\n")
+	if err := os.WriteFile(rc, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InjectSourceLine(rc, envFrag); err != nil {
+		t.Fatalf("InjectSourceLine: %v", err)
+	}
+	got := readFileString(t, rc)
+	if n := strings.Count(got, "if [ -r "); n != 3 {
+		t.Fatalf("guarded source lines = %d, want 2 managed + 1 user:\n%s", n, got)
+	}
+	if strings.Count(got, envLine) != 1 || strings.Count(got, shellLine) != 1 {
+		t.Fatalf("managed lines were not collapsed to one each:\n%s", got)
+	}
+	if !strings.Contains(got, "export KEEP=1") || !strings.Contains(got, user) {
+		t.Fatalf("user rc content was lost:\n%s", got)
+	}
+}
+
 // Repeated applies must stay idempotent.
 func TestInjectSourceLine_IdempotentAcrossApplies(t *testing.T) {
 	home := setTestHomeDir(t)

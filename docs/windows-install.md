@@ -11,11 +11,11 @@ scoop bucket add ks1686 https://github.com/ks1686/scoop-bucket
 scoop install genv
 ```
 
-`scoop install genv` needs a `genv.json` manifest on that bucket, which the
-first stable tag after merge uploads. Until then, use the zip:
+`scoop install genv` uses the root `genv.json` manifest on that bucket.
+To install the GitHub release zip instead:
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.1.0_windows_amd64.zip -OutFile genv.zip
+Invoke-WebRequest -Uri https://github.com/ks1686/genv/releases/latest/download/genv_4.7.4_windows_amd64.zip -OutFile genv.zip
 Expand-Archive genv.zip -DestinationPath .\genv
 New-Item -ItemType Directory -Force $HOME\bin
 Copy-Item .\genv\genv.exe $HOME\bin\genv.exe

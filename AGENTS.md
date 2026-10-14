@@ -86,7 +86,7 @@ Adapters are registered in priority order in `internal/adapter/adapter.go` (`var
 | File | Purpose |
 |------|---------|
 | `main.go` | CLI entry point and manual command dispatch (`main.go:81-127`) |
-| `go.mod` | Module: `github.com/ks1686/genv`, Go 1.24.3 |
+| `go.mod` | Module: `github.com/ks1686/genv`, Go 1.26.9 |
 | `Makefile` | Build, test, CI, lint, benchmark targets |
 | `schema/v8/genv.json` | JSON Schema mirror for v8 (Go `ParseAndValidate` is authoritative) |
 | `.goreleaser.yml` | Release build configuration |
@@ -117,7 +117,7 @@ make fmt                      # gofmt -w .
 
 ## Coding Conventions
 
-- **Go version**: 1.24.3 (see `go.mod`)
+- **Go version**: 1.26.9 (see `go.mod`)
 - **Error handling**: Return `error` values; wrap with context using `fmt.Errorf("...: %w", err)`
 - **Logging**: Use `log/slog` for structured logging; never `fmt.Println` in library code
 - **Tests**: Table-driven tests with `t.Run`. Use `testing/fstest` for filesystem mocks where possible.

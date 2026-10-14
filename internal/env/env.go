@@ -145,13 +145,27 @@ func InjectSourceLine(rcPath, fragmentPath string) error {
 	return os.WriteFile(rcPath, []byte(updated), 0o644)
 }
 
+// managedFragmentNames returns the fragment basenames that share one "# genv env"
+// block. ApplyEnv and ApplyShell each call InjectSourceLine with only their
+// own path, so the rewriter has to recognise both or the line it is not
+// currently rewriting is left behind and duplicated on the next apply (#226).
+func managedFragmentNames(fragmentBase string) []string {
+	names := []string{"env.sh", "shell.sh"}
+	if fragmentBase != "" && fragmentBase != "env.sh" && fragmentBase != "shell.sh" {
+		names = append(names, fragmentBase)
+	}
+	return names
+}
+
 // replaceOrAppendBlock rewrites the block introduced by marker so it holds
-// sourceLine, appending a fresh block when the file has none. fragmentBase is
-// the fragment's file name, used to find the end of a legacy block whose
-// source line is a bare ". /path" rather than the guarded form.
+// one source line per managed fragment, appending a fresh block when the
+// file has none. fragmentBase is the fragment being injected now.
 //
-// Content outside the block is preserved verbatim, including the blank line
-// genv inserted before the block.
+// The block is every consecutive source line under the marker that names a
+// managed fragment (guarded `if [ -r ...]` or a legacy `. /path`). Anything
+// after that run, including the user's own source lines, is left alone.
+// Duplicate copies of the same fragment collapse, and the block is rewritten
+// in a fixed order so a later apply is a no-op.
 func replaceOrAppendBlock(content, marker, sourceLine, fragmentBase string) string {
 	lines := strings.Split(content, "\n")
 	start := -1
@@ -165,17 +179,76 @@ func replaceOrAppendBlock(content, marker, sourceLine, fragmentBase string) stri
 		return content + "\n" + marker + "\n" + sourceLine + "\n"
 	}
 
-	// The block is the marker plus the source line beneath it. Walk forward
-	// over that one line; anything after it belongs to the user.
+	names := managedFragmentNames(fragmentBase)
+	kept := make(map[string]string)
 	end := start + 1
-	if end < len(lines) && strings.Contains(lines[end], fragmentBase) {
+	for end < len(lines) {
+		name, ok := managedSourceLine(lines[end], names)
+		if !ok {
+			break
+		}
+		kept[name] = strings.TrimRight(lines[end], "\r")
 		end++
 	}
-	out := make([]string, 0, len(lines)+2)
+	kept[fragmentBase] = sourceLine
+
+	out := make([]string, 0, len(lines)+len(kept)+1)
 	out = append(out, lines[:start]...)
-	out = append(out, marker, sourceLine)
+	out = append(out, marker)
+	for _, name := range orderedFragmentNames(kept) {
+		out = append(out, kept[name])
+	}
 	out = append(out, lines[end:]...)
 	return strings.Join(out, "\n")
+}
+
+// managedSourceLine reports which managed fragment a rc line sources.
+// Recognition is the line shape plus the basename, so a comment that merely
+// mentions env.sh, or the user's own `if [ -r other.sh ]`, is not part of
+// the block.
+func managedSourceLine(line string, names []string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "if [ -r ") && !strings.HasPrefix(trimmed, ". ") {
+		return "", false
+	}
+	var hit string
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if strings.Contains(line, "/"+name) || strings.Contains(line, `\`+name) {
+			if len(name) > len(hit) {
+				hit = name
+			}
+		}
+	}
+	if hit == "" {
+		return "", false
+	}
+	return hit, true
+}
+
+// orderedFragmentNames emits env.sh, then shell.sh, then any other fragment
+// basename. Apply order must not change the bytes of a block that is already
+// correct.
+func orderedFragmentNames(kept map[string]string) []string {
+	preferred := []string{"env.sh", "shell.sh"}
+	out := make([]string, 0, len(kept))
+	seen := make(map[string]bool, len(kept))
+	for _, name := range preferred {
+		if _, ok := kept[name]; ok {
+			out = append(out, name)
+			seen[name] = true
+		}
+	}
+	rest := make([]string, 0, len(kept))
+	for name := range kept {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
 }
 
 // RcFiles returns the list of shell rc files to inject the source line into.

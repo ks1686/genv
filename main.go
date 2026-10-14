@@ -2194,7 +2194,7 @@ func toOutputShellEntries(entries []shellcfg.ShellStatusEntry) (out []output.She
 			SpecValue: e.SpecValue,
 			LockValue: e.LockValue,
 		})
-		if e.Kind == shellcfg.ShellStatusModified || e.Kind == shellcfg.ShellStatusExtra || e.Kind == shellcfg.ShellStatusMissing {
+		if e.Kind == shellcfg.ShellStatusModified || e.Kind == shellcfg.ShellStatusExtra {
 			hasDrift = true
 		}
 	}
@@ -2214,7 +2214,7 @@ func toOutputEnvEntries(entries []genvenv.EnvStatusEntry) (out []output.EnvStatu
 			LockValue: commands.RedactValue(e.LockValue, e.Sensitive),
 			Sensitive: e.Sensitive,
 		})
-		if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra || e.Kind == genvenv.EnvStatusMissing {
+		if e.Kind == genvenv.EnvStatusModified || e.Kind == genvenv.EnvStatusExtra {
 			hasDrift = true
 		}
 	}
@@ -2233,7 +2233,6 @@ func writeShellStatusTable(w io.Writer, entries []shellcfg.ShellStatusEntry) (ha
 			hasDrift = true
 			fprintf(tw, "  modified\t%s\t%s\t(run 'genv apply' to update)\n", e.EntryType, e.Name)
 		case shellcfg.ShellStatusMissing:
-			hasDrift = true
 			fprintf(tw, "  missing\t%s\t%s\t(in spec, not applied — run 'genv apply')\n", e.EntryType, e.Name)
 		case shellcfg.ShellStatusExtra:
 			hasDrift = true
@@ -3752,7 +3751,7 @@ func statusCmd(args []string) int {
 				Kind:    string(e.Kind),
 				Running: e.Running,
 			})
-			if e.Kind != service.ServiceStatusOK {
+			if e.Kind == service.ServiceStatusModified || e.Kind == service.ServiceStatusExtra {
 				hasDrift = true
 			}
 		}
@@ -5465,8 +5464,9 @@ Commands:
   version     Show genv build version information
   help        Show this help text
 
-Flags common to all commands:
+Flags for commands that read a spec:
   --file <path>   Path to genv.json (default: $XDG_CONFIG_HOME/genv/genv.json or ~/.config/genv/genv.json, falling back to ./genv.json)
+                  updates status and updates stop inspect the scheduler and do not take --file.
 
 Host-specific flags (used by apply, status, upgrade, updates check/start, adopt):
   --host <name>   Legacy host filter for v1–v7 records (default: host classification, not hostname)
@@ -5493,6 +5493,8 @@ Apply-specific flags:
   --hook-timeout <duration> Per-hook timeout, e.g. 5m or 30s
   --debug              Emit debug-level structured logs to stderr
   --target <id>        Portable target id for current schemaVersion specs
+  --force              Overwrite mismatched managed files
+  --backup             Back up mismatched files before overwrite (keeps *.backup.*)
   --force-new-lock     Back up a foreign lock and start a new local lock
   --state-dir <dir>    Directory for lock and env/shell fragments (default: directory of --file)
   --source-root <dir>  Resolve files.links/templates and service template sources relative to this directory

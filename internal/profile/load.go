@@ -15,8 +15,8 @@ import (
 var ErrProfileNotFound = errors.New("profile not found")
 
 // ErrV8ProfilesUnsupported is returned when named profiles are used with a
-// schemaVersion 8 spec. v8 uses defaults/targets instead.
-var ErrV8ProfilesUnsupported = errors.New("named profiles are not supported on schemaVersion 8; use targets, or migrate/export")
+// portable spec (schemaVersion 8, 9, or 10). Those specs use defaults/targets.
+var ErrV8ProfilesUnsupported = errors.New("named profiles are not supported on portable specs (schemaVersion 8 or newer); use targets, or migrate/export")
 
 // Dir returns the directory where profiles are stored, given the base spec path.
 func Dir(specPath string) string {

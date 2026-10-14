@@ -15,6 +15,8 @@ var registeredHelpCommands = [][]string{
 	{"disown"},
 	{"list"},
 	{"apply"},
+	{"config"},
+	{"explain"},
 	{"edit"},
 	{"clean"},
 	{"scan"},
@@ -101,6 +103,43 @@ func assertHelpOK(t *testing.T, args []string) {
 	}
 	if strings.Contains(errOut, "unknown subcommand") || strings.Contains(errOut, "unknown command") {
 		t.Fatalf("run(%v): stderr = %q, must not report unknown command for help", args, errOut)
+	}
+}
+
+func TestHelp_listsApplyMismatchFlags(t *testing.T) {
+	var code int
+	errOut := captureStderr(t, func() { code = run([]string{"help"}) })
+	if code != exitOK {
+		t.Fatalf("help = %d, want %d\n%s", code, exitOK, errOut)
+	}
+	if !strings.Contains(errOut, "--backup") {
+		t.Fatalf("help omits --backup:\n%s", errOut)
+	}
+	foundForce := false
+	for _, line := range strings.Split(errOut, "\n") {
+		if strings.Contains(line, "--force") && !strings.Contains(line, "--force-new-lock") {
+			foundForce = true
+			break
+		}
+	}
+	if !foundForce {
+		t.Fatalf("help omits --force:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "common to all commands") {
+		t.Fatalf("help still says --file is common to all commands:\n%s", errOut)
+	}
+	if !strings.Contains(errOut, "commands that read a spec") {
+		t.Fatalf("help does not scope --file to spec-reading commands:\n%s", errOut)
+	}
+}
+
+func TestUpdatesStatus_rejectsSpecFileFlag(t *testing.T) {
+	var code int
+	errOut := captureStderr(t, func() {
+		code = run([]string{"updates", "status", "--file", "genv.json"})
+	})
+	if code != exitUsage {
+		t.Fatalf("updates status --file = %d, want %d\n%s", code, exitUsage, errOut)
 	}
 }
 
