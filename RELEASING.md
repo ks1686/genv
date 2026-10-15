@@ -151,6 +151,23 @@ spctl -a -t exec -vv ./genv
 ./genv version
 ```
 
+**2e. Shared signing credentials**
+
+The Apple Developer ID Application certificate, App Store Connect API key, and
+notarytool setup on Karim's Mac are shared with umbilical
+([ks1686/umbilical](https://github.com/ks1686/umbilical), see
+[docs/RELEASE.md](https://github.com/ks1686/umbilical/blob/main/docs/RELEASE.md))
+and the other app (PeaProxy). Rotating, revoking or moving them can break the
+other apps' signing, so test a signed build of genv, PeaProxy and umbilical
+before any such change.
+
+In this repo, Darwin signing and notarization run in CI: the tagged Release
+workflow runs GoReleaser (anchore/quill on `ubuntu-latest`) using the
+`MACOS_*` GitHub Actions secrets, which `scripts/set-macos-signing-secrets.sh`
+uploads from the local `.p12` and `.p8`. If you rotate the certificate or API
+key, re-upload these secrets here and update the other apps too. Keep the raw
+key files out of the repo and out of any other CI.
+
 ### 3. Homebrew tap
 
 GoReleaser pushes the formula to a separate `homebrew-tap` repo.
