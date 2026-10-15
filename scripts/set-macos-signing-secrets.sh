@@ -12,6 +12,8 @@
 #
 # Optional:
 #   --repo owner/name   (default: ks1686/genv)
+#   --env NAME          store as environment secrets (e.g. release);
+#                       default: repository secrets
 set -euo pipefail
 
 REPO="ks1686/genv"
@@ -20,6 +22,7 @@ P12_PASSWORD=""
 P8_PATH=""
 KEY_ID=""
 ISSUER_ID=""
+ENV_NAME=""
 
 usage() {
   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
@@ -34,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --key-id) KEY_ID="$2"; shift 2 ;;
     --issuer-id) ISSUER_ID="$2"; shift 2 ;;
     --repo) REPO="$2"; shift 2 ;;
+    --env) ENV_NAME="$2"; shift 2 ;;
     -h|--help) usage ;;
     *)
       echo "unknown argument: $1" >&2
@@ -72,11 +76,24 @@ b64_file() {
   fi
 }
 
-echo "Setting MACOS_* secrets on $REPO …"
-gh secret set MACOS_SIGN_P12 --repo "$REPO" --body "$(b64_file "$P12_PATH")"
-gh secret set MACOS_SIGN_PASSWORD --repo "$REPO" --body "$P12_PASSWORD"
-gh secret set MACOS_NOTARY_KEY --repo "$REPO" --body "$(b64_file "$P8_PATH")"
-gh secret set MACOS_NOTARY_KEY_ID --repo "$REPO" --body "$KEY_ID"
-gh secret set MACOS_NOTARY_ISSUER_ID --repo "$REPO" --body "$ISSUER_ID"
+# Optional environment scope; empty means repository secrets (default).
+ENV_ARGS=()
+TARGET="$REPO"
+if [[ -n "$ENV_NAME" ]]; then
+  ENV_ARGS=(--env "$ENV_NAME")
+  TARGET="$REPO (environment: $ENV_NAME)"
+fi
 
-echo "Done. Verify with: gh secret list --repo $REPO"
+# Values are piped on stdin, so they never appear in argv or output.
+set_secret() {
+  gh secret set "$1" --repo "$REPO" "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}"
+}
+
+echo "Setting MACOS_* secrets on $TARGET …"
+b64_file "$P12_PATH" | set_secret MACOS_SIGN_P12
+printf '%s' "$P12_PASSWORD" | set_secret MACOS_SIGN_PASSWORD
+b64_file "$P8_PATH" | set_secret MACOS_NOTARY_KEY
+printf '%s' "$KEY_ID" | set_secret MACOS_NOTARY_KEY_ID
+printf '%s' "$ISSUER_ID" | set_secret MACOS_NOTARY_ISSUER_ID
+
+echo "Done. Verify with: gh secret list --repo $REPO ${ENV_ARGS[*]+"${ENV_ARGS[*]}"}"
