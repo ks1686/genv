@@ -120,9 +120,10 @@ pull request, or manual run from a non-tag ref cannot read them. Upload them
 with `--env release`:
 
 ```bash
+# Password from Keychain (or omit the variable to be prompted, input hidden):
+MACOS_P12_PASSWORD="$(security find-generic-password -w -s <item>)" \
 ./scripts/set-macos-signing-secrets.sh \
   --p12 /path/to/Certificates.p12 \
-  --p12-password 'your-export-password' \
   --p8 /path/to/AuthKey_XXXXXXXXXX.p8 \
   --key-id XXXXXXXXXX \
   --issuer-id 00000000-0000-0000-0000-000000000000 \

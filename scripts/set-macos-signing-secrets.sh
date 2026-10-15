@@ -5,10 +5,15 @@
 # Usage:
 #   ./scripts/set-macos-signing-secrets.sh \
 #     --p12 /path/to/Certificates.p12 \
-#     --p12-password '…' \
 #     --p8 /path/to/AuthKey_XXXXXXXXXX.p8 \
 #     --key-id XXXXXXXXXX \
 #     --issuer-id 00000000-0000-0000-0000-000000000000
+#
+# The .p12 password is never a CLI argument. It is read from
+# $MACOS_P12_PASSWORD if set, otherwise prompted for on the terminal
+# (input hidden). Example pulling it from Keychain:
+#   MACOS_P12_PASSWORD="$(security find-generic-password -w -s <item>)" \
+#     ./scripts/set-macos-signing-secrets.sh --p12 ... --env release
 #
 # Optional:
 #   --repo owner/name   (default: ks1686/genv)
@@ -25,14 +30,13 @@ ISSUER_ID=""
 ENV_NAME=""
 
 usage() {
-  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --p12) P12_PATH="$2"; shift 2 ;;
-    --p12-password) P12_PASSWORD="$2"; shift 2 ;;
     --p8) P8_PATH="$2"; shift 2 ;;
     --key-id) KEY_ID="$2"; shift 2 ;;
     --issuer-id) ISSUER_ID="$2"; shift 2 ;;
@@ -46,7 +50,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$P12_PATH" || -z "$P12_PASSWORD" || -z "$P8_PATH" || -z "$KEY_ID" || -z "$ISSUER_ID" ]]; then
+if [[ -z "$P12_PATH" || -z "$P8_PATH" || -z "$KEY_ID" || -z "$ISSUER_ID" ]]; then
   echo "missing required arguments" >&2
   usage
 fi
@@ -64,6 +68,22 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 if ! command -v base64 >/dev/null 2>&1; then
   echo "base64 is required" >&2
+  exit 1
+fi
+
+# Password: env var first, then a hidden TTY prompt. Never a CLI argument.
+if [[ -n "${MACOS_P12_PASSWORD:-}" ]]; then
+  P12_PASSWORD="$MACOS_P12_PASSWORD"
+elif [[ -r /dev/tty ]] && { : </dev/tty; } 2>/dev/null; then
+  read -rs -p "Password for $P12_PATH: " P12_PASSWORD </dev/tty
+  echo >&2
+else
+  echo "no TTY to prompt for the .p12 password; set MACOS_P12_PASSWORD" >&2
+  exit 1
+fi
+unset MACOS_P12_PASSWORD
+if [[ -z "$P12_PASSWORD" ]]; then
+  echo "empty .p12 password" >&2
   exit 1
 fi
 
