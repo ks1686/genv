@@ -1,7 +1,6 @@
 package export
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -105,7 +104,7 @@ func writeSnapshot(path, schemaVersion, targetID string, bundle *schema.TargetBu
 			targetID: bundle,
 		},
 	}
-	data, err := json.MarshalIndent(doc, "", "  ")
+	data, err := schema.EncodeJSON(doc, "  ")
 	if err != nil {
 		return fmt.Errorf("serializing export snapshot: %w", err)
 	}

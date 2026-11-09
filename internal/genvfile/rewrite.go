@@ -259,12 +259,16 @@ func formatPackageArray(existingIDs []string, existingRaw [][]byte, want []schem
 }
 
 func marshalPackage(pkg schema.Package, pretty bool, elemIndent, nl string) ([]byte, error) {
-	if !pretty {
-		return json.Marshal(pkg)
+	indent := ""
+	if pretty {
+		indent = "  "
 	}
-	b, err := json.MarshalIndent(pkg, "", "  ")
+	b, err := schema.EncodeJSON(pkg, indent)
 	if err != nil {
 		return nil, err
+	}
+	if !pretty {
+		return b, nil
 	}
 	if nl == "\r\n" {
 		b = bytes.ReplaceAll(b, []byte("\n"), []byte("\r\n"))

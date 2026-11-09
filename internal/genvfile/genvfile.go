@@ -3,7 +3,6 @@
 package genvfile
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -188,12 +187,17 @@ func Write(path string, f *schema.GenvFile) error {
 		if patched, ok := rewritePackagesInPlace(original, f); ok {
 			return writeValidated(path, patched)
 		}
+		// A service edit is not a package-list edit. Patch that object in
+		// place too, so hook commands and key order survive service add.
+		if patched, ok := rewriteServicesInPlace(original, f); ok {
+			return writeValidated(path, patched)
+		}
 	}
 	return writeMarshaled(path, f)
 }
 
 func writeMarshaled(path string, f *schema.GenvFile) error {
-	data, err := json.MarshalIndent(f, "", "  ")
+	data, err := schema.EncodeJSON(f, "  ")
 	if err != nil {
 		return fmt.Errorf("serialising genv.json: %w", err)
 	}
