@@ -128,7 +128,9 @@ func changedServicePaths(before, after *schema.GenvFile) []string {
 	if !reflect.DeepEqual(bundleServiceMap(before.Defaults), bundleServiceMap(after.Defaults)) {
 		paths = append(paths, "defaults.services")
 	}
-	ids := make([]string, 0, len(before.Targets)+len(after.Targets))
+	// No precomputed capacity: len(before.Targets)+len(after.Targets) can
+	// overflow, and the map is tiny.
+	var ids []string
 	seen := map[string]bool{}
 	for id := range before.Targets {
 		seen[id] = true

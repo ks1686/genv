@@ -180,8 +180,10 @@ func New() *schema.GenvFile {
 // Writing is atomic: it writes to a temp file then renames, so a crash
 // mid-write cannot leave a half-written genv.json.
 //
-// When path already exists and f only changes package lists, Write edits
-// those arrays in place so empty blocks and key order survive adopt/disown.
+// When path already exists and f only changes package lists or service maps,
+// Write patches those values in place so empty blocks and key order survive.
+// Any other change, including an adapters edit alongside a package edit, is
+// remarshaled.
 func Write(path string, f *schema.GenvFile) error {
 	if original, err := os.ReadFile(path); err == nil {
 		if patched, ok := rewritePackagesInPlace(original, f); ok {
