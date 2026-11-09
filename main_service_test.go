@@ -161,3 +161,68 @@ func TestServiceStatus_BrewFormula(t *testing.T) {
 		}
 	})
 }
+
+// Service add rewrites the whole spec when the edit is not a package-list
+// change. Hook commands that contain shell redirections must survive that
+// rewrite byte-for-byte; only the new service entry may differ (#244).
+func TestServiceAdd_PreservesUnrelatedHookCommands(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "genv.json")
+	const original = `{
+  "schemaVersion": "9",
+  "targets": {
+    "macos": {
+      "hooks": {
+        "postApply": [
+          { "command": "echo ok >/dev/null 2>&1 && true" },
+          { "command": "printf '<'" }
+        ]
+      }
+    }
+  }
+}
+`
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code := run([]string{
+		"service", "add", "demo",
+		"--launchd-plist", "demo.plist",
+		"--target", "macos",
+		"--file", path,
+	})
+	if code != exitOK {
+		t.Fatalf("service add: exit %d, want %d", code, exitOK)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{
+  "schemaVersion": "9",
+  "targets": {
+    "macos": {
+      "hooks": {
+        "postApply": [
+          { "command": "echo ok >/dev/null 2>&1 && true" },
+          { "command": "printf '<'" }
+        ]
+      },
+      "services": {
+        "demo": {
+          "launchd": {
+            "plist": "demo.plist"
+          }
+        }
+      }
+    }
+  }
+}
+`
+	if string(got) != want {
+		t.Fatalf("service add changed more than the added service\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}

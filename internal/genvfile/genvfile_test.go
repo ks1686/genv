@@ -732,6 +732,44 @@ func TestWrite_RejectsInvalidSchemaContent(t *testing.T) {
 	}
 }
 
+// A full remarshal (no in-place package edit) must not HTML-escape shell
+// metacharacters. encoding/json does that by default so JSON can sit inside
+// HTML; genv.json is a source file (#244).
+func TestWrite_DoesNotHTMLEscapeSpecStrings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "genv.json")
+	original := &schema.GenvFile{
+		SchemaVersion: schema.Version9,
+		Targets: map[string]*schema.TargetBundle{
+			"macos": {
+				Hooks: &schema.HooksConfig{
+					PostApply: []schema.Hook{{
+						Command: "echo ok >/dev/null 2>&1 && echo '<'",
+					}},
+				},
+			},
+		},
+	}
+	if err := Write(path, original); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, escaped := range []string{`\u003e`, `\u003c`, `\u0026`} {
+		if strings.Contains(text, escaped) {
+			t.Fatalf("spec HTML-escaped %s:\n%s", escaped, text)
+		}
+	}
+	if !strings.Contains(text, `echo ok >/dev/null 2>&1 && echo '<'`) {
+		t.Fatalf("hook command was not written literally:\n%s", text)
+	}
+	if !strings.HasSuffix(text, "\n") {
+		t.Fatalf("spec missing trailing newline:\n%s", text)
+	}
+}
+
 func TestDefaultDir_HomeDirError(t *testing.T) {
 	// First ensure XDG_CONFIG_HOME is unset
 	t.Setenv("XDG_CONFIG_HOME", "")
