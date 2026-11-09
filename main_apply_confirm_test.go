@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,16 +24,35 @@ func writeApplyServiceSpec(t *testing.T, path, marker string) {
 	t.Helper()
 	// A declared service with no lock entry is pending work, so apply must
 	// ask before it runs. The marker records whether that run happened.
+	// Marshal the command: a Windows temp path contains backslashes, and a
+	// raw paste is not valid JSON (\U is not an escape).
+	command, err := json.Marshal("touch " + marker)
+	if err != nil {
+		t.Fatal(err)
+	}
 	spec := `{
   "schemaVersion": "4",
   "packages": [],
   "services": {
-    "demo": {"start": ["sh", "-c", "touch ` + marker + `"]}
+    "demo": {"start": ["sh", "-c", ` + string(command) + `]}
   }
 }
 `
 	if err := os.WriteFile(path, []byte(spec), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWriteApplyServiceSpec_EscapesWindowsPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "genv.json")
+	writeApplyServiceSpec(t, path, `C:\Users\RUNNER~1\AppData\Local\Temp\marker`)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec map[string]any
+	if err := json.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("spec is not valid JSON: %v\n%s", err, data)
 	}
 }
 
