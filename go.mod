@@ -1,11 +1,11 @@
 module github.com/ks1686/genv
 
-go 1.26.9
+go 1.26.10
 
 require (
 	aead.dev/minisign v0.3.0
 	github.com/ProtonMail/go-crypto v1.4.1
-	github.com/klauspost/compress v1.18.7
+	github.com/klauspost/compress v1.20.4
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/sys v0.48.0
