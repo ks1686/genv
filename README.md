@@ -26,7 +26,7 @@ genv map --target arch                # assist-only manager suggestions
 | Arch / Manjaro | `paru -S genv` or `yay -S genv` (or `genv-bin`) |
 | Other Linux | GitHub release tarball (see below) |
 | Windows | Scoop (self-hosted bucket) or GitHub release zip (see below) |
-| Any (from source) | `go install github.com/ks1686/genv@latest` (Go 1.26.9+) |
+| Any (from source) | `go install github.com/ks1686/genv@latest` (Go 1.26.10+) |
 
 **Linux x86-64 example** (replace the version to match [Releases](https://github.com/ks1686/genv/releases/latest)):
 

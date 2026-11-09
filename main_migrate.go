@@ -1,13 +1,13 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"os"
 
 	"github.com/ks1686/genv/internal/genvfile"
 	"github.com/ks1686/genv/internal/migrate"
+	"github.com/ks1686/genv/internal/schema"
 )
 
 // migrateCmd implements `genv migrate [--file] [--write]`.
@@ -71,7 +71,7 @@ func migrateCmd(args []string) int {
 		return exitOK
 	}
 
-	data, err := json.MarshalIndent(out, "", "  ")
+	data, err := schema.EncodeJSON(out, "  ")
 	if err != nil {
 		fprintf(os.Stderr, "genv migrate: serializing migrated spec: %v\n", err)
 		return exitIO

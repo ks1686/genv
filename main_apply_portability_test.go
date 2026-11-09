@@ -50,7 +50,10 @@ func TestApply_ForceNewLockAllowsDryRunWithoutForeignUninstall(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("apply --force-new-lock dry-run: expected exitOK (%d), got %d; stdout=%s", exitOK, code, out)
 	}
-	if strings.Contains(out, "mas") || strings.Contains(out, "x") {
+	// The foreign package id is the single letter "x" and its manager is
+	// "mas". Matching those as bare substrings also matches a temp path
+	// (macOS /var/folders/.../t85nd63d71x27/...), so look for the plan line.
+	if strings.Contains(out, "to remove") || strings.Contains(out, "via mas") {
 		t.Fatalf("force-new-lock dry-run should not plan foreign uninstall, got: %s", out)
 	}
 	if _, err := os.Stat(lockPath); err != nil {

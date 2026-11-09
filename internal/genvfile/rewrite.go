@@ -55,7 +55,8 @@ func rewritePackagesInPlace(original []byte, f *schema.GenvFile) ([]byte, bool) 
 // Every non-package field must be compared: if one is missed, Write returns
 // success while silently dropping that field's change. Modules and UseModules
 // are part of that set since v10 composition state lives outside the package
-// arrays.
+// arrays. Adapters live on the root, outside every target bundle, so a
+// package edit that also changes them must fall through to a full remarshal.
 func sameNonPackageState(a, b *schema.GenvFile) bool {
 	if a.SchemaVersion != b.SchemaVersion {
 		return false
@@ -67,7 +68,8 @@ func sameNonPackageState(a, b *schema.GenvFile) bool {
 		!reflect.DeepEqual(a.Hooks, b.Hooks) ||
 		!reflect.DeepEqual(a.Repo, b.Repo) ||
 		!reflect.DeepEqual(a.Updates, b.Updates) ||
-		!reflect.DeepEqual(a.Modules, b.Modules) {
+		!reflect.DeepEqual(a.Modules, b.Modules) ||
+		!reflect.DeepEqual(a.Adapters, b.Adapters) {
 		return false
 	}
 	if !bundleMetaEqual(a.Defaults, b.Defaults) {
@@ -197,7 +199,7 @@ func insertPackagesKey(data []byte, spans map[string]jsonSpan, path string, want
 		return nil, false
 	}
 	nl := detectNewline(data)
-	pretty, childIndent, closeIndent := objectStyle(data, parentSpan)
+	pretty, childIndent, _ := objectStyle(data, parentSpan)
 	elemIndent := childIndent
 	if pretty {
 		elemIndent = childIndent + "  "
@@ -206,38 +208,7 @@ func insertPackagesKey(data []byte, spans map[string]jsonSpan, path string, want
 	if array == nil {
 		return nil, false
 	}
-	member := []byte(`"packages":`)
-	if pretty {
-		member = []byte(`"packages": `)
-	}
-	member = append(member, array...)
-	closeIdx := parentSpan.end - 1
-	if isEmptyObject(data[parentSpan.start:parentSpan.end]) {
-		var insert []byte
-		if pretty {
-			insert = []byte(nl + childIndent)
-			insert = append(insert, member...)
-			insert = append(insert, nl...)
-			insert = append(insert, closeIndent...)
-		} else {
-			insert = member
-		}
-		return concat(data[:parentSpan.start+1], insert, data[closeIdx:]), true
-	}
-	last := closeIdx - 1
-	for last > parentSpan.start && isWS(data[last]) {
-		last--
-	}
-	var insert []byte
-	if pretty {
-		insert = []byte("," + nl + childIndent)
-		insert = append(insert, member...)
-		insert = append(insert, nl...)
-		insert = append(insert, closeIndent...)
-	} else {
-		insert = append([]byte{','}, member...)
-	}
-	return concat(data[:last+1], insert, data[closeIdx:]), true
+	return insertRawMember(data, spans, path, array)
 }
 
 func formatPackageArray(existingIDs []string, existingRaw [][]byte, want []schema.Package, pretty bool, elemIndent, closeIndent, nl string) []byte {
@@ -259,26 +230,7 @@ func formatPackageArray(existingIDs []string, existingRaw [][]byte, want []schem
 }
 
 func marshalPackage(pkg schema.Package, pretty bool, elemIndent, nl string) ([]byte, error) {
-	if !pretty {
-		return json.Marshal(pkg)
-	}
-	b, err := json.MarshalIndent(pkg, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if nl == "\r\n" {
-		b = bytes.ReplaceAll(b, []byte("\n"), []byte("\r\n"))
-	}
-	lines := bytes.Split(b, []byte(nl))
-	var out bytes.Buffer
-	for i, line := range lines {
-		if i > 0 {
-			out.WriteString(nl)
-			out.WriteString(elemIndent)
-		}
-		out.Write(line)
-	}
-	return out.Bytes(), nil
+	return marshalInline(pkg, pretty, elemIndent, nl)
 }
 
 func joinArray(elems [][]byte, pretty bool, elemIndent, closeIndent, nl string) []byte {

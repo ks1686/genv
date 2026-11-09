@@ -212,15 +212,45 @@ func fprint(w io.Writer, a ...any)                 { _, _ = fmt.Fprint(w, a...) 
 var confirmReader *bufio.Reader
 
 // confirm writes prompt to stdout and reads a y/Y response from stdin.
-// Returns true if the user confirmed.
+// Returns true if the user confirmed. A typed "n", any other answer, and a
+// blank Enter on a terminal all return false. EOF and a blank line when stdin
+// is not a terminal also return false; confirmDeclined distinguishes those
+// from an actual decline.
 func confirm(prompt string) bool {
+	accepted, _ := confirmAnswer(prompt)
+	return accepted
+}
+
+// confirmAnswer reports whether the user accepted the prompt.
+// declined is true for an explicit non-yes, including "n" and a blank Enter
+// on a terminal. Both returns are false when stdin is not a terminal and the
+// line is empty, or the read hits EOF before an answer: that is not a decline
+// and must not be reported as a successful abort.
+func confirmAnswer(prompt string) (accepted, declined bool) {
 	fprint(os.Stdout, prompt)
 	if confirmReader == nil {
 		confirmReader = bufio.NewReader(os.Stdin)
 	}
-	answer, _ := confirmReader.ReadString('\n')
+	answer, err := confirmReader.ReadString('\n')
+	return classifyConfirm(isTerminal(), answer, err)
+}
+
+// classifyConfirm splits a prompt read into yes, an explicit decline, or no
+// answer. Only y/Y accepts. A non-empty answer that is not yes is a decline
+// on any stdin, as is a blank Enter on a terminal. EOF, and a blank line when
+// stdin is not a terminal, are missing answers.
+func classifyConfirm(isTTY bool, answer string, err error) (accepted, declined bool) {
 	answer = strings.TrimSpace(answer)
-	return answer == "y" || answer == "Y"
+	if answer == "y" || answer == "Y" {
+		return true, false
+	}
+	if answer != "" {
+		return false, true
+	}
+	if isTTY && err == nil {
+		return false, true
+	}
+	return false, false
 }
 
 // isTerminal reports whether stdin is an interactive terminal.
@@ -1875,9 +1905,21 @@ func runApplyText(ctx context.Context, opts applyOptions, lockPath string, f *sc
 
 	confirmMsg := applyConfirmMessage(opts.SkipPackages, toInstall, toRemove, envChanges, shellChanges, serviceChanges, fileChanges)
 
-	if !opts.Yes && !confirm(confirmMsg) {
-		fPrintln(os.Stdout, "Aborted.")
-		return exitOK
+	if !opts.Yes {
+		accepted, declined := confirmAnswer(confirmMsg)
+		if !accepted {
+			if declined {
+				// A person at a terminal (or a piped "n") chose not to apply.
+				// That stays exit 0, the same contract as scan and upgrade.
+				fPrintln(os.Stdout, "Aborted.")
+				return exitOK
+			}
+			// Closed stdin and a non-interactive blank line used to take the
+			// same path and exit 0, so a script looked successful. Nothing was
+			// applied; say so and name the flag that skips the prompt.
+			fprintf(os.Stderr, "genv apply: not applied; no confirmation was received because stdin is not a terminal or reached EOF. Re-run with --yes.\n")
+			return exitLogic
+		}
 	}
 
 	hostName := hostForCommand(opts.Host)

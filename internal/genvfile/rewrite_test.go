@@ -175,6 +175,101 @@ func TestWrite_FallsBackWhenNonPackageFieldsChange(t *testing.T) {
 	}
 }
 
+// A package edit and an adapters edit in the same write must both persist.
+// sameNonPackageState used to ignore Adapters, so the in-place package path
+// reported success and left the adapter change out of the file.
+func TestWrite_PackageEditKeepsAdapterChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "genv.json")
+	original := `{
+  "schemaVersion": "8",
+  "targets": {
+    "macos": {
+      "packages": [
+        {"id": "git", "prefer": "brew"}
+      ]
+    }
+  }
+}
+`
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Targets["macos"].Packages = append(f.Targets["macos"].Packages, schema.Package{ID: "bash"})
+	f.Adapters = map[string]schema.AdapterDef{
+		"claude-plugin": {
+			List:    "claude plugin list --json",
+			Install: "claude plugin install {{id}}",
+			Remove:  "claude plugin uninstall {{id}}",
+		},
+	}
+	if err := Write(path, f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Targets["macos"].Packages) != 2 || got.Targets["macos"].Packages[1].ID != "bash" {
+		t.Fatalf("packages = %+v, want git and bash", got.Targets["macos"].Packages)
+	}
+	adapter, ok := got.Adapters["claude-plugin"]
+	if !ok || adapter.List != "claude plugin list --json" || adapter.Install == "" || adapter.Remove == "" {
+		t.Fatalf("adapters = %+v, want the claude-plugin change kept", got.Adapters)
+	}
+}
+
+// Adapters that did not change must still take the in-place package path,
+// which keeps empty blocks the full remarshal would drop.
+func TestWrite_UnchangedAdaptersStayInPlace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "genv.json")
+	original := `{
+  "schemaVersion": "8",
+  "adapters": {
+    "claude-plugin": {
+      "list": "claude plugin list --json",
+      "install": "claude plugin install {{id}}",
+      "remove": "claude plugin uninstall {{id}}"
+    }
+  },
+  "targets": {
+    "macos": {
+      "packages": [{"id": "git"}],
+      "services": {}
+    }
+  }
+}
+`
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Targets["macos"].Packages = append(f.Targets["macos"].Packages, schema.Package{ID: "bash"})
+	if err := Write(path, f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	if !strings.Contains(text, `"services": {}`) {
+		t.Fatalf("package edit remarshaled the file and dropped the empty services block:\n%s", text)
+	}
+	if !strings.Contains(text, `"list": "claude plugin list --json"`) {
+		t.Fatalf("unchanged adapter was rewritten:\n%s", text)
+	}
+	if !strings.Contains(text, `"bash"`) {
+		t.Fatalf("new package missing:\n%s", text)
+	}
+}
+
 func TestRewritePackagesInPlace_RejectsInvalidOriginal(t *testing.T) {
 	if _, ok := rewritePackagesInPlace([]byte(`{`), &schema.GenvFile{SchemaVersion: schema.Version8}); ok {
 		t.Fatal("expected invalid JSON to fail rewrite")

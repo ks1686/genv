@@ -3,7 +3,6 @@
 package genvfile
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -181,11 +180,18 @@ func New() *schema.GenvFile {
 // Writing is atomic: it writes to a temp file then renames, so a crash
 // mid-write cannot leave a half-written genv.json.
 //
-// When path already exists and f only changes package lists, Write edits
-// those arrays in place so empty blocks and key order survive adopt/disown.
+// When path already exists and f only changes package lists or service maps,
+// Write patches those values in place so empty blocks and key order survive.
+// Any other change, including an adapters edit alongside a package edit, is
+// remarshaled.
 func Write(path string, f *schema.GenvFile) error {
 	if original, err := os.ReadFile(path); err == nil {
 		if patched, ok := rewritePackagesInPlace(original, f); ok {
+			return writeValidated(path, patched)
+		}
+		// A service edit is not a package-list edit. Patch that object in
+		// place too, so hook commands and key order survive service add.
+		if patched, ok := rewriteServicesInPlace(original, f); ok {
 			return writeValidated(path, patched)
 		}
 	}
@@ -193,7 +199,7 @@ func Write(path string, f *schema.GenvFile) error {
 }
 
 func writeMarshaled(path string, f *schema.GenvFile) error {
-	data, err := json.MarshalIndent(f, "", "  ")
+	data, err := schema.EncodeJSON(f, "  ")
 	if err != nil {
 		return fmt.Errorf("serialising genv.json: %w", err)
 	}

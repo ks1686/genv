@@ -173,7 +173,9 @@ func (h *HostPredicate) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON always emits host as a JSON array.
 func (h HostPredicate) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]string(h))
+	// Compact and unescaped. A parent encoder with the default HTML escaping
+	// still re-escapes on the way out; spec writers use EncodeJSON so it does not.
+	return EncodeJSON([]string(h), "")
 }
 
 // GenvFile is the top-level structure of a genv.json file.
@@ -207,7 +209,7 @@ type GenvFile struct {
 func (f GenvFile) MarshalJSON() ([]byte, error) {
 	type alias GenvFile
 	if !IsPortableVersion(f.SchemaVersion) {
-		return json.Marshal(alias(f))
+		return EncodeJSON(alias(f), "")
 	}
 	// v8File mirrors GenvFile field-for-field; the only difference is
 	// omitempty on Packages. The conversion (rather than a hand-copied
@@ -228,7 +230,7 @@ func (f GenvFile) MarshalJSON() ([]byte, error) {
 		Defaults      *TargetBundle            `json:"defaults,omitempty"`
 		Targets       map[string]*TargetBundle `json:"targets,omitempty"`
 	}
-	return json.Marshal(v8File(f))
+	return EncodeJSON(v8File(f), "")
 }
 
 // AdapterDef is a spec-level command adapter for plugin ecosystems that genv
