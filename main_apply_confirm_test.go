@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,34 @@ func TestApply_NonInteractiveEOFDoesNotSucceed(t *testing.T) {
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatalf("apply ran the service despite missing confirmation (stat %v)", err)
+			}
+		})
+	}
+}
+
+func TestClassifyConfirm(t *testing.T) {
+	tests := []struct {
+		name     string
+		tty      bool
+		answer   string
+		err      error
+		accepted bool
+		declined bool
+	}{
+		{name: "yes", answer: "y\n", accepted: true},
+		{name: "yes upper with eof", tty: true, answer: "Y", err: io.EOF, accepted: true},
+		{name: "explicit n off a tty", answer: "n\n", declined: true},
+		{name: "other text", answer: "no\n", declined: true},
+		{name: "blank enter on a tty", tty: true, answer: "\n", declined: true},
+		{name: "blank line off a tty", answer: "\n"},
+		{name: "eof", answer: "", err: io.EOF},
+		{name: "eof on a tty", tty: true, answer: "", err: io.EOF},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			accepted, declined := classifyConfirm(tt.tty, tt.answer, tt.err)
+			if accepted != tt.accepted || declined != tt.declined {
+				t.Fatalf("classifyConfirm(%v, %q) = (%v, %v), want (%v, %v)", tt.tty, tt.answer, accepted, declined, tt.accepted, tt.declined)
 			}
 		})
 	}
