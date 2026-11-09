@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Spec writes no longer HTML-escape `&`, `<`, and `>` (#244). `encoding/json` does that so a document can sit inside HTML; `genv.json` is a source file. `genv service add` also patches the services object in place, so an existing spec stays byte-identical apart from the added service and hook commands such as `>/dev/null 2>&1 &&` are not rewritten.
+- `genv apply` no longer treats a closed stdin, or a blank line when stdin is not a terminal, as a successful "no" (#245). Nothing is applied, the process exits non-zero, and the message names `--yes`. Typing `n` or pressing Enter on a terminal still aborts with exit 0.
 
 ## v4.7.6 - 2026-10-14
 
