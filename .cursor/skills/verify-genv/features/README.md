@@ -19,7 +19,7 @@ This directory is the source for verifying genv's user-facing CLI. Read this ind
 - Treat every command in a feature file as literal. Keep flags and quotes unchanged.
 - Quote a drive command as one string when it contains quotes or `&&`.
 - Pass `--until` when a command waits for input before it exits.
-- Copy proof files with `verify-genv capture` before `verify-genv cleanup "$GENV_VERIFY_RUN"`.
+- Copy proof files with `verify-genv capture` before `verify-genv cleanup "$GENV_VERIFY_RUN"`. Do not use a reserved evidence name such as `operator-watch.tsv`, `run.env`, or `build.log`.
 - The harness joins wrapped pane lines in the saved drive transcript. Search that file for a phrase. A raw 80-column capture can split the phrase across lines.
 - Cleanup removes the session and the throwaway home. It leaves the evidence directory.
 

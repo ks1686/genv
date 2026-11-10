@@ -23,14 +23,16 @@ Launch is finished when it prints `run_id`, `home`, `spec_dir`, `evidence`, `ses
 
 What launch does:
 
-- Builds `genv` with `GOTOOLCHAIN=go1.26.10`, matching `go.mod`, and puts the binary on the session `PATH` ahead of anything else. The build sets `HOME`, `GOCACHE`, `GOMODCACHE`, `GOPATH`, and `GOENV` inside the run directory, so a toolchain download does not write the operator home.
-- Creates a throwaway home under `/tmp/genv-verify-runs/<run-id>/home`.
+- Builds `genv` with `GOTOOLCHAIN=go1.26.10`, matching `go.mod`, and puts the binary on the session `PATH` ahead of anything else. Before the build it runs `go telemetry off` with `HOME`, `GOENV`, `GOCACHE`, `GOMODCACHE`, and `GOPATH` inside the run directory. It does not run `go env` against the operator home. A `GOTELEMETRY=off` prefix does not turn telemetry off.
+- Creates the run directory with `mktemp -d` (mode 700) inside a private runs root. The throwaway home is `<run>/home`.
 - Sets `XDG_CONFIG_HOME` to `<home>/.config`, so the default spec is `<home>/.config/genv/genv.json`.
 - Starts tmux session `genv-verify-<run-id>` with `env -i`. The tmux server inherits the operator environment. Without a cleared environment the session would read and write the real config directory.
 - Forces `SHELL=/bin/bash`. On Linux and macOS, `genv apply` injects its source line into `~/.bashrc` for bash and `~/.zshrc` for zsh. This session always exercises the bash file.
 - On Ubuntu, interactive bash sources `/etc/bash.bashrc` before the harness rc file. That file prints a sudo hint when the throwaway home has no `.sudo_as_admin_successful` and the user is in group `sudo` or `admin`. The hint is not genv running sudo. Ignore that banner. Fail the journey if the transcript contains an install or uninstall command.
 - Records a fingerprint of the operator's `~/.config/genv`, `~/.bashrc`, and `~/.zshrc` (and `$XDG_CONFIG_HOME/genv` when that variable is set and points somewhere else). Doctor and cleanup fail if a fingerprint changes.
-- Writes proof under `$GENV_VERIFY_EVIDENCE/<run-id>` when that variable is set, otherwise `/tmp/genv-verify-evidence/<run-id>`.
+- Writes proof in a mode 700 directory created with `mktemp -d` under the evidence root. Set `GENV_VERIFY_RUNS` and `GENV_VERIFY_EVIDENCE` to choose the roots. Each one must already exist, must be owned by you, and must not be writable by group or others. The harness does not create those roots and does not chmod them. When the variables are unset, the roots are private temporary directories recorded in `$XDG_RUNTIME_DIR/genv-verify/roots`, or in `$HOME/.cache/genv-verify/roots` when the runtime directory is unset.
+- Sets `CFFIXED_USER_HOME` to the throwaway home so a macOS session does not write operator preferences. This Linux harness does not prove those preference files.
+- Turns off job control in the session (`set +m`) so a background process stays in the shell's process group.
 
 Ready means the prompt is up and `verify-genv doctor` passes. A built binary with a dead session is not ready.
 
@@ -119,7 +121,7 @@ Record the feature id before cleanup:
 printf '%s\n' env > "$(.cursor/skills/verify-genv/scripts/verify-genv paths evidence)/feature.txt"
 ```
 
-Copy files out of the throwaway home before cleanup. `capture` resolves the path with `realpath -e` and accepts it only when that path is inside the throwaway home. It refuses `..`, any symlink, and a name with a slash. On a normal filesystem the evidence directory is mode `700` and the files are mode `600`. Launch still keeps the files when a filesystem rejects `chmod`.
+Copy files out of the throwaway home before cleanup. `capture` opens the file once and copies that descriptor, so a symlink swapped into the path during the copy is not followed. The opened file must stay inside the throwaway home, and the saved file's real path must be exactly `<evidence>/<name>`. It refuses `..`, a relative path, a symlink, and a reserved name (`operator-watch.tsv`, `run.env`, `run.proc`, `build.log`, `pane.log`, `commands.log`, `cleanup-ok.txt`, `cleanup-failed.txt`, `timeout.txt`, `feature.txt`, `drives`). On a normal filesystem the evidence directory is mode `700` and the files are mode `600`. Launch still keeps the files when a filesystem rejects `chmod` of a file the harness created. It never chmods a root the caller passed in.
 
 ```bash
 .cursor/skills/verify-genv/scripts/verify-genv capture env.sh "$(.cursor/skills/verify-genv/scripts/verify-genv paths spec-dir)/env.sh"
@@ -148,9 +150,11 @@ A dry-run is not proof of an apply. `genv apply --dry-run` prints the plan and l
 .cursor/skills/verify-genv/scripts/verify-genv cleanup "$GENV_VERIFY_RUN"
 ```
 
-Cleanup requires that run id. It does not read `GENV_VERIFY_RUN` by itself, and it does not read a current-run file. A missing id is an error and deletes nothing.
+Cleanup requires that run id. The id matches `YYYYMMDDThhmmssZ-<pid>`. `.` and `..` are rejected. Cleanup does not read `GENV_VERIFY_RUN` by itself, and it does not read a current-run file. A missing id is an error and deletes nothing.
 
-Cleanup kills tmux session `genv-verify-<run-id>` with an exact session match, and deletes `/tmp/genv-verify-runs/<run-id>`. It does not delete the evidence directory. It writes `<evidence>/cleanup-ok.txt` when the operator fingerprint still matches. A mismatch still removes that session and that throwaway home, writes `<evidence>/cleanup-failed.txt`, and exits non-zero.
+`run.env` is `key=value` data. Cleanup does not source it. The home, binary, and evidence paths are derived from the run id and the private roots.
+
+Before it signals anything, cleanup compares the saved pid's owner, start time, and command with `TZ=UTC0 LC_ALL=C ps -o lstart= -o command= -p PID`. If the process is still running and that line does not match, cleanup exits non-zero and leaves the session and the run directory in place. If it matches, cleanup signals that process group, then kills tmux session `genv-verify-<run-id>` with an exact session match, then deletes that run directory. It does not delete the evidence directory. It writes `<evidence>/cleanup-ok.txt` when the operator fingerprint still matches. A fingerprint mismatch still removes that session and that throwaway home, writes `<evidence>/cleanup-failed.txt`, and exits non-zero.
 
 A failed launch already removed its own session and home. Pass that run id only if you still need cleanup to record `cleanup-ok.txt`. Do not run cleanup with no id.
 
@@ -183,9 +187,9 @@ Regression checks for cleanup, capture, and evidence modes:
 
 ## Platform limits
 
-Proved on Linux with bash, the harness covers default-path env and shell writes, `~/.bashrc`, and host class `ubuntu`. On Ubuntu the session leaves `GENV_TARGET` unset.
+Proved on Linux with bash, the harness covers default-path env and shell writes, `~/.bashrc`, and the host class of the machine that runs it. On a host genv classifies, the session leaves `GENV_TARGET` unset. On a host it cannot classify, launch exports `GENV_TARGET=linux`.
 
-Debian and other Linux hosts genv cannot classify are not a separate live journey. Launch exports `GENV_TARGET=linux` there, and `classify` reports that choice. Do not mark a Debian apply as verified because the Ubuntu journey passed.
+`scripts/regress.sh` checks both cases from fixtures: Debian reports `session_target=linux`, and Ubuntu reports an empty `session_target`. A live launch must match `classify` on the machine running the script. An Ubuntu apply does not prove a Debian apply.
 
 Not proved here:
 

@@ -8,8 +8,15 @@ umask 077
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 REPO=$(CDPATH='' cd "$SCRIPT_DIR/../../../.." && pwd)
 
-RUNS_ROOT=${GENV_VERIFY_RUNS:-/tmp/genv-verify-runs}
-EVIDENCE_ROOT=${GENV_VERIFY_EVIDENCE:-/tmp/genv-verify-evidence}
+# Roots are chosen by ensure_roots. A caller-supplied directory is used as
+# it is: this process never creates it and never chmods it.
+RUNS_ROOT=
+EVIDENCE_ROOT=
+roots_ready=0
+REGISTRY_DIR=
+DEFAULT_ROOT=
+ROOT_RECORD=
+CHILD_DIR=
 
 # launch_ok stays 0 until the session is up. The EXIT trap removes only this
 # run, so a failed launch cannot leave a later cleanup aimed at an older one.
@@ -17,6 +24,23 @@ launch_ok=0
 launch_run=
 launch_session=
 launch_run_dir=
+launch_pid=
+launch_pgid=
+launch_user=
+launch_identity=
+
+RUN_ID=
+SESSION=
+RUN_DIR=
+VERIFY_HOME=
+XDG=
+BINDIR=
+EVIDENCE=
+SESSION_TARGET=
+PROC_PID=
+PROC_PGID=
+PROC_USER=
+PROC_IDENTITY=
 
 die() {
   printf 'verify-genv: %s\n' "$*" >&2
@@ -29,6 +53,14 @@ on_launch_exit() {
   if [[ "$launch_ok" -eq 1 ]]; then
     exit "$rc"
   fi
+  if [[ -n "$launch_pid" ]] && pid_alive "$launch_pid"; then
+    if launch_process_matches; then
+      kill_group "$launch_pgid" || true
+    else
+      printf 'verify-genv: launch failed and pid %s is not the process this run started. Leaving state in place.\n' "$launch_pid" >&2
+      exit "$rc"
+    fi
+  fi
   if [[ -n "$launch_session" ]]; then
     tmux_cmd kill-session -t "$(tmux_session "$launch_session")" >/dev/null 2>&1 || true
   fi
@@ -36,7 +68,7 @@ on_launch_exit() {
     printf 'verify-genv: launch failed for run %s\n' "$launch_run" >&2
   fi
   if [[ -n "$launch_run" && -n "$RUNS_ROOT" && "$RUNS_ROOT" != "/" && "$launch_run_dir" == "$RUNS_ROOT/$launch_run" ]]; then
-    remove_tree "${launch_run_dir:?}" || true
+    remove_tree "$launch_run_dir" || true
   fi
   exit "$rc"
 }
@@ -61,9 +93,16 @@ Enter. --until is an extended regular expression.
 
 Export GENV_VERIFY_RUN to the run_id launch printed before doctor, paths,
 drive, respond, or capture. There is no current-run file. cleanup requires
-that run id as an argument and does not guess. Set GENV_VERIFY_EVIDENCE to
-the directory that should keep proof. cleanup deletes the session and the
-throwaway home. It leaves the evidence directory in place.
+that run id as an argument and does not guess. A run id matches
+YYYYMMDDThhmmssZ-<pid>.
+
+Set GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE to private directories you own
+that group and others cannot write. The harness does not create or chmod
+those directories. When they are unset, launch stores new mode 700 roots
+under $XDG_RUNTIME_DIR/genv-verify or $HOME/.cache/genv-verify.
+
+cleanup deletes the session and the throwaway home after the saved process
+identity matches. It leaves the evidence directory in place.
 EOF
 }
 
@@ -87,24 +126,210 @@ tmux_pane() {
   printf '=%s:' "$1"
 }
 
-# Proof directories are sometimes on a filesystem that rejects chmod.
-# A normal filesystem still gets these modes, and the regression checks them.
-chmod_best() {
-  local mode=$1
-  shift
-  local path
-  for path in "$@"; do
-    [[ -e "$path" || -L "$path" ]] || continue
-    chmod "$mode" "$path" 2>/dev/null || true
-  done
+# Proof files are sometimes on a filesystem that rejects chmod.
+# Never chmod a directory the caller passed in. Callers pass roots, not
+# these files. A symlink is left alone so chmod cannot follow it.
+chmod_file() {
+  local path=$1
+  [[ -L "$path" ]] && return 0
+  [[ -f "$path" ]] || return 0
+  chmod 600 "$path" 2>/dev/null || true
 }
 
 # Go's module cache is mode 0555. A plain rm leaves it behind.
 remove_tree() {
   local dir=$1
-  [[ -n "$dir" && "$dir" != "/" && -d "$dir" ]] || return 0
+  [[ -n "$dir" && "$dir" != "/" && -d "$dir" && ! -L "$dir" ]] || return 0
   chmod -R u+w "$dir" 2>/dev/null || true
   rm -rf "$dir"
+}
+
+mode_digits() {
+  local path=$1 mode
+  mode=$(stat -c %a "$path" 2>/dev/null || stat -f %OLp "$path") || return 1
+  printf '%s' "$mode"
+}
+
+# Return 0 when group or other has a write bit.
+group_or_other_can_write() {
+  local mode=$1 len g o
+  len=${#mode}
+  [[ "$len" -ge 2 ]] || return 0
+  g=$((len - 2))
+  o=$((len - 1))
+  g=${mode:$g:1}
+  o=${mode:$o:1}
+  case "$g" in
+    2|3|6|7) return 0 ;;
+  esac
+  case "$o" in
+    2|3|6|7) return 0 ;;
+  esac
+  return 1
+}
+
+private_dir_ok() {
+  local path=$1 mode
+  [[ -n "$path" && "$path" != "/" ]] || return 1
+  [[ -L "$path" ]] && return 1
+  [[ -d "$path" && -O "$path" ]] || return 1
+  mode=$(mode_digits "$path") || return 1
+  if group_or_other_can_write "$mode"; then
+    return 1
+  fi
+  return 0
+}
+
+require_private_dir() {
+  local path=$1 label=$2 mode
+  [[ -n "$path" && "$path" != "/" ]] || die "$label is missing"
+  if [[ -L "$path" ]]; then
+    die "$label is a symlink. Refusing to use it."
+  fi
+  if [[ ! -d "$path" ]]; then
+    die "$label does not exist. Refusing to create it."
+  fi
+  if [[ ! -O "$path" ]]; then
+    die "$label is not owned by $(id -un). Refusing to use it."
+  fi
+  mode=$(mode_digits "$path") || die "$label mode cannot be read"
+  if group_or_other_can_write "$mode"; then
+    die "$label is writable by group or others (mode $mode). Refusing to use it."
+  fi
+}
+
+run_id_ok() {
+  [[ "$1" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]]
+}
+
+registry_dir() {
+  local dir
+  REGISTRY_DIR=
+  if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && private_dir_ok "$XDG_RUNTIME_DIR"; then
+    dir=$XDG_RUNTIME_DIR/genv-verify
+    if [[ ! -e "$dir" && ! -L "$dir" ]]; then
+      mkdir -m 700 "$dir" || die "cannot create $dir"
+    fi
+    private_dir_ok "$dir" || die "registry $dir is not private"
+    REGISTRY_DIR=$dir
+    return 0
+  fi
+  if [[ -n "${HOME:-}" ]] && private_dir_ok "$HOME"; then
+    if [[ ! -e "$HOME/.cache" && ! -L "$HOME/.cache" ]]; then
+      mkdir -m 700 "$HOME/.cache" || die "cannot create $HOME/.cache"
+    fi
+    if private_dir_ok "$HOME/.cache"; then
+      dir=$HOME/.cache/genv-verify
+      if [[ ! -e "$dir" && ! -L "$dir" ]]; then
+        mkdir -m 700 "$dir" || die "cannot create $dir"
+      fi
+      private_dir_ok "$dir" || die "registry $dir is not private"
+      REGISTRY_DIR=$dir
+      return 0
+    fi
+  fi
+  die "no private directory for verify-genv state. Set GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE to directories you own that group and others cannot write."
+}
+
+read_root_record() {
+  local file=$1 kind=$2 line val
+  ROOT_RECORD=
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" == "$kind"=* ]] || continue
+    val=${line#*=}
+    ROOT_RECORD=$val
+  done <"$file"
+  [[ -n "$ROOT_RECORD" ]]
+}
+
+write_root_record() {
+  local file=$1 kind=$2 value=$3 tmp line key
+  case "$value" in
+    *$'\n'*|*'='*) die "refusing to record a root path with a newline or extra '='" ;;
+  esac
+  tmp=$file.tmp.$$
+  : >"$tmp"
+  if [[ -f "$file" && ! -L "$file" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ "$line" == *=* ]] || continue
+      key=${line%%=*}
+      [[ "$key" == "$kind" ]] && continue
+      printf '%s\n' "$line" >>"$tmp"
+    done <"$file"
+  fi
+  printf '%s=%s\n' "$kind" "$value" >>"$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+}
+
+pick_default_root() {
+  local kind=$1 reg dir
+  case "$kind" in
+    runs|evidence) ;;
+    *) die "unknown root kind" ;;
+  esac
+  registry_dir
+  reg=$REGISTRY_DIR/roots
+  dir=
+  if [[ -f "$reg" ]]; then
+    if read_root_record "$reg" "$kind"; then
+      dir=$ROOT_RECORD
+    fi
+  fi
+  if [[ -n "$dir" ]] && private_dir_ok "$dir"; then
+    DEFAULT_ROOT=$dir
+    return 0
+  fi
+  # Mode 700 comes from umask 077. chmod applies only to this new directory.
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/genv-verify-${kind}.XXXXXX") || die "mktemp failed"
+  chmod 700 "$dir" || die "cannot set mode 700 on $dir"
+  private_dir_ok "$dir" || die "temporary directory $dir is not private"
+  write_root_record "$reg" "$kind" "$dir"
+  DEFAULT_ROOT=$dir
+}
+
+ensure_roots() {
+  [[ "$roots_ready" -eq 1 ]] && return 0
+  if [[ -n "${GENV_VERIFY_RUNS+x}" ]]; then
+    [[ -n "$GENV_VERIFY_RUNS" ]] || die "GENV_VERIFY_RUNS is empty"
+    require_private_dir "$GENV_VERIFY_RUNS" "GENV_VERIFY_RUNS"
+    RUNS_ROOT=$GENV_VERIFY_RUNS
+  else
+    pick_default_root runs
+    RUNS_ROOT=$DEFAULT_ROOT
+  fi
+  if [[ -n "${GENV_VERIFY_EVIDENCE+x}" ]]; then
+    [[ -n "$GENV_VERIFY_EVIDENCE" ]] || die "GENV_VERIFY_EVIDENCE is empty"
+    require_private_dir "$GENV_VERIFY_EVIDENCE" "GENV_VERIFY_EVIDENCE"
+    EVIDENCE_ROOT=$GENV_VERIFY_EVIDENCE
+  else
+    pick_default_root evidence
+    EVIDENCE_ROOT=$DEFAULT_ROOT
+  fi
+  [[ "$RUNS_ROOT" != "$EVIDENCE_ROOT" ]] || die "runs and evidence directories must be different"
+  [[ "$RUNS_ROOT" != "/" && "$EVIDENCE_ROOT" != "/" ]] || die "refusing to use /"
+  roots_ready=1
+}
+
+make_private_child() {
+  local root=$1 name=$2 tmp dest
+  CHILD_DIR=
+  run_id_ok "$name" || die "refusing to create $root/$name"
+  private_dir_ok "$root" || die "$root is not a private directory"
+  dest=$root/$name
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    die "refusing to reuse existing directory $dest"
+  fi
+  tmp=$(mktemp -d "$root/.tmp.XXXXXX") || die "mktemp failed in $root"
+  chmod 700 "$tmp" || die "cannot set mode 700 on $tmp"
+  if ! mv "$tmp" "$dest"; then
+    chmod -R u+w "$tmp" 2>/dev/null || true
+    rm -rf "$tmp"
+    die "cannot create $dest"
+  fi
+  private_dir_ok "$dest" || die "$dest is not private"
+  CHILD_DIR=$dest
 }
 
 config_fingerprint() {
@@ -157,12 +382,12 @@ write_operator_watch() {
       *) record_watch "$dest" "$path" ;;
     esac
   fi
-  chmod_best 600 "$dest"
+  chmod_file "$dest"
 }
 
 check_operator_watch() {
   local file=$1 fp path now
-  [[ -f "$file" ]] || {
+  [[ -f "$file" && ! -L "$file" ]] || {
     printf 'verify-genv: missing operator watch file %s\n' "$file" >&2
     return 1
   }
@@ -257,37 +482,224 @@ cmd_classify() {
   fi
 }
 
-apply_run_env() {
-  local envf=$1
-  # shellcheck disable=SC1090,SC1091
-  source "$envf"
-  # shellcheck disable=SC2154
-  RUN_ID=${run_id:-}
-  # shellcheck disable=SC2154
-  SESSION=${session:-}
-  # shellcheck disable=SC2154
-  RUN_DIR=${run_dir:-}
-  # shellcheck disable=SC2154
-  VERIFY_HOME=${verify_home:-}
-  # shellcheck disable=SC2154
-  XDG=${xdg:-}
-  # shellcheck disable=SC2154
-  BINDIR=${bindir:-}
-  # shellcheck disable=SC2154
-  EVIDENCE=${evidence:-}
-  # shellcheck disable=SC2154
-  SESSION_TARGET=${session_target:-}
-  [[ -n "$RUN_ID" && -n "$SESSION" && -n "$VERIFY_HOME" && -n "$XDG" && -n "$BINDIR" && -n "$EVIDENCE" ]] || die "run.env is incomplete: $envf"
+# run.env is data. Sourcing it would run whatever was written into the directory.
+load_run_record() {
+  local file=$1 expected=$2
+  local line key val got_session got_target saw_id
+  got_session=
+  got_target=
+  saw_id=0
+  [[ -f "$file" && ! -L "$file" ]] || die "run.env is missing: $file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line%$'\r'}
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *=* ]] || die "run.env is not key=value data: $file"
+    key=${line%%=*}
+    val=${line#*=}
+    case "$key" in
+      run_id|session|host_class|session_target) ;;
+      run_dir|verify_home|xdg|bindir|evidence|repo) continue ;;
+      *) die "run.env has an unknown key" ;;
+    esac
+    case "$key" in
+      run_id)
+        run_id_ok "$val" || die "run.env run_id is not a run id"
+        [[ "$val" == "$expected" ]] || die "run.env id does not match"
+        saw_id=1
+        ;;
+      session)
+        got_session=$val
+        ;;
+      host_class)
+        case "$val" in
+          ""|macos|windows|arch|ubuntu|wsl-arch) ;;
+          *) die "run.env host_class is not a known class" ;;
+        esac
+        ;;
+      session_target)
+        case "$val" in
+          ""|linux|macos|windows|arch|ubuntu|wsl-arch) got_target=$val ;;
+          *) die "run.env session_target is not a known target" ;;
+        esac
+        ;;
+    esac
+  done <"$file"
+  [[ "$saw_id" -eq 1 ]] || die "run.env has no run_id"
+  [[ "$got_session" == "genv-verify-$expected" ]] || die "run.env session does not match"
+  # Paths come from the id and the private roots, never from the file.
+  RUN_ID=$expected
+  SESSION=genv-verify-$expected
+  RUN_DIR=$RUNS_ROOT/$expected
+  VERIFY_HOME=$RUN_DIR/home
+  XDG=$VERIFY_HOME/.config
+  BINDIR=$RUN_DIR/bin
+  EVIDENCE=$EVIDENCE_ROOT/$expected
+  SESSION_TARGET=$got_target
 }
 
 load_state() {
   local run=${GENV_VERIFY_RUN:-}
+  ensure_roots
   [[ -n "$run" ]] || die "GENV_VERIFY_RUN is empty. Export the run_id launch printed. This harness does not guess a current run."
-  [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || die "GENV_VERIFY_RUN is not a run id"
+  run_id_ok "$run" || die "GENV_VERIFY_RUN is not a run id"
   [[ -f "$RUNS_ROOT/$run/run.env" ]] || die "run $run has no state at $RUNS_ROOT/$run/run.env"
-  apply_run_env "$RUNS_ROOT/$run/run.env"
-  [[ "$RUN_ID" == "$run" ]] || die "run.env id does not match GENV_VERIFY_RUN"
-  [[ "$SESSION" == "genv-verify-$run" ]] || die "run.env session does not match $run"
+  load_run_record "$RUNS_ROOT/$run/run.env" "$run"
+  [[ -d "$VERIFY_HOME" && ! -L "$VERIFY_HOME" ]] || die "throwaway home is missing"
+  [[ -d "$EVIDENCE" && ! -L "$EVIDENCE" ]] || die "evidence directory is missing"
+  private_dir_ok "$EVIDENCE" || die "evidence directory is not private"
+}
+
+pid_alive() {
+  local pid=$1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  ps -p "$pid" >/dev/null 2>&1
+}
+
+ps_user() {
+  ps -o user= -p "$1" 2>/dev/null | tr -d '[:space:]' || true
+}
+
+# Same command on every check so the saved line can be compared on macOS,
+# where /proc does not exist. TZ=UTC0 keeps the date stable.
+process_identity() {
+  TZ=UTC0 LC_ALL=C ps -o lstart= -o command= -p "$1" 2>/dev/null || true
+}
+
+own_pgid() {
+  ps -o pgid= -p $$ | tr -d '[:space:]'
+}
+
+group_has_processes() {
+  local pgid=$1 line lines
+  lines=$(ps -eo pgid= 2>/dev/null || true)
+  while IFS= read -r line; do
+    line=${line//[[:space:]]/}
+    [[ "$line" == "$pgid" ]] && return 0
+  done <<EOF
+$lines
+EOF
+  return 1
+}
+
+kill_group() {
+  local pgid=$1 mine i
+  [[ "$pgid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$pgid" -gt 1 ]] || return 1
+  mine=$(own_pgid)
+  [[ -n "$mine" && "$pgid" != "$mine" ]] || return 1
+  kill -TERM "-$pgid" 2>/dev/null || true
+  i=0
+  while [[ "$i" -lt 10 ]]; do
+    if ! group_has_processes "$pgid"; then
+      return 0
+    fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  kill -KILL "-$pgid" 2>/dev/null || true
+  sleep 0.1
+  if group_has_processes "$pgid"; then
+    return 1
+  fi
+  return 0
+}
+
+launch_process_matches() {
+  local now user cmd
+  [[ -n "$launch_pid" ]] || return 1
+  user=$(ps_user "$launch_pid")
+  [[ "$user" == "$(id -un)" ]] || return 1
+  if [[ -n "$launch_identity" ]]; then
+    now=$(process_identity "$launch_pid")
+    [[ -n "$now" && "$now" == "$launch_identity" && "$user" == "$launch_user" ]]
+    return
+  fi
+  cmd=$(ps -o command= -p "$launch_pid" 2>/dev/null || true)
+  [[ -n "$launch_run_dir" && -n "$cmd" ]] || return 1
+  case "$cmd" in
+    *"$launch_run_dir"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+note_launch_process() {
+  local pid pgid
+  pid=$(tmux_cmd display-message -p -t "$(tmux_pane "$launch_session")" '#{pane_pid}')
+  [[ "$pid" =~ ^[0-9]+$ ]] || die "session pane pid is missing"
+  pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)
+  [[ "$pgid" =~ ^[0-9]+$ ]] || die "session pane pgid is missing"
+  launch_pid=$pid
+  launch_pgid=$pgid
+  launch_user=$(ps_user "$pid")
+  [[ "$launch_user" == "$(id -un)" ]] || die "pane owner is ${launch_user:-unknown}"
+}
+
+record_proc() {
+  local ident
+  note_launch_process
+  ident=$(process_identity "$launch_pid")
+  [[ -n "$ident" ]] || die "cannot record process identity"
+  launch_identity=$ident
+  {
+    printf 'pid=%s\n' "$launch_pid"
+    printf 'pgid=%s\n' "$launch_pgid"
+    printf 'user=%s\n' "$launch_user"
+    printf 'identity=%s\n' "$ident"
+  } >"$RUN_DIR/run.proc"
+  chmod_file "$RUN_DIR/run.proc"
+}
+
+load_proc() {
+  local file=$1 line key val saw_pid saw_pgid saw_user saw_ident
+  PROC_PID=
+  PROC_PGID=
+  PROC_USER=
+  PROC_IDENTITY=
+  saw_pid=0
+  saw_pgid=0
+  saw_user=0
+  saw_ident=0
+  [[ -f "$file" && ! -L "$file" ]] || die "run.proc is missing: $file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line%$'\r'}
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *=* ]] || die "run.proc is not key=value data"
+    key=${line%%=*}
+    val=${line#*=}
+    case "$key" in
+      pid)
+        [[ "$val" =~ ^[0-9]+$ ]] || die "run.proc pid is not a number"
+        PROC_PID=$val
+        saw_pid=1
+        ;;
+      pgid)
+        [[ "$val" =~ ^[0-9]+$ ]] || die "run.proc pgid is not a number"
+        PROC_PGID=$val
+        saw_pgid=1
+        ;;
+      user)
+        [[ "$val" =~ ^[A-Za-z0-9._+-]+$ ]] || die "run.proc user is not a user name"
+        PROC_USER=$val
+        saw_user=1
+        ;;
+      identity)
+        PROC_IDENTITY=$val
+        saw_ident=1
+        ;;
+      *)
+        die "run.proc has an unknown key"
+        ;;
+    esac
+  done <"$file"
+  [[ "$saw_pid" -eq 1 && "$saw_pgid" -eq 1 && "$saw_user" -eq 1 && "$saw_ident" -eq 1 ]] || die "run.proc is incomplete"
+  [[ -n "$PROC_IDENTITY" ]] || die "run.proc identity is empty"
+}
+
+proc_matches_live() {
+  local now user
+  user=$(ps_user "$PROC_PID")
+  now=$(process_identity "$PROC_PID")
+  [[ "$user" == "$PROC_USER" && "$user" == "$(id -un)" && -n "$now" && "$now" == "$PROC_IDENTITY" ]]
 }
 
 pane_text() {
@@ -319,14 +731,14 @@ wait_for_match() {
       exits=$(match_count '^GENV_DRIVE_EXIT:[0-9]+$')
       if (( exits > before_exit )); then
         pane_text >"$EVIDENCE/timeout.txt" || true
-        chmod_best 600 "$EVIDENCE/timeout.txt"
+        chmod_file "$EVIDENCE/timeout.txt"
         die "command finished before /$until/ appeared. Refusing to leave the session waiting for respond."
       fi
     fi
     sleep 0.2
   done
   pane_text >"$EVIDENCE/timeout.txt" || true
-  chmod_best 600 "$EVIDENCE/timeout.txt"
+  chmod_file "$EVIDENCE/timeout.txt"
   die "timed out after ${timeout}s waiting for /$until/"
 }
 
@@ -334,8 +746,13 @@ save_drive() {
   local label=$1
   local n dir file
   dir=$EVIDENCE/drives
-  mkdir -p "$dir"
-  chmod_best 700 "$EVIDENCE" "$dir"
+  [[ -d "$EVIDENCE" && ! -L "$EVIDENCE" ]] || die "evidence directory is missing"
+  if [[ -L "$dir" ]]; then
+    die "drives path is a symlink"
+  fi
+  if [[ ! -d "$dir" ]]; then
+    mkdir -m 700 "$dir"
+  fi
   n=$(find "$dir" -name '*.txt' | wc -l | tr -d ' ')
   n=$((n + 1))
   file=$(printf '%s/%03d.txt' "$dir" "$n")
@@ -343,7 +760,7 @@ save_drive() {
     printf 'command: %s\n' "$label"
     pane_text
   } >"$file"
-  chmod_best 600 "$file"
+  chmod_file "$file"
 }
 
 newest_exit_code() {
@@ -363,7 +780,7 @@ finish_drive() {
   local code=0
   save_drive "$label"
   printf '%s\n' "$label" >>"$EVIDENCE/commands.log"
-  chmod_best 600 "$EVIDENCE/commands.log"
+  chmod_file "$EVIDENCE/commands.log"
   if [[ "$expect_exit" -eq 1 ]]; then
     code=$(newest_exit_code)
     [[ -n "$code" ]] || die "command finished without GENV_DRIVE_EXIT"
@@ -402,7 +819,11 @@ parse_until() {
   if [[ "$UNTIL" != ^GENV_DRIVE_EXIT:* ]]; then
     EXPECT_EXIT=0
   fi
-  REMAINING=("$@")
+  if [[ "$#" -eq 0 ]]; then
+    REMAINING=()
+  else
+    REMAINING=("$@")
+  fi
 }
 
 path_has_dotdot() {
@@ -415,28 +836,62 @@ path_has_dotdot() {
   [[ "$rest" == ".." ]]
 }
 
+# go env writes telemetry into the home that runs it. Putting GOTELEMETRY=off
+# on the command line does not turn that off. Read the module cache path
+# from disk, then run go telemetry off with HOME pointed at the throwaway home.
+operator_download_cache() {
+  local envf=${HOME}/.config/go/env line val base
+  base=${HOME}/go/pkg/mod
+  if [[ -f "$envf" && ! -L "$envf" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ "$line" == GOMODCACHE=* ]] || continue
+      val=${line#GOMODCACHE=}
+      case "$val" in
+        /*) ;;
+        *) continue ;;
+      esac
+      case "$val" in
+        *'$'*|*'`'*|*';'*|*' '*|*$'\n'*) continue ;;
+      esac
+      base=$val
+    done <"$envf"
+  fi
+  if [[ -d "$base/cache/download" && ! -L "$base/cache/download" ]]; then
+    printf '%s\n' "$base/cache/download"
+  fi
+}
+
 build_genv() {
   local home=$1 out=$2 logfile=$3
-  local gocache gomodcache goenv gopath proxy operator_mod
+  local gocache gomodcache goenv gopath proxy download
   gocache=${GENV_VERIFY_GOCACHE:-$RUN_DIR/gocache}
   gomodcache=${GENV_VERIFY_GOMODCACHE:-$RUN_DIR/gomodcache}
   goenv=$RUN_DIR/goenv
   gopath=$RUN_DIR/gopath
   mkdir -p "$gocache" "$gomodcache" "$gopath"
   proxy=${GOPROXY:-https://proxy.golang.org,direct}
-  # Read the operator module cache as a file proxy. Writes go to the run cache.
-  operator_mod=
-  if ! operator_mod=$(CDPATH='' cd /tmp && GOTOOLCHAIN=local GOENV=off go env GOMODCACHE 2>/dev/null); then
-    operator_mod=
-  fi
-  if [[ -n "$operator_mod" && -d "$operator_mod/cache/download" && "$operator_mod" != "$gomodcache" ]]; then
-    proxy="file://${operator_mod}/cache/download,${proxy}"
+  download=$(operator_download_cache || true)
+  if [[ -n "$download" && "$download" != "$gomodcache/cache/download" ]]; then
+    proxy="file://${download},${proxy}"
   fi
   (
     printf 'gocache=%s\n' "$gocache"
     printf 'gomodcache=%s\n' "$gomodcache"
     printf 'build_home=%s\n' "$home"
     printf 'goproxy=%s\n' "$proxy"
+    if ! env \
+      HOME="$home" \
+      GOCACHE="$gocache" \
+      GOMODCACHE="$gomodcache" \
+      GOPATH="$gopath" \
+      GOENV="$goenv" \
+      GOPROXY="$proxy" \
+      GOTOOLCHAIN=go1.26.10 \
+      go telemetry off; then
+      printf 'go_telemetry=unavailable\n'
+    else
+      printf 'go_telemetry=off\n'
+    fi
     CDPATH='' cd "$REPO"
     env \
       HOME="$home" \
@@ -446,7 +901,6 @@ build_genv() {
       GOENV="$goenv" \
       GOPROXY="$proxy" \
       GOTOOLCHAIN=go1.26.10 \
-      GOTELEMETRY=off \
       go build -o "$out" .
     printf 'binary=%s\n' "$out"
     env \
@@ -457,7 +911,6 @@ build_genv() {
       GOENV="$goenv" \
       GOPROXY="$proxy" \
       GOTOOLCHAIN=go1.26.10 \
-      GOTELEMETRY=off \
       go version
     "$out" version
   ) >"$logfile" 2>&1
@@ -478,6 +931,8 @@ write_start() {
     printf '  USER=%q \\\n' "${USER:-verify}"
     printf '  LOGNAME=%q \\\n' "${USER:-verify}"
     printf '  INPUTRC=%q \\\n' "$RUN_DIR/inputrc"
+    # CoreFoundation on macOS reads this instead of the operator home.
+    printf '  CFFIXED_USER_HOME=%q \\\n' "$home"
     if [[ -n "$target" ]]; then
       printf '  GENV_TARGET=%q \\\n' "$target"
     fi
@@ -494,12 +949,17 @@ cmd_launch() {
   command -v go >/dev/null || die "go is not on PATH"
   command -v tmux >/dev/null || die "tmux is not on PATH"
   command -v realpath >/dev/null || die "realpath is not on PATH"
+  command -v perl >/dev/null || die "perl is not on PATH"
+  ensure_roots
   run=$(date -u +%Y%m%dT%H%M%SZ)-$$
-  RUN_DIR=$RUNS_ROOT/$run
+  run_id_ok "$run" || die "generated run id is not a run id"
+  make_private_child "$RUNS_ROOT" "$run"
+  RUN_DIR=$CHILD_DIR
   home=$RUN_DIR/home
   xdg=$home/.config
   bindir=$RUN_DIR/bin
-  evidence=$EVIDENCE_ROOT/$run
+  make_private_child "$EVIDENCE_ROOT" "$run"
+  evidence=$CHILD_DIR
   session=genv-verify-$run
   operator_home=${HOME:-}
   [[ -n "$operator_home" ]] || die "HOME is empty. Refusing to launch."
@@ -523,48 +983,48 @@ cmd_launch() {
   trap on_launch_exit EXIT
 
   mkdir -p "$home/.config" "$home/.cache" "$home/.local/share" "$bindir" "$evidence/drives"
-  chmod_best 700 "$RUN_DIR" "$home" "$home/.config" "$home/.cache" "$home/.local" "$evidence" "$evidence/drives"
+  chmod 700 "$home" "$home/.config" "$home/.cache" "$home/.local" "$evidence/drives" || true
   write_operator_watch "$evidence/operator-watch.tsv" "$operator_home"
   cp "$evidence/operator-watch.tsv" "$RUN_DIR/operator-watch.tsv"
-  chmod_best 600 "$RUN_DIR/operator-watch.tsv"
+  chmod_file "$RUN_DIR/operator-watch.tsv"
 
   cat >"$RUN_DIR/inputrc" <<'EOF'
 set enable-bracketed-paste off
 set bell-style none
 EOF
+  # Interactive bash turns job control on after the rc file. That puts a
+  # background process in its own group, which cleanup would miss. set +m
+  # in PROMPT_COMMAND runs before each command and keeps the job in the
+  # shell's process group.
   cat >"$RUN_DIR/verify.bashrc" <<'EOF'
 set +H
 set +o history
+set +m
 PS1='GENVVERIFY> '
-PROMPT_COMMAND='printf "GENV_DRIVE_EXIT:%s\n" "$?"'
+PROMPT_COMMAND='set +m; printf "GENV_DRIVE_EXIT:%s\n" "$?"'
 EOF
   write_start "$home" "$xdg" "$bindir" "$session_target"
   {
-    printf 'run_id=%q\n' "$run"
-    printf 'session=%q\n' "$session"
-    printf 'run_dir=%q\n' "$RUN_DIR"
-    printf 'verify_home=%q\n' "$home"
-    printf 'xdg=%q\n' "$xdg"
-    printf 'bindir=%q\n' "$bindir"
-    printf 'evidence=%q\n' "$evidence"
-    printf 'repo=%q\n' "$REPO"
-    printf 'host_class=%q\n' "$host_class"
-    printf 'session_target=%q\n' "$session_target"
+    printf 'run_id=%s\n' "$run"
+    printf 'session=%s\n' "$session"
+    printf 'host_class=%s\n' "$host_class"
+    printf 'session_target=%s\n' "$session_target"
   } >"$RUN_DIR/run.env"
-  chmod_best 600 "$RUN_DIR/run.env"
+  chmod_file "$RUN_DIR/run.env"
   cp "$RUN_DIR/run.env" "$evidence/run.env"
-  chmod_best 600 "$evidence/run.env"
+  chmod_file "$evidence/run.env"
 
   if ! build_genv "$home" "$bindir/genv" "$evidence/build.log"; then
     die "go build failed. See $evidence/build.log"
   fi
-  chmod_best 600 "$evidence/build.log"
+  chmod_file "$evidence/build.log"
 
   : >"$evidence/pane.log"
-  chmod_best 600 "$evidence/pane.log"
+  chmod_file "$evidence/pane.log"
   tmux_cmd new-session -d -s "$session" -c "$home" -- "$RUN_DIR/start.sh"
   SESSION=$session
   EVIDENCE=$evidence
+  note_launch_process
   local deadline
   deadline=$((SECONDS + 20))
   while (( SECONDS < deadline )); do
@@ -579,9 +1039,9 @@ EOF
   if ! pane_text 2>/dev/null | grep -q 'GENVVERIFY>'; then
     die "session did not reach the GENVVERIFY prompt"
   fi
+  record_proc
   tmux_cmd pipe-pane -t "$(tmux_pane "$session")" -o "cat >> $(printf '%q' "$evidence/pane.log")" || printf 'verify-genv: pane log not attached\n' >&2
-  chmod_best 600 "$evidence/pane.log"
-  chmod_best 700 "$evidence" "$evidence/drives"
+  chmod_file "$evidence/pane.log"
 
   launch_ok=1
   trap - EXIT
@@ -657,18 +1117,99 @@ cmd_respond() {
   finish_drive "$UNTIL" "$label" "$EXPECT_EXIT"
 }
 
+capture_reserved() {
+  case "$1" in
+    operator-watch.tsv|run.env|run.proc|build.log|pane.log|commands.log|cleanup-ok.txt|cleanup-failed.txt|timeout.txt|feature.txt|drives)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Open the source once and copy that descriptor. realpath and a later open
+# are not the same file if the directory is swapped in between.
+copy_nofollow() {
+  local src=$1 dest=$2 home_real=$3 evidence_real=$4 name=$5 err
+  if ! err=$(perl - "$src" "$dest" "$home_real" "$evidence_real" "$name" 2>&1 <<'PERL'
+use strict;
+use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW);
+use Cwd qw(realpath);
+
+my ($src, $dst, $home_real, $evidence_real, $name) = @ARGV;
+die "capture args\n" unless defined $name && $name ne "";
+
+sub inside {
+  my ($root, $path) = @_;
+  return 0 unless defined $path && defined $root && $root ne "";
+  return 0 if $path eq $root;
+  my $prefix = $root;
+  $prefix .= "/" unless substr($prefix, -1) eq "/";
+  return rindex($path, $prefix, 0) == 0;
+}
+
+sub fd_path {
+  my ($fh) = @_;
+  my $n = fileno($fh);
+  my $proc = "/proc/self/fd/$n";
+  if (-e $proc) {
+    my $link = readlink($proc);
+    return $link if defined $link && $link ne "";
+  }
+  my $buf = "\0" x 4096;
+  if (fcntl($fh, 50, $buf)) {
+    $buf =~ s/\0.*//s;
+    return $buf if $buf ne "";
+  }
+  return;
+}
+
+sysopen(my $in, $src, O_RDONLY | O_NOFOLLOW) or die "open src: $!\n";
+die "source is not a file\n" unless -f $in;
+my $opened = fd_path($in);
+die "cannot resolve opened file\n" unless defined $opened && $opened ne "";
+my $real = realpath($opened);
+die "cannot resolve opened file\n" unless defined $real;
+die "opened file is outside the throwaway home\n" unless inside($home_real, $real);
+
+my $expect = $evidence_real . "/" . $name;
+sysopen(my $out, $dst, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600) or die "open dst: $!\n";
+while (1) {
+  my $n = sysread($in, my $buf, 8192);
+  die "read: $!\n" unless defined $n;
+  last if $n == 0;
+  my $off = 0;
+  while ($off < length($buf)) {
+    my $w = syswrite($out, $buf, length($buf) - $off, $off);
+    die "write: $!\n" unless defined $w;
+    $off += $w;
+  }
+}
+close $in or die "close src: $!\n";
+close $out or die "close dst: $!\n";
+my $dest_real = realpath($dst);
+die "evidence file escaped the evidence directory\n" unless defined $dest_real && $dest_real eq $expect;
+PERL
+  ); then
+    die "capture: ${err:-refusing to copy}"
+  fi
+}
+
 cmd_capture() {
-  local name=${1:-} path=${2:-} dest home_real dir dir_real src_real
+  local name=${1:-} path=${2:-} dest home_real evidence_real dir dir_real dest_real
   [[ -n "$name" && -n "$path" ]] || die "capture: usage: verify-genv capture <name> <absolute-path>"
   load_state
   case "$name" in
     */*|*..*|.*) die "capture: name must be a single path segment" ;;
   esac
+  if capture_reserved "$name"; then
+    die "capture: $name is reserved"
+  fi
   [[ "$path" == /* ]] || die "capture: path must be absolute"
   if path_has_dotdot "$path"; then
     die "capture: refusing '..' in $path"
   fi
   home_real=$(realpath -e "$VERIFY_HOME") || die "capture: throwaway home is missing"
+  evidence_real=$(realpath -e "$EVIDENCE") || die "capture: evidence directory is missing"
   if [[ -L "$path" ]]; then
     die "capture: refusing symlink $path"
   fi
@@ -688,18 +1229,21 @@ cmd_capture() {
     [[ "$dir" == "/" ]] && die "capture: $path is outside the throwaway home"
     dir=$(dirname -- "$dir")
   done
-  src_real=$(realpath -e -- "$path" 2>/dev/null) || die "capture: $path is not a file"
-  if [[ -L "$src_real" ]]; then
-    die "capture: refusing symlink $path"
-  fi
-  case "$src_real" in
-    "$home_real"/*) ;;
-    *) die "capture: $path is outside the throwaway home" ;;
-  esac
-  [[ -f "$src_real" ]] || die "capture: $path is not a file"
+  [[ -e "$path" ]] || die "capture: $path is not a file"
   dest=$EVIDENCE/$name
-  cp -- "$src_real" "$dest"
-  chmod_best 600 "$dest"
+  if [[ -L "$dest" ]]; then
+    die "capture: refusing symlink at $dest"
+  fi
+  if [[ -e "$dest" ]]; then
+    dest_real=$(realpath -e -- "$dest" 2>/dev/null) || die "capture: $dest is outside the evidence directory"
+    [[ "$dest_real" == "$evidence_real/$name" ]] || die "capture: $dest is outside the evidence directory"
+    [[ -f "$dest" ]] || die "capture: $dest is not a file"
+    rm -f -- "$dest"
+  fi
+  copy_nofollow "$path" "$dest" "$home_real" "$evidence_real" "$name"
+  dest_real=$(realpath -e -- "$dest" 2>/dev/null) || die "capture: evidence file escaped the evidence directory"
+  [[ "$dest_real" == "$evidence_real/$name" ]] || die "capture: evidence file escaped the evidence directory"
+  [[ ! -L "$dest" && -f "$dest" ]] || die "capture: evidence file is not a regular file"
   printf '%s\n' "$dest"
 }
 
@@ -741,26 +1285,44 @@ cmd_doctor() {
   printf 'doctor ok\n%s\n' "$line"
 }
 
+stop_recorded_process() {
+  local procf=$1
+  [[ -f "$procf" ]] || return 0
+  load_proc "$procf"
+  if ! pid_alive "$PROC_PID"; then
+    return 0
+  fi
+  if ! proc_matches_live; then
+    printf 'verify-genv: process identity does not match pid %s. Refusing to signal or remove this run.\n' "$PROC_PID" >&2
+    exit 1
+  fi
+  kill_group "$PROC_PGID" || die "refusing to signal process group $PROC_PGID"
+}
+
 cmd_cleanup() {
   local run envf session_name watch_ok
   if [[ $# -ne 1 || -z "${1:-}" ]]; then
     die "cleanup requires the run id. Pass the id launch printed. Refusing to guess."
   fi
   run=$1
-  [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || die "cleanup: run id is not a run id"
-  if [[ -f "$RUNS_ROOT/$run/run.env" ]]; then
+  run_id_ok "$run" || die "cleanup: run id is not a run id"
+  ensure_roots
+  if [[ -f "$RUNS_ROOT/$run/run.env" && ! -L "$RUNS_ROOT/$run/run.env" ]]; then
     envf=$RUNS_ROOT/$run/run.env
-  elif [[ -f "$EVIDENCE_ROOT/$run/run.env" ]]; then
+  elif [[ -f "$EVIDENCE_ROOT/$run/run.env" && ! -L "$EVIDENCE_ROOT/$run/run.env" ]]; then
     envf=$EVIDENCE_ROOT/$run/run.env
   else
     die "cleanup: no run $run. Refusing to guess."
   fi
-  apply_run_env "$envf"
-  [[ "$RUN_ID" == "$run" ]] || die "run.env id does not match $run"
+  load_run_record "$envf" "$run"
   session_name=$SESSION
-  [[ "$session_name" == "genv-verify-$run" ]] || die "cleanup: run.env session does not match $run"
-  [[ -d "$EVIDENCE" ]] || die "evidence directory $EVIDENCE is missing before cleanup"
-  [[ -f "$EVIDENCE/operator-watch.tsv" ]] || die "evidence is missing operator-watch.tsv"
+  [[ "$session_name" == "genv-verify-$run" ]] || die "cleanup: session does not match $run"
+  [[ -d "$EVIDENCE" && ! -L "$EVIDENCE" ]] || die "evidence directory $EVIDENCE is missing before cleanup"
+  private_dir_ok "$EVIDENCE" || die "evidence directory is not private"
+  [[ -f "$EVIDENCE/operator-watch.tsv" && ! -L "$EVIDENCE/operator-watch.tsv" ]] || die "evidence is missing operator-watch.tsv"
+  if [[ -d "$RUN_DIR" && ! -L "$RUN_DIR" && -f "$RUN_DIR/run.proc" ]]; then
+    stop_recorded_process "$RUN_DIR/run.proc"
+  fi
   if tmux_cmd has-session -t "$(tmux_session "$session_name")" 2>/dev/null; then
     tmux_cmd kill-session -t "$(tmux_session "$session_name")"
   fi
@@ -772,15 +1334,19 @@ cmd_cleanup() {
     watch_ok=1
   fi
   [[ -n "$RUNS_ROOT" && "$RUNS_ROOT" != "/" && -n "$run" ]] || die "refusing to remove run directory"
-  remove_tree "${RUNS_ROOT:?}/${run:?}"
+  [[ "$RUN_DIR" == "$RUNS_ROOT/$run" ]] || die "refusing to remove $RUN_DIR"
+  if [[ -L "$RUN_DIR" ]]; then
+    die "refusing to remove symlink $RUN_DIR"
+  fi
+  remove_tree "$RUN_DIR"
   [[ -d "$EVIDENCE" ]] || die "cleanup removed evidence directory $EVIDENCE"
   if [[ "$watch_ok" -ne 1 ]]; then
     printf 'operator config changed\n' >"$EVIDENCE/cleanup-failed.txt"
-    chmod_best 600 "$EVIDENCE/cleanup-failed.txt"
+    chmod_file "$EVIDENCE/cleanup-failed.txt"
     die "cleanup removed the session, and the operator config fingerprint changed"
   fi
   printf 'session=dead\nhome=removed\nevidence=%s\n' "$EVIDENCE" >"$EVIDENCE/cleanup-ok.txt"
-  chmod_best 600 "$EVIDENCE/cleanup-ok.txt"
+  chmod_file "$EVIDENCE/cleanup-ok.txt"
   printf 'cleaned %s\nevidence %s\n' "$run" "$EVIDENCE"
 }
 
