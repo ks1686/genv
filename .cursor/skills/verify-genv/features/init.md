@@ -26,7 +26,7 @@ Preconditions:
 - **Add an id.** Run `verify-genv respond --until 'package id \(or Enter to finish\)' -- git`. The pane contains `added git`.
 - **Finish.** Run `verify-genv respond --`. Exit code `0`. The pane contains `created` and `1 package`.
 - **Read the spec.** Run `verify-genv drive -- 'sed -n "1,80p" "$XDG_CONFIG_HOME/genv/genv.json"'`. Exit code `0`. The pane contains `"schemaVersion": "8"` and `"id": "git"`.
-- **Refuse a second init.** Run `verify-genv drive -- genv init`. Exit code `4`. The pane contains `already exists`.
+- **Refuse a second init.** Run `verify-genv drive -- genv init`. Exit code `4`. The saved drive transcript contains `already exists` on one line. The harness joins wrapped pane lines before it saves that file.
 - **Proof.** The spec file is unchanged by the second init. Copy it.
 
 ```bash
@@ -41,7 +41,7 @@ For `init-empty`, use a new launch and run `verify-genv drive --until 'package i
 ## Gotchas
 
 - `genv init` only writes the spec. The packages are not installed. `genv apply` would install them, and that reaches the host package manager.
-- The package id is stored on the active target. It is not stored in `defaults`.
+- The package id is stored on the active target. It is not stored in `defaults`. `genv init` has no `--target` flag. On Ubuntu and Arch the harness leaves `GENV_TARGET` unset and init classifies the host. On Debian and any other Linux host genv cannot classify, the harness exports `GENV_TARGET=linux` because that is the documented catch-all, and the id lands in `targets.linux`. Doctor expects that value. Do not export a different target over the session.
 - A blank first answer still creates the spec. The next `genv init` then exits 4 because the file exists.
 - Typing the same id twice in one wizard skips the duplicate and continues. The spec contains that id once.
 - The wizard reads stdin. Drive it in this tmux session. A closed stdin finishes the list immediately and can write an empty spec.

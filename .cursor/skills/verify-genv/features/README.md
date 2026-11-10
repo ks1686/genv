@@ -4,9 +4,9 @@ This directory is the source for verifying genv's user-facing CLI. Read this ind
 
 ## Baseline preconditions
 
-- Run `verify-genv launch`, then `verify-genv doctor`, and require `doctor ok`.
+- Run `verify-genv launch`, export `GENV_VERIFY_RUN` to the printed `run_id`, then `verify-genv doctor`, and require `doctor ok`.
 - Use the throwaway `HOME` and `XDG_CONFIG_HOME` from that launch. The default spec is `<spec-dir>/genv.json`.
-- Do not export `GENV_TARGET`, `GENV_HOST`, or `GENV_NO_INTERACTIVE` into the session.
+- Do not export `GENV_HOST` or `GENV_NO_INTERACTIVE`. Leave `GENV_TARGET` to the harness. It stays unset when genv can classify the host, and it is `linux` when genv cannot.
 - Start each feature from a new launch unless that feature says to continue a session.
 - Never drive a session this run did not start.
 
@@ -19,7 +19,8 @@ This directory is the source for verifying genv's user-facing CLI. Read this ind
 - Treat every command in a feature file as literal. Keep flags and quotes unchanged.
 - Quote a drive command as one string when it contains quotes or `&&`.
 - Pass `--until` when a command waits for input before it exits.
-- Copy proof files with `verify-genv capture` before `verify-genv cleanup`.
+- Copy proof files with `verify-genv capture` before `verify-genv cleanup "$GENV_VERIFY_RUN"`.
+- The harness joins wrapped pane lines in the saved drive transcript. Search that file for a phrase. A raw 80-column capture can split the phrase across lines.
 - Cleanup removes the session and the throwaway home. It leaves the evidence directory.
 
 ## Proof and skip reporting

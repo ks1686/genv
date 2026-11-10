@@ -3,17 +3,42 @@
 # account's environment, so the session must start from an empty env or it
 # will read and write the real config directory.
 set -euo pipefail
+umask 077
 
-SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
-REPO=$(CDPATH= cd "$SCRIPT_DIR/../../../.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+REPO=$(CDPATH='' cd "$SCRIPT_DIR/../../../.." && pwd)
 
-CURRENT_FILE=${GENV_VERIFY_CURRENT:-/tmp/genv-verify-current}
 RUNS_ROOT=${GENV_VERIFY_RUNS:-/tmp/genv-verify-runs}
 EVIDENCE_ROOT=${GENV_VERIFY_EVIDENCE:-/tmp/genv-verify-evidence}
+
+# launch_ok stays 0 until the session is up. The EXIT trap removes only this
+# run, so a failed launch cannot leave a later cleanup aimed at an older one.
+launch_ok=0
+launch_run=
+launch_session=
+launch_run_dir=
 
 die() {
   printf 'verify-genv: %s\n' "$*" >&2
   exit 1
+}
+
+on_launch_exit() {
+  local rc=$?
+  trap - EXIT
+  if [[ "$launch_ok" -eq 1 ]]; then
+    exit "$rc"
+  fi
+  if [[ -n "$launch_session" ]]; then
+    tmux_cmd kill-session -t "$(tmux_session "$launch_session")" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$launch_run" ]]; then
+    printf 'verify-genv: launch failed for run %s\n' "$launch_run" >&2
+  fi
+  if [[ -n "$launch_run" && -n "$RUNS_ROOT" && "$RUNS_ROOT" != "/" && "$launch_run_dir" == "$RUNS_ROOT/$launch_run" ]]; then
+    remove_tree "${launch_run_dir:?}" || true
+  fi
+  exit "$rc"
 }
 
 usage() {
@@ -26,17 +51,19 @@ usage: verify-genv <command> [args]
   drive [--until EXTENDED_REGEX] [--timeout SECONDS] -- <command>
   respond [--until EXTENDED_REGEX] [--timeout SECONDS] -- [text]
   capture <evidence-name> <absolute-path>
-  cleanup
+  cleanup <run-id>
+  classify [os-release-file] [proc-version-file] [uname]
 
 drive types <command> into the session and waits until a pane line matches
 --until. The default match is a line GENV_DRIVE_EXIT:<code>, and drive then
 exits with that code. respond types text and Enter. An empty text sends only
 Enter. --until is an extended regular expression.
 
-Set GENV_VERIFY_RUN to a run id to select a session other than the latest
-launch. Set GENV_VERIFY_EVIDENCE to the directory that should keep proof.
-cleanup deletes the session and the throwaway home. It leaves the evidence
-directory in place.
+Export GENV_VERIFY_RUN to the run_id launch printed before doctor, paths,
+drive, respond, or capture. There is no current-run file. cleanup requires
+that run id as an argument and does not guess. Set GENV_VERIFY_EVIDENCE to
+the directory that should keep proof. cleanup deletes the session and the
+throwaway home. It leaves the evidence directory in place.
 EOF
 }
 
@@ -48,16 +75,53 @@ tmux_cmd() {
   fi
 }
 
+# tmux treats a target as a prefix unless it starts with '='.
+# has-session and kill-session take a session target ('=name').
+# capture-pane, send-keys, and pipe-pane take a pane target, which needs
+# '=name:' or the equals sign is read as part of the pane name.
+tmux_session() {
+  printf '=%s' "$1"
+}
+
+tmux_pane() {
+  printf '=%s:' "$1"
+}
+
+# Proof directories are sometimes on a filesystem that rejects chmod.
+# A normal filesystem still gets these modes, and the regression checks them.
+chmod_best() {
+  local mode=$1
+  shift
+  local path
+  for path in "$@"; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    chmod "$mode" "$path" 2>/dev/null || true
+  done
+}
+
+# Go's module cache is mode 0555. A plain rm leaves it behind.
+remove_tree() {
+  local dir=$1
+  [[ -n "$dir" && "$dir" != "/" && -d "$dir" ]] || return 0
+  chmod -R u+w "$dir" 2>/dev/null || true
+  rm -rf "$dir"
+}
+
 config_fingerprint() {
   local dir=$1 path
-  if [[ ! -e "$dir" ]]; then
+  if [[ ! -e "$dir" && ! -L "$dir" ]]; then
     printf 'ABSENT\n'
     return 0
   fi
   {
     printf 'EXISTS\n'
+    if [[ -L "$dir" ]]; then
+      printf 'link %s\n' "$(readlink "$dir")"
+    fi
     find "$dir" -print | LC_ALL=C sort | while IFS= read -r path; do
-      if [[ -f "$path" ]]; then
+      if [[ -L "$path" ]]; then
+        printf 'link %s %s\n' "$path" "$(readlink "$path")"
+      elif [[ -f "$path" ]]; then
         cksum "$path"
       else
         printf 'node %s\n' "$path"
@@ -66,30 +130,34 @@ config_fingerprint() {
   } | cksum | awk '{print $1 "-" $2}'
 }
 
-write_operator_watch() {
-  local dest=$1 home phys xdg path fp
-  home=$2
-  : >"$dest"
-  path=$home/.config/genv
+record_watch() {
+  local dest=$1 path=$2 fp
   fp=$(config_fingerprint "$path")
   printf '%s\t%s\n' "$fp" "$path" >>"$dest"
-  if phys=$(CDPATH= cd "$home" && pwd -P); then
+}
+
+write_operator_watch() {
+  local dest=$1 home phys path
+  home=$2
+  : >"$dest"
+  record_watch "$dest" "$home/.config/genv"
+  record_watch "$dest" "$home/.bashrc"
+  record_watch "$dest" "$home/.zshrc"
+  if phys=$(CDPATH='' cd "$home" && pwd -P); then
     if [[ "$phys" != "$home" ]]; then
-      path=$phys/.config/genv
-      fp=$(config_fingerprint "$path")
-      printf '%s\t%s\n' "$fp" "$path" >>"$dest"
+      record_watch "$dest" "$phys/.config/genv"
+      record_watch "$dest" "$phys/.bashrc"
+      record_watch "$dest" "$phys/.zshrc"
     fi
   fi
   if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
     path=${XDG_CONFIG_HOME%/}/genv
     case "$path" in
       "$home/.config/genv") ;;
-      *)
-        fp=$(config_fingerprint "$path")
-        printf '%s\t%s\n' "$fp" "$path" >>"$dest"
-        ;;
+      *) record_watch "$dest" "$path" ;;
     esac
   fi
+  chmod_best 600 "$dest"
 }
 
 check_operator_watch() {
@@ -109,29 +177,121 @@ check_operator_watch() {
   return 0
 }
 
+# Match genv's host classifier: ID and ID_LIKE tokens, plus a WSL proc line.
+os_release_has() {
+  local file=$1 target=$2 line key val part
+  target=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+  [[ -n "$target" && -r "$file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *=* ]] || continue
+    key=${line%%=*}
+    val=${line#*=}
+    key=$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')
+    key=${key#"${key%%[![:space:]]*}"}
+    key=${key%"${key##*[![:space:]]}"}
+    val=${val#"${val%%[![:space:]]*}"}
+    val=${val%"${val##*[![:space:]]}"}
+    val=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]' | sed "s/^[\"']*//; s/[\"']*$//")
+    case "$key" in
+      id)
+        [[ "$val" == "$target" ]] && return 0
+        ;;
+      id_like)
+        for part in $val; do
+          part=$(printf '%s' "$part" | sed "s/^[\"']*//; s/[\"']*$//")
+          [[ "$part" == "$target" ]] && return 0
+        done
+        ;;
+    esac
+  done <"$file"
+  return 1
+}
+
+classify_host() {
+  local os_file=$1 proc_file=$2 uname_s=$3
+  case "$uname_s" in
+    Darwin) printf 'macos\n'; return 0 ;;
+    MINGW*|MSYS*|CYGWIN*) printf 'windows\n'; return 0 ;;
+    Linux) ;;
+    *) return 0 ;;
+  esac
+  local wsl=0
+  if [[ -r "$proc_file" ]] && grep -Eiq 'microsoft|wsl' "$proc_file"; then
+    wsl=1
+  fi
+  if [[ "$wsl" -eq 1 ]] && os_release_has "$os_file" arch; then
+    printf 'wsl-arch\n'
+    return 0
+  fi
+  if [[ "$wsl" -eq 1 ]] && os_release_has "$os_file" ubuntu; then
+    printf 'ubuntu\n'
+    return 0
+  fi
+  if [[ "$wsl" -eq 1 ]]; then
+    return 0
+  fi
+  if os_release_has "$os_file" arch; then
+    printf 'arch\n'
+    return 0
+  fi
+  if os_release_has "$os_file" ubuntu; then
+    printf 'ubuntu\n'
+    return 0
+  fi
+}
+
+cmd_classify() {
+  local os_file=${1:-/etc/os-release}
+  local proc_file=${2:-/proc/version}
+  local uname_s=${3:-$(uname -s)}
+  local class
+  class=$(classify_host "$os_file" "$proc_file" "$uname_s")
+  printf 'host_class=%s\n' "$class"
+  if [[ -z "$class" ]]; then
+    printf 'session_target=linux\n'
+  else
+    printf 'session_target=\n'
+  fi
+}
+
+apply_run_env() {
+  local envf=$1
+  # shellcheck disable=SC1090,SC1091
+  source "$envf"
+  # shellcheck disable=SC2154
+  RUN_ID=${run_id:-}
+  # shellcheck disable=SC2154
+  SESSION=${session:-}
+  # shellcheck disable=SC2154
+  RUN_DIR=${run_dir:-}
+  # shellcheck disable=SC2154
+  VERIFY_HOME=${verify_home:-}
+  # shellcheck disable=SC2154
+  XDG=${xdg:-}
+  # shellcheck disable=SC2154
+  BINDIR=${bindir:-}
+  # shellcheck disable=SC2154
+  EVIDENCE=${evidence:-}
+  # shellcheck disable=SC2154
+  SESSION_TARGET=${session_target:-}
+  [[ -n "$RUN_ID" && -n "$SESSION" && -n "$VERIFY_HOME" && -n "$XDG" && -n "$BINDIR" && -n "$EVIDENCE" ]] || die "run.env is incomplete: $envf"
+}
+
 load_state() {
   local run=${GENV_VERIFY_RUN:-}
-  if [[ -z "$run" ]]; then
-    [[ -f "$CURRENT_FILE" ]] || die "no run yet. Run verify-genv launch first."
-    run=$(cat "$CURRENT_FILE")
-  fi
-  RUN_DIR=$RUNS_ROOT/$run
-  [[ -f "$RUN_DIR/run.env" ]] || die "run $run has no state at $RUN_DIR/run.env"
-  # shellcheck disable=SC1091
-  source "$RUN_DIR/run.env"
-  RUN_ID=$run_id
-  SESSION=$session
-  RUN_DIR=$run_dir
-  VERIFY_HOME=$verify_home
-  XDG=$xdg
-  BINDIR=$bindir
-  EVIDENCE=$evidence
-  OPERATOR_HOME=$operator_home
-  REPO=$repo
+  [[ -n "$run" ]] || die "GENV_VERIFY_RUN is empty. Export the run_id launch printed. This harness does not guess a current run."
+  [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || die "GENV_VERIFY_RUN is not a run id"
+  [[ -f "$RUNS_ROOT/$run/run.env" ]] || die "run $run has no state at $RUNS_ROOT/$run/run.env"
+  apply_run_env "$RUNS_ROOT/$run/run.env"
+  [[ "$RUN_ID" == "$run" ]] || die "run.env id does not match GENV_VERIFY_RUN"
+  [[ "$SESSION" == "genv-verify-$run" ]] || die "run.env session does not match $run"
 }
 
 pane_text() {
-  tmux_cmd capture-pane -p -t "$SESSION" -S -10000
+  tmux_cmd capture-pane -J -p -t "$(tmux_pane "$SESSION")" -S -
 }
 
 match_count() {
@@ -140,31 +300,50 @@ match_count() {
   printf '%s\n' "$pane" | grep -c -E "$1" || true
 }
 
+shell_at_prompt() {
+  local last
+  last=$(pane_text | sed '/^[[:space:]]*$/d' | tail -n 1)
+  [[ "$last" =~ ^"GENVVERIFY>"[[:space:]]*$ ]]
+}
+
 wait_for_match() {
-  local until=$1 before=$2 timeout=$3 deadline now
+  local until=$1 before=$2 timeout=$3 before_exit=$4
+  local deadline now exits
   deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
     now=$(match_count "$until")
     if (( now > before )); then
       return 0
     fi
+    if [[ "$EXPECT_EXIT" -eq 0 ]]; then
+      exits=$(match_count '^GENV_DRIVE_EXIT:[0-9]+$')
+      if (( exits > before_exit )); then
+        pane_text >"$EVIDENCE/timeout.txt" || true
+        chmod_best 600 "$EVIDENCE/timeout.txt"
+        die "command finished before /$until/ appeared. Refusing to leave the session waiting for respond."
+      fi
+    fi
     sleep 0.2
   done
   pane_text >"$EVIDENCE/timeout.txt" || true
+  chmod_best 600 "$EVIDENCE/timeout.txt"
   die "timed out after ${timeout}s waiting for /$until/"
 }
 
 save_drive() {
   local label=$1
-  local n dir
+  local n dir file
   dir=$EVIDENCE/drives
   mkdir -p "$dir"
+  chmod_best 700 "$EVIDENCE" "$dir"
   n=$(find "$dir" -name '*.txt' | wc -l | tr -d ' ')
   n=$((n + 1))
+  file=$(printf '%s/%03d.txt' "$dir" "$n")
   {
     printf 'command: %s\n' "$label"
     pane_text
-  } >"$(printf '%s/%03d.txt' "$dir" "$n")"
+  } >"$file"
+  chmod_best 600 "$file"
 }
 
 newest_exit_code() {
@@ -174,9 +353,9 @@ newest_exit_code() {
 type_text() {
   local text=$1
   if [[ -n "$text" ]]; then
-    tmux_cmd send-keys -t "$SESSION" -l -- "$text"
+    tmux_cmd send-keys -t "$(tmux_pane "$SESSION")" -l -- "$text"
   fi
-  tmux_cmd send-keys -t "$SESSION" Enter
+  tmux_cmd send-keys -t "$(tmux_pane "$SESSION")" Enter
 }
 
 finish_drive() {
@@ -184,6 +363,7 @@ finish_drive() {
   local code=0
   save_drive "$label"
   printf '%s\n' "$label" >>"$EVIDENCE/commands.log"
+  chmod_best 600 "$EVIDENCE/commands.log"
   if [[ "$expect_exit" -eq 1 ]]; then
     code=$(newest_exit_code)
     [[ -n "$code" ]] || die "command finished without GENV_DRIVE_EXIT"
@@ -225,18 +405,100 @@ parse_until() {
   REMAINING=("$@")
 }
 
+path_has_dotdot() {
+  local rest=$1 part
+  while [[ "$rest" == */* ]]; do
+    part=${rest%%/*}
+    [[ "$part" == ".." ]] && return 0
+    rest=${rest#*/}
+  done
+  [[ "$rest" == ".." ]]
+}
+
+build_genv() {
+  local home=$1 out=$2 logfile=$3
+  local gocache gomodcache goenv gopath proxy operator_mod
+  gocache=${GENV_VERIFY_GOCACHE:-$RUN_DIR/gocache}
+  gomodcache=${GENV_VERIFY_GOMODCACHE:-$RUN_DIR/gomodcache}
+  goenv=$RUN_DIR/goenv
+  gopath=$RUN_DIR/gopath
+  mkdir -p "$gocache" "$gomodcache" "$gopath"
+  proxy=${GOPROXY:-https://proxy.golang.org,direct}
+  # Read the operator module cache as a file proxy. Writes go to the run cache.
+  operator_mod=
+  if ! operator_mod=$(CDPATH='' cd /tmp && GOTOOLCHAIN=local GOENV=off go env GOMODCACHE 2>/dev/null); then
+    operator_mod=
+  fi
+  if [[ -n "$operator_mod" && -d "$operator_mod/cache/download" && "$operator_mod" != "$gomodcache" ]]; then
+    proxy="file://${operator_mod}/cache/download,${proxy}"
+  fi
+  (
+    printf 'gocache=%s\n' "$gocache"
+    printf 'gomodcache=%s\n' "$gomodcache"
+    printf 'build_home=%s\n' "$home"
+    printf 'goproxy=%s\n' "$proxy"
+    CDPATH='' cd "$REPO"
+    env \
+      HOME="$home" \
+      GOCACHE="$gocache" \
+      GOMODCACHE="$gomodcache" \
+      GOPATH="$gopath" \
+      GOENV="$goenv" \
+      GOPROXY="$proxy" \
+      GOTOOLCHAIN=go1.26.10 \
+      GOTELEMETRY=off \
+      go build -o "$out" .
+    printf 'binary=%s\n' "$out"
+    env \
+      HOME="$home" \
+      GOCACHE="$gocache" \
+      GOMODCACHE="$gomodcache" \
+      GOPATH="$gopath" \
+      GOENV="$goenv" \
+      GOPROXY="$proxy" \
+      GOTOOLCHAIN=go1.26.10 \
+      GOTELEMETRY=off \
+      go version
+    "$out" version
+  ) >"$logfile" 2>&1
+}
+
+write_start() {
+  local home=$1 xdg=$2 bindir=$3 target=$4
+  {
+    printf '%s\n' '#!/bin/bash'
+    printf '%s\n' "exec env -i \\"
+    printf '  HOME=%q \\\n' "$home"
+    printf '  XDG_CONFIG_HOME=%q \\\n' "$xdg"
+    printf '  XDG_CACHE_HOME=%q \\\n' "$home/.cache"
+    printf '  XDG_DATA_HOME=%q \\\n' "$home/.local/share"
+    printf '  PATH=%q \\\n' "$bindir:/usr/bin:/bin"
+    printf '  SHELL=%q \\\n' /bin/bash
+    printf '  TERM=%q \\\n' xterm-256color
+    printf '  USER=%q \\\n' "${USER:-verify}"
+    printf '  LOGNAME=%q \\\n' "${USER:-verify}"
+    printf '  INPUTRC=%q \\\n' "$RUN_DIR/inputrc"
+    if [[ -n "$target" ]]; then
+      printf '  GENV_TARGET=%q \\\n' "$target"
+    fi
+    printf '  bash --noprofile --rcfile %q -i\n' "$RUN_DIR/verify.bashrc"
+  } >"$RUN_DIR/start.sh"
+  chmod 700 "$RUN_DIR/start.sh"
+}
+
 cmd_launch() {
-  local run home xdg bindir evidence session workdir
-  local operator_home
+  local run home xdg bindir evidence session
+  local operator_home host_class session_target
+  [[ $# -eq 0 ]] || die "launch: unexpected arguments"
   [[ -f "$REPO/go.mod" ]] || die "repository root $REPO has no go.mod"
   command -v go >/dev/null || die "go is not on PATH"
   command -v tmux >/dev/null || die "tmux is not on PATH"
+  command -v realpath >/dev/null || die "realpath is not on PATH"
   run=$(date -u +%Y%m%dT%H%M%SZ)-$$
   RUN_DIR=$RUNS_ROOT/$run
   home=$RUN_DIR/home
   xdg=$home/.config
   bindir=$RUN_DIR/bin
-  workdir=$RUN_DIR/work
   evidence=$EVIDENCE_ROOT/$run
   session=genv-verify-$run
   operator_home=${HOME:-}
@@ -247,10 +509,24 @@ cmd_launch() {
   case "$evidence" in
     "$RUN_DIR"|"$RUN_DIR"/*) die "evidence directory must sit outside the run directory" ;;
   esac
-  mkdir -p "$home/.config" "$home/.cache" "$home/.local/share" "$bindir" "$workdir" "$evidence/drives"
-  chmod 700 "$home" "$home/.config" "$home/.cache" "$home/.local"
+  host_class=$(classify_host /etc/os-release /proc/version "$(uname -s)")
+  session_target=
+  if [[ -z "$host_class" ]]; then
+    # genv init has no --target flag. linux is the documented catch-all.
+    session_target=linux
+  fi
+
+  launch_ok=0
+  launch_run=$run
+  launch_session=$session
+  launch_run_dir=$RUN_DIR
+  trap on_launch_exit EXIT
+
+  mkdir -p "$home/.config" "$home/.cache" "$home/.local/share" "$bindir" "$evidence/drives"
+  chmod_best 700 "$RUN_DIR" "$home" "$home/.config" "$home/.cache" "$home/.local" "$evidence" "$evidence/drives"
   write_operator_watch "$evidence/operator-watch.tsv" "$operator_home"
   cp "$evidence/operator-watch.tsv" "$RUN_DIR/operator-watch.tsv"
+  chmod_best 600 "$RUN_DIR/operator-watch.tsv"
 
   cat >"$RUN_DIR/inputrc" <<'EOF'
 set enable-bracketed-paste off
@@ -262,68 +538,64 @@ set +o history
 PS1='GENVVERIFY> '
 PROMPT_COMMAND='printf "GENV_DRIVE_EXIT:%s\n" "$?"'
 EOF
-  cat >"$RUN_DIR/start.sh" <<EOF
-#!/bin/bash
-exec env -i \\
-  HOME='$home' \\
-  XDG_CONFIG_HOME='$xdg' \\
-  XDG_CACHE_HOME='$home/.cache' \\
-  XDG_DATA_HOME='$home/.local/share' \\
-  PATH='$bindir:/usr/bin:/bin' \\
-  SHELL=/bin/bash \\
-  TERM=xterm-256color \\
-  USER='${USER:-verify}' \\
-  LOGNAME='${USER:-verify}' \\
-  INPUTRC='$RUN_DIR/inputrc' \\
-  bash --noprofile --rcfile '$RUN_DIR/verify.bashrc' -i
-EOF
-  chmod 700 "$RUN_DIR/start.sh"
+  write_start "$home" "$xdg" "$bindir" "$session_target"
+  {
+    printf 'run_id=%q\n' "$run"
+    printf 'session=%q\n' "$session"
+    printf 'run_dir=%q\n' "$RUN_DIR"
+    printf 'verify_home=%q\n' "$home"
+    printf 'xdg=%q\n' "$xdg"
+    printf 'bindir=%q\n' "$bindir"
+    printf 'evidence=%q\n' "$evidence"
+    printf 'repo=%q\n' "$REPO"
+    printf 'host_class=%q\n' "$host_class"
+    printf 'session_target=%q\n' "$session_target"
+  } >"$RUN_DIR/run.env"
+  chmod_best 600 "$RUN_DIR/run.env"
+  cp "$RUN_DIR/run.env" "$evidence/run.env"
+  chmod_best 600 "$evidence/run.env"
 
-  if ! (cd "$REPO" && GOTOOLCHAIN=go1.26.10 go build -o "$bindir/genv" .) >"$evidence/build.log" 2>&1; then
+  if ! build_genv "$home" "$bindir/genv" "$evidence/build.log"; then
     die "go build failed. See $evidence/build.log"
   fi
-  {
-    printf 'binary=%s\n' "$bindir/genv"
-    (cd "$REPO" && GOTOOLCHAIN=go1.26.10 go version)
-    "$bindir/genv" version
-  } >>"$evidence/build.log"
+  chmod_best 600 "$evidence/build.log"
 
-  tmux_cmd new-session -d -s "$session" -c "$workdir" -- "$RUN_DIR/start.sh"
+  : >"$evidence/pane.log"
+  chmod_best 600 "$evidence/pane.log"
+  tmux_cmd new-session -d -s "$session" -c "$home" -- "$RUN_DIR/start.sh"
   SESSION=$session
   EVIDENCE=$evidence
   local deadline
   deadline=$((SECONDS + 20))
   while (( SECONDS < deadline )); do
-    if pane_text | grep -q 'GENVVERIFY>'; then
+    if ! tmux_cmd has-session -t "$(tmux_session "$session")" 2>/dev/null; then
+      die "session $session exited before the GENVVERIFY prompt"
+    fi
+    if pane_text 2>/dev/null | grep -q 'GENVVERIFY>'; then
       break
     fi
     sleep 0.2
   done
-  if ! pane_text | grep -q 'GENVVERIFY>'; then
-    tmux_cmd kill-session -t "$session" >/dev/null 2>&1 || true
+  if ! pane_text 2>/dev/null | grep -q 'GENVVERIFY>'; then
     die "session did not reach the GENVVERIFY prompt"
   fi
-  tmux_cmd pipe-pane -t "$session" -o "cat >> $(printf '%q' "$evidence/pane.log")" || printf 'verify-genv: pane log not attached\n' >&2
+  tmux_cmd pipe-pane -t "$(tmux_pane "$session")" -o "cat >> $(printf '%q' "$evidence/pane.log")" || printf 'verify-genv: pane log not attached\n' >&2
+  chmod_best 600 "$evidence/pane.log"
+  chmod_best 700 "$evidence" "$evidence/drives"
 
-  cat >"$RUN_DIR/run.env" <<EOF
-run_id='$run'
-session='$session'
-run_dir='$RUN_DIR'
-verify_home='$home'
-xdg='$xdg'
-bindir='$bindir'
-evidence='$evidence'
-operator_home='$operator_home'
-repo='$REPO'
-EOF
-  cp "$RUN_DIR/run.env" "$evidence/run.env"
-  printf '%s\n' "$run" >"$CURRENT_FILE"
+  launch_ok=1
+  trap - EXIT
   printf 'run_id=%s\n' "$run"
   printf 'home=%s\n' "$home"
   printf 'spec_dir=%s\n' "$xdg/genv"
   printf 'evidence=%s\n' "$evidence"
   printf 'session=%s\n' "$session"
   printf 'binary=%s\n' "$bindir/genv"
+  if [[ -n "$session_target" ]]; then
+    printf 'session_target=%s\n' "$session_target"
+  else
+    printf 'session_target=\n'
+  fi
 }
 
 cmd_paths() {
@@ -349,22 +621,23 @@ cmd_paths() {
 }
 
 cmd_drive() {
-  local before label
+  local before before_exit label
   load_state
-  tmux_cmd has-session -t "$SESSION" 2>/dev/null || die "session $SESSION is not running"
+  tmux_cmd has-session -t "$(tmux_session "$SESSION")" 2>/dev/null || die "session $SESSION is not running"
   parse_until "$@"
   [[ ${#REMAINING[@]} -gt 0 ]] || die "drive: missing command after --"
   label="${REMAINING[*]}"
   before=$(match_count "$UNTIL")
+  before_exit=$(match_count '^GENV_DRIVE_EXIT:[0-9]+$')
   type_text "$label"
-  wait_for_match "$UNTIL" "$before" "$TIMEOUT"
+  wait_for_match "$UNTIL" "$before" "$TIMEOUT" "$before_exit"
   finish_drive "$UNTIL" "$label" "$EXPECT_EXIT"
 }
 
 cmd_respond() {
-  local before text label
+  local before before_exit text label
   load_state
-  tmux_cmd has-session -t "$SESSION" 2>/dev/null || die "session $SESSION is not running"
+  tmux_cmd has-session -t "$(tmux_session "$SESSION")" 2>/dev/null || die "session $SESSION is not running"
   parse_until "$@"
   if [[ ${#REMAINING[@]} -eq 0 ]]; then
     text=
@@ -373,38 +646,74 @@ cmd_respond() {
   else
     die "respond: pass one text argument after --"
   fi
+  if shell_at_prompt; then
+    die "respond: the session is at GENVVERIFY>. The previous command already finished. Refusing to type into the shell."
+  fi
   label="respond:${text}"
   before=$(match_count "$UNTIL")
+  before_exit=$(match_count '^GENV_DRIVE_EXIT:[0-9]+$')
   type_text "$text"
-  wait_for_match "$UNTIL" "$before" "$TIMEOUT"
+  wait_for_match "$UNTIL" "$before" "$TIMEOUT" "$before_exit"
   finish_drive "$UNTIL" "$label" "$EXPECT_EXIT"
 }
 
 cmd_capture() {
-  local name=$1 path=$2 dest
-  [[ -n "${name:-}" && -n "${path:-}" ]] || die "capture: usage: verify-genv capture <name> <absolute-path>"
+  local name=${1:-} path=${2:-} dest home_real dir dir_real src_real
+  [[ -n "$name" && -n "$path" ]] || die "capture: usage: verify-genv capture <name> <absolute-path>"
   load_state
   case "$name" in
-    */*|*..*) die "capture: name must be a single path segment" ;;
+    */*|*..*|.*) die "capture: name must be a single path segment" ;;
   esac
-  case "$path" in
-    "$VERIFY_HOME"/*) ;;
-    *) die "capture: $path is outside the throwaway home $VERIFY_HOME" ;;
+  [[ "$path" == /* ]] || die "capture: path must be absolute"
+  if path_has_dotdot "$path"; then
+    die "capture: refusing '..' in $path"
+  fi
+  home_real=$(realpath -e "$VERIFY_HOME") || die "capture: throwaway home is missing"
+  if [[ -L "$path" ]]; then
+    die "capture: refusing symlink $path"
+  fi
+  dir=$(dirname -- "$path")
+  while true; do
+    if [[ -L "$dir" ]]; then
+      die "capture: refusing symlink $dir"
+    fi
+    dir_real=$(realpath -e -- "$dir" 2>/dev/null) || die "capture: $path is outside the throwaway home"
+    if [[ "$dir_real" == "$home_real" ]]; then
+      break
+    fi
+    case "$dir_real" in
+      "$home_real"/*) ;;
+      *) die "capture: $path is outside the throwaway home" ;;
+    esac
+    [[ "$dir" == "/" ]] && die "capture: $path is outside the throwaway home"
+    dir=$(dirname -- "$dir")
+  done
+  src_real=$(realpath -e -- "$path" 2>/dev/null) || die "capture: $path is not a file"
+  if [[ -L "$src_real" ]]; then
+    die "capture: refusing symlink $path"
+  fi
+  case "$src_real" in
+    "$home_real"/*) ;;
+    *) die "capture: $path is outside the throwaway home" ;;
   esac
-  [[ -f "$path" ]] || die "capture: $path is not a file"
+  [[ -f "$src_real" ]] || die "capture: $path is not a file"
   dest=$EVIDENCE/$name
-  cp -p "$path" "$dest"
+  cp -- "$src_real" "$dest"
+  chmod_best 600 "$dest"
   printf '%s\n' "$dest"
 }
 
 cmd_doctor() {
-  local doctor_file line got
+  local doctor_file line got want_target
+  [[ $# -eq 0 ]] || die "doctor: unexpected arguments"
   load_state
-  tmux_cmd has-session -t "$SESSION" 2>/dev/null || die "session $SESSION is not running"
+  tmux_cmd has-session -t "$(tmux_session "$SESSION")" 2>/dev/null || die "session $SESSION is not running"
   check_operator_watch "$EVIDENCE/operator-watch.tsv" || die "operator config changed"
   [[ -x "$BINDIR/genv" ]] || die "built binary missing at $BINDIR/genv"
   doctor_file=$VERIFY_HOME/.genv-verify-doctor
   rm -f "$doctor_file"
+  # The session shell expands HOME and command -v. This process must not.
+  # shellcheck disable=SC2016
   cmd_drive -- 'printf "HOME=%s\nXDG=%s\nGENV=%s\nNOI=%s\nTARGET=%s\nHOSTENV=%s\nSHELL=%s\n" "$HOME" "$XDG_CONFIG_HOME" "$(command -v genv)" "${GENV_NO_INTERACTIVE-unset}" "${GENV_TARGET-unset}" "${GENV_HOST-unset}" "$SHELL" > "$HOME/.genv-verify-doctor"'
   [[ -f "$doctor_file" ]] || die "doctor file was not written"
   got=$(grep '^HOME=' "$doctor_file" | cut -d= -f2-)
@@ -415,8 +724,12 @@ cmd_doctor() {
   [[ "$got" == "$BINDIR/genv" ]] || die "genv on PATH is $got, want $BINDIR/genv"
   got=$(grep '^NOI=' "$doctor_file" | cut -d= -f2-)
   [[ "$got" == "unset" ]] || die "GENV_NO_INTERACTIVE is set inside the session ($got)"
+  want_target="unset"
+  if [[ -n "$SESSION_TARGET" ]]; then
+    want_target=$SESSION_TARGET
+  fi
   got=$(grep '^TARGET=' "$doctor_file" | cut -d= -f2-)
-  [[ "$got" == "unset" ]] || die "GENV_TARGET is set inside the session ($got)"
+  [[ "$got" == "$want_target" ]] || die "GENV_TARGET inside the session is $got, harness expects $want_target"
   got=$(grep '^HOSTENV=' "$doctor_file" | cut -d= -f2-)
   [[ "$got" == "unset" ]] || die "GENV_HOST is set inside the session ($got)"
   got=$(grep '^SHELL=' "$doctor_file" | cut -d= -f2-)
@@ -429,50 +742,46 @@ cmd_doctor() {
 }
 
 cmd_cleanup() {
-  local run evidence session
-  run=${GENV_VERIFY_RUN:-}
-  if [[ -z "$run" && -f "$CURRENT_FILE" ]]; then
-    run=$(cat "$CURRENT_FILE")
+  local run envf session_name watch_ok
+  if [[ $# -ne 1 || -z "${1:-}" ]]; then
+    die "cleanup requires the run id. Pass the id launch printed. Refusing to guess."
   fi
-  [[ -n "$run" ]] || {
-    printf 'verify-genv: no run to clean\n' >&2
-    exit 0
-  }
-  RUN_DIR=$RUNS_ROOT/$run
-  evidence=$EVIDENCE_ROOT/$run
-  if [[ -f "$RUN_DIR/run.env" ]]; then
-    # shellcheck disable=SC1091
-    source "$RUN_DIR/run.env"
+  run=$1
+  [[ "$run" =~ ^[A-Za-z0-9._-]+$ ]] || die "cleanup: run id is not a run id"
+  if [[ -f "$RUNS_ROOT/$run/run.env" ]]; then
+    envf=$RUNS_ROOT/$run/run.env
+  elif [[ -f "$EVIDENCE_ROOT/$run/run.env" ]]; then
+    envf=$EVIDENCE_ROOT/$run/run.env
   else
-    session=genv-verify-$run
-    if [[ -f "$evidence/run.env" ]]; then
-      # shellcheck disable=SC1091
-      source "$evidence/run.env"
-    fi
+    die "cleanup: no run $run. Refusing to guess."
   fi
-  [[ -d "$evidence" ]] || die "evidence directory $evidence is missing before cleanup"
-  [[ -f "$evidence/operator-watch.tsv" ]] || die "evidence is missing operator-watch.tsv"
-  if tmux_cmd has-session -t "$session" 2>/dev/null; then
-    tmux_cmd kill-session -t "$session"
+  apply_run_env "$envf"
+  [[ "$RUN_ID" == "$run" ]] || die "run.env id does not match $run"
+  session_name=$SESSION
+  [[ "$session_name" == "genv-verify-$run" ]] || die "cleanup: run.env session does not match $run"
+  [[ -d "$EVIDENCE" ]] || die "evidence directory $EVIDENCE is missing before cleanup"
+  [[ -f "$EVIDENCE/operator-watch.tsv" ]] || die "evidence is missing operator-watch.tsv"
+  if tmux_cmd has-session -t "$(tmux_session "$session_name")" 2>/dev/null; then
+    tmux_cmd kill-session -t "$(tmux_session "$session_name")"
   fi
-  if tmux_cmd has-session -t "$session" 2>/dev/null; then
-    die "session $session is still running"
+  if tmux_cmd has-session -t "$(tmux_session "$session_name")" 2>/dev/null; then
+    die "session $session_name is still running"
   fi
-  local watch_ok=0
-  if check_operator_watch "$evidence/operator-watch.tsv"; then
+  watch_ok=0
+  if check_operator_watch "$EVIDENCE/operator-watch.tsv"; then
     watch_ok=1
   fi
-  rm -rf "$RUN_DIR"
-  if [[ -f "$CURRENT_FILE" ]] && [[ "$(cat "$CURRENT_FILE")" == "$run" ]]; then
-    rm -f "$CURRENT_FILE"
-  fi
-  [[ -d "$evidence" ]] || die "cleanup removed evidence directory $evidence"
+  [[ -n "$RUNS_ROOT" && "$RUNS_ROOT" != "/" && -n "$run" ]] || die "refusing to remove run directory"
+  remove_tree "${RUNS_ROOT:?}/${run:?}"
+  [[ -d "$EVIDENCE" ]] || die "cleanup removed evidence directory $EVIDENCE"
   if [[ "$watch_ok" -ne 1 ]]; then
-    printf 'operator config changed\n' >"$evidence/cleanup-failed.txt"
+    printf 'operator config changed\n' >"$EVIDENCE/cleanup-failed.txt"
+    chmod_best 600 "$EVIDENCE/cleanup-failed.txt"
     die "cleanup removed the session, and the operator config fingerprint changed"
   fi
-  printf 'session=dead\nhome=removed\nevidence=%s\n' "$evidence" >"$evidence/cleanup-ok.txt"
-  printf 'cleaned %s\nevidence %s\n' "$run" "$evidence"
+  printf 'session=dead\nhome=removed\nevidence=%s\n' "$EVIDENCE" >"$EVIDENCE/cleanup-ok.txt"
+  chmod_best 600 "$EVIDENCE/cleanup-ok.txt"
+  printf 'cleaned %s\nevidence %s\n' "$run" "$EVIDENCE"
 }
 
 main() {
@@ -490,6 +799,7 @@ main() {
     respond) cmd_respond "$@" ;;
     capture) cmd_capture "$@" ;;
     cleanup) cmd_cleanup "$@" ;;
+    classify) cmd_classify "$@" ;;
     -h|--help|help) usage ;;
     *) die "unknown command $cmd" ;;
   esac

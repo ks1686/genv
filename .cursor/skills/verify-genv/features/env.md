@@ -44,7 +44,7 @@ verify-genv capture genv.json "$(verify-genv paths spec)"
 verify-genv capture genv.lock.json "$(verify-genv paths spec-dir)/genv.lock.json"
 ```
 
-The captured `env.sh` contains `export EDITOR='nvim'`. The captured `bashrc` contains `# genv env`. The captured spec contains `"EDITOR"` under the active target, not only under `defaults`. On Ubuntu that target is `ubuntu`.
+The captured `env.sh` contains `export EDITOR='nvim'`. The captured `bashrc` contains `# genv env`. The captured spec contains `"EDITOR"` under the active target, not only under `defaults`. On a host genv classifies, that target is the host class (`ubuntu` on Ubuntu). On a host the harness cannot classify, the harness sets `GENV_TARGET=linux` and the bucket is `targets.linux`.
 
 ## Gotchas
 

@@ -9,7 +9,7 @@ genv is a short-lived CLI. There is no server to keep up. Launch builds the bina
 
 The session is the only place a verification command may run `genv`. A shell outside that session uses the operator's `HOME` and can write `~/.config/genv`.
 
-This directory is under the repo gitignore for `.cursor/`. Track the skill with `git add -f .cursor/skills/verify-genv`.
+`.cursor/*` is gitignored and `.cursor/skills/` is not, so a normal `git add` tracks files under this skill.
 
 ## Launch
 
@@ -23,18 +23,26 @@ Launch is finished when it prints `run_id`, `home`, `spec_dir`, `evidence`, `ses
 
 What launch does:
 
-- Builds `genv` with `GOTOOLCHAIN=go1.26.10`, matching `go.mod`, and puts the binary on the session `PATH` ahead of anything else.
+- Builds `genv` with `GOTOOLCHAIN=go1.26.10`, matching `go.mod`, and puts the binary on the session `PATH` ahead of anything else. The build sets `HOME`, `GOCACHE`, `GOMODCACHE`, `GOPATH`, and `GOENV` inside the run directory, so a toolchain download does not write the operator home.
 - Creates a throwaway home under `/tmp/genv-verify-runs/<run-id>/home`.
 - Sets `XDG_CONFIG_HOME` to `<home>/.config`, so the default spec is `<home>/.config/genv/genv.json`.
 - Starts tmux session `genv-verify-<run-id>` with `env -i`. The tmux server inherits the operator environment. Without a cleared environment the session would read and write the real config directory.
 - Forces `SHELL=/bin/bash`. On Linux and macOS, `genv apply` injects its source line into `~/.bashrc` for bash and `~/.zshrc` for zsh. This session always exercises the bash file.
 - On Ubuntu, interactive bash sources `/etc/bash.bashrc` before the harness rc file. That file prints a sudo hint when the throwaway home has no `.sudo_as_admin_successful` and the user is in group `sudo` or `admin`. The hint is not genv running sudo. Ignore that banner. Fail the journey if the transcript contains an install or uninstall command.
-- Records a fingerprint of the operator's `~/.config/genv` (and `$XDG_CONFIG_HOME/genv` when that variable is set and points somewhere else). Doctor and cleanup fail if that fingerprint changes.
+- Records a fingerprint of the operator's `~/.config/genv`, `~/.bashrc`, and `~/.zshrc` (and `$XDG_CONFIG_HOME/genv` when that variable is set and points somewhere else). Doctor and cleanup fail if a fingerprint changes.
 - Writes proof under `$GENV_VERIFY_EVIDENCE/<run-id>` when that variable is set, otherwise `/tmp/genv-verify-evidence/<run-id>`.
 
 Ready means the prompt is up and `verify-genv doctor` passes. A built binary with a dead session is not ready.
 
-Two runs can exist at once. Each launch uses a new home, a new session, and a new evidence directory. Commands after launch talk to the latest run. Set `GENV_VERIFY_RUN` to a printed `run_id` to select an older one.
+Export the printed `run_id` before any later command:
+
+```bash
+export GENV_VERIFY_RUN=<printed run_id>
+```
+
+`doctor`, `paths`, `drive`, `respond`, and `capture` use `GENV_VERIFY_RUN` and nothing else. There is no current-run file. A second launch does not redirect a shell that still has the first id exported.
+
+Launch writes the run id before it builds. If launch fails, it removes that run's session and home and leaves the evidence directory. It does not select an older run.
 
 `go` 1.26.10 and `tmux` 3.2 or newer must be on `PATH`. Older tmux has no literal `send-keys -l`, and the harness will type flags instead of the command. On this VM the harness passes `-f /exec-daemon/tmux.portal.conf` when that file exists. A machine without that file uses the default tmux.
 
@@ -50,7 +58,8 @@ Doctor exits 0 only when all of these are true.
 
 - The tmux session from launch is still alive.
 - Inside the session, `HOME` is the throwaway home, `XDG_CONFIG_HOME` is `<home>/.config`, and `command -v genv` is the binary launch built.
-- `GENV_NO_INTERACTIVE`, `GENV_TARGET`, and `GENV_HOST` are unset. `GENV_NO_INTERACTIVE` makes `genv apply` treat the terminal as closed and refuse to apply. `GENV_TARGET` overrides host classification.
+- `GENV_NO_INTERACTIVE` and `GENV_HOST` are unset. `GENV_NO_INTERACTIVE` makes `genv apply` treat the terminal as closed and refuse to apply.
+- `GENV_TARGET` matches the harness. It is unset when genv can classify this host. It is `linux` when genv cannot. `genv init` has no `--target` flag, so an unrecognized host would fail init unless the harness exports the documented `linux` catch-all. Do not export a different target over the session.
 - `SHELL` is `/bin/bash`.
 - `genv version` prints a line that starts with `genv `.
 - The operator config fingerprint is unchanged.
@@ -79,6 +88,10 @@ Type commands with `drive`. Answer a prompt with `respond`. Both append the pane
 
 `respond` with no text sends only Enter. That is how `genv init` finishes its package list.
 
+The harness joins wrapped pane lines before it matches and before it saves a transcript. A phrase that would split at the terminal width still matches in the saved drive file.
+
+If `--until` is still waiting and the command already printed `GENV_DRIVE_EXIT`, `drive` fails immediately. `respond` then refuses to type when the session is back at `GENVVERIFY>`. A missed prompt must not become a shell command.
+
 ```bash
 .cursor/skills/verify-genv/scripts/verify-genv respond --until 'package id \(or Enter to finish\)' -- git
 .cursor/skills/verify-genv/scripts/verify-genv respond --
@@ -86,7 +99,7 @@ Type commands with `drive`. Answer a prompt with `respond`. Both append the pane
 
 The recipes for each user journey live in `features/`. Follow the file for the journey. Do not swap in a different command and call the journey verified.
 
-`genv env set` and `genv shell alias set` write the active target (`--target`, else `GENV_TARGET`, else host classification). They do not write `defaults`. On Ubuntu the bucket is `targets.ubuntu`. A new spec from these commands, or from `genv init`, is schemaVersion 8 and already has a bucket for every known target.
+`genv env set` and `genv shell alias set` write the active target (`--target`, else `GENV_TARGET`, else host classification). They do not write `defaults`. On a host genv classifies, the bucket is that class (`targets.ubuntu` on Ubuntu). On a host the harness cannot classify, the harness sets `GENV_TARGET=linux` and the bucket is `targets.linux`. A new spec from these commands, or from `genv init`, is schemaVersion 8 and already has a bucket for every known target.
 
 `genv apply` without `--yes` asks `Continue? [y/N]` when stdin is a terminal. Only `y` or `Y` accepts. Enter on this session declines and prints `Aborted.` with exit 0. A closed stdin exits 4 and applies nothing. `--json` without `--yes` is plan-only.
 
@@ -106,7 +119,7 @@ Record the feature id before cleanup:
 printf '%s\n' env > "$(.cursor/skills/verify-genv/scripts/verify-genv paths evidence)/feature.txt"
 ```
 
-Copy files out of the throwaway home before cleanup. `capture` refuses a path outside that home, and it refuses a name with a slash.
+Copy files out of the throwaway home before cleanup. `capture` resolves the path with `realpath -e` and accepts it only when that path is inside the throwaway home. It refuses `..`, any symlink, and a name with a slash. On a normal filesystem the evidence directory is mode `700` and the files are mode `600`. Launch still keeps the files when a filesystem rejects `chmod`.
 
 ```bash
 .cursor/skills/verify-genv/scripts/verify-genv capture env.sh "$(.cursor/skills/verify-genv/scripts/verify-genv paths spec-dir)/env.sh"
@@ -132,20 +145,20 @@ A dry-run is not proof of an apply. `genv apply --dry-run` prints the plan and l
 ## Cleanup
 
 ```bash
-.cursor/skills/verify-genv/scripts/verify-genv cleanup
+.cursor/skills/verify-genv/scripts/verify-genv cleanup "$GENV_VERIFY_RUN"
 ```
 
-Cleanup kills tmux session `genv-verify-<run-id>` and deletes `/tmp/genv-verify-runs/<run-id>`. It does not delete the evidence directory. It writes `<evidence>/cleanup-ok.txt` when the operator fingerprint still matches. A mismatch still removes the session and the throwaway home, writes `<evidence>/cleanup-failed.txt`, and exits non-zero.
+Cleanup requires that run id. It does not read `GENV_VERIFY_RUN` by itself, and it does not read a current-run file. A missing id is an error and deletes nothing.
 
-Run cleanup after a failed launch or a failed drive so a session is not left behind. Then check the evidence path still exists:
+Cleanup kills tmux session `genv-verify-<run-id>` with an exact session match, and deletes `/tmp/genv-verify-runs/<run-id>`. It does not delete the evidence directory. It writes `<evidence>/cleanup-ok.txt` when the operator fingerprint still matches. A mismatch still removes that session and that throwaway home, writes `<evidence>/cleanup-failed.txt`, and exits non-zero.
+
+A failed launch already removed its own session and home. Pass that run id only if you still need cleanup to record `cleanup-ok.txt`. Do not run cleanup with no id.
+
+After cleanup, `paths` cannot resolve the removed run. Keep the evidence path launch printed and check that:
 
 ```bash
-test -f "$(.cursor/skills/verify-genv/scripts/verify-genv paths evidence)/run.env"
+test -f "$evidence/run.env"
 ```
-
-That check has to happen before cleanup if you still need `paths`. After cleanup, use the evidence path launch printed. `paths` will not resolve a removed run.
-
-`cleanup` with no recorded run exits 0.
 
 ## Helpers
 
@@ -159,11 +172,20 @@ The harness is `.cursor/skills/verify-genv/scripts/verify-genv`. It must be exec
 | `drive -- <command>` | Type a command and wait for it to finish |
 | `respond -- <text>` | Type an answer and Enter |
 | `capture <name> <path>` | Copy one throwaway-home file into evidence |
-| `cleanup` | Kill the session and delete the throwaway home |
+| `cleanup <run-id>` | Kill that session and delete that throwaway home |
+| `classify` | Print the host class and the `GENV_TARGET` launch would export |
+
+Regression checks for cleanup, capture, and evidence modes:
+
+```bash
+.cursor/skills/verify-genv/scripts/regress.sh
+```
 
 ## Platform limits
 
-Proved on Linux with bash, the harness covers default-path env and shell writes, `~/.bashrc`, and host class `ubuntu`.
+Proved on Linux with bash, the harness covers default-path env and shell writes, `~/.bashrc`, and host class `ubuntu`. On Ubuntu the session leaves `GENV_TARGET` unset.
+
+Debian and other Linux hosts genv cannot classify are not a separate live journey. Launch exports `GENV_TARGET=linux` there, and `classify` reports that choice. Do not mark a Debian apply as verified because the Ubuntu journey passed.
 
 Not proved here:
 
