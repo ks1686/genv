@@ -13,8 +13,7 @@ REPO=$(CDPATH='' cd "$SCRIPT_DIR/../../../.." && pwd)
 RUNS_ROOT=
 EVIDENCE_ROOT=
 roots_ready=0
-REGISTRY_DIR=
-DEFAULT_ROOT=
+RUNTIME_PARENT=
 ROOT_RECORD=
 CHILD_DIR=
 
@@ -48,14 +47,15 @@ die() {
 }
 
 on_launch_exit() {
-  local rc=$?
+  local rc=$? live=
   trap - EXIT
   if [[ "$launch_ok" -eq 1 ]]; then
     exit "$rc"
   fi
   if [[ -n "$launch_pid" ]] && pid_alive "$launch_pid"; then
-    if launch_process_matches; then
-      kill_group "$launch_pgid" || true
+    live=$(live_pgid "$launch_pid")
+    if launch_process_matches && [[ -n "$live" && "$live" == "$launch_pgid" ]]; then
+      kill_group "$live" || true
     else
       printf 'verify-genv: launch failed and pid %s is not the process this run started. Leaving state in place.\n' "$launch_pid" >&2
       exit "$rc"
@@ -98,8 +98,10 @@ YYYYMMDDThhmmssZ-<pid>.
 
 Set GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE to private directories you own
 that group and others cannot write. The harness does not create or chmod
-those directories. When they are unset, launch stores new mode 700 roots
-under $XDG_RUNTIME_DIR/genv-verify or $HOME/.cache/genv-verify.
+those directories. When both are unset, launch creates one mode 700 directory
+and records it under $XDG_RUNTIME_DIR/genv-verify (or /run/user/<uid> when
+that runtime directory exists). It does not write into the home directory.
+A command other than launch does not create that directory.
 
 cleanup deletes the session and the throwaway home after the saved process
 identity matches. It leaves the evidence directory in place.
@@ -202,33 +204,41 @@ run_id_ok() {
   [[ "$1" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]]
 }
 
-registry_dir() {
-  local dir
-  REGISTRY_DIR=
-  if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && private_dir_ok "$XDG_RUNTIME_DIR"; then
-    dir=$XDG_RUNTIME_DIR/genv-verify
-    if [[ ! -e "$dir" && ! -L "$dir" ]]; then
-      mkdir -m 700 "$dir" || die "cannot create $dir"
-    fi
-    private_dir_ok "$dir" || die "registry $dir is not private"
-    REGISTRY_DIR=$dir
+under_home() {
+  [[ -n "${HOME:-}" ]] || return 1
+  case "$1" in
+    "$HOME"|"$HOME"/*) return 0 ;;
+  esac
+  return 1
+}
+
+# A runtime directory is not the operator home. Never create ~/.cache for this.
+runtime_parent() {
+  local run_user
+  RUNTIME_PARENT=
+  if [[ -n "${XDG_RUNTIME_DIR:-}" ]] && private_dir_ok "$XDG_RUNTIME_DIR" && ! under_home "$XDG_RUNTIME_DIR"; then
+    RUNTIME_PARENT=$XDG_RUNTIME_DIR
     return 0
   fi
-  if [[ -n "${HOME:-}" ]] && private_dir_ok "$HOME"; then
-    if [[ ! -e "$HOME/.cache" && ! -L "$HOME/.cache" ]]; then
-      mkdir -m 700 "$HOME/.cache" || die "cannot create $HOME/.cache"
-    fi
-    if private_dir_ok "$HOME/.cache"; then
-      dir=$HOME/.cache/genv-verify
-      if [[ ! -e "$dir" && ! -L "$dir" ]]; then
-        mkdir -m 700 "$dir" || die "cannot create $dir"
-      fi
-      private_dir_ok "$dir" || die "registry $dir is not private"
-      REGISTRY_DIR=$dir
-      return 0
-    fi
+  run_user=/run/user/$(id -u)
+  if private_dir_ok "$run_user" && ! under_home "$run_user"; then
+    RUNTIME_PARENT=$run_user
+    return 0
   fi
-  die "no private directory for verify-genv state. Set GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE to directories you own that group and others cannot write."
+  return 1
+}
+
+use_base() {
+  local base=$1
+  private_dir_ok "$base" || return 1
+  private_dir_ok "$base/runs" || return 1
+  private_dir_ok "$base/evidence" || return 1
+  if under_home "$base"; then
+    return 1
+  fi
+  RUNS_ROOT=$base/runs
+  EVIDENCE_ROOT=$base/evidence
+  return 0
 }
 
 read_root_record() {
@@ -263,49 +273,61 @@ write_root_record() {
   mv "$tmp" "$file"
 }
 
-pick_default_root() {
-  local kind=$1 reg dir
-  case "$kind" in
-    runs|evidence) ;;
-    *) die "unknown root kind" ;;
-  esac
-  registry_dir
-  reg=$REGISTRY_DIR/roots
-  dir=
-  if [[ -f "$reg" ]]; then
-    if read_root_record "$reg" "$kind"; then
-      dir=$ROOT_RECORD
-    fi
+# One directory holds both runs and evidence. Launch is the only command
+# that creates it. Recording it under the home directory would touch the
+# operator account, so the path is stored in the runtime directory.
+create_default_base() {
+  local base reg
+  if ! runtime_parent; then
+    die "no private runtime directory. Set GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE. Refusing to write into the home directory."
   fi
-  if [[ -n "$dir" ]] && private_dir_ok "$dir"; then
-    DEFAULT_ROOT=$dir
+  reg=$RUNTIME_PARENT/genv-verify
+  if [[ ! -e "$reg" && ! -L "$reg" ]]; then
+    mkdir -m 700 "$reg" || die "cannot create $reg"
+  fi
+  private_dir_ok "$reg" || die "registry $reg is not private"
+  if [[ -f "$reg/roots" ]] && read_root_record "$reg/roots" base && use_base "$ROOT_RECORD"; then
     return 0
   fi
-  # Mode 700 comes from umask 077. chmod applies only to this new directory.
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/genv-verify-${kind}.XXXXXX") || die "mktemp failed"
-  chmod 700 "$dir" || die "cannot set mode 700 on $dir"
-  private_dir_ok "$dir" || die "temporary directory $dir is not private"
-  write_root_record "$reg" "$kind" "$dir"
-  DEFAULT_ROOT=$dir
+  base=$(mktemp -d "${TMPDIR:-/tmp}/genv-verify-base.XXXXXX") || die "mktemp failed"
+  chmod 700 "$base" || die "cannot set mode 700 on $base"
+  mkdir -m 700 "$base/runs" "$base/evidence" || die "cannot create runs and evidence under $base"
+  use_base "$base" || die "temporary directory $base is not private"
+  write_root_record "$reg/roots" base "$base"
+}
+
+load_default_base() {
+  local reg
+  if ! runtime_parent; then
+    die "GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE are unset, and there is no private runtime directory. Refusing to create directories or write into the home directory."
+  fi
+  reg=$RUNTIME_PARENT/genv-verify
+  if [[ ! -f "$reg/roots" ]] || ! read_root_record "$reg/roots" base; then
+    die "no verify-genv root is recorded. Refusing to create one."
+  fi
+  use_base "$ROOT_RECORD" || die "recorded verify-genv root is not private"
 }
 
 ensure_roots() {
+  local create=0 runs_set=0 ev_set=0
   [[ "$roots_ready" -eq 1 ]] && return 0
-  if [[ -n "${GENV_VERIFY_RUNS+x}" ]]; then
-    [[ -n "$GENV_VERIFY_RUNS" ]] || die "GENV_VERIFY_RUNS is empty"
-    require_private_dir "$GENV_VERIFY_RUNS" "GENV_VERIFY_RUNS"
-    RUNS_ROOT=$GENV_VERIFY_RUNS
-  else
-    pick_default_root runs
-    RUNS_ROOT=$DEFAULT_ROOT
+  [[ "${1:-}" == create ]] && create=1
+  [[ -n "${GENV_VERIFY_RUNS+x}" ]] && runs_set=1
+  [[ -n "${GENV_VERIFY_EVIDENCE+x}" ]] && ev_set=1
+  if [[ "$runs_set" -ne "$ev_set" ]]; then
+    die "set both GENV_VERIFY_RUNS and GENV_VERIFY_EVIDENCE, or set neither"
   fi
-  if [[ -n "${GENV_VERIFY_EVIDENCE+x}" ]]; then
+  if [[ "$runs_set" -eq 1 ]]; then
+    [[ -n "$GENV_VERIFY_RUNS" ]] || die "GENV_VERIFY_RUNS is empty"
     [[ -n "$GENV_VERIFY_EVIDENCE" ]] || die "GENV_VERIFY_EVIDENCE is empty"
+    require_private_dir "$GENV_VERIFY_RUNS" "GENV_VERIFY_RUNS"
     require_private_dir "$GENV_VERIFY_EVIDENCE" "GENV_VERIFY_EVIDENCE"
+    RUNS_ROOT=$GENV_VERIFY_RUNS
     EVIDENCE_ROOT=$GENV_VERIFY_EVIDENCE
+  elif [[ "$create" -eq 1 ]]; then
+    create_default_base
   else
-    pick_default_root evidence
-    EVIDENCE_ROOT=$DEFAULT_ROOT
+    load_default_base
   fi
   [[ "$RUNS_ROOT" != "$EVIDENCE_ROOT" ]] || die "runs and evidence directories must be different"
   [[ "$RUNS_ROOT" != "/" && "$EVIDENCE_ROOT" != "/" ]] || die "refusing to use /"
@@ -549,10 +571,24 @@ load_state() {
   private_dir_ok "$EVIDENCE" || die "evidence directory is not private"
 }
 
+# A failing ps (for example /proc is hidden) must not look like a dead pid.
+# That would let cleanup remove the run and leave a background process alive.
+require_ps() {
+  if ! ps -p $$ >/dev/null 2>&1; then
+    die "ps cannot list processes. Refusing to treat a pid as dead."
+  fi
+}
+
 pid_alive() {
   local pid=$1
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  require_ps
   ps -p "$pid" >/dev/null 2>&1
+}
+
+live_pgid() {
+  require_ps
+  ps -o pgid= -p "$1" 2>/dev/null | tr -d '[:space:]' || true
 }
 
 ps_user() {
@@ -571,6 +607,7 @@ own_pgid() {
 
 group_has_processes() {
   local pgid=$1 line lines
+  require_ps
   lines=$(ps -eo pgid= 2>/dev/null || true)
   while IFS= read -r line; do
     line=${line//[[:space:]]/}
@@ -696,10 +733,11 @@ load_proc() {
 }
 
 proc_matches_live() {
-  local now user
+  local now user pgid
   user=$(ps_user "$PROC_PID")
   now=$(process_identity "$PROC_PID")
-  [[ "$user" == "$PROC_USER" && "$user" == "$(id -un)" && -n "$now" && "$now" == "$PROC_IDENTITY" ]]
+  pgid=$(live_pgid "$PROC_PID")
+  [[ "$user" == "$PROC_USER" && "$user" == "$(id -un)" && -n "$now" && "$now" == "$PROC_IDENTITY" && -n "$pgid" && "$pgid" == "$PROC_PGID" ]]
 }
 
 pane_text() {
@@ -950,7 +988,7 @@ cmd_launch() {
   command -v tmux >/dev/null || die "tmux is not on PATH"
   command -v realpath >/dev/null || die "realpath is not on PATH"
   command -v perl >/dev/null || die "perl is not on PATH"
-  ensure_roots
+  ensure_roots create
   run=$(date -u +%Y%m%dT%H%M%SZ)-$$
   run_id_ok "$run" || die "generated run id is not a run id"
   make_private_child "$RUNS_ROOT" "$run"
@@ -994,14 +1032,14 @@ set bell-style none
 EOF
   # Interactive bash turns job control on after the rc file. That puts a
   # background process in its own group, which cleanup would miss. set +m
-  # in PROMPT_COMMAND runs before each command and keeps the job in the
-  # shell's process group.
+  # in PROMPT_COMMAND runs before each prompt and keeps the job in the
+  # shell's process group. Save $? first; set +m replaces it with 0.
   cat >"$RUN_DIR/verify.bashrc" <<'EOF'
 set +H
 set +o history
 set +m
 PS1='GENVVERIFY> '
-PROMPT_COMMAND='set +m; printf "GENV_DRIVE_EXIT:%s\n" "$?"'
+PROMPT_COMMAND='__genv_rc=$?; set +m; printf "GENV_DRIVE_EXIT:%s\n" "$__genv_rc"'
 EOF
   write_start "$home" "$xdg" "$bindir" "$session_target"
   {
@@ -1286,17 +1324,19 @@ cmd_doctor() {
 }
 
 stop_recorded_process() {
-  local procf=$1
+  local procf=$1 live
   [[ -f "$procf" ]] || return 0
   load_proc "$procf"
   if ! pid_alive "$PROC_PID"; then
     return 0
   fi
-  if ! proc_matches_live; then
+  live=$(live_pgid "$PROC_PID")
+  # The saved pgid is only a check. Signal the group the live pid is in.
+  if ! proc_matches_live || [[ -z "$live" || "$live" != "$PROC_PGID" ]]; then
     printf 'verify-genv: process identity does not match pid %s. Refusing to signal or remove this run.\n' "$PROC_PID" >&2
     exit 1
   fi
-  kill_group "$PROC_PGID" || die "refusing to signal process group $PROC_PGID"
+  kill_group "$live" || die "refusing to signal process group $live"
 }
 
 cmd_cleanup() {

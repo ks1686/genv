@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Proves private roots, a non-executed run.env, distro-neutral targets,
-# capture races, reserved names, strict run ids, and process-group cleanup.
+# capture races, reserved names, strict run ids, real command statuses,
+# and process-group cleanup.
 set -euo pipefail
 
 here=$(CDPATH='' cd "$(dirname "$0")" && pwd)
@@ -16,6 +17,10 @@ SWAP_PID=
 ENV_BACKUP=
 PROC_BACKUP=
 FOREIGN_DIR=
+OTHER_PID=
+DEFAULT_RUN=
+DEFAULT_BASE=
+DEFAULT_RUNTIME=
 PREFIX_ID=20260101T000000Z-12
 PREFIX_LONG_ID=20260101T000000Z-1234
 
@@ -54,6 +59,20 @@ finish() {
   fi
   if [[ -n "$BG_PID" ]]; then
     kill -TERM "$BG_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$OTHER_PID" ]]; then
+    kill -TERM "$OTHER_PID" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL "$OTHER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$DEFAULT_RUN" && -n "$DEFAULT_RUNTIME" ]]; then
+    env -u GENV_VERIFY_RUNS -u GENV_VERIFY_EVIDENCE \
+      XDG_RUNTIME_DIR="$DEFAULT_RUNTIME" \
+      "$harness" cleanup "$DEFAULT_RUN" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$DEFAULT_BASE" && -d "$DEFAULT_BASE" ]]; then
+    chmod -R u+w "$DEFAULT_BASE" 2>/dev/null || true
+    rm -rf "$DEFAULT_BASE"
   fi
   tmux_cmd kill-session -t "=genv-verify-$PREFIX_ID" >/dev/null 2>&1 || true
   tmux_cmd kill-session -t "=genv-verify-$PREFIX_LONG_ID" >/dev/null 2>&1 || true
@@ -121,6 +140,32 @@ expect_fail() {
   printf '%s_exit=%s\n' "$name" "$rc"
   cat "$out"
   [[ "$rc" -ne 0 ]]
+}
+
+expect_status() {
+  local name=$1 want=$2
+  shift 2
+  local out rc
+  out=$work/${name}.out
+  set +e
+  "$@" >"$out" 2>&1
+  rc=$?
+  set -e
+  printf '%s_exit=%s\n' "$name" "$rc"
+  cat "$out"
+  [[ "$rc" -eq "$want" ]]
+}
+
+latest_drive() {
+  find "$ev/drives" -name '*.txt' | LC_ALL=C sort | tail -n 1
+}
+
+last_exit_line() {
+  grep -E '^GENV_DRIVE_EXIT:[0-9]+$' "$(latest_drive)" | tail -n 1
+}
+
+tmp_names() {
+  find /tmp -maxdepth 1 -name 'genv-verify*' -printf '%f\n' | LC_ALL=C sort
 }
 
 printf '=== private roots ===\n'
@@ -207,6 +252,51 @@ require telemetry_mode "$telemetry_word" off
 printf 'build_home_is_throwaway=yes\n'
 printf 'gocache_is_run_local=yes\n'
 printf 'telemetry_off_in_throwaway=yes\n'
+
+printf '=== command status ===\n'
+expect_status drive_false 1 "$harness" drive -- false
+require drive_false_line "$(last_exit_line)" "GENV_DRIVE_EXIT:1"
+expect_status drive_exit7 7 "$harness" drive -- "sh -c 'exit 7'"
+require drive_exit7_line "$(last_exit_line)" "GENV_DRIVE_EXIT:7"
+expect_status drive_unknown 1 "$harness" drive -- genv not-a-command
+grep -q 'unknown command' "$(latest_drive)"
+require drive_unknown_line "$(last_exit_line)" "GENV_DRIVE_EXIT:1"
+
+expect_status validate_missing 3 "$harness" drive -- genv validate
+grep -q 'not found' "$(latest_drive)"
+grep -q 'genv init' "$(latest_drive)"
+require validate_missing_line "$(last_exit_line)" "GENV_DRIVE_EXIT:3"
+
+expect_status init_open 0 "$harness" drive --until 'package id \(or Enter to finish\)' -- genv init
+grep -q 'Creating' "$(latest_drive)"
+grep -q 'Enter package IDs to track, one per line.' "$(latest_drive)"
+expect_status init_add 0 "$harness" respond --until 'package id \(or Enter to finish\)' -- git
+grep -q 'added git' "$(latest_drive)"
+expect_status init_finish 0 "$harness" respond --
+grep -q 'created' "$(latest_drive)"
+grep -q '1 package' "$(latest_drive)"
+# The session shell expands these paths. This process must not.
+# shellcheck disable=SC2016
+expect_status init_read 0 "$harness" drive -- 'sed -n "1,80p" "$XDG_CONFIG_HOME/genv/genv.json"'
+grep -q '"schemaVersion": "8"' "$(latest_drive)"
+grep -q '"id": "git"' "$(latest_drive)"
+
+expect_status validate_ok 0 "$harness" drive -- genv validate
+grep -q 'is valid.' "$(latest_drive)"
+expect_status init_again 4 "$harness" drive -- genv init
+already=$(grep -c -F 'already exists' "$(latest_drive)" || true)
+require already_exists_lines "$already" 1
+require init_again_line "$(last_exit_line)" "GENV_DRIVE_EXIT:4"
+
+# shellcheck disable=SC2016
+expect_status bad_write 0 "$harness" drive -- 'printf "%s\n" "{not json" > "$HOME/bad.json"'
+# shellcheck disable=SC2016
+expect_status validate_bad 3 "$harness" drive -- 'genv validate --file "$HOME/bad.json"'
+grep -q 'bad.json' "$(latest_drive)"
+require validate_bad_line "$(last_exit_line)" "GENV_DRIVE_EXIT:3"
+expect_status validate_still 0 "$harness" drive -- genv validate
+grep -q 'is valid.' "$(latest_drive)"
+printf 'command_status_matches=yes\n'
 
 printf '=== run.env is data ===\n'
 ENV_BACKUP=$work/run.env.good
@@ -442,6 +532,58 @@ tmux_cmd has-session -t "=$sessionA" >/dev/null
 printf 'identity_mismatch_kept_state=yes\n'
 cp "$PROC_BACKUP" "$GENV_VERIFY_RUNS/$A_ID/run.proc"
 
+printf '=== live pgid ===\n'
+# ps pads the command column, so match fields instead of a trimmed line.
+# shellcheck disable=SC2016
+while IFS= read -r old; do
+  [[ -n "$old" ]] || continue
+  kill -TERM "$old" 2>/dev/null || true
+done < <(ps -eo pid=,args= | awk '$2=="sleep" && $3=="779" {print $1}')
+setsid sleep 779 >/dev/null 2>&1 &
+OTHER_PID=
+i=0
+while [[ "$i" -lt 25 ]]; do
+  # shellcheck disable=SC2016
+  OTHER_PID=$(ps -eo pid=,args= | awk '$2=="sleep" && $3=="779" {print $1; exit}')
+  [[ -n "$OTHER_PID" ]] && break
+  sleep 0.1
+  i=$((i + 1))
+done
+[[ "$OTHER_PID" =~ ^[0-9]+$ ]]
+other_pgid=$(ps -o pgid= -p "$OTHER_PID" | tr -d '[:space:]')
+[[ "$other_pgid" != "$shell_pgid" ]]
+sed "s/^pgid=.*/pgid=${other_pgid}/" "$PROC_BACKUP" >"$GENV_VERIFY_RUNS/$A_ID/run.proc"
+expect_fail forged_pgid "$harness" cleanup "$A_ID"
+ps -p "$OTHER_PID" >/dev/null
+ps -p "$BG_PID" >/dev/null
+tmux_cmd has-session -t "=$sessionA" >/dev/null
+[[ -d "$home" ]]
+[[ -d "$GENV_VERIFY_RUNS/$A_ID" ]]
+[[ ! -f "$ev/cleanup-ok.txt" ]]
+printf 'forged_pgid_kept_state=yes\n'
+cp "$PROC_BACKUP" "$GENV_VERIFY_RUNS/$A_ID/run.proc"
+kill -TERM "$OTHER_PID" 2>/dev/null || true
+sleep 0.1
+kill -KILL "$OTHER_PID" 2>/dev/null || true
+if ps -p "$OTHER_PID" >/dev/null 2>&1; then
+  printf 'unrelated sleep still alive\n' >&2
+  exit 1
+fi
+OTHER_PID=
+
+printf '=== ps failure ===\n'
+mkdir -m 700 "$work/fakeps"
+printf '%s\n' '#!/bin/sh' 'exit 47' >"$work/fakeps/ps"
+chmod 755 "$work/fakeps/ps"
+expect_fail ps_broken env PATH="$work/fakeps:$PATH" "$harness" cleanup "$A_ID"
+grep -q 'ps cannot list processes' "$work/ps_broken.out"
+ps -p "$BG_PID" >/dev/null
+tmux_cmd has-session -t "=$sessionA" >/dev/null
+[[ -d "$home" ]]
+[[ -d "$GENV_VERIFY_RUNS/$A_ID" ]]
+[[ ! -f "$ev/cleanup-ok.txt" ]]
+printf 'ps_failure_kept_state=yes\n'
+
 printf '=== operator cache ===\n'
 newer=$work/newer.txt
 : >"$newer"
@@ -474,4 +616,72 @@ fi
 BG_PID=
 [[ ! -e "${HOME}/.config/genv" ]]
 printf 'background_process_stopped=yes\n'
+
+printf '=== one root ===\n'
+[[ ! -e "${HOME}/.cache/genv-verify" ]]
+DEFAULT_RUNTIME=$work/runtime
+mkdir -m 700 "$DEFAULT_RUNTIME"
+tmp_names >"$work/tmp.before"
+expect_fail no_root env -u GENV_VERIFY_RUNS -u GENV_VERIFY_EVIDENCE \
+  XDG_RUNTIME_DIR="$DEFAULT_RUNTIME" \
+  "$harness" cleanup 20260101T000000Z-99
+[[ ! -e "$DEFAULT_RUNTIME/genv-verify" ]]
+[[ ! -e "${HOME}/.cache/genv-verify" ]]
+tmp_names >"$work/tmp.after"
+[[ -z "$(comm -13 "$work/tmp.before" "$work/tmp.after")" ]]
+expect_fail no_runtime env -u XDG_RUNTIME_DIR -u GENV_VERIFY_RUNS -u GENV_VERIFY_EVIDENCE \
+  "$harness" cleanup 20260101T000000Z-99
+[[ ! -e "${HOME}/.cache/genv-verify" ]]
+tmp_names >"$work/tmp.after"
+[[ -z "$(comm -13 "$work/tmp.before" "$work/tmp.after")" ]]
+printf 'no_home_registry=yes\n'
+
+tmp_names >"$work/tmp.before"
+env -u GENV_VERIFY_RUNS -u GENV_VERIFY_EVIDENCE -u GENV_VERIFY_RUN \
+  XDG_RUNTIME_DIR="$DEFAULT_RUNTIME" \
+  "$harness" launch >"$work/default-launch.out"
+DEFAULT_RUN=$(sed -n 's/^run_id=//p' "$work/default-launch.out" | tail -n 1)
+[[ "$DEFAULT_RUN" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]]
+tmp_names >"$work/tmp.after"
+new_roots=$(comm -13 "$work/tmp.before" "$work/tmp.after")
+require default_root_count "$(printf '%s\n' "$new_roots" | grep -c . || true)" 1
+DEFAULT_BASE=/tmp/$new_roots
+[[ -d "$DEFAULT_BASE/runs/$DEFAULT_RUN" ]]
+[[ -d "$DEFAULT_BASE/evidence/$DEFAULT_RUN" ]]
+require default_base_mode "$(stat -c %a "$DEFAULT_BASE")" 700
+require default_runs_mode "$(stat -c %a "$DEFAULT_BASE/runs")" 700
+require default_evidence_mode "$(stat -c %a "$DEFAULT_BASE/evidence")" 700
+require base_lines "$(grep -c '^base=' "$DEFAULT_RUNTIME/genv-verify/roots" || true)" 1
+if grep -q '^runs=' "$DEFAULT_RUNTIME/genv-verify/roots" || grep -q '^evidence=' "$DEFAULT_RUNTIME/genv-verify/roots"; then
+  printf 'default registry recorded two roots\n' >&2
+  exit 1
+fi
+require recorded_base "$(sed -n 's/^base=//p' "$DEFAULT_RUNTIME/genv-verify/roots")" "$DEFAULT_BASE"
+[[ ! -e "${HOME}/.cache/genv-verify" ]]
+printf 'one_root_only=yes\n'
+
+newer=$work/newer-default.txt
+: >"$newer"
+for d in "${HOME}/go" "${HOME}/.cache/go-build" "${HOME}/.config/go"; do
+  [[ -e "$d" ]] || continue
+  find "$d" -newer "$stamp" -print >>"$newer"
+done
+if [[ -s "$newer" ]]; then
+  printf 'operator go cache changed during default launch:\n' >&2
+  cat "$newer" >&2
+  exit 1
+fi
+
+env -u GENV_VERIFY_RUNS -u GENV_VERIFY_EVIDENCE \
+  XDG_RUNTIME_DIR="$DEFAULT_RUNTIME" \
+  "$harness" cleanup "$DEFAULT_RUN"
+[[ ! -d "$DEFAULT_BASE/runs/$DEFAULT_RUN" ]]
+[[ -d "$DEFAULT_BASE/evidence/$DEFAULT_RUN" ]]
+DEFAULT_RUN=
+chmod -R u+w "$DEFAULT_BASE"
+rm -rf "$DEFAULT_BASE"
+DEFAULT_BASE=
+[[ ! -e "${HOME}/.cache/genv-verify" ]]
+[[ ! -e "${HOME}/.config/genv" ]]
+printf 'default_root_cleaned=yes\n'
 printf 'regress_ok\n'

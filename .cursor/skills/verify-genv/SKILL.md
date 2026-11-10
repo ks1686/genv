@@ -30,7 +30,7 @@ What launch does:
 - Forces `SHELL=/bin/bash`. On Linux and macOS, `genv apply` injects its source line into `~/.bashrc` for bash and `~/.zshrc` for zsh. This session always exercises the bash file.
 - On Ubuntu, interactive bash sources `/etc/bash.bashrc` before the harness rc file. That file prints a sudo hint when the throwaway home has no `.sudo_as_admin_successful` and the user is in group `sudo` or `admin`. The hint is not genv running sudo. Ignore that banner. Fail the journey if the transcript contains an install or uninstall command.
 - Records a fingerprint of the operator's `~/.config/genv`, `~/.bashrc`, and `~/.zshrc` (and `$XDG_CONFIG_HOME/genv` when that variable is set and points somewhere else). Doctor and cleanup fail if a fingerprint changes.
-- Writes proof in a mode 700 directory created with `mktemp -d` under the evidence root. Set `GENV_VERIFY_RUNS` and `GENV_VERIFY_EVIDENCE` to choose the roots. Each one must already exist, must be owned by you, and must not be writable by group or others. The harness does not create those roots and does not chmod them. When the variables are unset, the roots are private temporary directories recorded in `$XDG_RUNTIME_DIR/genv-verify/roots`, or in `$HOME/.cache/genv-verify/roots` when the runtime directory is unset.
+- Writes proof in a mode 700 directory created with `mktemp -d` under the evidence root. Set `GENV_VERIFY_RUNS` and `GENV_VERIFY_EVIDENCE` together, or set neither. Each supplied directory must already exist, must be owned by you, and must not be writable by group or others. The harness does not create those roots and does not chmod them. When both are unset, launch creates one mode 700 directory, with `runs` and `evidence` inside it, and records that directory under `$XDG_RUNTIME_DIR/genv-verify` (or `/run/user/<uid>` when that directory already exists and is private). The harness does not write a registry into the home directory. A command other than launch does not create the directory.
 - Sets `CFFIXED_USER_HOME` to the throwaway home so a macOS session does not write operator preferences. This Linux harness does not prove those preference files.
 - Turns off job control in the session (`set +m`) so a background process stays in the shell's process group.
 
@@ -84,7 +84,7 @@ Type commands with `drive`. Answer a prompt with `respond`. Both append the pane
 .cursor/skills/verify-genv/scripts/verify-genv drive -- '. "$HOME/.bashrc" && printf "EDITOR=%s\n" "$EDITOR"'
 ```
 
-`--until` is an extended regular expression. The default waits for a new line `GENV_DRIVE_EXIT:<code>`. That line is the session's `PROMPT_COMMAND`, not genv output. `drive` and `respond` then exit with `<code>`. Pass `--until` when the command stops for input before it exits. The apply confirmation line contains `Continue? [y/N]`.
+`--until` is an extended regular expression. The default waits for a new line `GENV_DRIVE_EXIT:<code>`. That line is the session's `PROMPT_COMMAND`, not genv output. The status is saved before `set +m`, so `<code>` is the command's own status. `drive` and `respond` then exit with `<code>`. Pass `--until` when the command stops for input before it exits. The apply confirmation line contains `Continue? [y/N]`.
 
 `--timeout` is seconds. The default is 90.
 
