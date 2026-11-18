@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Build with Go 1.26.11, which fixes an HTTP/1 server panic when MaxBytesReader sets `Connection: close` while a handler writes headers (GO-2026-6859).
 - Build with Go 1.26.10, which distrusts compromised intermediate certificates in `crypto/x509` (GO-2026-6809).
 - `github.com/klauspost/compress` is v1.20.4, which fixes a panic on two-block zstd frames (GO-2026-6865).
 
