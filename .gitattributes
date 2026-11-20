@@ -8,3 +8,6 @@
 # eol=lf controls what lands in the working tree; text=auto lets git detect
 # binary files and leave them alone.
 * text=auto eol=lf
+
+# The verification skill is tracked. It is not part of the release archive.
+.cursor export-ignore

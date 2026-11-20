@@ -112,7 +112,8 @@ desktop.ini
 # Cursor (local IDE/agent hooks and state, not for the repo)
 # =============================================================================
 
-.cursor/
+.cursor/*
+!.cursor/skills/
 
 # =============================================================================
 # Superpowers / SDD scratch (local agent briefs, reports, progress)
